@@ -2,16 +2,17 @@
 
 import React from 'react';
 import { useUIStore } from '../store/uiStore';
-import { useProgressionStore as useStudyStore } from '../features/progression';
 import { calculateLevelFromXP } from '../utils/progressionUtils';
-import { useTopicMetadata } from '../features/content/selectors';
-import { useTopicCards } from '../hooks/useDeckData';
-import { Card } from '../types/core';
+import type { TopicMetadata } from '../features/content/selectors';
+import type { Card } from '../types/core';
 
 interface TopicSelectionBarProps {
   /** Whether this bar is embedded in the 3D scene (vs standalone) */
   isEmbedded?: boolean;
   onStartTopicStudySession?: (topicId: string, cards: Card[]) => void;
+  selectedMetadata?: TopicMetadata;
+  selectedCards?: Card[];
+  selectedXp?: number;
 }
 
 /**
@@ -23,20 +24,17 @@ interface TopicSelectionBarProps {
 export default function TopicSelectionBar({
   isEmbedded = false,
   onStartTopicStudySession,
+  selectedMetadata,
+  selectedCards = [],
+  selectedXp = 0,
 }: TopicSelectionBarProps) {
   const selectedTopicId = useUIStore((state) => state.selectedTopicId);
   const selectTopic = useUIStore((state) => state.selectTopic);
   const isSelectionMode = selectedTopicId !== null;
-
-  const activeCrystals = useStudyStore((state) => state.activeCrystals);
-  const metadata = useTopicMetadata(selectedTopicId ? [selectedTopicId] : []);
-  const selectedMetadata = selectedTopicId ? metadata[selectedTopicId] : undefined;
-  const resolvedSubjectId = selectedMetadata?.subjectId || '';
-  const topicCardsQuery = useTopicCards(resolvedSubjectId, selectedTopicId || '');
+  const xp = selectedXp;
 
   const topicName = selectedMetadata?.topicName || 'Selected topic';
   const subjectName = selectedMetadata?.subjectName || 'Unknown subject';
-  const xp = activeCrystals.find((crystal) => crystal.topicId === selectedTopicId)?.xp || 0;
   const level = calculateLevelFromXP(xp);
 
   if (!isSelectionMode || !selectedTopicId) {
@@ -44,12 +42,11 @@ export default function TopicSelectionBar({
   }
 
   const handleBegin = () => {
-    const cards = topicCardsQuery.data ?? [];
-    if (!cards.length) {
+    if (!selectedCards?.length) {
       console.warn(`[TopicSelectionBar] No cards available for topic ${selectedTopicId}`);
       return;
     }
-    onStartTopicStudySession?.(selectedTopicId, cards);
+    onStartTopicStudySession?.(selectedTopicId, selectedCards);
   };
 
   const handleClear = () => {
@@ -60,15 +57,13 @@ export default function TopicSelectionBar({
 
   return (
     <div className={containerClass}>
-      <div className="flex items-center gap-3 px-4 py-2 bg-black/80 backdrop-blur-sm rounded-lg border border-white/10 shadow-lg">
+      <div className="flex items-center gap-2 px-2 py-2 bg-black/80 backdrop-blur-sm rounded-lg border border-white/10 shadow-lg">
         <div className="flex flex-col items-start">
           <span className="text-xs text-white/50 uppercase tracking-wider">Selected</span>
           <div className="flex items-center gap-2 text-white">
-            <span className="font-medium">{subjectName}</span>
-            <span className="text-white/40">–</span>
-            <span className="font-semibold">{topicName}</span>
+            <span className="font-semibold min-w-[100px]">{topicName}</span>
             <span className="text-white/40">•</span>
-            <span className="text-sm text-amber-400">Level {level} ({xp} XP)</span>
+            <span className="text-sm text-amber-400 min-w-[50px]">Level {level} ({xp} XP)</span>
           </div>
         </div>
 

@@ -223,101 +223,114 @@ export function DiscoveryModal({
         onClick={onClose}
       >
         <div
-          className="bg-slate-800 rounded-[20px] p-6 max-w-3xl w-[95%] max-h-[85vh] overflow-y-auto relative border border-slate-700"
+          className="bg-slate-800 rounded-[20px] p-6 max-w-3xl w-[95%] max-h-[85vh] relative border border-slate-700 flex flex-col min-h-0 overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Close Button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 bg-transparent border-none text-slate-400 text-2xl cursor-pointer leading-none p-1 hover:text-slate-200 transition-colors"
+            className="absolute top-4 right-4 bg-transparent border-none text-slate-400 text-2xl cursor-pointer leading-none p-1 hover:text-slate-200 transition-colors z-30"
             aria-label="Close modal"
           >
             ✕
           </button>
 
-          {/* Header */}
-          <header className="text-center mb-6">
-            <h2 className="text-2xl font-semibold text-slate-200 m-0">🏛️ Wisdom Altar</h2>
-            <p className="text-slate-400 mt-1.5 text-sm">
-              Unlock topic crystals to expand your knowledge
-            </p>
-            <p className="text-slate-500 mt-1 text-xs">
-              {lockedTopicsCount} locked topic{lockedTopicsCount !== 1 ? 's' : ''}
-            </p>
-          </header>
+          <div className="sticky top-0 z-20 bg-slate-800">
+            {/* Header */}
+            <header className="text-center mb-6">
+              <h2 className="text-2xl font-semibold text-slate-200 m-0">🏛️ Wisdom Altar</h2>
+              <p className="text-slate-400 mt-1.5 text-sm">
+                Unlock topic crystals to expand your knowledge
+              </p>
+              <p className="text-slate-500 mt-1 text-xs">
+                {lockedTopicsCount} locked topic{lockedTopicsCount !== 1 ? 's' : ''}
+              </p>
+            </header>
 
-          {/* Unlock Points Display */}
-          <div className="text-center mb-6">
-            <div className="inline-block bg-amber-900/40 border border-amber-500 rounded-full py-2 px-6">
-              <span className="text-amber-400 font-bold text-lg">
-                ✨ {unlockPoints} Unlock Point{unlockPoints !== 1 ? 's' : ''}
-              </span>
+            {/* Unlock Points Display */}
+            <div className="text-center mb-6">
+              <div className="inline-block bg-amber-900/40 border border-amber-500 rounded-full py-2 px-6">
+                <span className="text-amber-400 font-bold text-lg">
+                  ✨ {unlockPoints} Unlock Point{unlockPoints !== 1 ? 's' : ''}
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Tiered Grid Layout */}
-          <div className="space-y-6">
-            {topicsByTier.map((tierData) => (
-              <div key={tierData.tier}>
-                {/* Tier Label */}
-                <div className="flex items-center mb-3">
-                  <div className="flex-1 h-px bg-slate-600"></div>
-                  <span className="px-4 text-slate-400 text-sm font-semibold">
-                    Tier {tierData.tier}
-                  </span>
-                  <div className="flex-1 h-px bg-slate-600"></div>
-                </div>
+          <div className="min-h-0 flex-1 overflow-y-auto pr-2">
+            {/* Tiered Grid Layout */}
+            <div className="space-y-6">
+              {topicsByTier.map((tierData) => (
+                <div key={tierData.tier}>
+                  {/* Tier Label */}
+                  <div className="flex items-center mb-3">
+                    <div className="flex-1 h-px bg-slate-600"></div>
+                    <span className="px-4 text-slate-400 text-sm font-semibold">
+                      Tier {tierData.tier}
+                    </span>
+                    <div className="flex-1 h-px bg-slate-600"></div>
+                  </div>
 
-                {/* Topics in this tier */}
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {tierData.topics.map((topic) => (
-                    <button
-                      key={topic.id}
-                      onClick={() => setSelectedTopic(topic)}
-                      className={`text-left p-4 rounded-lg border transition-all ${
-                        topic.isLocked
-                          ? 'bg-slate-700/50 border-slate-600 hover:border-slate-500'
-                          : 'bg-cyan-900/30 border-cyan-500/50 hover:border-cyan-400'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <h4 className={`font-semibold text-sm truncate ${
-                            topic.isLocked ? 'text-slate-400' : 'text-cyan-400'
-                          }`}>
-                            {topic.name}
-                          </h4>
-                          <p className={`text-xs mt-1 line-clamp-2 ${
-                            topic.isLocked ? 'text-slate-500' : 'text-slate-400'
-                          }`}>
-                            {topic.description}
-                          </p>
-                          {!topic.isContentAvailable && (
-                            <p className="mt-2 text-amber-400 text-xs">
-                              📦 Content not available yet
+                  {/* Topics in this tier */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {tierData.topics.map((topic) => (
+                      <button
+                        key={topic.id}
+                        onClick={() => setSelectedTopic(topic)}
+                        className={`text-left p-4 rounded-lg border transition-all ${
+                          topic.isLocked
+                            ? 'bg-slate-700/50 border-slate-600 hover:border-slate-500'
+                            : 'bg-cyan-900/30 border-cyan-500/50 hover:border-cyan-400'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <h4 className={`font-semibold text-sm truncate ${
+                              topic.isLocked ? 'text-slate-400' : 'text-cyan-400'
+                            }`}>
+                              {topic.name}
+                            </h4>
+                            <p className={`text-xs mt-1 line-clamp-2 ${
+                              topic.isLocked ? 'text-slate-500' : 'text-slate-400'
+                            }`}>
+                              {topic.description}
                             </p>
+                            {!topic.isContentAvailable && (
+                              <p className="mt-2 text-amber-400 text-xs">
+                                📦 Content not available yet
+                              </p>
+                            )}
+                          </div>
+                          {topic.isLocked && (
+                            <span className="text-slate-500 text-lg ml-2">🔒</span>
+                          )}
+                          {topic.isUnlocked && (
+                            <span className="text-emerald-400 text-lg ml-2">✅</span>
                           )}
                         </div>
-                        {topic.isLocked && (
-                          <span className="text-slate-500 text-lg ml-2">🔒</span>
-                        )}
-                        {topic.isUnlocked && (
-                          <span className="text-emerald-400 text-lg ml-2">✅</span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              ))}
+            </div>
+
+            {/* Empty state if no topics */}
+            {topicsByTier.length === 0 && (
+              <div className="text-center py-8">
+                <p className="text-slate-400">No topics available</p>
               </div>
-            ))}
+            )}
           </div>
 
-          {/* Empty state if no topics */}
-          {topicsByTier.length === 0 && (
-            <div className="text-center py-8">
-              <p className="text-slate-400">No topics available</p>
-            </div>
-          )}
+          <div className="sticky bottom-0 z-20 bg-slate-800 pt-3 pb-1 text-center">
+            <button
+              onClick={onClose}
+              className="text-slate-200 bg-slate-700 border-none px-6 py-2 rounded-md cursor-pointer hover:bg-slate-600"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
 

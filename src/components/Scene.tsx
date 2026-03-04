@@ -11,7 +11,7 @@ import { Crystals } from './Crystals';
 import TopicSelectionBar from './TopicSelectionBar';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useUIStore } from '../store/uiStore';
-import { useTopicMetadata } from '../features/content/selectors';
+import { useTopicMetadata, type TopicMetadata } from '../features/content/selectors';
 import { Card } from '../types/core';
 import { deckRepository } from '../infrastructure/di';
 
@@ -52,6 +52,18 @@ export const Scene: React.FC = () => {
     });
     return map;
   }, [activeTopicIds, topicCardQueries]);
+
+  const selectedTopicMetadata: TopicMetadata | undefined = selectedTopicId
+    ? allTopicMetadata[selectedTopicId]
+    : undefined;
+  const selectedTopicCards = useMemo(
+    () => (selectedTopicId ? topicCardsById.get(selectedTopicId) ?? [] : []),
+    [selectedTopicId, topicCardsById],
+  );
+  const selectedTopicXp = useMemo(() => {
+    if (!selectedTopicId) return 0;
+    return activeCrystals.find((crystal) => crystal.topicId === selectedTopicId)?.xp || 0;
+  }, [activeCrystals, selectedTopicId]);
 
   const startTopicStudySessionFromCards = (topicId: string, cards: Card[]) => {
     if (!cards.length) {
@@ -176,6 +188,9 @@ export const Scene: React.FC = () => {
             <TopicSelectionBar
               isEmbedded
               onStartTopicStudySession={startTopicStudySessionFromCards}
+              selectedMetadata={selectedTopicMetadata}
+              selectedCards={selectedTopicCards}
+              selectedXp={selectedTopicXp}
             />
           </Html>
         )}

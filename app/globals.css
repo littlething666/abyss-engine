@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 
 :root {
   --foreground-rgb: 0, 0, 0;
@@ -24,4 +25,25 @@ body {
     rgb(var(--background-start-rgb));
   margin: 0;
   padding: 0;
+}
+
+.markdown-body :where(p, ul, ol, li) {
+  margin: 0;
+}
+
+.markdown-body :where(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+}
+
+.markdown-body .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.markdown-body--inline :where(p, ul, ol, li) {
+  display: inline;
+}
+
+.markdown-body .katex {
+  font-size: 1.15em;
 }

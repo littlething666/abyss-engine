@@ -5,6 +5,7 @@ import { getRatingLabel, getRatingColor, normalizeSM2State } from '../utils/sm2'
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useTopicCards } from '../hooks/useDeckData';
 import { useTopicMetadata } from '../features/content/selectors';
+import MathMarkdownRenderer from './MathMarkdownRenderer';
 
 interface StudyPanelModalProps {
   isOpen: boolean;
@@ -238,20 +239,20 @@ export function StudyPanelModal({
       onClick={onClose}
     >
       <div
-        className="bg-slate-800 rounded-[20px] p-8 max-w-[550px] w-[90%] max-h-[85vh] overflow-y-auto relative border border-slate-700"
+        className="bg-slate-800 rounded-[20px] p-3 max-w-[1000px] w-[90%] max-h-[90vh] relative border border-slate-700 flex flex-col min-h-0 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 bg-transparent border-none text-slate-400 text-2xl cursor-pointer leading-none p-1 hover:text-slate-200 transition-colors"
+          className="absolute top-4 right-4 bg-transparent border-none text-slate-400 text-2xl cursor-pointer leading-none p-1 hover:text-slate-200 transition-colors z-30"
           aria-label="Close modal"
         >
           ×
         </button>
 
         {/* Header with Tabs */}
-        <header className="text-center mb-3">
+        <header className="text-center mb-3 sticky top-0 z-20 bg-slate-800">
           <h2 className="text-2xl font-semibold text-slate-200 m-0">📚 Study Session</h2>
 
           {/* Theory Tab - only show when topic has theory content */}
@@ -281,65 +282,67 @@ export function StudyPanelModal({
           )}
         </header>
 
-        {/* Level Up Banner */}
-        {levelUpMessage && (
-          <div className="mb-4 p-4 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl text-center animate-pulse">
-            <div className="text-xl font-bold text-white">🎉 {levelUpMessage}</div>
-            <div className="text-amber-100 text-sm mt-1">Keep up the great work!</div>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {isEmptyDeck && (
-          <div className="text-center py-8 px-5">
-            <p className="text-slate-400 mb-4">No cards are currently available for this topic.</p>
-          </div>
-        )}
-
-        {/* Loading State for cards */}
-        {isLoadingCards && (
-          <div className="text-center py-8 px-5 text-slate-300">Loading cards for this topic...</div>
-        )}
-
-        {/* Error State for cards */}
-        {isCardsLoadError && (
-          <div className="text-center py-8 px-5 text-amber-300">
-            Unable to load cards for this topic. Open a topic and try again.
-          </div>
-        )}
-
-        {/* Missing card data */}
-        {!isLoadingCards && !isCardsLoadError && !hasActiveCard && !isEmptyDeck && !isCompleted && (
-          <div className="text-center py-8 px-5 text-slate-300">
-            <p className="mb-4">No current card is available for this study session.</p>
-            <button
-              onClick={onClose}
-              className="bg-slate-700 text-white border-none py-3 px-6 rounded-lg text-base cursor-pointer hover:bg-slate-600"
-            >
-              Return to Grid
-            </button>
-          </div>
-        )}
-
-        {/* Study Card View */}
-        {hasActiveCard && resolvedTopicTheory && activeTab === 'theory' && (
-          <div className="w-full">
-            <div className="bg-slate-900 rounded-[15px] p-5">
-              <div className="text-violet-400 text-xs uppercase tracking-wider mb-3">💡 Theory</div>
-              <div className="text-slate-200 text-sm leading-relaxed whitespace-pre-wrap">
-                {resolvedTopicTheory}
-              </div>
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          {/* Level Up Banner */}
+          {levelUpMessage && (
+            <div className="mb-4 p-4 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl text-center animate-pulse">
+              <div className="text-xl font-bold text-white">🎉 {levelUpMessage}</div>
+              <div className="text-amber-100 text-sm mt-1">Keep up the great work!</div>
             </div>
-            <div className="mt-4 text-center">
+          )}
+
+          {/* Empty State */}
+          {isEmptyDeck && (
+            <div className="text-center py-8 px-5">
+              <p className="text-slate-400 mb-4">No cards are currently available for this topic.</p>
+            </div>
+          )}
+
+          {/* Loading State for cards */}
+          {isLoadingCards && (
+            <div className="text-center py-8 px-5 text-slate-300">Loading cards for this topic...</div>
+          )}
+
+          {/* Error State for cards */}
+          {isCardsLoadError && (
+            <div className="text-center py-8 px-5 text-amber-300">
+              Unable to load cards for this topic. Open a topic and try again.
+            </div>
+          )}
+
+          {/* Missing card data */}
+          {!isLoadingCards && !isCardsLoadError && !hasActiveCard && !isEmptyDeck && !isCompleted && (
+            <div className="text-center py-8 px-5 text-slate-300">
+              <p className="mb-4">No current card is available for this study session.</p>
               <button
-                onClick={() => setActiveTab('study')}
-                className="bg-cyan-600 text-white border-none py-3 px-8 rounded-lg text-base cursor-pointer hover:bg-cyan-500"
+                onClick={onClose}
+                className="bg-slate-700 text-white border-none py-3 px-6 rounded-lg text-base cursor-pointer hover:bg-slate-600"
               >
-                Back to Study
+                Return to Grid
               </button>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Study Card View */}
+          {hasActiveCard && resolvedTopicTheory && activeTab === 'theory' && (
+            <div className="w-full">
+              <div className="bg-slate-900 rounded-[15px] p-5">
+                <div className="text-violet-400 text-xs uppercase tracking-wider mb-3">💡 Theory</div>
+                <MathMarkdownRenderer
+                  source={resolvedTopicTheory}
+                  className="text-slate-200 leading-relaxed markdown-body markdown-body--theory"
+                />
+              </div>
+              <div className="mt-4 text-center sticky bottom-0 z-10 bg-slate-800 py-3">
+                <button
+                  onClick={() => setActiveTab('study')}
+                  className="bg-cyan-600 text-white border-none py-3 px-8 rounded-lg text-base cursor-pointer hover:bg-cyan-500"
+                >
+                  Back to Study
+                </button>
+              </div>
+            </div>
+          )}
 
         {/* Study Card View */}
         {hasActiveCard && activeTab === 'study' && renderedCard && (
@@ -357,13 +360,19 @@ export function StudyPanelModal({
             <div className="bg-slate-900 rounded-[15px] p-5 min-h-[150px] flex flex-col justify-center">
               {/* Question */}
               <div className="text-cyan-500 text-xs uppercase tracking-wider mb-2">Question</div>
-              <div className="text-slate-200 text-lg">{renderedCard.question}</div>
+              <MathMarkdownRenderer
+                source={renderedCard.question}
+                className="text-slate-200 text-lg markdown-body markdown-body--block"
+              />
 
               {/* Flashcard Answer */}
               {isFlashcard && isCardFlipped && renderedCard.answer && (
                 <div className="mt-4 pt-4 border-t border-slate-700">
                   <div className="text-green-500 text-xs uppercase tracking-wider mb-2">Answer</div>
-                  <div className="text-slate-200 text-lg">{renderedCard.answer}</div>
+                  <MathMarkdownRenderer
+                    source={renderedCard.answer}
+                    className="text-slate-200 text-lg markdown-body markdown-body--block"
+                  />
                 </div>
               )}
 
@@ -394,7 +403,10 @@ export function StudyPanelModal({
                           isAnswerSubmitted ? 'cursor-default' : 'cursor-pointer'
                         }`}
                       >
-                        <span className="text-slate-300">{option}</span>
+                        <MathMarkdownRenderer
+                          source={option}
+                          className="text-slate-300 markdown-body markdown-body--inline"
+                        />
                       </button>
                     );
                   })}
@@ -441,7 +453,10 @@ export function StudyPanelModal({
                             </svg>
                           )}
                         </span>
-                        <span className="text-slate-300">{option}</span>
+                        <MathMarkdownRenderer
+                          source={option}
+                          className="text-slate-300 markdown-body markdown-body--inline"
+                        />
                       </button>
                     );
                   })}
@@ -452,7 +467,10 @@ export function StudyPanelModal({
               {((isFlashcard && isCardFlipped) || (isChoiceQuestion && isAnswerSubmitted)) && renderedCard.context && (
                 <div className="mt-4 pt-4 border-t border-slate-700">
                   <div className="text-violet-400 text-xs uppercase tracking-wider mb-2">💡 Explanation</div>
-                  <div className="text-slate-300 text-sm italic">{renderedCard.context}</div>
+                  <MathMarkdownRenderer
+                    source={renderedCard.context}
+                    className="text-slate-300 text-sm italic markdown-body markdown-body--block"
+                  />
                 </div>
               )}
 
@@ -486,7 +504,7 @@ export function StudyPanelModal({
             )}
 
             {/* Actions */}
-            <div className="mt-4 text-center">
+            <div className="mt-4 text-center sticky bottom-0 z-10 bg-slate-800 pt-3">
               {/* Flashcard Actions */}
               {isFlashcard && !isCardFlipped && (
                 <button
@@ -540,20 +558,23 @@ export function StudyPanelModal({
           </div>
         )}
 
-        {/* Completed State */}
-        {isCompleted && (
-          <div className="text-center py-6 px-5">
-            <h3 className="text-green-500 text-xl mb-2">🎉 All Done!</h3>
-            <p className="text-slate-400 mb-2">You've reviewed all cards due today.</p>
-            <p className="text-slate-400 mb-4">Return to the grid to see your crystals grow!</p>
-            <button
-              onClick={onClose}
-              className="bg-cyan-500 text-white border-none py-3 px-6 rounded-lg text-base cursor-pointer hover:bg-cyan-400"
-            >
-              Back to Grid
-            </button>
-          </div>
-        )}
+          {/* Completed State */}
+          {isCompleted && (
+            <div className="text-center py-6 px-5">
+              <h3 className="text-green-500 text-xl mb-2">🎉 All Done!</h3>
+              <p className="text-slate-400 mb-2">You've reviewed all cards due today.</p>
+              <p className="text-slate-400 mb-4">Return to the grid to see your crystals grow!</p>
+              <div className="sticky bottom-0 z-10 bg-slate-800 py-3">
+                <button
+                  onClick={onClose}
+                  className="bg-cyan-500 text-white border-none py-3 px-6 rounded-lg text-base cursor-pointer hover:bg-cyan-400"
+                >
+                  Back to Grid
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
