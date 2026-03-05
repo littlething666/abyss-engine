@@ -19,7 +19,11 @@ import { deckRepository } from '../infrastructure/di';
  * Scene component - Main 3D visualization for Abyss Engine
  * Uses fixed orthographic camera for isometric view
  */
-export const Scene: React.FC = () => {
+interface SceneProps {
+  onStartAttunement?: (topicId: string, cards: Card[]) => void;
+}
+
+export const Scene: React.FC<SceneProps> = ({ onStartAttunement }) => {
   const cameraRef = useRef<THREE.OrthographicCamera>(null);
   const activeCrystals = useStudyStore((state) => state.activeCrystals);
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
@@ -78,6 +82,10 @@ export const Scene: React.FC = () => {
     const cards = topicCardsById.get(topicId) ?? [];
     if (!cards.length) {
       console.warn(`[Scene] No cards available for topic ${topicId}; unable to start study session.`);
+      return;
+    }
+    if (onStartAttunement) {
+      onStartAttunement(topicId, cards);
       return;
     }
     startTopicStudySessionFromCards(topicId, cards);
@@ -188,6 +196,7 @@ export const Scene: React.FC = () => {
             <TopicSelectionBar
               isEmbedded
               onStartTopicStudySession={startTopicStudySessionFromCards}
+              onStartAttunement={onStartAttunement}
               selectedMetadata={selectedTopicMetadata}
               selectedCards={selectedTopicCards}
               selectedXp={selectedTopicXp}

@@ -10,76 +10,136 @@ import {
   getTopicsByTier,
 } from './progressionUtils';
 import { defaultSM2, sm2, SM2Data } from '../../utils/sm2';
-import { ActiveCrystal, Card } from '../../types/core';
-import { INITIAL_UNLOCK_POINTS, Rating } from '../../types/progression';
-import { SubjectGraph } from '../../types/core';
+import { Card, SubjectGraph } from '../../types/core';
+import {
+  AttunementPayload,
+  AttunementSessionRecord,
+  INITIAL_UNLOCK_POINTS,
+  ProgressionActions,
+  ProgressionState,
+  Rating,
+  Buff,
+} from '../../types/progression';
 import { findNextGridPosition } from '../../utils/gridUtils';
-
-interface StudySessionState {
-  topicId: string;
-  queueCardIds: string[];
-  currentCardId: string | null;
-  totalCards: number;
-}
-
-interface ProgressionState {
-  activeCrystals: ActiveCrystal[];
-  sm2Data: Record<string, SM2Data>;
-  unlockedTopicIds: string[];
-  lockedTopics: string[];
-  unlockPoints: number;
-  currentSubjectId: string | null;
-  currentSession: StudySessionState | null;
-  levelUpMessage: string | null;
-  isCurrentCardFlipped: boolean;
-}
-
-interface ProgressionActions {
-  initialize: () => void;
-  setCurrentSubject: (subjectId: string | null) => void;
-  startTopicStudySession: (topicId: string, cards: Card[]) => void;
-  submitStudyResult: (cardId: string, rating: Rating) => void;
-  flipCurrentCard: () => void;
-  unlockTopic: (topicId: string, allGraphs: SubjectGraph[]) => [number, number] | null;
-  getTopicUnlockStatus: (topicId: string, allGraphs: SubjectGraph[]) => {
-    canUnlock: boolean;
-    hasPrerequisites: boolean;
-    hasEnoughPoints: boolean;
-    missingPrerequisites: {
-      topicId: string;
-      topicName: string;
-      requiredLevel: number;
-      currentLevel: number;
-    }[];
-  };
-  getTopicTier: (topicId: string, allGraphs: SubjectGraph[]) => number;
-  getTopicsByTier: (
-    allGraphs: SubjectGraph[],
-    subjects: Array<{ id: string; name: string }>,
-  ) => {
-    tier: number;
-    topics: {
-      id: string;
-      name: string;
-      description: string;
-      subjectId: string;
-      subjectName: string;
-      isContentAvailable: boolean;
-      isLocked: boolean;
-      isUnlocked: boolean;
-    }[];
-  }[];
-  getDueCardsCount: (cards?: Array<{ id: string }>) => number;
-  getTotalCardsCount: (cards?: Array<{ id: string }>) => number;
-  addXP: (topicId: string, xpAmount: number) => number;
-  updateSM2: (cardId: string, sm2State: SM2Data) => void;
-  getSM2Data: (cardId: string) => SM2Data | undefined;
-}
+import {
+  buildSessionMetrics,
+  calculateHarmonyScore,
+  generateActiveBuffs,
+  makeSessionId,
+} from '../analytics/attunementMetrics';
 
 type ProgressionStore = ProgressionState & ProgressionActions;
+const PROGRESSION_STORAGE_KEY = 'abyss-progression';
+const ATTUNEMENT_SESSIONS_STORAGE_KEY = `${PROGRESSION_STORAGE_KEY}-attunement-sessions`;
+
+function safeParseJSON<T>(raw: string): T | null {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function readFromStorage<T>(key: string): T | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(key);
+  if (!raw) {
+    return null;
+  }
+
+  return safeParseJSON<T>(raw);
+}
+
+function writeToStorage(key: string, value: unknown) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function getInitialAttunementSessions(): AttunementSessionRecord[] {
+  const separateStore = readFromStorage<AttunementSessionRecord[]>(ATTUNEMENT_SESSIONS_STORAGE_KEY);
+  if (Array.isArray(separateStore)) {
+    return separateStore;
+  }
+
+  return [];
+}
+
+function persistAttunementSessions(sessions: AttunementSessionRecord[]) {
+  writeToStorage(ATTUNEMENT_SESSIONS_STORAGE_KEY, sessions);
+}
 
 interface CardWithSm2 extends Card {
   sm2: SM2Data;
+}
+
+interface SessionAttempt {
+  cardId: string;
+  rating: Rating;
+  difficulty: number;
+  timestamp: number;
+  isCorrect: boolean;
+}
+
+function getGrowthSpeedBonus(activeBuffs: Buff[]): number {
+  return activeBuffs
+    .filter((buff) => buff.modifierType === 'growth_speed')
+    .reduce((sum, buff) => sum + Math.max(0, buff.magnitude - 1), 0);
+}
+
+function getXpMultiplier(activeBuffs: Buff[]): number {
+  return activeBuffs
+    .filter((buff) => buff.modifierType === 'xp_multiplier')
+    .reduce((sum, buff) => sum * buff.magnitude, 1);
+}
+
+function normalizeActiveBuffs(state: { activeBuffs: Buff[] }, incoming: Buff[]): Buff[] {
+  const nonSession = state.activeBuffs.filter((buff) => buff.condition !== 'session_end');
+  return [...nonSession, ...incoming];
+}
+
+function consumeUsageBuffs(activeBuffs: Buff[]): Buff[] {
+  return activeBuffs
+    .map((buff) => {
+      if ((buff.condition === 'next_10_cards' || buff.condition === 'next_5_cards') && typeof buff.remainingUses === 'number') {
+        const remainingUses = Math.max(buff.remainingUses - 1, 0);
+        if (remainingUses <= 0) {
+          return null;
+        }
+        return { ...buff, remainingUses };
+      }
+      return buff;
+    })
+    .filter((buff): buff is Buff => buff !== null);
+}
+
+function clearSessionCompletionBuffs(activeBuffs: Buff[]): Buff[] {
+  return activeBuffs.filter((buff) => (
+    buff.condition !== 'session_end'
+    && buff.condition !== 'next_10_cards'
+    && buff.condition !== 'next_5_cards'
+  ));
+}
+
+function upsertAttunementRecord(
+  records: AttunementSessionRecord[],
+  record: AttunementSessionRecord,
+): AttunementSessionRecord[] {
+  const index = records.findIndex((item) => item.sessionId === record.sessionId);
+  if (index === -1) {
+    return [...records, record];
+  }
+  const next = [...records];
+  next[index] = {
+    ...next[index],
+    ...record,
+  };
+  return next;
 }
 
 function attachSm2(cards: Card[], sm2Map: Record<string, SM2Data>): CardWithSm2[] {
@@ -101,24 +161,105 @@ export const useProgressionStore = create<ProgressionStore>()(
       currentSession: null,
       levelUpMessage: null,
       isCurrentCardFlipped: false,
+      activeBuffs: [],
+      attunementSessions: [],
+      pendingAttunement: null,
 
       initialize: () => {
+        const initialAttunementSessions = getInitialAttunementSessions();
+        persistAttunementSessions(initialAttunementSessions);
         set((state) => ({
           levelUpMessage: state.levelUpMessage || null,
+          attunementSessions: initialAttunementSessions,
         }));
       },
 
       setCurrentSubject: (subjectId) => set({ currentSubjectId: subjectId }),
+
+      openAttunementForTopic: (topicId, cards) => {
+        set({
+          pendingAttunement: {
+            topicId,
+            cards,
+            sessionId: makeSessionId(topicId),
+          },
+        });
+      },
+
+      submitAttunement: (payload) => {
+        const state = get();
+        if (!state.pendingAttunement || state.pendingAttunement.topicId !== payload.topicId) {
+          return null;
+        }
+
+        const sessionId = state.pendingAttunement.sessionId;
+        const { harmonyScore, readinessBucket } = calculateHarmonyScore(payload.checklist);
+        const buffs = generateActiveBuffs(payload);
+
+        const sessionRecord: AttunementSessionRecord = {
+          sessionId,
+          topicId: payload.topicId,
+          startedAt: Date.now(),
+          completedAt: null,
+          harmonyScore,
+          readinessBucket,
+          checklist: payload.checklist,
+          buffs,
+        };
+
+        set({
+          activeBuffs: normalizeActiveBuffs(state, buffs),
+          attunementSessions: upsertAttunementRecord(state.attunementSessions, sessionRecord),
+        });
+        persistAttunementSessions(upsertAttunementRecord(state.attunementSessions, sessionRecord));
+
+        return {
+          harmonyScore,
+          readinessBucket,
+          buffs,
+        };
+      },
+
+      clearActiveBuffs: () => set({ activeBuffs: [] }),
+      clearPendingAttunement: () => set({ pendingAttunement: null }),
 
       startTopicStudySession: (topicId, cards) => {
         const state = get();
         const crystal = state.activeCrystals.find((item) => item.topicId === topicId);
         const level = calculateLevelFromXP(crystal?.xp ?? 0);
         const sm2Augmented = attachSm2(cards, state.sm2Data);
-        const maxDifficulty = Math.min(level + 1, 4);
+        const growthBoost = getGrowthSpeedBonus(state.activeBuffs);
+        const difficultyBoost = Math.max(0, Math.floor(growthBoost * 10) - 1);
+        const maxDifficulty = Math.min(level + 1 + difficultyBoost, 4);
         const gatedCards = filterCardsByDifficulty(sm2Augmented, maxDifficulty);
         const dueCards = sm2.getDueCards(gatedCards);
         const queue = (dueCards.length > 0 ? dueCards : gatedCards).map((card) => card.id);
+        const cardDifficultyById = sm2Augmented.reduce<Record<string, number>>((acc, card) => {
+          acc[card.id] = card.difficulty;
+          return acc;
+        }, {});
+        const sessionId = state.pendingAttunement?.topicId === topicId
+          ? state.pendingAttunement.sessionId
+          : makeSessionId(topicId);
+        const startedAt = Date.now();
+        const activeBuffIds = state.activeBuffs.map((buff) => buff.buffId);
+        const attunementSessions = state.attunementSessions.some((record) => record.sessionId === sessionId)
+          ? state.attunementSessions.map((record) => record.sessionId === sessionId
+            ? {
+                ...record,
+                startedAt,
+              }
+            : record)
+          : upsertAttunementRecord(state.attunementSessions, {
+              sessionId,
+              topicId,
+              startedAt,
+              completedAt: null,
+              harmonyScore: 0,
+              readinessBucket: 'low',
+              checklist: {},
+              buffs: state.activeBuffs,
+            });
 
         set({
           currentSession: {
@@ -126,9 +267,17 @@ export const useProgressionStore = create<ProgressionStore>()(
             queueCardIds: queue,
             currentCardId: queue[0] ?? null,
             totalCards: queue.length,
+            sessionId,
+            startedAt,
+            activeBuffIds,
+            attempts: [],
+            cardDifficultyById,
           },
           isCurrentCardFlipped: false,
+          pendingAttunement: null,
+          attunementSessions,
         });
+        persistAttunementSessions(attunementSessions);
       },
 
       submitStudyResult: (cardId, rating) => {
@@ -146,10 +295,47 @@ export const useProgressionStore = create<ProgressionStore>()(
         const previousSM2 = state.sm2Data[cardId] || defaultSM2;
         const updatedSM2 = sm2.calculateNextReview(previousSM2, rating);
         const reward = calculateXPReward(undefined, rating);
-        const xp = crystal.xp + reward;
-
+        const buffedReward = Math.max(0, Math.round(reward * getXpMultiplier(state.activeBuffs)));
+        const xp = crystal.xp + buffedReward;
+        const difficulty = session.cardDifficultyById?.[cardId] ?? 1;
+        const isCorrect = rating >= 3;
+        const sessionId = session.sessionId ?? makeSessionId(session.topicId);
+        const attempt: SessionAttempt = {
+          cardId,
+          rating,
+          difficulty,
+          timestamp: Date.now(),
+          isCorrect,
+        };
+        const nextAttempts = [...(session.attempts ?? []), attempt];
         const nextQueue = session.queueCardIds.filter((id) => id !== cardId);
         const nextCard = nextQueue[0] ?? null;
+        const buffsAfterUsage = consumeUsageBuffs(state.activeBuffs);
+        const nextBuffs = nextQueue.length > 0 ? buffsAfterUsage : clearSessionCompletionBuffs(buffsAfterUsage);
+        const isSessionComplete = nextQueue.length === 0;
+        const attunementSessions = sessionId && state.attunementSessions.length > 0
+          ? state.attunementSessions.map((record) => {
+              if (record.sessionId !== sessionId) return record;
+              if (!isSessionComplete) {
+                return record;
+              }
+              const metrics = buildSessionMetrics(
+                sessionId,
+                session.topicId,
+                nextAttempts,
+                session.startedAt ?? Date.now(),
+              );
+              return {
+                ...record,
+                completedAt: Date.now(),
+                totalAttempts: metrics.cardsCompleted,
+                correctRate: metrics.correctRate,
+                avgRating: metrics.avgRating,
+                sessionDurationMs: metrics.sessionDurationMs,
+                readinessBucket: record.readinessBucket || 'low',
+              };
+            })
+          : state.attunementSessions;
 
         set((current) => ({
           sm2Data: {
@@ -160,18 +346,23 @@ export const useProgressionStore = create<ProgressionStore>()(
             item.topicId === session.topicId
               ? {
                   ...item,
-                  xp,
+                  xp: xp,
                 }
               : item,
           ),
+          attunementSessions,
           currentSession: {
             ...session,
+            attempts: nextAttempts,
             queueCardIds: nextQueue,
             currentCardId: nextCard,
             totalCards: Math.max(session.totalCards - 1, 0),
+            ...(isSessionComplete ? { startedAt: session.startedAt ?? Date.now() } : {}),
           },
+          activeBuffs: nextBuffs,
           isCurrentCardFlipped: false,
         }));
+        persistAttunementSessions(attunementSessions);
       },
 
       flipCurrentCard: () => {
@@ -269,7 +460,7 @@ export const useProgressionStore = create<ProgressionStore>()(
       },
     }),
     {
-      name: 'abyss-progression',
+      name: PROGRESSION_STORAGE_KEY,
       partialize: (state) => ({
         activeCrystals: state.activeCrystals,
         sm2Data: state.sm2Data,
@@ -278,6 +469,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         unlockPoints: state.unlockPoints,
         currentSubjectId: state.currentSubjectId,
         currentSession: state.currentSession,
+        activeBuffs: state.activeBuffs,
+        pendingAttunement: state.pendingAttunement,
       }),
     },
   ),

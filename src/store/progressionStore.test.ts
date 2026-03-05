@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { useProgressionStore } from '../features/progression';
 import { Card, ActiveCrystal } from '../types';
 import { SubjectGraph } from '../types/core';
+import { AttunementPayload } from '../types/progression';
 
 function createCard(id: string): Card {
   return {
@@ -56,11 +57,31 @@ function resetStore() {
     lockedTopics: [],
     sm2Data: {},
     activeCrystals: [],
+    activeBuffs: [],
+    attunementSessions: [],
+    pendingAttunement: null,
     currentSubjectId: null,
     currentSession: null,
     levelUpMessage: null,
     unlockPoints: 0,
   });
+}
+
+function ritualPayload(topicId: string): AttunementPayload {
+  return {
+    topicId,
+    checklist: {
+      sleepHours: 8,
+      ateFuel: true,
+      movementMinutes: 20,
+      digitalSilence: true,
+      visualClarity: true,
+      lightingAndAir: true,
+      targetCrystal: 'Core',
+      microGoal: 'Improve recall',
+      confidenceRating: 5,
+    },
+  };
 }
 
 describe('progressionStore card-only canonical API', () => {
@@ -123,5 +144,45 @@ describe('progressionStore card-only canonical API', () => {
     const cards = [createCard('due-1'), createCard('due-2')];
     const dueCount = useProgressionStore.getState().getDueCardsCount(cards);
     expect(dueCount).toBe(2);
+  });
+
+  it('stores attunement submission and starts session with derived buffs', () => {
+    const cards = [createCard('a-1'), createCard('a-2')];
+    useProgressionStore.setState({
+      unlockedTopicIds: ['topic-a'],
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+      lockedTopics: ['topic-b'],
+    });
+
+    useProgressionStore.getState().openAttunementForTopic('topic-a', cards);
+    const result = useProgressionStore.getState().submitAttunement(ritualPayload('topic-a'));
+    expect(result).not.toBeNull();
+    expect(result?.buffs.length).toBeGreaterThan(0);
+
+    const stateAfterSubmission = useProgressionStore.getState();
+    const expectedSessionId = stateAfterSubmission.pendingAttunement?.sessionId;
+    expect(expectedSessionId).toBeDefined();
+    expect(stateAfterSubmission.pendingAttunement?.topicId).toBe('topic-a');
+    expect(stateAfterSubmission.attunementSessions).toHaveLength(1);
+    expect(stateAfterSubmission.activeBuffs).toHaveLength(result?.buffs.length || 0);
+    expect(stateAfterSubmission.activeBuffs[0]?.condition).toBeDefined();
+
+    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    const startedState = useProgressionStore.getState().currentSession;
+    expect(useProgressionStore.getState().pendingAttunement).toBeNull();
+    expect(startedState?.sessionId).toBe(expectedSessionId);
+    expect(startedState?.activeBuffIds).toEqual(expect.arrayContaining(result?.buffs.map((buff) => buff.buffId) ?? []));
+
+    useProgressionStore.getState().submitStudyResult('a-1', 4);
+    useProgressionStore.getState().submitStudyResult('a-2', 4);
+
+    const allSessions = useProgressionStore.getState().attunementSessions;
+    const sessionRecord = allSessions[allSessions.length - 1];
+    expect(sessionRecord?.completedAt).not.toBeNull();
+    expect(sessionRecord?.totalAttempts).toBe(2);
+    expect(sessionRecord?.sessionDurationMs).toBeGreaterThanOrEqual(0);
+    expect(sessionRecord?.correctRate).toBe(1);
+    expect(useProgressionStore.getState().activeBuffs).toHaveLength(0);
   });
 });

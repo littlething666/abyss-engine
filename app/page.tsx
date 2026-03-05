@@ -8,9 +8,12 @@ import { Rating } from '@/types';
 
 import { playPositiveSound } from '@/utils/sound';
 import { initAbyssDev } from '@/utils/abyssDev';
+import { Card } from '@/types/core';
+import { AttunementPayload } from '@/types/progression';
 
 // Components
 import StatsOverlay from '@/components/StatsOverlay';
+import { AttunementRitualModal } from '@/components/AttunementRitualModal';
 import DiscoveryModal from '@/components/DiscoveryModal';
 import StudyPanelModal from '@/components/StudyPanelModal';
 import SubjectNavigation from '@/components/SubjectNavigation';
@@ -53,12 +56,19 @@ export default function Home() {
   const lockedTopics = useStudyStore(s => s.lockedTopics);
   const levelUpMessage = useStudyStore(s => s.levelUpMessage);
   const unlockPoints = useStudyStore(s => s.unlockPoints);
+  const activeBuffs = useStudyStore((state) => state.activeBuffs);
+  const attunementSessions = useStudyStore((state) => state.attunementSessions);
 
   // Get store actions - stable references
   const initialize = useStudyStore(s => s.initialize);
   const flipCurrentCard = useStudyStore(s => s.flipCurrentCard);
   const submitStudyResult = useStudyStore(s => s.submitStudyResult);
+  const openAttunementForTopic = useStudyStore(s => s.openAttunementForTopic);
+  const submitAttunement = useStudyStore(s => s.submitAttunement);
+  const startTopicStudySession = useStudyStore(s => s.startTopicStudySession);
+  const clearPendingAttunement = useStudyStore(s => s.clearPendingAttunement);
   const isCurrentCardFlipped = useStudyStore(s => s.isCurrentCardFlipped);
+  const openStudyPanel = useUIStore(s => s.openStudyPanel);
 
   // UI store - modal state - stable selectors
   const isDiscoveryModalOpen = useUIStore(s => s.isDiscoveryModalOpen);
@@ -68,6 +78,10 @@ export default function Home() {
 
   // Study panel feedback state
   const [studyFeedback, setStudyFeedback] = useState<string | null>(null);
+  const [attunementContext, setAttunementContext] = useState<{ topicId: string; cards: Card[] } | null>(null);
+  const [skipRitualForSession, setSkipRitualForSession] = useState(false);
+
+  const latestSession = attunementSessions.length > 0 ? attunementSessions[attunementSessions.length - 1] : null;
 
   const currentTopicId = currentSession?.topicId || null;
 
@@ -139,6 +153,46 @@ export default function Home() {
     closeStudyPanel();
   };
 
+  const handleStartAttunement = (topicId: string, cards: Card[]) => {
+    if (skipRitualForSession) {
+      startTopicStudySession(topicId, cards);
+      openStudyPanel();
+      setSkipRitualForSession(false);
+      setAttunementContext(null);
+      return;
+    }
+
+    openAttunementForTopic(topicId, cards);
+    setAttunementContext({ topicId, cards });
+  };
+
+  const handleAttunementSubmit = (payload: AttunementPayload) => {
+    return submitAttunement(payload);
+  };
+
+  const handleAttunementStart = () => {
+    if (!attunementContext) {
+      return;
+    }
+    startTopicStudySession(attunementContext.topicId, attunementContext.cards);
+    openStudyPanel();
+  };
+
+  const handleCloseAttunement = () => {
+    clearPendingAttunement();
+    setAttunementContext(null);
+  };
+
+  const handleSkipAttunement = () => {
+    if (!attunementContext) {
+      return;
+    }
+    setSkipRitualForSession(true);
+    startTopicStudySession(attunementContext.topicId, attunementContext.cards);
+    openStudyPanel();
+    handleCloseAttunement();
+  };
+
   if (!isClient) {
     return (
       <div className="w-screen h-screen flex items-center justify-center bg-slate-900 text-slate-200 text-2xl">
@@ -161,7 +215,7 @@ export default function Home() {
 
         {/* Full Screen 3D Scene */}
         <div className="absolute inset-0">
-          <Scene />
+          <Scene onStartAttunement={handleStartAttunement} />
         </div>
 
         {/* Stats Overlay */}
@@ -170,6 +224,18 @@ export default function Home() {
           dueCards={dueCards}
           activeTopics={activeCrystals.length}
           lockedTopics={lockedTopics.length}
+          activeBuffs={activeBuffs}
+          latestHarmonyScore={latestSession?.harmonyScore}
+          latestReadinessBucket={latestSession?.readinessBucket}
+        />
+
+        <AttunementRitualModal
+          isOpen={attunementContext !== null}
+          topicId={attunementContext?.topicId || ''}
+          onClose={handleCloseAttunement}
+          onSubmit={handleAttunementSubmit}
+          onStartSession={handleAttunementStart}
+          onSkip={handleSkipAttunement}
         />
 
         {/* Title */}

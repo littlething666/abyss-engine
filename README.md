@@ -2,7 +2,7 @@
 
 ## Overview
 
-Abyss Engine is a modular edutainment framework where studying Anki cards triggers 3D crystal growth on a grid. The engine combines spaced repetition learning with immersive 3D visualization.
+Abyss Engine is a modular edutainment framework where studying cards / quizzes triggers 3D crystal growth on a grid. The engine combines spaced repetition learning with immersive 3D visualization. Goal is to make process of studying difficult topics easygoing and rewarding.
 
 ## Development Philosophy
 

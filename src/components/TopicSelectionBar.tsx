@@ -10,6 +10,7 @@ interface TopicSelectionBarProps {
   /** Whether this bar is embedded in the 3D scene (vs standalone) */
   isEmbedded?: boolean;
   onStartTopicStudySession?: (topicId: string, cards: Card[]) => void;
+  onStartAttunement?: (topicId: string, cards: Card[]) => void;
   selectedMetadata?: TopicMetadata;
   selectedCards?: Card[];
   selectedXp?: number;
@@ -24,6 +25,7 @@ interface TopicSelectionBarProps {
 export default function TopicSelectionBar({
   isEmbedded = false,
   onStartTopicStudySession,
+  onStartAttunement,
   selectedMetadata,
   selectedCards = [],
   selectedXp = 0,
@@ -44,6 +46,10 @@ export default function TopicSelectionBar({
   const handleBegin = () => {
     if (!selectedCards?.length) {
       console.warn(`[TopicSelectionBar] No cards available for topic ${selectedTopicId}`);
+      return;
+    }
+    if (onStartAttunement) {
+      onStartAttunement(selectedTopicId, selectedCards);
       return;
     }
     onStartTopicStudySession?.(selectedTopicId, selectedCards);
