@@ -1,6 +1,12 @@
 import React from 'react';
 import { AttunementReadinessBucket, Buff } from '../types/progression';
-import { getBuffIcon, getBuffSummary } from '../features/progression/buffDisplay';
+import {
+  getBuffDisplayName,
+  getBuffIcon,
+  getBuffSummary,
+  groupBuffsByType,
+  groupBuffsByTypeWithSources,
+} from '../features/progression/buffDisplay';
 
 export interface StatsOverlayProps {
   /** Total number of cards in the deck */
@@ -30,21 +36,49 @@ export function StatsOverlay({
   latestHarmonyScore,
   latestReadinessBucket,
 }: StatsOverlayProps) {
+  const [selectedBuffType, setSelectedBuffType] = React.useState<Buff['modifierType'] | null>(null);
   const readinessLabel = latestReadinessBucket ?? 'low';
 
-  const buffIcons = activeBuffs.slice(0, 3).map((buff) => {
+  const groupedBuffs = groupBuffsByType(activeBuffs).slice(0, 3);
+  const groupedBuffsWithSources = groupBuffsByTypeWithSources(activeBuffs);
+  const selectedGroup = groupedBuffsWithSources.find((group) => group.modifierType === selectedBuffType);
+
+  const buffIcons = groupedBuffs.map((buff) => {
     const icon = getBuffIcon(buff.modifierType);
     const summary = getBuffSummary(buff);
     return (
-      <span
-        key={buff.buffId}
-        className="inline-flex items-center justify-center w-8 h-8 rounded bg-indigo-500/20 border border-indigo-400/40 mr-1"
-        title={`${summary} (${buff.condition})`}
+      <button
+        type="button"
+        key={buff.modifierType}
+        className={`inline-flex items-center justify-center w-8 h-8 rounded bg-indigo-500/20 border border-indigo-400/40 mr-1 ${selectedBuffType === buff.modifierType ? 'ring-2 ring-cyan-400' : ''}`}
+        onClick={() => {
+          setSelectedBuffType((current) => (current === buff.modifierType ? null : buff.modifierType));
+        }}
+        aria-label={`View ${summary} sources`}
+        title={summary}
       >
         {icon}
-      </span>
+      </button>
     );
   });
+
+  const selectedDetails = selectedGroup ? (
+    <div className="text-xs text-slate-200 mt-2 border-t border-indigo-400/30 pt-2">
+      <p className="font-semibold text-emerald-300">
+        {`${selectedGroup.totalMagnitude.toFixed(2)}x ${getBuffDisplayName(selectedGroup.modifierType)} sources`}
+      </p>
+      <ul className="mt-1 flex flex-col gap-1">
+        {selectedGroup.buffs.map((buff, index) => (
+          <li key={`${buff.buffId}-${buff.source ?? 'unknown'}-${index}`} className="leading-4">
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true">{getBuffIcon(selectedGroup.modifierType)}</span>
+              <span>{buff.magnitude.toFixed(2)}x from {buff.source ?? 'Unknown origin'}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  ) : null;
 
   return (
     <div className="absolute top-5 left-5 flex gap-[15px] z-10">
@@ -87,7 +121,14 @@ export function StatsOverlay({
         {activeBuffs.length === 0 ? (
           <span className="text-sm text-slate-500">None</span>
         ) : (
-          <div className="flex flex-wrap items-center">{buffIcons}</div>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center">{buffIcons}</div>
+            {selectedBuffType ? (
+              selectedDetails
+            ) : (
+              <span className="text-xs text-slate-500 mt-2">Click a buff to see details</span>
+            )}
+          </div>
         )}
       </div>
     </div>

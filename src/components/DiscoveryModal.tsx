@@ -179,7 +179,7 @@ export function DiscoveryModal({
 
   // Get topics grouped by tier
   const topicsByTier = useMemo(() => {
-    return getTopicsByTier(allGraphs, subjectList);
+    return getTopicsByTier(allGraphs, unlockedTopicIds, subjectList);
   }, [getTopicsByTier, unlockPoints, lockedTopics, unlockedTopicIds, allGraphs, subjectList]);
 
   // Get unlock status for selected topic

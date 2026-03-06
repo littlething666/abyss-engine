@@ -11,6 +11,8 @@ import { initAbyssDev } from '@/utils/abyssDev';
 import { Card } from '@/types/core';
 import { AttunementPayload } from '@/types/progression';
 
+const ATTUNEMENT_RITUAL_COOLDOWN_MS = 4 * 60 * 60 * 1000;
+
 // Components
 import StatsOverlay from '@/components/StatsOverlay';
 import { AttunementRitualModal } from '@/components/AttunementRitualModal';
@@ -85,6 +87,19 @@ export default function Home() {
 
   const currentTopicId = currentSession?.topicId || null;
 
+  const latestRitualSubmissionAt = React.useMemo(() => {
+    const ritualSessions = attunementSessions.filter((session) => Object.keys(session.checklist).length > 0);
+    if (ritualSessions.length === 0) {
+      return null;
+    }
+    return ritualSessions.reduce<number | null>((latest, session) => {
+      if (latest === null) {
+        return session.startedAt;
+      }
+      return Math.max(latest, session.startedAt);
+    }, null);
+  }, [attunementSessions]);
+
   // Initialize on mount - only once
   useEffect(() => {
     setIsClient(true);
@@ -154,11 +169,17 @@ export default function Home() {
   };
 
   const handleStartAttunement = (topicId: string, cards: Card[]) => {
+    const canSkipRitual = latestRitualSubmissionAt !== null && Date.now() - latestRitualSubmissionAt < ATTUNEMENT_RITUAL_COOLDOWN_MS;
     if (skipRitualForSession) {
       startTopicStudySession(topicId, cards);
       openStudyPanel();
       setSkipRitualForSession(false);
       setAttunementContext(null);
+      return;
+    }
+    if (canSkipRitual) {
+      startTopicStudySession(topicId, cards);
+      openStudyPanel();
       return;
     }
 

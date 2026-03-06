@@ -20,6 +20,7 @@ import {
   Rating,
   Buff,
 } from '../../types/progression';
+import { BuffEngine } from './buffs/buffEngine';
 import { findNextGridPosition } from '../../utils/gridUtils';
 import {
   buildSessionMetrics,
@@ -86,44 +87,28 @@ interface SessionAttempt {
   isCorrect: boolean;
 }
 
-function getGrowthSpeedBonus(activeBuffs: Buff[]): number {
-  return activeBuffs
-    .filter((buff) => buff.modifierType === 'growth_speed')
-    .reduce((sum, buff) => sum + Math.max(0, buff.magnitude - 1), 0);
-}
-
-function getXpMultiplier(activeBuffs: Buff[]): number {
-  return activeBuffs
-    .filter((buff) => buff.modifierType === 'xp_multiplier')
-    .reduce((sum, buff) => sum * buff.magnitude, 1);
-}
-
 function normalizeActiveBuffs(state: { activeBuffs: Buff[] }, incoming: Buff[]): Buff[] {
-  const nonSession = state.activeBuffs.filter((buff) => buff.condition !== 'session_end');
-  return [...nonSession, ...incoming];
+  const nonSession = state.activeBuffs
+    .map((buff) => BuffEngine.get().hydrateBuff(buff))
+    .filter((buff) => buff.condition !== 'session_end');
+  const sanitizedIncoming = incoming.map((buff) => BuffEngine.get().hydrateBuff(buff));
+  const combined = [...nonSession, ...sanitizedIncoming];
+  return dedupeBuffsById(combined);
 }
 
-function consumeUsageBuffs(activeBuffs: Buff[]): Buff[] {
-  return activeBuffs
-    .map((buff) => {
-      if ((buff.condition === 'next_10_cards' || buff.condition === 'next_5_cards') && typeof buff.remainingUses === 'number') {
-        const remainingUses = Math.max(buff.remainingUses - 1, 0);
-        if (remainingUses <= 0) {
-          return null;
-        }
-        return { ...buff, remainingUses };
-      }
-      return buff;
-    })
-    .filter((buff): buff is Buff => buff !== null);
-}
-
-function clearSessionCompletionBuffs(activeBuffs: Buff[]): Buff[] {
-  return activeBuffs.filter((buff) => (
-    buff.condition !== 'session_end'
-    && buff.condition !== 'next_10_cards'
-    && buff.condition !== 'next_5_cards'
-  ));
+function dedupeBuffsById(buffs: Buff[]): Buff[] {
+  const seen = new Set<string>();
+  const deduped: Buff[] = [];
+  for (let index = buffs.length - 1; index >= 0; index -= 1) {
+    const buff = buffs[index];
+    const dedupeKey = !buff ? '' : `${buff.buffId}|${buff.source ?? 'unknown'}|${buff.condition}`;
+    if (!buff || seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+    deduped.push(buff);
+  }
+  return deduped.reverse();
 }
 
 function upsertAttunementRecord(
@@ -168,9 +153,14 @@ export const useProgressionStore = create<ProgressionStore>()(
       initialize: () => {
         const initialAttunementSessions = getInitialAttunementSessions();
         persistAttunementSessions(initialAttunementSessions);
+        const currentState = get();
+        const hydratedActiveBuffs = currentState.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
+        const activeBuffsAfterSessionEnd = BuffEngine.get().consumeForEvent(hydratedActiveBuffs, 'session_ended');
+        const activeBuffs = BuffEngine.get().pruneExpired(activeBuffsAfterSessionEnd);
         set((state) => ({
           levelUpMessage: state.levelUpMessage || null,
           attunementSessions: initialAttunementSessions,
+          activeBuffs: dedupeBuffsById(activeBuffs),
         }));
       },
 
@@ -228,7 +218,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         const crystal = state.activeCrystals.find((item) => item.topicId === topicId);
         const level = calculateLevelFromXP(crystal?.xp ?? 0);
         const sm2Augmented = attachSm2(cards, state.sm2Data);
-        const growthBoost = getGrowthSpeedBonus(state.activeBuffs);
+        const activeBuffs = state.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
+        const growthBoost = BuffEngine.get().getModifierTotal('growth_speed', activeBuffs);
         const difficultyBoost = Math.max(0, Math.floor(growthBoost * 10) - 1);
         const maxDifficulty = Math.min(level + 1 + difficultyBoost, 4);
         const gatedCards = filterCardsByDifficulty(sm2Augmented, maxDifficulty);
@@ -243,23 +234,17 @@ export const useProgressionStore = create<ProgressionStore>()(
           : makeSessionId(topicId);
         const startedAt = Date.now();
         const activeBuffIds = state.activeBuffs.map((buff) => buff.buffId);
-        const attunementSessions = state.attunementSessions.some((record) => record.sessionId === sessionId)
-          ? state.attunementSessions.map((record) => record.sessionId === sessionId
-            ? {
-                ...record,
-                startedAt,
-              }
-            : record)
-          : upsertAttunementRecord(state.attunementSessions, {
-              sessionId,
-              topicId,
-              startedAt,
-              completedAt: null,
-              harmonyScore: 0,
-              readinessBucket: 'low',
-              checklist: {},
-              buffs: state.activeBuffs,
-            });
+        let attunementSessions = state.attunementSessions;
+        if (sessionId) {
+          const existingSession = state.attunementSessions.find((record) => record.sessionId === sessionId);
+          if (existingSession) {
+            attunementSessions = state.attunementSessions.map((record) => (
+              record.sessionId === sessionId
+                ? { ...record, startedAt }
+                : record
+            ));
+          }
+        }
 
         set({
           currentSession: {
@@ -295,7 +280,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         const previousSM2 = state.sm2Data[cardId] || defaultSM2;
         const updatedSM2 = sm2.calculateNextReview(previousSM2, rating);
         const reward = calculateXPReward(undefined, rating);
-        const buffedReward = Math.max(0, Math.round(reward * getXpMultiplier(state.activeBuffs)));
+        const activeBuffs = state.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
+        const buffedReward = Math.max(0, Math.round(reward * BuffEngine.get().getModifierTotal('xp_multiplier', activeBuffs)));
         const xp = crystal.xp + buffedReward;
         const difficulty = session.cardDifficultyById?.[cardId] ?? 1;
         const isCorrect = rating >= 3;
@@ -310,32 +296,57 @@ export const useProgressionStore = create<ProgressionStore>()(
         const nextAttempts = [...(session.attempts ?? []), attempt];
         const nextQueue = session.queueCardIds.filter((id) => id !== cardId);
         const nextCard = nextQueue[0] ?? null;
-        const buffsAfterUsage = consumeUsageBuffs(state.activeBuffs);
-        const nextBuffs = nextQueue.length > 0 ? buffsAfterUsage : clearSessionCompletionBuffs(buffsAfterUsage);
+        const buffsAfterUsage = BuffEngine.get().consumeForEvent(activeBuffs, 'card_reviewed');
+        const nextBuffs = nextQueue.length > 0
+          ? buffsAfterUsage
+          : BuffEngine.get().consumeForEvent(buffsAfterUsage, 'session_ended');
         const isSessionComplete = nextQueue.length === 0;
-        const attunementSessions = sessionId && state.attunementSessions.length > 0
-          ? state.attunementSessions.map((record) => {
-              if (record.sessionId !== sessionId) return record;
-              if (!isSessionComplete) {
-                return record;
-              }
-              const metrics = buildSessionMetrics(
-                sessionId,
-                session.topicId,
-                nextAttempts,
-                session.startedAt ?? Date.now(),
-              );
-              return {
-                ...record,
-                completedAt: Date.now(),
-                totalAttempts: metrics.cardsCompleted,
-                correctRate: metrics.correctRate,
-                avgRating: metrics.avgRating,
-                sessionDurationMs: metrics.sessionDurationMs,
-                readinessBucket: record.readinessBucket || 'low',
-              };
-            })
-          : state.attunementSessions;
+        let attunementSessions = state.attunementSessions;
+        if (sessionId) {
+          const existingRecord = state.attunementSessions.find((record) => record.sessionId === sessionId);
+          if (isSessionComplete) {
+            const metrics = buildSessionMetrics(
+              sessionId,
+              session.topicId,
+              nextAttempts,
+              session.startedAt ?? Date.now(),
+            );
+            if (existingRecord) {
+              attunementSessions = state.attunementSessions.map((record) => {
+                if (record.sessionId !== sessionId) {
+                  return record;
+                }
+                return {
+                  ...record,
+                  completedAt: Date.now(),
+                  totalAttempts: metrics.cardsCompleted,
+                  correctRate: metrics.correctRate,
+                  avgRating: metrics.avgRating,
+                  sessionDurationMs: metrics.sessionDurationMs,
+                  readinessBucket: record.readinessBucket || 'low',
+                };
+              });
+            } else {
+              attunementSessions = [
+                ...state.attunementSessions,
+                {
+                  sessionId,
+                  topicId: session.topicId,
+                  startedAt: session.startedAt ?? Date.now(),
+                  completedAt: Date.now(),
+                  harmonyScore: 0,
+                  readinessBucket: 'low',
+                  checklist: {},
+                  buffs: dedupeBuffsById(state.activeBuffs),
+                  totalAttempts: metrics.cardsCompleted,
+                  correctRate: metrics.correctRate,
+                  avgRating: metrics.avgRating,
+                  sessionDurationMs: metrics.sessionDurationMs,
+                },
+              ];
+            }
+          }
+        }
 
         set((current) => ({
           sm2Data: {
@@ -413,8 +424,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         return calculateTopicTier(topicId, allGraphs);
       },
 
-      getTopicsByTier: (allGraphs, subjects) => {
-        return getTopicsByTier(allGraphs, get().unlockedTopicIds, subjects);
+      getTopicsByTier: (allGraphs, unlockedTopicIds, subjects, currentSubjectId) => {
+        return getTopicsByTier(allGraphs, unlockedTopicIds, subjects, currentSubjectId);
       },
 
       getDueCardsCount: (cards = []) => {

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { Suspense, useRef, useMemo } from 'react';
-import { Canvas } from '@react-three/fiber';
+import React, { Suspense, useRef, useMemo, useEffect } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrthographicCamera, Html } from '@react-three/drei';
 import { useQueries } from '@tanstack/react-query';
 import * as THREE from 'three';
@@ -22,6 +22,68 @@ import { deckRepository } from '../infrastructure/di';
 interface SceneProps {
   onStartAttunement?: (topicId: string, cards: Card[]) => void;
 }
+
+interface SceneRenderInvalidatorProps {
+  activeCrystals: readonly unknown[];
+  filteredCrystals: readonly unknown[];
+  selectedTopicId: string | null;
+  selectedTopicXp: number;
+  currentSubjectId: string | null;
+  selectedTopicCardsCount: number;
+}
+
+type RenderQuality = {
+  dpr: number | [number, number];
+  antialias: boolean;
+  powerPreference: 'high-performance' | 'low-power';
+};
+
+const getRenderQuality = (): RenderQuality => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return {
+      dpr: [1, 1.5],
+      antialias: true,
+      powerPreference: 'high-performance',
+    };
+  }
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const lowCoreCount = typeof navigator.hardwareConcurrency === 'number'
+    && navigator.hardwareConcurrency <= 4;
+  const veryHighDpr = (window.devicePixelRatio || 1) > 2;
+  const needsReducedQuality = reducedMotion || lowCoreCount || veryHighDpr;
+
+  return {
+    dpr: needsReducedQuality ? 1 : [1, 1.5],
+    antialias: !needsReducedQuality,
+    powerPreference: needsReducedQuality ? 'low-power' : 'high-performance',
+  };
+};
+
+const SceneRenderInvalidator: React.FC<SceneRenderInvalidatorProps> = ({
+  activeCrystals,
+  filteredCrystals,
+  selectedTopicId,
+  selectedTopicXp,
+  currentSubjectId,
+  selectedTopicCardsCount,
+}) => {
+  const invalidate = useThree((state) => state.invalidate);
+
+  useEffect(() => {
+    invalidate();
+  }, [
+    invalidate,
+    activeCrystals,
+    filteredCrystals,
+    selectedTopicId,
+    selectedTopicXp,
+    currentSubjectId,
+    selectedTopicCardsCount,
+  ]);
+
+  return null;
+};
 
 export const Scene: React.FC<SceneProps> = ({ onStartAttunement }) => {
   const cameraRef = useRef<THREE.OrthographicCamera>(null);
@@ -119,17 +181,29 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement }) => {
 
   // Note: Removed handleSelectedCrystalPositionChange callback
   // The position is now computed synchronously in useMemo above
+  const renderQuality = useMemo(() => getRenderQuality(), []);
 
   return (
     <div style={{ width: '100%', height: '100%', backgroundColor: '#0a0a1a' }}>
       <Canvas
+        frameloop="demand"
+        dpr={renderQuality.dpr}
         gl={{
-          antialias: true,
+          antialias: renderQuality.antialias,
           alpha: false,
-          powerPreference: 'high-performance'
+          powerPreference: renderQuality.powerPreference,
         }}
         style={{ background: '#0a0a1a' }}
       >
+        <SceneRenderInvalidator
+          activeCrystals={activeCrystals}
+          filteredCrystals={filteredCrystals}
+          selectedTopicId={selectedTopicId}
+          selectedTopicXp={selectedTopicXp}
+          currentSubjectId={currentSubjectId}
+          selectedTopicCardsCount={selectedTopicCards.length}
+        />
+
         {/* Orthographic camera with isometric view */}
         <OrthographicCamera
           ref={cameraRef}

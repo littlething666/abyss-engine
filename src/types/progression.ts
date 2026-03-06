@@ -3,6 +3,7 @@ import type { SubjectGraph } from './core';
 
 export type BuffModifierType = 'growth_speed' | 'xp_multiplier' | 'clarity_boost' | 'mana_boost';
 export type BuffCondition = 'session_end' | 'next_10_cards' | 'next_5_cards' | 'manual';
+export type BuffStackingRule = 'multiplicative' | 'additive' | 'max' | 'override';
 
 export interface BuffModifier {
   modifierType: BuffModifierType;
@@ -16,15 +17,24 @@ export interface Buff {
   duration?: number;
   condition: BuffCondition;
   remainingUses?: number;
+  maxUses?: number;
   issuedAt?: number;
+  source?: string;
+  expiresAt?: number;
+  instanceId?: string;
+  stacks?: number;
+  icon?: string;
+  name?: string;
+  description?: string;
 }
 
 export type AttunementReadinessBucket = 'low' | 'medium' | 'high';
 
 export interface AttunementChecklistSubmission {
   sleepHours?: number;
-  ateFuel?: boolean;
   movementMinutes?: number;
+  fuelQuality?: 'underfueled' | 'sugar-rush' | 'steady-fuel' | 'food-coma';
+  hydration?: 'dehydrated' | 'moderate' | 'optimal';
   digitalSilence?: boolean;
   visualClarity?: boolean;
   lightingAndAir?: boolean;

@@ -3,9 +3,8 @@ import {
   AttunementPayload,
   AttunementReadinessBucket,
   Buff,
-  BuffCondition,
-  BuffModifierType,
 } from '../../types/progression';
+import { BuffEngine } from '../progression/buffs/buffEngine';
 
 export interface AttunementDimensionScores {
   readiness: number;
@@ -67,7 +66,7 @@ export function calculateHarmonyScore(
   const readiness = checklist.confidenceRating ? clamp01((checklist.confidenceRating - 1) / 4) * 3 : 0;
   const biological = 0 +
     (checklist.sleepHours !== undefined && checklist.sleepHours >= 7 ? 2 : checklist.sleepHours !== undefined && checklist.sleepHours >= 5 ? 1 : 0) +
-    (checklist.ateFuel ? 1 : 0) +
+    (checklist.fuelQuality === 'steady-fuel' ? 1 : 0) +
     (checklist.movementMinutes !== undefined && checklist.movementMinutes >= 5 ? 1 : 0);
 
   const environmental = 0 +
@@ -94,39 +93,30 @@ export function calculateHarmonyScore(
   };
 }
 
-function makeBuff(buffId: string, modifierType: BuffModifierType, magnitude: number, condition: BuffCondition, duration?: number): Buff {
-  return {
-    buffId,
-    modifierType,
-    magnitude,
-    condition,
-    duration,
-    issuedAt: Date.now(),
-  };
-}
-
 export function generateActiveBuffs(payload: AttunementPayload): Buff[] {
-  const result = calculateHarmonyScore(payload.checklist);
+  const checklist = payload.checklist;
   const buffs: Buff[] = [];
-  const confidence = payload.checklist.confidenceRating ?? 3;
+  const isBiologicalComplete = checklist.sleepHours !== undefined
+    && checklist.movementMinutes !== undefined
+    && checklist.fuelQuality !== undefined
+    && checklist.hydration !== undefined;
+  const isCognitiveComplete = checklist.digitalSilence === true && checklist.visualClarity === true && checklist.lightingAndAir === true;
+  const isQuestComplete = checklist.targetCrystal !== undefined
+    && checklist.microGoal !== undefined
+    && checklist.confidenceRating !== undefined
+    && checklist.confidenceRating > 0;
 
-  if (result.readinessBucket === 'high' && confidence >= 4) {
-    buffs.push(makeBuff('clarity_focus_high', 'clarity_boost', 1.25, 'session_end'));
+  if (isQuestComplete) {
+    buffs.push(BuffEngine.get().grantBuff('clarity_focus_high', 'quest'));
   }
-  if (payload.checklist.digitalSilence && payload.checklist.sleepHours !== undefined && payload.checklist.sleepHours >= 7) {
-    buffs.push({
-      ...makeBuff('clarity_focus', 'xp_multiplier', 1.15, 'next_10_cards'),
-      remainingUses: 10,
-    });
+  if (isCognitiveComplete) {
+    buffs.push(BuffEngine.get().grantBuff('clarity_focus', 'cognitive'));
   }
-  if (result.readinessBucket === 'high' && payload.checklist.ateFuel) {
-    buffs.push({
-      ...makeBuff('mana_burst', 'xp_multiplier', 1.10, 'next_5_cards'),
-      remainingUses: 5,
-    });
+  if (isBiologicalComplete) {
+    buffs.push(BuffEngine.get().grantBuff('clarity_focus', 'biological'));
   }
-  if (result.harmonyScore >= 85) {
-    buffs.push(makeBuff('ritual_growth', 'growth_speed', 1.15, 'session_end'));
+  if (isQuestComplete) {
+    buffs.push(BuffEngine.get().grantBuff('ritual_growth', 'quest'));
   }
 
   return buffs;
@@ -166,4 +156,3 @@ export function extractAdaptationSignals(metrics: SessionMetrics): AdaptationSig
 export function makeSessionId(topicId: string) {
   return `${DEFAULT_SESSION_ID_PREFIX}-${topicId}-${Date.now()}`;
 }
-

@@ -72,7 +72,8 @@ function ritualPayload(topicId: string): AttunementPayload {
     topicId,
     checklist: {
       sleepHours: 8,
-      ateFuel: true,
+      fuelQuality: 'steady-fuel',
+      hydration: 'moderate',
       movementMinutes: 20,
       digitalSilence: true,
       visualClarity: true,

@@ -6,7 +6,8 @@ const highPayload: AttunementPayload = {
   topicId: 'topic-a',
   checklist: {
     sleepHours: 8,
-    ateFuel: true,
+    fuelQuality: 'steady-fuel',
+    hydration: 'optimal',
     movementMinutes: 30,
     digitalSilence: true,
     visualClarity: true,
@@ -21,9 +22,29 @@ const lowPayload: AttunementPayload = {
   topicId: 'topic-a',
   checklist: {
     sleepHours: 3,
-    ateFuel: false,
+    fuelQuality: 'underfueled',
+    hydration: 'dehydrated',
     movementMinutes: 0,
     confidenceRating: 1,
+  },
+};
+
+const completeBiologicalPayload: AttunementPayload = {
+  topicId: 'topic-a',
+  checklist: {
+    sleepHours: 7,
+    fuelQuality: 'sugar-rush',
+    hydration: 'moderate',
+    movementMinutes: 15,
+  },
+};
+
+const incompleteBiologicalPayload: AttunementPayload = {
+  topicId: 'topic-a',
+  checklist: {
+    sleepHours: 7,
+    fuelQuality: 'steady-fuel',
+    movementMinutes: 15,
   },
 };
 
@@ -39,9 +60,23 @@ describe('attunement metrics', () => {
 
   it('derives session buffs from attunement payload', () => {
     const buffs = generateActiveBuffs(highPayload);
+    const buffIds = buffs.map((buff) => buff.buffId);
     expect(buffs.length).toBeGreaterThan(0);
     expect(buffs.some((buff) => buff.modifierType === 'xp_multiplier')).toBe(true);
-    expect(buffs.some((buff) => buff.condition.includes('next_') || buff.condition === 'session_end')).toBe(true);
+    expect(buffIds.filter((buffId) => buffId === 'clarity_focus')).toHaveLength(2);
+    expect(buffs.some((buff) => buff.buffId === 'clarity_focus' && buff.source === 'cognitive')).toBe(true);
+    expect(buffs.some((buff) => buff.buffId === 'clarity_focus' && buff.source === 'biological')).toBe(true);
+    expect(buffs.some((buff) => buff.condition === 'session_end')).toBe(true);
+  });
+
+  it('grants biological buffs only when biological section is complete', () => {
+    const completeBuffs = generateActiveBuffs(completeBiologicalPayload);
+    const incompleteBuffs = generateActiveBuffs(incompleteBiologicalPayload);
+
+    const biologicalXpBuffs = completeBuffs.filter((buff) => buff.source === 'biological' && buff.modifierType === 'xp_multiplier');
+    expect(biologicalXpBuffs).toHaveLength(1);
+    expect(biologicalXpBuffs[0]?.buffId).toBe('clarity_focus');
+    expect(incompleteBuffs).toHaveLength(0);
   });
 
   it('builds session metrics and adaptation signals', () => {
@@ -62,4 +97,3 @@ describe('attunement metrics', () => {
     expect(adaptation.clarityBoost).toBe(1.05);
   });
 });
-

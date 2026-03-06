@@ -1,6 +1,65 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AttunementPayload, AttunementResult, AttunementReadinessBucket } from '../types/progression';
-import { getAllBuffVisuals, getBuffIcon, getBuffSummary } from '../features/progression/buffDisplay';
+import { motion } from 'motion/react';
+import {
+  AttunementPayload,
+  AttunementResult,
+  AttunementReadinessBucket,
+  AttunementChecklistSubmission,
+} from '../types/progression';
+import { getSectionBuffs } from '../features/progression/buffs/buffDefinitions';
+import { BuffEngine } from '../features/progression/buffs/buffEngine';
+import { getBuffIcon, getBuffSummary, groupBuffsByType } from '../features/progression/buffDisplay';
+import { useProgressionStore } from '../features/progression';
+import { Button } from './ui/button';
+import { NativeSelect } from './ui/native-select';
+import { Switch } from './ui/switch';
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
+
+const MICRO_GOAL_OPTIONS = [
+  'Review 15 cards',
+  'Clear 10 flashcards',
+  'Solve 3 practice prompts',
+  'Finish one chapter',
+];
+
+const SLEEP_OPTIONS = [
+  { value: 'deprived', label: 'Deprived (<5h)' },
+  { value: 'fair', label: 'Fair (6-7h)' },
+  { value: 'peak', label: 'Peak (8h+)' },
+];
+
+const MOVEMENT_OPTIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'short', label: 'Short (15m)' },
+  { value: 'full', label: 'Full Workout' },
+  { value: 'high', label: 'High Intensity' },
+];
+
+const FUEL_QUALITY_OPTIONS = [
+  { value: 'underfueled', label: 'Underfueled (Weak)' },
+  { value: 'sugar-rush', label: 'Sugar Rush (Jittery)' },
+  { value: 'steady-fuel', label: 'Steady Fuel (Sharp)' },
+  { value: 'food-coma', label: 'Food Coma (Heavy)' },
+];
+
+const HYDRATION_OPTIONS = [
+  { value: 'dehydrated', label: 'Dehydrated' },
+  { value: 'moderate', label: 'Moderate' },
+  { value: 'optimal', label: 'Optimal' },
+];
+
+const SLEEP_TO_HOURS: Record<string, number> = {
+  deprived: 4,
+  fair: 6,
+  peak: 8,
+};
+
+const MOVEMENT_TO_MINUTES: Record<string, number> = {
+  none: 0,
+  short: 15,
+  full: 60,
+  high: 120,
+};
 
 interface AttunementRitualModalProps {
   isOpen: boolean;
@@ -27,24 +86,51 @@ export function AttunementRitualModal({
   onStartSession,
   onSkip,
 }: AttunementRitualModalProps) {
-  const [sleepHours, setSleepHours] = useState('');
-  const [movementMinutes, setMovementMinutes] = useState('');
-  const [confidenceRating, setConfidenceRating] = useState(3);
-  const [ateFuel, setAteFuel] = useState(false);
+  const [sleepQuality, setSleepQuality] = useState('');
+  const [movementQuality, setMovementQuality] = useState('');
+  const [fuelQuality, setFuelQuality] = useState('');
+  const [hydration, setHydration] = useState('');
+  const [confidenceRating, setConfidenceRating] = useState(0);
   const [digitalSilence, setDigitalSilence] = useState(false);
   const [visualClarity, setVisualClarity] = useState(false);
   const [lightingAndAir, setLightingAndAir] = useState(false);
   const [targetCrystal, setTargetCrystal] = useState('');
   const [microGoal, setMicroGoal] = useState('');
   const [submittedResult, setSubmittedResult] = useState<AttunementResult | null>(null);
+  const activeCrystals = useProgressionStore((state) => state.activeCrystals);
+  const activeCrystalTopicIds = useMemo(() => activeCrystals.map((item) => item.topicId), [activeCrystals]);
+  const sectionBuffs = useMemo(() => ({
+    biological: getSectionBuffs('biological').map((definition) => BuffEngine.get().grantBuff(definition.id, 'biological')),
+    cognitive: getSectionBuffs('cognitive').map((definition) => BuffEngine.get().grantBuff(definition.id, 'cognitive')),
+    quest: getSectionBuffs('quest').map((definition) => BuffEngine.get().grantBuff(definition.id, 'quest')),
+  }), []);
+  const targetCrystalOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const uniqueTopicIds = [...activeCrystalTopicIds];
+    return uniqueTopicIds
+      .filter((id) => id.trim().length > 0)
+      .filter((id) => {
+        if (seen.has(id)) {
+          return false;
+        }
+        seen.add(id);
+        return true;
+      })
+      .map((id) => ({
+        value: id,
+        label: id,
+      }));
+  }, [activeCrystalTopicIds]);
+
   useEffect(() => {
     if (!isOpen) {
       return;
     }
-    setSleepHours('');
-    setMovementMinutes('');
-    setConfidenceRating(3);
-    setAteFuel(false);
+    setSleepQuality('');
+    setMovementQuality('');
+    setFuelQuality('');
+    setHydration('');
+    setConfidenceRating(0);
     setDigitalSilence(false);
     setVisualClarity(false);
     setLightingAndAir(false);
@@ -53,7 +139,29 @@ export function AttunementRitualModal({
     setSubmittedResult(null);
   }, [isOpen]);
 
-  const canSubmit = useMemo(() => microGoal.trim().length > 0 && targetCrystal.trim().length > 0, [microGoal, targetCrystal]);
+  const isBiologicalComplete = Boolean(sleepQuality && movementQuality && fuelQuality && hydration);
+  const isCognitiveComplete = digitalSilence && visualClarity && lightingAndAir;
+  const isQuestComplete = confidenceRating > 0 && targetCrystal.trim().length > 0 && microGoal.trim().length > 0;
+  const sanitizedChecklist = useMemo(() => {
+    const checklist: AttunementChecklistSubmission = {};
+    if (isBiologicalComplete) {
+      checklist.sleepHours = SLEEP_TO_HOURS[sleepQuality];
+      checklist.movementMinutes = MOVEMENT_TO_MINUTES[movementQuality];
+      checklist.fuelQuality = fuelQuality as AttunementChecklistSubmission['fuelQuality'];
+      checklist.hydration = hydration as AttunementChecklistSubmission['hydration'];
+    }
+    if (isCognitiveComplete) {
+      checklist.digitalSilence = digitalSilence;
+      checklist.visualClarity = visualClarity;
+      checklist.lightingAndAir = lightingAndAir;
+    }
+    if (isQuestComplete) {
+      checklist.confidenceRating = confidenceRating;
+      checklist.targetCrystal = targetCrystal;
+      checklist.microGoal = microGoal;
+    }
+    return checklist;
+  }, [confidenceRating, microGoal, isBiologicalComplete, isCognitiveComplete, isQuestComplete, movementQuality, sleepQuality, targetCrystal, digitalSilence, visualClarity, lightingAndAir, fuelQuality, hydration]);
 
   if (!isOpen) {
     return null;
@@ -72,17 +180,7 @@ export function AttunementRitualModal({
   const handleSubmit = () => {
     const result = onSubmit({
       topicId,
-      checklist: {
-        sleepHours: Number.parseInt(sleepHours, 10) || 0,
-        ateFuel,
-        movementMinutes: Number.parseInt(movementMinutes, 10) || 0,
-        digitalSilence,
-        visualClarity,
-        lightingAndAir,
-        targetCrystal,
-        microGoal,
-        confidenceRating,
-      },
+      checklist: sanitizedChecklist,
     });
 
     if (!result) {
@@ -101,165 +199,208 @@ export function AttunementRitualModal({
 
   return (
     <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center">
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[min(90%,720px)] max-h-[90vh] overflow-y-auto">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[min(90%,720px)] max-h-[90vh] overflow-y-auto"
+      >
         <h2 className="text-2xl mb-2 text-cyan-200">🧪 Attunement Ritual</h2>
-        {!submittedResult && (
-          <div className="mb-6">
-            <p className="text-slate-300 text-sm mb-2">
-              <span className="font-semibold text-slate-200">Unlocks:</span>
-              <span className="ml-2 flex flex-wrap items-center gap-3">
-                {getAllBuffVisuals().map((buffVisual) => (
-                  <span
-                    key={buffVisual.modifierType}
-                    className="inline-flex items-center gap-2 text-slate-200"
-                  >
-                    <span className="text-xl" aria-hidden="true">
-                      {buffVisual.icon}
-                    </span>
-                    <span>{buffVisual.name}</span>
-                  </span>
-                ))}
-              </span>
-            </p>
-          </div>
-        )}
-
         {!submittedResult && (
           <>
             <section className="space-y-2 mb-5">
-              <h3 className="text-slate-200">1. Biological Foundation</h3>
-              <label className="text-sm text-slate-300 block">
-                Sleep Hours
-                <input
-                  type="number"
-                  min={0}
-                  max={24}
-                  value={sleepHours}
-                  onChange={(event) => setSleepHours(event.target.value)}
-                  className="ml-2 rounded bg-slate-900 border border-slate-700 px-2 py-1 w-20"
-                />
-              </label>
-              <label className="text-sm text-slate-300 block">
-                <input
-                  type="checkbox"
-                  checked={ateFuel}
-                  onChange={(event) => setAteFuel(event.target.checked)}
-                  className="mr-2"
-                />
-                Fuel Check: Protein/complex carbs consumed within 3h
-              </label>
-              <label className="text-sm text-slate-300 block">
-                Movement Minutes
-                <input
-                  type="number"
-                  min={0}
-                  value={movementMinutes}
-                  onChange={(event) => setMovementMinutes(event.target.value)}
-                  className="ml-2 rounded bg-slate-900 border border-slate-700 px-2 py-1 w-20"
-                />
-              </label>
-            </section>
-
-            <section className="space-y-2 mb-5">
-              <h3 className="text-slate-200">2. Cognitive Environment</h3>
-              <label className="text-sm text-slate-300 block">
-                <input
-                  type="checkbox"
-                  checked={digitalSilence}
-                  onChange={(event) => setDigitalSilence(event.target.checked)}
-                  className="mr-2"
-                />
-                Digital Silence
-              </label>
-              <label className="text-sm text-slate-300 block">
-                <input
-                  type="checkbox"
-                  checked={visualClarity}
-                  onChange={(event) => setVisualClarity(event.target.checked)}
-                  className="mr-2"
-                />
-                Single-tasking + Visual Clarity
-              </label>
-              <label className="text-sm text-slate-300 block">
-                <input
-                  type="checkbox"
-                  checked={lightingAndAir}
-                  onChange={(event) => setLightingAndAir(event.target.checked)}
-                  className="mr-2"
-                />
-                Lighting & Ventilation
-              </label>
-            </section>
-
-            <section className="space-y-2 mb-5">
-              <h3 className="text-slate-200">3. Quest Intent</h3>
-              <label className="text-sm text-slate-300 block">
-                Target Crystal
-                <input
-                  value={targetCrystal}
-                  onChange={(event) => setTargetCrystal(event.target.value)}
-                  className="ml-2 rounded bg-slate-900 border border-slate-700 px-2 py-1 w-56"
-                  placeholder="e.g. Linear Algebra"
-                />
-              </label>
-              <label className="text-sm text-slate-300 block">
-                Micro-goal
-                <input
-                  value={microGoal}
-                  onChange={(event) => setMicroGoal(event.target.value)}
-                  className="ml-2 rounded bg-slate-900 border border-slate-700 px-2 py-1 w-64"
-                  placeholder="e.g. Learn 10 cards"
-                />
-              </label>
-              <label className="text-sm text-slate-300 block">
-                Readiness (1-5)
-                <select
-                  value={confidenceRating}
-                  onChange={(event) => setConfidenceRating(Number(event.target.value))}
-                  className="ml-2 rounded bg-slate-900 border border-slate-700 px-2 py-1"
+              <h3 className="text-slate-200">🧬 1. Biological Foundation</h3>
+              <p className="text-xs text-slate-300 mb-1">Section unlocks</p>
+              <ul className="mb-3 flex flex-wrap gap-2 text-slate-300 text-sm">
+                {sectionBuffs.biological.map((buff) => (
+                  <li key={buff.buffId} className="inline-flex items-center gap-2 rounded border border-slate-700 px-2 py-1">
+                    <span className="text-lg" aria-hidden="true">
+                      {getBuffIcon(buff.modifierType)}
+                    </span>
+                    <span>{getBuffSummary(buff)}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="space-y-1">
+                <label className="text-sm text-slate-300">😴 Sleep (Biological Readiness)</label>
+                <ToggleGroup
+                  value={sleepQuality}
+                  onValueChange={setSleepQuality}
                 >
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                  <option value={3}>3</option>
-                  <option value={4}>4</option>
-                  <option value={5}>5</option>
-                </select>
-              </label>
+                  {SLEEP_OPTIONS.map((option) => (
+                    <ToggleGroupItem key={option.value} value={option.value}>
+                      {option.label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm text-slate-300">🍽️ Fuel Quality</label>
+                <ToggleGroup
+                  value={fuelQuality}
+                  onValueChange={setFuelQuality}
+                >
+                  {FUEL_QUALITY_OPTIONS.map((option) => (
+                    <ToggleGroupItem key={option.value} value={option.value}>
+                      {option.label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm text-slate-300">💧 Hydration</label>
+                <ToggleGroup
+                  value={hydration}
+                  onValueChange={setHydration}
+                >
+                  {HYDRATION_OPTIONS.map((option) => (
+                    <ToggleGroupItem key={option.value} value={option.value}>
+                      {option.label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm text-slate-300">🏃 Movement</label>
+                <ToggleGroup
+                  value={movementQuality}
+                  onValueChange={setMovementQuality}
+                >
+                  {MOVEMENT_OPTIONS.map((option) => (
+                    <ToggleGroupItem key={option.value} value={option.value}>
+                      {option.label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
+            </section>
+
+            <section className="space-y-2 mb-5">
+              <h3 className="text-slate-200">🧠 2. Cognitive Environment</h3>
+              <p className="text-xs text-slate-300 mb-1">Section unlocks</p>
+              <ul className="mb-3 flex flex-wrap gap-2 text-slate-300 text-sm">
+                {sectionBuffs.cognitive.map((buff) => (
+                  <li key={buff.buffId} className="inline-flex items-center gap-2 rounded border border-slate-700 px-2 py-1">
+                    <span className="text-lg" aria-hidden="true">
+                      {getBuffIcon(buff.modifierType)}
+                    </span>
+                    <span>{getBuffSummary(buff)}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="space-y-1">
+                <label className="text-sm text-slate-300">🔕 Digital Silence</label>
+                <Switch
+                  checked={digitalSilence}
+                  onCheckedChange={setDigitalSilence}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm text-slate-300">👁️ Visual Clarity</label>
+                <Switch
+                  checked={visualClarity}
+                  onCheckedChange={setVisualClarity}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm text-slate-300">💡 Lighting & Ventilation</label>
+                <Switch
+                  checked={lightingAndAir}
+                  onCheckedChange={setLightingAndAir}
+                />
+              </div>
+            </section>
+
+            <section className="space-y-2 mb-5">
+              <h3 className="text-slate-200">🎯 3. Quest Intent</h3>
+              <p className="text-xs text-slate-300 mb-1">Section unlocks</p>
+              <ul className="mb-3 flex flex-wrap gap-2 text-slate-300 text-sm">
+                {sectionBuffs.quest.map((buff) => (
+                  <li key={buff.buffId} className="inline-flex items-center gap-2 rounded border border-slate-700 px-2 py-1">
+                    <span className="text-lg" aria-hidden="true">
+                      {getBuffIcon(buff.modifierType)}
+                    </span>
+                    <span>{getBuffSummary(buff)}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="space-y-1">
+                <label className="text-sm text-slate-300">💎 Target Crystal</label>
+                <NativeSelect
+                  value={targetCrystal}
+                  onValueChange={setTargetCrystal}
+                  placeholder="Pick a crystal"
+                  options={[
+                    ...(targetCrystalOptions.length === 0
+                      ? [{ value: '__empty__', label: 'No unlocked crystals', disabled: true }]
+                      : targetCrystalOptions),
+                  ]}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm text-slate-300">🎯 Micro-Goal</label>
+                <NativeSelect
+                  value={microGoal}
+                  onValueChange={setMicroGoal}
+                  placeholder="Pick a micro-goal"
+                  options={MICRO_GOAL_OPTIONS.map((option) => ({ value: option, label: option }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm text-slate-300">🧠 Readiness (1-5)</label>
+                <ToggleGroup
+                  type="single"
+                  value={confidenceRating === 0 ? '' : String(confidenceRating)}
+                  onValueChange={(value) => setConfidenceRating(value.length ? Number(value) : 0)}
+                >
+                  {[1, 2, 3, 4, 5].map((rating) => (
+                    <ToggleGroupItem key={rating} value={String(rating)}>
+                      {rating}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
             </section>
 
             <div className="flex gap-3 justify-end">
-              <button
-                type="button"
-                onClick={handleSkip}
-                className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded"
-              >
-                Skip Ritual
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={!canSubmit}
-                className={`px-4 py-2 rounded ${canSubmit ? 'bg-violet-500 hover:bg-violet-400' : 'bg-slate-700'} text-white`}
-              >
-                Submit Ritual
-              </button>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Button
+                  variant="outline"
+                  onClick={handleSkip}
+                  className="bg-slate-600 hover:bg-slate-500 border-none"
+                >
+                  Skip Ritual
+                </Button>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Button
+                  onClick={handleSubmit}
+                  className="bg-violet-500 hover:bg-violet-400"
+                >
+                  Submit Ritual
+                </Button>
+              </motion.div>
             </div>
           </>
         )}
 
         {submittedResult && (
-          <div>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4"
+          >
             <div className="p-3 rounded-lg bg-slate-900 border border-emerald-500/40">
-                <p className="text-emerald-300 mb-2 font-semibold">
-                  {submittedResult.buffs.length > 0
-                    ? 'Unlocks Granted'
-                    : 'No Unlocks'} (Harmony {submittedResult.harmonyScore} / {readinessLabel(submittedResult.readinessBucket)}).
-                </p>
+              <p className="text-emerald-300 mb-2 font-semibold">
+                {submittedResult.buffs.length > 0
+                  ? 'Unlocks Granted'
+                  : 'No Unlocks'} (Harmony {submittedResult.harmonyScore} / {readinessLabel(submittedResult.readinessBucket)}).
+              </p>
               {submittedResult.buffs.length > 0 ? (
                 <div className="text-sm text-slate-200 flex flex-wrap items-center gap-2">
                   <span className="text-emerald-300 font-semibold">Unlocks:</span>
-                  {submittedResult.buffs.map((buff) => (
-                    <span key={buff.buffId} className="inline-flex items-center gap-2">
+                  {groupBuffsByType(submittedResult.buffs).map((buff) => (
+                    <span key={buff.modifierType} className="inline-flex items-center gap-2">
                       <span className="text-xl" aria-hidden="true">{getBuffIcon(buff.modifierType)}</span>
                       <span>{getBuffSummary(buff)}</span>
                     </span>
@@ -270,17 +411,18 @@ export function AttunementRitualModal({
               )}
             </div>
             <div className="flex gap-3 justify-end mt-4">
-              <button
-                type="button"
-                onClick={handleContinue}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded"
-              >
-                Begin Study
-              </button>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Button
+                  onClick={handleContinue}
+                  className="bg-emerald-600 hover:bg-emerald-500"
+                >
+                  Begin Study
+                </Button>
+              </motion.div>
             </div>
-          </div>
+          </motion.div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }
