@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import * as THREE from 'three';
+import React, { useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three/webgpu';
 import { uiStore } from '../store/uiStore';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
@@ -34,6 +35,8 @@ const glowRingGeometry = new THREE.RingGeometry(0.5, 0.9, 32);
  * Optimized with memoized geometries and materials for performance
  */
 export const WisdomAltar: React.FC = () => {
+  const rotatingRingRef = useRef<THREE.Mesh>(null);
+
   const handleClick = () => {
     // Open the Discovery Modal using UI store
     uiStore.getState().openDiscoveryModal();
@@ -70,36 +73,55 @@ export const WisdomAltar: React.FC = () => {
     // Generate glowing variant for central crystal
     const crystalColor = baseColor;
 
+    const basePedestal = new THREE.MeshStandardNodeMaterial({
+      color: pedestalColor,
+      metalness: 0.4,
+      roughness: 0.5,
+    });
+
+    const topPlatform = new THREE.MeshStandardNodeMaterial({
+      color: platformColor,
+      metalness: 0.5,
+      roughness: 0.4,
+    });
+
+    const centralCrystal = new THREE.MeshStandardNodeMaterial({
+      color: crystalColor,
+      metalness: 0.6,
+      roughness: 0.3,
+      emissive: crystalColor,
+      emissiveIntensity: 0.4,
+    });
+
+    const glowRing = new THREE.MeshBasicNodeMaterial({
+      color: crystalColor,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide,
+    });
+
     return {
       // Base pedestal material - uses subject color
-      basePedestal: new THREE.MeshStandardMaterial({
-        color: pedestalColor,
-        metalness: 0.4,
-        roughness: 0.5,
-      }),
+      basePedestal,
       // Top platform material - uses subject color
-      topPlatform: new THREE.MeshStandardMaterial({
-        color: platformColor,
-        metalness: 0.5,
-        roughness: 0.4,
-      }),
+      topPlatform,
       // Central crystal material - glowing subject color
-      centralCrystal: new THREE.MeshStandardMaterial({
-        color: crystalColor,
-        metalness: 0.6,
-        roughness: 0.3,
-        emissive: crystalColor,
-        emissiveIntensity: 0.4,
-      }),
+      centralCrystal,
       // Glow ring material - semi-transparent subject color
-      glowRing: new THREE.MeshBasicMaterial({
-        color: crystalColor,
-        transparent: true,
-        opacity: 0.3,
-        side: THREE.DoubleSide,
-      }),
+      glowRing,
     };
   }, [subjectColor]);
+
+  useFrame(() => {
+    const elapsedTime = performance.now() / 1000;
+    const pulse = 0.4 + Math.sin(elapsedTime * 2) * 0.15;
+
+    materials.centralCrystal.emissiveIntensity = pulse;
+
+    if (rotatingRingRef.current) {
+      rotatingRingRef.current.rotation.y = elapsedTime * 0.3;
+    }
+  });
 
   return (
     <group
@@ -130,6 +152,16 @@ export const WisdomAltar: React.FC = () => {
       {/* Central crystal - subject-specific geometry */}
       <mesh position={[0, 0.75, 0]} geometry={altarGeometry}>
         <primitive object={materials.centralCrystal} attach="material" />
+      </mesh>
+
+      {/* Rotating ritual glow ring */}
+      <mesh
+        ref={rotatingRingRef}
+        geometry={decorativeRingGeometry}
+        position={[0, 0.65, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+      >
+        <primitive object={materials.glowRing} attach="material" />
       </mesh>
 
       {/* Glow ring on ground */}

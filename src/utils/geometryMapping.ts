@@ -3,7 +3,7 @@
  */
 
 import { useMemo } from 'react';
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { SubjectGeometry as CoreSubjectGeometry } from '../types/core';
 import { Subject } from '../types/core';
 import { useManifest } from '../hooks/useDeckData';

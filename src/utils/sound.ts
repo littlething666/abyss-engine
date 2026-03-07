@@ -75,3 +75,40 @@ export function playPositiveSound(): void {
     console.warn('Audio playback failed:', error);
   }
 }
+
+/**
+ * Play a sharper level-up sound for growth milestones
+ * Uses a bright two-note fanfare for quick recognition
+ */
+export function playLevelUpSound(): void {
+  try {
+    const ctx = getAudioContext();
+
+    // Resume context if suspended (browser autoplay policy)
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+
+    const currentTime = ctx.currentTime;
+
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(587.33, currentTime); // D5
+    oscillator.frequency.setValueAtTime(783.99, currentTime + 0.07); // G5
+    oscillator.frequency.setValueAtTime(1174.66, currentTime + 0.14); // D6
+
+    gainNode.gain.setValueAtTime(0, currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.35, currentTime + 0.04);
+    gainNode.gain.linearRampToValueAtTime(0, currentTime + 0.28);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    oscillator.start(currentTime);
+    oscillator.stop(currentTime + 0.28);
+  } catch (error) {
+    console.warn('Audio playback failed:', error);
+  }
+}

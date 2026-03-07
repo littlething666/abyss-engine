@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
 
@@ -84,6 +84,36 @@ export const Grid: React.FC = () => {
     return '#' + color.getHexString();
   }, [subjectColor, currentSubjectId]);
 
+  const tileMaterial = useMemo(() => {
+    const material = new THREE.MeshStandardNodeMaterial({
+      color: tileColor,
+      metalness: 0.3,
+      roughness: 0.7,
+      transparent: true,
+      opacity: 0.5,
+    });
+    return material;
+  }, [tileColor]);
+
+  const centerTileMaterial = useMemo(() => {
+    const material = new THREE.MeshStandardNodeMaterial({
+      color: centerTileColor,
+      metalness: 0.3,
+      roughness: 0.7,
+      transparent: true,
+      opacity: 0.5,
+    });
+    return material;
+  }, [centerTileColor]);
+
+  const groundMaterial = useMemo(() => {
+    return new THREE.MeshStandardNodeMaterial({
+      color: '#050510',
+      metalness: 0.2,
+      roughness: 0.8,
+    });
+  }, []);
+
   return (
     <group>
       {/* Grid helper for visual reference */}
@@ -98,15 +128,9 @@ export const Grid: React.FC = () => {
           position={[gridX * TILE_SIZE, -0.01, gridZ * TILE_SIZE]}
           rotation={[0, 0, 0]}
           geometry={tileGeometry}
+          material={isCenter ? centerTileMaterial : tileMaterial}
         >
-          <meshStandardMaterial
-            color={isCenter ? centerTileColor : tileColor}
-            side={2}
-            metalness={0.3}
-            roughness={0.7}
-            transparent={true}
-            opacity={0.5}
-          />
+          {/* Material moved to useMemo for stable node graphs and reduced rebuilds. */}
         </mesh>
       ))}
       {/* Ground plane - using shared memoized geometry */}
@@ -114,8 +138,8 @@ export const Grid: React.FC = () => {
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, -0.02, 0]}
         geometry={groundGeometry}
+        material={groundMaterial}
       >
-        <meshStandardMaterial color="#050510" />
       </mesh>
     </group>
   );

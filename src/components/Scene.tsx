@@ -2,18 +2,21 @@
 
 import React, { Suspense, useRef, useMemo, useEffect } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrthographicCamera, Html } from '@react-three/drei';
+import { OrthographicCamera, Html, OrbitControls } from '@react-three/drei';
 import { useQueries } from '@tanstack/react-query';
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
+import { WebGPURenderer } from 'three/webgpu';
 import { Grid } from './Grid';
 import { WisdomAltar } from './WisdomAltar';
 import { Crystals } from './Crystals';
+import { CrystalGlowPostProcessing } from '../graphics/glowPostProcessing';
 import TopicSelectionBar from './TopicSelectionBar';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useUIStore } from '../store/uiStore';
 import { useTopicMetadata, type TopicMetadata } from '../features/content';
 import { Card } from '../types/core';
 import { deckRepository } from '../infrastructure/di';
+import '../graphics/nodeMaterialRegistration';
 
 /**
  * Scene component - Main 3D visualization for Abyss Engine
@@ -32,11 +35,59 @@ interface SceneRenderInvalidatorProps {
   selectedTopicCardsCount: number;
 }
 
+function resolveWebGPUCanvas(
+  canvas:
+    | HTMLCanvasElement
+    | { getContext?: () => unknown }
+    | { domElement?: unknown; canvas?: unknown }
+    | { current?: unknown }
+    | null
+    | undefined,
+): HTMLCanvasElement {
+  if (canvas instanceof HTMLCanvasElement) {
+    return canvas;
+  }
+
+  const hasGetContext = canvas && typeof canvas === 'object' && 'getContext' in canvas
+    && typeof (canvas as { getContext?: () => unknown }).getContext === 'function'
+    ? (canvas as { getContext: () => unknown })
+    : undefined;
+  if (hasGetContext) {
+    return canvas as HTMLCanvasElement;
+  }
+
+  const withDomElement = canvas && typeof canvas === 'object' && 'domElement' in canvas
+    ? (canvas as { domElement?: unknown })
+    : undefined;
+  if (withDomElement?.domElement instanceof HTMLCanvasElement) {
+    return withDomElement.domElement;
+  }
+
+  const withCanvas = canvas && typeof canvas === 'object' && 'canvas' in canvas
+    ? (canvas as { canvas?: unknown })
+    : undefined;
+  if (withCanvas?.canvas instanceof HTMLCanvasElement) {
+    return withCanvas.canvas;
+  }
+
+  const withCurrent = canvas && typeof canvas === 'object' && 'current' in canvas
+    ? (canvas as { current?: unknown })
+    : undefined;
+  if (withCurrent?.current instanceof HTMLCanvasElement) {
+    return withCurrent.current;
+  }
+
+  return document.createElement('canvas');
+}
+
 type RenderQuality = {
   dpr: number | [number, number];
   antialias: boolean;
   powerPreference: 'high-performance' | 'low-power';
 };
+
+const TARGET_SCENE_FPS = 45;
+const TARGET_FRAME_INTERVAL_MS = 1000 / TARGET_SCENE_FPS;
 
 const getRenderQuality = (): RenderQuality => {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -58,6 +109,33 @@ const getRenderQuality = (): RenderQuality => {
     antialias: !needsReducedQuality,
     powerPreference: needsReducedQuality ? 'low-power' : 'high-performance',
   };
+};
+
+const CAMERA_START_POSITION: [number, number, number] = [8, 8, 8];
+const ORBIT_TARGET: [number, number, number] = [0, 0, 0];
+const CAMERA_START_DISTANCE = Math.hypot(
+  CAMERA_START_POSITION[0] - ORBIT_TARGET[0],
+  CAMERA_START_POSITION[1] - ORBIT_TARGET[1],
+  CAMERA_START_POSITION[2] - ORBIT_TARGET[2],
+);
+const CAMERA_START_POLAR_ANGLE = Math.acos(
+  (CAMERA_START_POSITION[1] - ORBIT_TARGET[1]) / CAMERA_START_DISTANCE,
+);
+
+const SceneFrameLimiter: React.FC = () => {
+  const invalidate = useThree((state) => state.invalidate);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      invalidate();
+    }, TARGET_FRAME_INTERVAL_MS);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [invalidate]);
+
+  return null;
 };
 
 const SceneRenderInvalidator: React.FC<SceneRenderInvalidatorProps> = ({
@@ -85,11 +163,30 @@ const SceneRenderInvalidator: React.FC<SceneRenderInvalidatorProps> = ({
   return null;
 };
 
+const OrbitCameraControls: React.FC = () => {
+  const invalidate = useThree((state) => state.invalidate);
+
+  return (
+    <OrbitControls
+      enablePan={false}
+      enableZoom={false}
+      enableRotate
+      minDistance={CAMERA_START_DISTANCE}
+      maxDistance={CAMERA_START_DISTANCE}
+      minPolarAngle={CAMERA_START_POLAR_ANGLE}
+      maxPolarAngle={CAMERA_START_POLAR_ANGLE}
+      target={ORBIT_TARGET}
+      onChange={invalidate}
+    />
+  );
+};
+
 export const Scene: React.FC<SceneProps> = ({ onStartAttunement }) => {
   const cameraRef = useRef<THREE.OrthographicCamera>(null);
   const activeCrystals = useStudyStore((state) => state.activeCrystals);
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
   const selectedTopicId = useUIStore((state) => state.selectedTopicId);
+  const isStudyPanelOpen = useUIStore((state) => state.isStudyPanelOpen);
   const startTopicStudySession = useStudyStore((state) => state.startTopicStudySession);
   const openStudyPanel = useUIStore((state) => state.openStudyPanel);
   const allTopicMetadata = useTopicMetadata(activeCrystals.map((crystal) => crystal.topicId));
@@ -188,13 +285,28 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement }) => {
       <Canvas
         frameloop="demand"
         dpr={renderQuality.dpr}
-        gl={{
-          antialias: renderQuality.antialias,
-          alpha: false,
-          powerPreference: renderQuality.powerPreference,
+        gl={async (canvas) => {
+          const resolvedCanvas = resolveWebGPUCanvas(canvas);
+          const hasWebGPU = typeof navigator !== 'undefined'
+            && !!(navigator as { gpu?: { requestAdapter?: unknown } }).gpu
+            && typeof (navigator as { gpu?: { requestAdapter?: unknown } }).gpu?.requestAdapter === 'function'
+            && typeof window !== 'undefined'
+            && window.isSecureContext;
+          if (!hasWebGPU) {
+            throw new Error('WebGPU is required but not available in this browser or context.');
+          }
+          const renderer = new WebGPURenderer({
+            canvas: resolvedCanvas,
+            antialias: renderQuality.antialias,
+            alpha: false,
+            powerPreference: renderQuality.powerPreference,
+          });
+          await renderer.init();
+          return renderer;
         }}
         style={{ background: '#0a0a1a' }}
       >
+        <SceneFrameLimiter />
         <SceneRenderInvalidator
           activeCrystals={activeCrystals}
           filteredCrystals={filteredCrystals}
@@ -208,12 +320,13 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement }) => {
         <OrthographicCamera
           ref={cameraRef}
           makeDefault
-          position={[8, 8, 8]}
+          position={CAMERA_START_POSITION}
           zoom={50}
           near={0.1}
           far={1000}
-          onUpdate={(c) => c.lookAt(0, 0, 0)}
+          onUpdate={(c) => c.lookAt(...ORBIT_TARGET)}
         />
+        <OrbitCameraControls />
 
         {/* Lighting setup */}
         <ambientLight intensity={0.6} color="#ffffff" />
@@ -255,8 +368,11 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement }) => {
           <Crystals
             crystals={filteredCrystals}
             onStartTopicStudySession={startTopicStudySessionFromSelection}
+            isStudyPanelOpen={isStudyPanelOpen}
           />
         </Suspense>
+
+        <CrystalGlowPostProcessing />
 
         {/* Topic Selection Bar - rendered as HTML overlay following selected crystal */}
         {selectedCrystalPosition && (
@@ -289,7 +405,7 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement }) => {
           }}
         >
           <planeGeometry args={[100, 100]} />
-          <meshBasicMaterial visible={false} />
+          <meshBasicNodeMaterial visible={false} />
         </mesh>
       </Canvas>
     </div>
