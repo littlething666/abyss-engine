@@ -6,7 +6,7 @@ import {
   getBuffSummary,
   groupBuffsByType,
   groupBuffsByTypeWithSources,
-} from '../features/progression/buffDisplay';
+} from '../features/progression';
 
 export interface StatsOverlayProps {
   /** Total number of cards in the deck */

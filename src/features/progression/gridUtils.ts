@@ -12,7 +12,7 @@
  * - Positions are [x, z] pairs
  */
 
-import { ActiveCrystal } from '../types';
+import { ActiveCrystal } from '../../types';
 
 /**
  * Altar's fixed grid position

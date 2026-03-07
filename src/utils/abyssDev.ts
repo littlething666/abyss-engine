@@ -3,7 +3,7 @@
  */
 
 import { uiStore } from '../store/uiStore';
-import { SM2Data } from './sm2';
+import { SM2Data } from '../features/progression';
 import { deckRepository } from '../infrastructure/di';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { SubjectGraph, Card } from '../types/core';

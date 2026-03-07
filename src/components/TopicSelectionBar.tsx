@@ -2,8 +2,8 @@
 
 import React from 'react';
 import { useUIStore } from '../store/uiStore';
-import { calculateLevelFromXP } from '../utils/progressionUtils';
-import type { TopicMetadata } from '../features/content/selectors';
+import { calculateLevelFromXP } from '../features/progression';
+import type { TopicMetadata } from '../features/content';
 import type { Card } from '../types/core';
 
 interface TopicSelectionBarProps {

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useProgressionStore } from '../features/progression';
-import { Card, ActiveCrystal } from '../types';
-import { SubjectGraph } from '../types/core';
-import { AttunementPayload } from '../types/progression';
+import { useProgressionStore } from '.';
+import { Card, ActiveCrystal } from '../../types';
+import { SubjectGraph } from '../../types/core';
+import { AttunementPayload } from '../../types/progression';
 
 function createCard(id: string): Card {
   return {

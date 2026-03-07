@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useProgressionStore as useStudyStore } from '../features/progression';
-import { useSubjects } from '../features/content/contentQueries';
+import { useSubjects } from '../features/content';
 
 /**
  * SubjectNavigation component - Fixed dropdown at top of screen

@@ -1,4 +1,4 @@
-import { Rating } from '../types';
+import { Rating } from '../../types';
 
 export interface SM2Data {
   interval: number;

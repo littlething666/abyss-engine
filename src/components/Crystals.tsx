@@ -3,10 +3,10 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
 import { ActiveCrystal } from '../types';
-import { calculateLevelFromXP } from '../utils/progressionUtils';
+import { calculateLevelFromXP } from '../features/progression';
 import { useUIStore } from '../store/uiStore';
 import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
-import { useTopicMetadata } from '../features/content/selectors';
+import { useTopicMetadata } from '../features/content';
 
 const crystalInnerGeometry = new THREE.SphereGeometry(0.15, 8, 6);
 const levelIndicatorGeometry = new THREE.SphereGeometry(0.08, 16, 16);

@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Rating } from '../types';
 import { Card } from '../types';
-import { getRatingLabel, getRatingColor, normalizeSM2State } from '../utils/sm2';
+import { getRatingLabel, getRatingColor, normalizeSM2State } from '../features/progression';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useTopicCards } from '../hooks/useDeckData';
-import { useTopicMetadata } from '../features/content/selectors';
+import { evaluateAnswer, useTopicMetadata } from '../features/content';
 import MathMarkdownRenderer from './MathMarkdownRenderer';
 
 interface StudyPanelModalProps {
@@ -197,19 +197,9 @@ export function StudyPanelModal({
 
   // Handle submit for choice questions
   const handleChoiceSubmit = () => {
-    if (!renderedCard || !renderedCard.correctAnswers) return;
+    if (!activeCard) return;
 
-    const correctSet = new Set(renderedCard.correctAnswers);
-    const selectedSet = new Set(selectedAnswers);
-
-    let isAnswerCorrect: boolean;
-    if (isMultiChoice) {
-      isAnswerCorrect =
-        correctSet.size === selectedSet.size &&
-        Array.from(correctSet).every((answer) => selectedSet.has(answer));
-    } else {
-      isAnswerCorrect = selectedAnswers.length === 1 && correctSet.has(selectedAnswers[0]);
-    }
+    const isAnswerCorrect = evaluateAnswer(activeCard, selectedAnswers);
 
     setIsCorrect(isAnswerCorrect);
     setIsAnswerSubmitted(true);

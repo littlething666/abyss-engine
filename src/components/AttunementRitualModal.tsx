@@ -6,60 +6,24 @@ import {
   AttunementReadinessBucket,
   AttunementChecklistSubmission,
 } from '../types/progression';
-import { getCategoryBuffs } from '../features/progression/buffs/buffDefinitions';
-import { BuffEngine } from '../features/progression/buffs/buffEngine';
-import { getBuffIcon, getBuffSummary, groupBuffsByType } from '../features/progression/buffDisplay';
+import {
+  BuffEngine,
+  getBuffIcon,
+  getBuffSummary,
+  getCategoryBuffs,
+  groupBuffsByType,
+  FUEL_QUALITY_OPTIONS,
+  getChecklistForSelection,
+  HYDRATION_OPTIONS,
+  MICRO_GOAL_OPTIONS,
+  MOVEMENT_OPTIONS,
+  SLEEP_OPTIONS,
+} from '../features/progression';
 import { useProgressionStore } from '../features/progression';
 import { Button } from './ui/button';
 import { NativeSelect } from './ui/native-select';
 import { Switch } from './ui/switch';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
-
-const MICRO_GOAL_OPTIONS = [
-  'Review 15 cards',
-  'Clear 10 flashcards',
-  'Solve 3 practice prompts',
-  'Finish one chapter',
-];
-
-const SLEEP_OPTIONS = [
-  { value: 'deprived', label: 'Deprived (<5h)' },
-  { value: 'fair', label: 'Fair (6-7h)' },
-  { value: 'peak', label: 'Peak (8h+)' },
-];
-
-const MOVEMENT_OPTIONS = [
-  { value: 'none', label: 'None' },
-  { value: 'short', label: 'Short (15m)' },
-  { value: 'full', label: 'Full Workout' },
-  { value: 'high', label: 'High Intensity' },
-];
-
-const FUEL_QUALITY_OPTIONS = [
-  { value: 'underfueled', label: 'Underfueled (Weak)' },
-  { value: 'sugar-rush', label: 'Sugar Rush (Jittery)' },
-  { value: 'steady-fuel', label: 'Steady Fuel (Sharp)' },
-  { value: 'food-coma', label: 'Food Coma (Heavy)' },
-];
-
-const HYDRATION_OPTIONS = [
-  { value: 'dehydrated', label: 'Dehydrated' },
-  { value: 'moderate', label: 'Moderate' },
-  { value: 'optimal', label: 'Optimal' },
-];
-
-const SLEEP_TO_HOURS: Record<string, number> = {
-  deprived: 4,
-  fair: 6,
-  peak: 8,
-};
-
-const MOVEMENT_TO_MINUTES: Record<string, number> = {
-  none: 0,
-  short: 15,
-  full: 60,
-  high: 120,
-};
 
 interface AttunementRitualModalProps {
   isOpen: boolean;
@@ -145,10 +109,10 @@ export function AttunementRitualModal({
   const sanitizedChecklist = useMemo(() => {
     const checklist: AttunementChecklistSubmission = {};
     if (isBiologicalComplete) {
-      checklist.sleepHours = SLEEP_TO_HOURS[sleepQuality];
-      checklist.movementMinutes = MOVEMENT_TO_MINUTES[movementQuality];
-      checklist.fuelQuality = fuelQuality as AttunementChecklistSubmission['fuelQuality'];
-      checklist.hydration = hydration as AttunementChecklistSubmission['hydration'];
+      Object.assign(checklist, getChecklistForSelection(SLEEP_OPTIONS, sleepQuality));
+      Object.assign(checklist, getChecklistForSelection(MOVEMENT_OPTIONS, movementQuality));
+      Object.assign(checklist, getChecklistForSelection(FUEL_QUALITY_OPTIONS, fuelQuality));
+      Object.assign(checklist, getChecklistForSelection(HYDRATION_OPTIONS, hydration));
     }
     if (isCognitiveComplete) {
       checklist.digitalSilence = digitalSilence;
@@ -158,7 +122,7 @@ export function AttunementRitualModal({
     if (isQuestComplete) {
       checklist.confidenceRating = confidenceRating;
       checklist.targetCrystal = targetCrystal;
-      checklist.microGoal = microGoal;
+      Object.assign(checklist, getChecklistForSelection(MICRO_GOAL_OPTIONS, microGoal));
     }
     return checklist;
   }, [confidenceRating, microGoal, isBiologicalComplete, isCognitiveComplete, isQuestComplete, movementQuality, sleepQuality, targetCrystal, digitalSilence, visualClarity, lightingAndAir, fuelQuality, hydration]);
@@ -343,7 +307,7 @@ export function AttunementRitualModal({
                   value={microGoal}
                   onValueChange={setMicroGoal}
                   placeholder="Pick a micro-goal"
-                  options={MICRO_GOAL_OPTIONS.map((option) => ({ value: option, label: option }))}
+                  options={MICRO_GOAL_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
                 />
               </div>
               <div className="space-y-1">

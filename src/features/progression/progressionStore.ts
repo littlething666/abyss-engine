@@ -9,7 +9,7 @@ import {
   getTopicUnlockStatus,
   getTopicsByTier,
 } from './progressionUtils';
-import { defaultSM2, sm2, SM2Data } from '../../utils/sm2';
+import { defaultSM2, sm2, SM2Data } from './sm2';
 import { Card, SubjectGraph } from '../../types/core';
 import {
   AttunementPayload,
@@ -21,7 +21,7 @@ import {
   Buff,
 } from '../../types/progression';
 import { BuffEngine } from './buffs/buffEngine';
-import { findNextGridPosition } from '../../utils/gridUtils';
+import { findNextGridPosition } from './gridUtils';
 import {
   buildSessionMetrics,
   calculateHarmonyScore,

@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useProgressionStore as useStudyStore } from '../features/progression';
-import { useAllGraphs } from '../features/content/selectors';
-import { useSubjects } from '../features/content/contentQueries';
+import { useAllGraphs, useSubjects } from '../features/content';
 
 // ============================================================================
 // Types

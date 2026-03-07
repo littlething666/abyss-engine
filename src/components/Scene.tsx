@@ -11,7 +11,7 @@ import { Crystals } from './Crystals';
 import TopicSelectionBar from './TopicSelectionBar';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useUIStore } from '../store/uiStore';
-import { useTopicMetadata, type TopicMetadata } from '../features/content/selectors';
+import { useTopicMetadata, type TopicMetadata } from '../features/content';
 import { Card } from '../types/core';
 import { deckRepository } from '../infrastructure/di';
 
