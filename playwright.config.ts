@@ -7,7 +7,7 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * Key features:
  * - Web server auto-start for Next.js dev
- * - Chromium only (WebGL testing)
+ * - Chromium only (WebGPU/3D testing)
  * - Trace on first retry for debugging
  * - HTML reporter for test results
  */
@@ -36,7 +36,7 @@ export default defineConfig({
     ['list'],
   ],
 
-  // Global test timeout - increased for WebGL/CI environments
+  // Global test timeout - increased for WebGPU/CI environments
   timeout: 60 * 1000,
 
   // Use settings for all tests
@@ -61,13 +61,12 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        // Use headed mode for WebGL to work properly
+        // Use headed mode for consistent WebGPU context initialization
         headless: false,
-        // Launch options for WebGL support - software rendering for CI
+        // Launch options tuned for WebGPU/3D validation in CI
         launchOptions: {
           args: [
-            '--enable-webgl',
-            '--ignore-gpu-blacklist',
+            '--enable-unsafe-webgpu',
             '--no-sandbox',
           ],
         },

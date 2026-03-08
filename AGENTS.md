@@ -8,7 +8,7 @@ Authoritative reference for repository architecture and agent workflows. Codebas
 Abyss Engine is a **beautiful, immersive spaced-repetition learning platform** built as a 3D crystal garden.
 Core fantasy: *Your knowledge literally grows as glowing crystals in a mystical abyss.*
 
-Core stack: React Three Fiber 10+, Drei 11+, WebGPU (Three.js Shading Language), TanStack Query, Zustand, Tailwind, motion.
+Core stack: @react-three/fiber@10.0.0-alpha.x, @react-three/drei@11.0.0-alpha.x, WebGPU (Three.js Shading Language), TanStack Query, Zustand, Tailwind, motion.
 Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural node-based graphics.
 
 ## Architectural Patterns
@@ -39,16 +39,19 @@ Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural
   - `progressionStore.ts`: Lifecycle and state management (when it triggers).
 
 ### 5. WebGPU & Mobile-First Graphics Engine
-- **Hardware Target**: The application targets flagship mobile hardware exclusively. WebGL fallback support is strictly prohibited.
-- **Renderer Initialization**: All Three.js imports must utilize `three/webgpu`. The R3F `<Canvas>` must utilize the asynchronous `WebGPURenderer`.
-- **Material Constraints**: Legacy materials (e.g., `MeshStandardMaterial`) are prohibited. All surface rendering must utilize Node materials (e.g., `MeshStandardNodeMaterial`).
-- **Procedural Logic & Compute**: Heavy procedural logic (crystal growth, particle physics) must be offloaded to WebGPU compute shaders or TSL.
-- **Main-Thread Isolation**: Animations and procedural scaling must not be bound to React state (`useState`, `setState`). Drive continuous graphical updates directly via TSL uniforms, `useNodes`, or isolated `useFrame` loops.
-- **Post-Processing**: Glowing crystals and atmospheric effects must be implemented via TSL node composition. Usage of `EffectComposer` is forbidden.
+- **Renderer Initialization**: The standard `<Canvas>` import from `@react-three/fiber` is strictly prohibited. You must import `<Canvas>` exclusively from `@react-three/fiber/webgpu` to natively initialize the asynchronous `WebGPURenderer`. Manual `gl` prop instantiation of the WebGPU renderer is deprecated.
+- **State API Refactoring**: The `state.gl` property is deprecated in R3F v10. Access the renderer exclusively via `state.renderer` across all components and `useFrame` hooks.
+- **Drei Component Import Paths**: The root `@react-three/drei` entry point is forbidden, as it defaults to legacy WebGL implementations. All Drei components must be imported via their dedicated WebGPU entry points (e.g., `@react-three/drei/webgpu`).
+- **Drei Component Fallbacks**: If a specific Drei utility lacks a WebGPU entry point in v11, its usage is prohibited. You must reconstruct the required functionality from scratch using Three.js Shading Language (TSL) and Node Materials.
+- **Materials & TSL**: Legacy materials (`MeshStandardMaterial`, `ShaderMaterial`, etc.) and raw GLSL strings are strictly prohibited. Use Node Materials (`MeshStandardNodeMaterial`) and Three.js Shading Language (TSL) exclusively. Bind uniforms and manage state-driven material updates using R3F v10's native WebGPU hooks: `useNodes`, `useLocalNodes`, and `useUniforms`.
+- **Post-Processing & Pipelines**: The `@react-three/postprocessing` library and `EffectComposer` are forbidden. Implement post-processing using native WebGPU nodes and the R3F v10 `usePostProcessing` hook. Use the `RenderPipeline` API (Three r182+) instead of the deprecated `PostProcessing` API. Replace `WebGLCubeRenderTarget` with `CubeRenderTarget`. Apply additive blending for Screen Space Reflections (SSR) instead of `blendColor()`.
+- **Lifecycle & Timers**: `THREE.Clock` is deprecated. Implement all timing logic using `THREE.Timer`. Leverage the R3F v10 standalone scheduler to decouple frame loops and execute them outside the `<Canvas>` tree for UI synchronization when necessary.
+- **Lighting & Scene Graph**: Cameras are automatically attached to the scene graph; do not manually attach objects to cameras. WebGPU shadow precision requires decreasing or removing legacy WebGL shadow biases. Recalibrate exposures if using `RoomEnvironment` (PMREM positioning changed) or `Sky`/`SkyMesh` (legacy gamma removed).
 
 ## Mandatory Project Rules
 - **Data-Driven Execution**: No magic strings. No manual state mapping.
 - **No Legacy Burden**: Deprecated behavior must be refactored or removed. Do not preserve dead code.
+- **WebGPU Strictness**: Any pull request or code generation that introduces a legacy WebGL material, `WebGLRenderer`, `state.gl`, `THREE.Clock`, or non-TSL shader string into the codebase will be rejected.
 
 ## Agent Workflow & Decision Framework
 Agents must execute the following structured decision process before outputting code modifications to force planned, architectural alignment.

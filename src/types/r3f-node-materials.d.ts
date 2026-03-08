@@ -1,10 +1,12 @@
 import * as React from 'react';
 
-declare module '@react-three/fiber' {
-  interface ThreeElements {
-    meshStandardNodeMaterial: React.DetailedHTMLProps<any, any>;
-    meshBasicNodeMaterial: React.DetailedHTMLProps<any, any>;
-  }
+type R3FNodeMaterialElements = {
+  meshStandardNodeMaterial: React.DetailedHTMLProps<any, any>;
+  meshBasicNodeMaterial: React.DetailedHTMLProps<any, any>;
+};
+
+declare module '@react-three/fiber/webgpu' {
+  interface ThreeElements extends R3FNodeMaterialElements {}
 }
 
 declare global {

@@ -8,7 +8,7 @@ import {
  * Boot Test - Abyss Engine
  *
  * Single consolidated test for app boot and initialization.
- * Combines UI checks, console error detection, and WebGL verification.
+ * Combines UI checks, console error detection, and canvas verification.
  */
 
 test.describe('Boot Test', () => {
@@ -44,7 +44,7 @@ test.describe('Boot Test', () => {
     expect(box!.width).toBeGreaterThan(0);
     expect(box!.height).toBeGreaterThan(0);
 
-    // 5. Check canvas dimensions as a proxy for rendering capability
+    // 5. Check canvas dimensions as a proxy for rendering readiness
     const hasDimensions = await page.evaluate(() => {
       const canvas = document.querySelector('canvas');
       if (!canvas) return false;

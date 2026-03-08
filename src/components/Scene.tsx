@@ -1,11 +1,10 @@
 'use client';
 
 import React, { Suspense, useRef, useMemo, useEffect } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
-import { OrthographicCamera, Html, OrbitControls } from '@react-three/drei';
+import { Canvas, useThree } from '@react-three/fiber/webgpu';
+import { OrthographicCamera, Html, OrbitControls } from '@react-three/drei/webgpu';
 import { useQueries } from '@tanstack/react-query';
 import * as THREE from 'three/webgpu';
-import { WebGPURenderer } from 'three/webgpu';
 import { Grid } from './Grid';
 import { WisdomAltar } from './WisdomAltar';
 import { Crystals } from './Crystals';
@@ -33,51 +32,6 @@ interface SceneRenderInvalidatorProps {
   selectedTopicXp: number;
   currentSubjectId: string | null;
   selectedTopicCardsCount: number;
-}
-
-function resolveWebGPUCanvas(
-  canvas:
-    | HTMLCanvasElement
-    | { getContext?: () => unknown }
-    | { domElement?: unknown; canvas?: unknown }
-    | { current?: unknown }
-    | null
-    | undefined,
-): HTMLCanvasElement {
-  if (canvas instanceof HTMLCanvasElement) {
-    return canvas;
-  }
-
-  const hasGetContext = canvas && typeof canvas === 'object' && 'getContext' in canvas
-    && typeof (canvas as { getContext?: () => unknown }).getContext === 'function'
-    ? (canvas as { getContext: () => unknown })
-    : undefined;
-  if (hasGetContext) {
-    return canvas as HTMLCanvasElement;
-  }
-
-  const withDomElement = canvas && typeof canvas === 'object' && 'domElement' in canvas
-    ? (canvas as { domElement?: unknown })
-    : undefined;
-  if (withDomElement?.domElement instanceof HTMLCanvasElement) {
-    return withDomElement.domElement;
-  }
-
-  const withCanvas = canvas && typeof canvas === 'object' && 'canvas' in canvas
-    ? (canvas as { canvas?: unknown })
-    : undefined;
-  if (withCanvas?.canvas instanceof HTMLCanvasElement) {
-    return withCanvas.canvas;
-  }
-
-  const withCurrent = canvas && typeof canvas === 'object' && 'current' in canvas
-    ? (canvas as { current?: unknown })
-    : undefined;
-  if (withCurrent?.current instanceof HTMLCanvasElement) {
-    return withCurrent.current;
-  }
-
-  return document.createElement('canvas');
 }
 
 type RenderQuality = {
@@ -176,7 +130,9 @@ const OrbitCameraControls: React.FC = () => {
       minPolarAngle={CAMERA_START_POLAR_ANGLE}
       maxPolarAngle={CAMERA_START_POLAR_ANGLE}
       target={ORBIT_TARGET}
-      onChange={invalidate}
+      onChange={() => {
+        invalidate();
+      }}
     />
   );
 };
@@ -285,25 +241,6 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement }) => {
       <Canvas
         frameloop="demand"
         dpr={renderQuality.dpr}
-        gl={async (canvas) => {
-          const resolvedCanvas = resolveWebGPUCanvas(canvas);
-          const hasWebGPU = typeof navigator !== 'undefined'
-            && !!(navigator as { gpu?: { requestAdapter?: unknown } }).gpu
-            && typeof (navigator as { gpu?: { requestAdapter?: unknown } }).gpu?.requestAdapter === 'function'
-            && typeof window !== 'undefined'
-            && window.isSecureContext;
-          if (!hasWebGPU) {
-            throw new Error('WebGPU is required but not available in this browser or context.');
-          }
-          const renderer = new WebGPURenderer({
-            canvas: resolvedCanvas,
-            antialias: renderQuality.antialias,
-            alpha: false,
-            powerPreference: renderQuality.powerPreference,
-          });
-          await renderer.init();
-          return renderer;
-        }}
         style={{ background: '#0a0a1a' }}
       >
         <SceneFrameLimiter />
@@ -324,7 +261,9 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement }) => {
           zoom={50}
           near={0.1}
           far={1000}
-          onUpdate={(c) => c.lookAt(...ORBIT_TARGET)}
+          onUpdate={(c: THREE.OrthographicCamera) => {
+            c.lookAt(...ORBIT_TARGET);
+          }}
         />
         <OrbitCameraControls />
 

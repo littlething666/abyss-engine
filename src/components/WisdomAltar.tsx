@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useUniforms } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
+import { color } from 'three/tsl';
 import { uiStore } from '../store/uiStore';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
@@ -36,6 +37,13 @@ const glowRingGeometry = new THREE.RingGeometry(0.5, 0.9, 32);
  */
 export const WisdomAltar: React.FC = () => {
   const rotatingRingRef = useRef<THREE.Mesh>(null);
+  const altarUniforms = useUniforms(
+    {
+      centralEmissive: 0.4,
+    },
+    'wisdomAltar',
+  );
+  const { centralEmissive } = altarUniforms;
 
   const handleClick = () => {
     // Open the Discovery Modal using UI store
@@ -90,7 +98,8 @@ export const WisdomAltar: React.FC = () => {
       metalness: 0.6,
       roughness: 0.3,
       emissive: crystalColor,
-      emissiveIntensity: 0.4,
+      emissiveIntensity: 1,
+      emissiveNode: color(crystalColor).mul(centralEmissive),
     });
 
     const glowRing = new THREE.MeshBasicNodeMaterial({
@@ -110,13 +119,13 @@ export const WisdomAltar: React.FC = () => {
       // Glow ring material - semi-transparent subject color
       glowRing,
     };
-  }, [subjectColor]);
+  }, [subjectColor, centralEmissive]);
 
   useFrame(() => {
     const elapsedTime = performance.now() / 1000;
     const pulse = 0.4 + Math.sin(elapsedTime * 2) * 0.15;
 
-    materials.centralCrystal.emissiveIntensity = pulse;
+    centralEmissive.value = pulse;
 
     if (rotatingRingRef.current) {
       rotatingRingRef.current.rotation.y = elapsedTime * 0.3;

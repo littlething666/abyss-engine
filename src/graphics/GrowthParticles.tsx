@@ -1,17 +1,26 @@
 'use client';
 
-import React, { useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { useFrame, useUniform } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
 
 interface GrowthParticlesProps {
   position: [number, number, number];
   active: boolean;
+  scope?: string;
 }
 
-export function GrowthParticles({ position, active }: GrowthParticlesProps) {
+const sanitizeUniformName = (value: string) => `u_${value.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+
+export function GrowthParticles({ position, active, scope }: GrowthParticlesProps) {
   const pointsRef = useRef<THREE.Points>(null);
   const count = 24;
+  const scopeId = useMemo(
+    () => scope ?? `growth_particles_${position[0]}_${position[1]}_${position[2]}`,
+    [scope, position],
+  );
+  const uniformName = useMemo(() => sanitizeUniformName(`${scopeId}_opacity`), [scopeId]);
+  const opacity = useUniform(uniformName, 1);
 
   const { positions, colors, sizes } = useMemo(() => {
     const pos = new Float32Array(count * 3);
@@ -46,11 +55,21 @@ export function GrowthParticles({ position, active }: GrowthParticlesProps) {
       size: 0.06,
       transparent: true,
       depthWrite: false,
+      opacityNode: opacity,
       blending: THREE.AdditiveBlending,
     });
-    m.opacity = 1;
     return m;
-  }, []);
+  }, [opacity]);
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    opacity.value = 1;
+    if (pointsRef.current) {
+      pointsRef.current.visible = true;
+    }
+  }, [active, opacity]);
 
   useFrame((_state, delta) => {
     if (!pointsRef.current || !active) {
@@ -58,9 +77,9 @@ export function GrowthParticles({ position, active }: GrowthParticlesProps) {
     }
 
     pointsRef.current.position.y += delta * 1.8;
-    material.opacity = Math.max(0, material.opacity - delta * 2);
+    opacity.value = Math.max(0, opacity.value - delta * 2);
 
-    if (material.opacity <= 0) {
+    if (opacity.value <= 0) {
       pointsRef.current.visible = false;
     }
   });

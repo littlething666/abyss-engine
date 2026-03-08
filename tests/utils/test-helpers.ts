@@ -23,7 +23,7 @@ export async function waitForPageHydrated(page: Page): Promise<void> {
 }
 
 /**
- * Find the WebGL canvas element on the page.
+ * Find the 3D canvas element on the page.
  */
 export async function getCanvas(page: Page): Promise<Locator | null> {
   const canvas = page.locator('canvas').first();
