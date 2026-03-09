@@ -52,6 +52,7 @@ Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural
 - **Data-Driven Execution**: No magic strings. No manual state mapping.
 - **No Legacy Burden**: Deprecated behavior must be refactored or removed. Do not preserve dead code.
 - **WebGPU Strictness**: Any pull request or code generation that introduces a legacy WebGL material, `WebGLRenderer`, `state.gl`, `THREE.Clock`, or non-TSL shader string into the codebase will be rejected.
+- **Mobile-First**: All UI must be adapted to mobile devices.
 
 ## Agent Workflow & Decision Framework
 Agents must execute the following structured decision process before outputting code modifications to force planned, architectural alignment.
@@ -70,9 +71,8 @@ Before generating code, the agent must evaluate the request against the architec
 
 ### III. Mandatory Collaboration Output
 Every agent response proposing code changes must begin with an **Architecture Alignment Plan** containing:
-1. **Misalignment Risk**: A concise list of potential conflicts between the requested change and current architecture.
+1. **Misalignment Risk**: A concise list of potential high-risk conflicts between the requested change and current architecture.
 2. **Implementation Strategy**: The selected architectural pattern and boundary defense strategy.
-3. **Optimization**: Better architectural options if the user's initial request violates system design.
 
 This file is authoritative.
 If something in the codebase contradicts AGENTS.md, the codebase is wrong.

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useAllGraphs, useSubjects } from '../features/content';
+import { ModalWrapper } from './ui/modal-wrapper';
 
 // ============================================================================
 // Types
@@ -60,14 +61,12 @@ const DetailsPopup: React.FC<DetailsPopupProps> = ({
   isContentAvailable,
 }) => {
   return (
-    <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-[200]"
-      onClick={onClose}
+    <ModalWrapper
+      onClose={onClose}
+      overlayClassName="bg-black/60 z-[200]"
+      panelClassName="w-[min(95%,30rem)] border-slate-600 shadow-2xl"
     >
-      <div
-        className="bg-slate-800 rounded-xl p-6 max-w-md w-[90%] border border-slate-600 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-start mb-4">
           <div>
@@ -142,7 +141,7 @@ const DetailsPopup: React.FC<DetailsPopupProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </ModalWrapper>
   );
 };
 
@@ -217,14 +216,10 @@ export function DiscoveryModal({
 
   return (
     <>
-      <div
-        className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100]"
-        onClick={onClose}
+      <ModalWrapper
+        onClose={onClose}
+        panelClassName="w-[min(95%,56rem)]"
       >
-        <div
-          className="bg-slate-800 rounded-[20px] p-6 max-w-3xl w-[95%] max-h-[85vh] relative border border-slate-700 flex flex-col min-h-0 overflow-hidden"
-          onClick={(e) => e.stopPropagation()}
-        >
           {/* Close Button */}
           <button
             onClick={onClose}
@@ -271,7 +266,7 @@ export function DiscoveryModal({
                   </div>
 
                   {/* Topics in this tier */}
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     {tierData.topics.map((topic) => (
                       <button
                         key={topic.id}
@@ -330,8 +325,7 @@ export function DiscoveryModal({
               Close
             </button>
           </div>
-        </div>
-      </div>
+      </ModalWrapper>
 
       {/* Details Popup */}
       {selectedTopic && selectedTopicStatus && (

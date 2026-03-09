@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useMemo, useRef } from 'react';
-import { useFrame, useUniforms } from '@react-three/fiber/webgpu';
+import { useFrame, useThree } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
-import { color } from 'three/tsl';
 import { uiStore } from '../store/uiStore';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
@@ -37,13 +36,7 @@ const glowRingGeometry = new THREE.RingGeometry(0.5, 0.9, 32);
  */
 export const WisdomAltar: React.FC = () => {
   const rotatingRingRef = useRef<THREE.Mesh>(null);
-  const altarUniforms = useUniforms(
-    {
-      centralEmissive: 0.4,
-    },
-    'wisdomAltar',
-  );
-  const { centralEmissive } = altarUniforms;
+  const environmentMap = useThree((state) => state.scene.environment);
 
   const handleClick = () => {
     // Open the Discovery Modal using UI store
@@ -69,44 +62,58 @@ export const WisdomAltar: React.FC = () => {
 
   // Memoized materials with subject color applied
   const materials = useMemo(() => {
-    // Darken/lighten the subject color for different elements
     const baseColor = subjectColor;
+    const pedestalTint = new THREE.Color(baseColor).offsetHSL(0.0, 0.0, -0.06);
+    const platformTint = new THREE.Color(baseColor).offsetHSL(0.0, 0.0, 0.08);
+    const crystalTint = new THREE.Color(baseColor).offsetHSL(0.0, -0.05, 0.05);
+    const ringTint = new THREE.Color(baseColor).offsetHSL(0.0, 0.15, -0.12);
 
     // Generate darker variant for pedestal
-    const pedestalColor = baseColor;
-
-    // Generate lighter variant for top platform
-    const platformColor = baseColor;
-
-    // Generate glowing variant for central crystal
-    const crystalColor = baseColor;
-
-    const basePedestal = new THREE.MeshStandardNodeMaterial({
-      color: pedestalColor,
-      metalness: 0.4,
-      roughness: 0.5,
+    const basePedestal = new THREE.MeshPhysicalNodeMaterial({
+      color: pedestalTint,
+      metalness: 0.92,
+      roughness: 0.22,
+      envMap: environmentMap || null,
+      envMapIntensity: 2.0,
+      clearcoat: 0.2,
+      clearcoatRoughness: 0.4,
+      ior: 2.2,
+      side: THREE.FrontSide,
     });
 
-    const topPlatform = new THREE.MeshStandardNodeMaterial({
-      color: platformColor,
-      metalness: 0.5,
-      roughness: 0.4,
-    });
-
-    const centralCrystal = new THREE.MeshStandardNodeMaterial({
-      color: crystalColor,
+    const topPlatform = new THREE.MeshPhysicalNodeMaterial({
+      color: platformTint,
       metalness: 0.6,
-      roughness: 0.3,
-      emissive: crystalColor,
-      emissiveIntensity: 1,
-      emissiveNode: color(crystalColor).mul(centralEmissive),
+      roughness: 0.28,
+      envMap: environmentMap || null,
+      envMapIntensity: 2.0,
+      clearcoat: 0.5,
+      clearcoatRoughness: 0.25,
+      ior: 1.9,
     });
 
     const glowRing = new THREE.MeshBasicNodeMaterial({
-      color: crystalColor,
+      color: ringTint,
       transparent: true,
       opacity: 0.3,
       side: THREE.DoubleSide,
+    });
+
+    const centralCrystal = new THREE.MeshPhysicalNodeMaterial({
+      color: crystalTint,
+      metalness: 0.05,
+      roughness: 0.07,
+      transmission: 0.9,
+      transparent: true,
+      ior: 2.2,
+      thickness: 0.55,
+      attenuationColor: crystalTint,
+      attenuationDistance: 0.8,
+      envMap: environmentMap || null,
+      envMapIntensity: 1.8,
+      clearcoat: 0.25,
+      emissive: pedestalTint,
+      emissiveIntensity: 0.08,
     });
 
     return {
@@ -114,19 +121,14 @@ export const WisdomAltar: React.FC = () => {
       basePedestal,
       // Top platform material - uses subject color
       topPlatform,
-      // Central crystal material - glowing subject color
       centralCrystal,
       // Glow ring material - semi-transparent subject color
       glowRing,
     };
-  }, [subjectColor, centralEmissive]);
+  }, [subjectColor, environmentMap]);
 
   useFrame(() => {
     const elapsedTime = performance.now() / 1000;
-    const pulse = 0.4 + Math.sin(elapsedTime * 2) * 0.15;
-
-    centralEmissive.value = pulse;
-
     if (rotatingRingRef.current) {
       rotatingRingRef.current.rotation.y = elapsedTime * 0.3;
     }
@@ -160,7 +162,10 @@ export const WisdomAltar: React.FC = () => {
 
       {/* Central crystal - subject-specific geometry */}
       <mesh position={[0, 0.75, 0]} geometry={altarGeometry}>
-        <primitive object={materials.centralCrystal} attach="material" />
+        <primitive
+          object={materials.centralCrystal}
+          attach="material"
+        />
       </mesh>
 
       {/* Rotating ritual glow ring */}

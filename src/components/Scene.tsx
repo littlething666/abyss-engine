@@ -1,14 +1,15 @@
 'use client'
 
-import React, { Suspense, useRef, useMemo, useEffect } from 'react'
+import React, { Suspense, useRef, useMemo, useEffect, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber/webgpu'
-import { PerspectiveCamera, Html, OrbitControls, Environment, Stats } from '@react-three/drei/webgpu'
+import { PerspectiveCamera, Html, OrbitControls, Environment } from '@react-three/drei/webgpu'
 import { useQueries } from '@tanstack/react-query'
 import * as THREE from 'three/webgpu'
 import { Grid } from './Grid'
 import { WisdomAltar } from './WisdomAltar'
 import { Crystals } from './Crystals'
 import { CrystalGlowPostProcessing } from '../graphics/glowPostProcessing'
+import { SceneDebugStats } from './debug/SceneDebugStats'
 import TopicSelectionBar from './TopicSelectionBar'
 import { useProgressionStore as useStudyStore } from '../features/progression'
 import { useUIStore } from '../store/uiStore'
@@ -19,11 +20,12 @@ import '../graphics/nodeMaterialRegistration'
 
 /**
  * Scene component - Main 3D visualization for Abyss Engine
- * Uses fixed orthographic camera for isometric view
+ * Uses a perspective camera with locked polar angle for isometric-like framing
  */
 interface SceneProps {
   onStartAttunement?: (topicId: string, cards: Card[]) => void
   showStats?: boolean
+  isCameraAngleUnlocked?: boolean
 }
 
 interface SceneRenderInvalidatorProps {
@@ -76,10 +78,15 @@ const CAMERA_START_DISTANCE = Math.hypot(
 const CAMERA_START_POLAR_ANGLE = Math.acos(
   (CAMERA_START_POSITION[1] - ORBIT_TARGET[1]) / CAMERA_START_DISTANCE,
 )
-const CAMERA_START_ZOOM = 60
-const CAMERA_ZOOM_RANGE = 20
-const CAMERA_MIN_ZOOM = CAMERA_START_ZOOM - CAMERA_ZOOM_RANGE
-const CAMERA_MAX_ZOOM = CAMERA_START_ZOOM + CAMERA_ZOOM_RANGE
+const CAMERA_START_FOV = 60
+const CAMERA_MIN_DISTANCE = CAMERA_START_DISTANCE * 0.6
+const CAMERA_MAX_DISTANCE = CAMERA_START_DISTANCE * 1.05
+const CAMERA_UNLOCKED_MIN_POLAR_ANGLE = 0.08
+const CAMERA_UNLOCKED_MAX_POLAR_ANGLE = Math.PI - CAMERA_UNLOCKED_MIN_POLAR_ANGLE
+
+interface OrbitCameraControlsProps {
+  isCameraAngleUnlocked: boolean
+}
 
 const SceneFrameLimiter: React.FC = () => {
   const invalidate = useThree((state) => state.invalidate)
@@ -122,21 +129,21 @@ const SceneRenderInvalidator: React.FC<SceneRenderInvalidatorProps> = ({
   return null
 }
 
-const OrbitCameraControls: React.FC = () => {
+const OrbitCameraControls: React.FC<OrbitCameraControlsProps> = ({ isCameraAngleUnlocked }) => {
   const invalidate = useThree((state) => state.invalidate)
+  const minPolarAngle = isCameraAngleUnlocked ? CAMERA_UNLOCKED_MIN_POLAR_ANGLE : CAMERA_START_POLAR_ANGLE
+  const maxPolarAngle = isCameraAngleUnlocked ? CAMERA_UNLOCKED_MAX_POLAR_ANGLE : CAMERA_START_POLAR_ANGLE
 
   return (
     <OrbitControls
       enablePan={false}
       enableZoom
       enableRotate
-      minDistance={CAMERA_START_DISTANCE * 0.95}
-      maxDistance={CAMERA_START_DISTANCE * 1.05}
-      minPolarAngle={CAMERA_START_POLAR_ANGLE}
-      maxPolarAngle={CAMERA_START_POLAR_ANGLE}
+      minDistance={CAMERA_MIN_DISTANCE}
+      maxDistance={CAMERA_MAX_DISTANCE}
+      minPolarAngle={minPolarAngle}
+      maxPolarAngle={maxPolarAngle}
       target={ORBIT_TARGET}
-      minZoom={CAMERA_MIN_ZOOM}
-      maxZoom={CAMERA_MAX_ZOOM}
       onChange={() => {
         invalidate()
       }}
@@ -144,7 +151,11 @@ const OrbitCameraControls: React.FC = () => {
   )
 }
 
-export const Scene: React.FC<SceneProps> = ({ onStartAttunement, showStats = false }) => {
+export const Scene: React.FC<SceneProps> = ({
+  onStartAttunement,
+  showStats = false,
+  isCameraAngleUnlocked = false,
+}) => {
   const cameraRef = useRef<THREE.PerspectiveCamera>(null)
   const activeCrystals = useStudyStore((state) => state.activeCrystals)
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId)
@@ -242,6 +253,7 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement, showStats = fal
   // Note: Removed handleSelectedCrystalPositionChange callback
   // The position is now computed synchronously in useMemo above
   const renderQuality = useMemo(() => getRenderQuality(), [])
+  const [statsText, setStatsText] = useState(showStats ? 'Initializing...' : '')
 
   return (
     <div style={{ width: '100%', height: '100%', backgroundColor: '#0a0a1a' }}>
@@ -250,7 +262,7 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement, showStats = fal
         dpr={renderQuality.dpr}
         style={{ background: '#0a0a1a' }}
       >
-        {showStats && <Stats />}
+        {showStats && <SceneDebugStats onReport={setStatsText} />}
         <SceneFrameLimiter />
         <SceneRenderInvalidator
           activeCrystals={activeCrystals}
@@ -268,14 +280,14 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement, showStats = fal
           ref={cameraRef}
           makeDefault
           position={CAMERA_START_POSITION}
-          fov={CAMERA_START_ZOOM}
+          fov={CAMERA_START_FOV}
           near={0.1}
           far={1000}
           onUpdate={(c: THREE.PerspectiveCamera) => {
             c.lookAt(...ORBIT_TARGET)
           }}
         />
-        <OrbitCameraControls />
+        <OrbitCameraControls isCameraAngleUnlocked={isCameraAngleUnlocked} />
 
         {/* Lighting setup */}
         <ambientLight intensity={0.6} color="#ffffff" />
@@ -291,14 +303,6 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement, showStats = fal
           color="#a0a0ff"
         />
 
-        {/* Accent light from above for the altar */}
-        <pointLight
-          position={[0, 5, 0]}
-          intensity={1}
-          color="#ffd700"
-          distance={20}
-          decay={2}
-        />
 
         {/* Fog for depth */}
         <fog attach="fog" args={['#0a0a1a', 10, 50]} />
@@ -354,6 +358,24 @@ export const Scene: React.FC<SceneProps> = ({ onStartAttunement, showStats = fal
           <meshBasicNodeMaterial visible={false} />
         </mesh>
       </Canvas>
+      {showStats && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 8,
+            left: 8,
+            zIndex: 20,
+            color: '#8ef',
+            pointerEvents: 'none',
+            fontFamily: 'monospace',
+            fontSize: 12,
+            textShadow: '0 0 3px rgba(0, 0, 0, 0.8)',
+            whiteSpace: 'pre',
+          }}
+        >
+          {statsText}
+        </div>
+      )}
     </div>
   )
 }

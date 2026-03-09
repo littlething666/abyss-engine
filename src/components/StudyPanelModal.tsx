@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Rating } from '../types';
 import { Card } from '../types';
-import { getRatingLabel, getRatingColor, normalizeSM2State } from '../features/progression';
+import { calculateLevelFromXP, getRatingLabel, getRatingColor, normalizeSM2State } from '../features/progression';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useTopicCards } from '../hooks/useDeckData';
 import { evaluateAnswer, useTopicMetadata } from '../features/content';
 import MathMarkdownRenderer from './MathMarkdownRenderer';
+import { ModalWrapper } from './ui/modal-wrapper';
 
 interface StudyPanelModalProps {
   isOpen: boolean;
@@ -94,6 +95,8 @@ export function StudyPanelModal({
 }: StudyPanelModalProps) {
   const sm2Data = useStudyStore((state) => state.sm2Data);
   const currentSession = useStudyStore((state) => state.currentSession);
+  const activeCrystals = useStudyStore((state) => state.activeCrystals);
+  const unlockedTopicIds = useStudyStore((state) => state.unlockedTopicIds);
 
   // Handle escape key
   useEffect(() => {
@@ -107,8 +110,8 @@ export function StudyPanelModal({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
-  // Track which tab is active: 'study' or 'theory'
-  const [activeTab, setActiveTab] = useState<'study' | 'theory'>('study');
+  // Track which tab is active: 'study', 'theory', or 'system_prompt'
+  const [activeTab, setActiveTab] = useState<'study' | 'theory' | 'system_prompt'>('study');
 
   // State for choice questions
   const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]);
@@ -120,11 +123,73 @@ export function StudyPanelModal({
     () => currentTopicId || currentSession?.topicId || null,
     [currentTopicId, currentSession?.topicId],
   );
-  const topicMetadata = useTopicMetadata(resolvedTopicId ? [resolvedTopicId] : []);
+  const topicMetadataTopicIds = useMemo(() => {
+    const topicIds = new Set<string>();
+    if (resolvedTopicId) {
+      topicIds.add(resolvedTopicId);
+    }
+    unlockedTopicIds.forEach((topicId) => topicIds.add(topicId));
+    return Array.from(topicIds);
+  }, [resolvedTopicId, unlockedTopicIds]);
+  const topicMetadata = useTopicMetadata(topicMetadataTopicIds);
   const resolvedTopicTheory = useMemo(
     () => topicMetadata[resolvedTopicId || '']?.theory || null,
     [resolvedTopicId, topicMetadata],
   );
+  const resolvedSubject = useMemo(
+    () => topicMetadata[resolvedTopicId || '']?.subjectName || 'Unknown Subject',
+    [resolvedTopicId, topicMetadata],
+  );
+  const resolvedTopic = useMemo(
+    () => topicMetadata[resolvedTopicId || '']?.topicName || 'Unknown Topic',
+    [resolvedTopicId, topicMetadata],
+  );
+  const priorKnowledgeLines = useMemo(() => {
+    const entries = unlockedTopicIds
+      .map((topicId) => {
+        const topicName = topicMetadata[topicId]?.topicName || topicId;
+        const crystal = activeCrystals.find((item) => item.topicId === topicId);
+        const level = calculateLevelFromXP(crystal?.xp ?? 0);
+        return {
+          topicName,
+          level,
+        };
+      })
+      .sort((a, b) => a.topicName.localeCompare(b.topicName));
+
+    if (entries.length === 0) {
+      return '- No unlocked topics found.';
+    }
+
+    return entries.map((entry) => `- ${entry.topicName} - Level ${entry.level}`).join('\n');
+  }, [activeCrystals, unlockedTopicIds, topicMetadata]);
+  const topicSystemPrompt = useMemo(() => (
+    `<system_prompt>\n`
+    + `You are an expert lecturer in ${resolvedSubject}. Explain for Domain Experts.\n`
+    + `\n`
+    + `<topic>${resolvedTopic}</topic>\n`
+    + `\n`
+    + `<constraints>\n`
+    + `Assume prior knowledge:\n${priorKnowledgeLines}\n`
+    + `Be rigorous but clear. Include equations, analogies, applications, and ASCII diagrams when useful.\n`
+    + `</constraints>\n`
+    + `\n`
+    + `<sections>\n`
+    + `1. summary_applications - concise overview + 2-4 applications\n`
+    + `2. intuition - mental models and analogies\n`
+    + `3. definition - formal definition and notation\n`
+    + `4. examples - 3-5 practical examples\n`
+    + `5. diagrams - conceptual/ASCII visualizations\n`
+    + `6. formulas_methods - key formulas, algorithms, principles\n`
+    + `</sections>\n`
+    + `\n`
+    + `<related_topics>\n`
+    + `<parents />\n`
+    + `<siblings />\n`
+    + `<children />\n`
+    + `</related_topics>\n`
+    + `</system_prompt>`
+  ), [resolvedSubject, resolvedTopic, priorKnowledgeLines]);
 
   const resolvedSubjectId = useMemo(
     () => (resolvedTopicId ? topicMetadata[resolvedTopicId]?.subjectId || null : null),
@@ -165,6 +230,14 @@ export function StudyPanelModal({
     setIsAnswerSubmitted(false);
     setIsCorrect(false);
   }, [currentSession?.currentCardId, currentCardId]);
+
+  const hasTheory = Boolean(resolvedTopicTheory);
+
+  useEffect(() => {
+    if (!resolvedTopicId || (activeTab === 'theory' && !hasTheory)) {
+      setActiveTab('study');
+    }
+  }, [activeTab, hasTheory, resolvedTopicId]);
 
   if (!isOpen) return null;
 
@@ -224,14 +297,10 @@ export function StudyPanelModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100]"
-      onClick={onClose}
+    <ModalWrapper
+      onClose={onClose}
+      panelClassName="w-[min(95%,60rem)]"
     >
-      <div
-        className="bg-slate-800 rounded-[20px] p-3 max-w-[1000px] w-[90%] max-h-[90vh] relative border border-slate-700 flex flex-col min-h-0 overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -245,19 +314,19 @@ export function StudyPanelModal({
         <header className="text-center mb-3 sticky top-0 z-20 bg-slate-800">
           <h2 className="text-2xl font-semibold text-slate-200 m-0">📚 Study Session</h2>
 
-          {/* Theory Tab - only show when topic has theory content */}
-          {resolvedTopicTheory && (
-            <div className="flex justify-center gap-2 mt-3">
-              <button
-                onClick={() => setActiveTab('study')}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === 'study'
-                    ? 'bg-cyan-600 text-white'
-                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                }`}
-              >
-                📖 Study
-              </button>
+          {/* Tabs */}
+          <div className="flex flex-wrap justify-center gap-2 mt-3">
+            <button
+              onClick={() => setActiveTab('study')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'study'
+                  ? 'bg-cyan-600 text-white'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              📖 Study
+            </button>
+            {hasTheory && (
               <button
                 onClick={() => setActiveTab('theory')}
                 className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -268,8 +337,19 @@ export function StudyPanelModal({
               >
                 💡 Theory
               </button>
-            </div>
-          )}
+            )}
+            <button
+              onClick={() => setActiveTab('system_prompt')}
+              disabled={!resolvedTopicId}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'system_prompt'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              } ${!resolvedTopicId ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              🧠 System Prompt
+            </button>
+          </div>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -323,13 +403,17 @@ export function StudyPanelModal({
                   className="text-slate-200 leading-relaxed markdown-body markdown-body--theory"
                 />
               </div>
-              <div className="mt-4 text-center sticky bottom-0 z-10 bg-slate-800 py-3">
-                <button
-                  onClick={() => setActiveTab('study')}
-                  className="bg-cyan-600 text-white border-none py-3 px-8 rounded-lg text-base cursor-pointer hover:bg-cyan-500"
-                >
-                  Back to Study
-                </button>
+            </div>
+          )}
+
+          {/* System Prompt View */}
+          {activeTab === 'system_prompt' && (
+            <div className="w-full">
+              <div className="bg-slate-900 rounded-[15px] p-5">
+                <div className="text-emerald-400 text-xs uppercase tracking-wider mb-3">🧠 System Prompt</div>
+                <pre className="text-slate-200 leading-relaxed text-sm whitespace-pre-wrap break-words">
+                  {topicSystemPrompt}
+                </pre>
               </div>
             </div>
           )}
@@ -565,8 +649,7 @@ export function StudyPanelModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </ModalWrapper>
   );
 }
 

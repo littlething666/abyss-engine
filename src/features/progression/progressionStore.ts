@@ -410,7 +410,6 @@ export const useProgressionStore = create<ProgressionStore>()(
             },
           ],
           unlockPoints: Math.max(0, current.unlockPoints - 1),
-          levelUpMessage: `Unlocked topic ${topicId}`,
         }));
 
         return nextPosition;

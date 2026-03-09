@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useProgressionStore as useStudyStore } from '@/features/progression';
 import { useUIStore } from '@/store/uiStore';
 import { Rating } from '@/types';
-import { Leva, useControls } from 'leva';
+import DebugControls from '@/components/debug/DebugControls';
 
 import { playPositiveSound } from '@/utils/sound';
 import { initAbyssDev } from '@/utils/abyssDev';
@@ -37,12 +37,11 @@ const Scene = dynamic(() => import('@/components/Scene'), {
  * Features: Full screen 3D crystal grid, click altar to study
  * Coordinates between the 3D scene and UI modals
  */
-export default function Home() {
+const HomeContent: React.FC = () => {
   const searchParams = useSearchParams();
   const isDebugMode = searchParams.get('debug') === '1';
-  const { showStats } = useControls({
-    showStats: true,
-  });
+  const [showStats, setShowStats] = useState(true);
+  const [isCameraAngleUnlocked, setIsCameraAngleUnlocked] = useState(isDebugMode);
 
   // Track initialization to prevent infinite loops
   const initializedRef = useRef(false);
@@ -231,21 +230,18 @@ export default function Home() {
   }
 
   return (
-    <Suspense
-      fallback={
-        <div className="w-screen h-screen flex items-center justify-center bg-slate-900 text-slate-200 text-2xl">
-          Loading deck data...
-        </div>
-      }
-    >
-      <div className="w-screen h-screen relative overflow-hidden">
-        {/* Subject Navigation - 2D Dropdown for Multi-Floor selection */}
-        <SubjectNavigation />
+    <div className="w-screen h-screen relative overflow-hidden">
+      {/* Subject Navigation - 2D Dropdown for Multi-Floor selection */}
+      <SubjectNavigation />
 
-        {/* Full Screen 3D Scene */}
-        <div className="absolute inset-0">
-          <Scene onStartAttunement={handleStartAttunement} showStats={isDebugMode && showStats} />
-        </div>
+      {/* Full Screen 3D Scene */}
+      <div className="absolute inset-0">
+        <Scene
+          onStartAttunement={handleStartAttunement}
+          showStats={isDebugMode && showStats}
+          isCameraAngleUnlocked={isCameraAngleUnlocked}
+        />
+      </div>
 
         {/* Stats Overlay */}
         <StatsOverlay
@@ -301,8 +297,27 @@ export default function Home() {
           onSubmitResult={handleRate}
         />
 
-        {isDebugMode && <Leva collapsed />}
-      </div>
+      {isDebugMode && (
+        <DebugControls
+          onShowStatsChange={setShowStats}
+          onCameraAngleUnlockChange={setIsCameraAngleUnlocked}
+          defaultCameraAngleUnlocked
+        />
+      )}
+    </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <div className="w-screen h-screen flex items-center justify-center bg-slate-900 text-slate-200 text-2xl">
+          Loading deck data...
+        </div>
+      }
+    >
+      <HomeContent />
     </Suspense>
   );
 }

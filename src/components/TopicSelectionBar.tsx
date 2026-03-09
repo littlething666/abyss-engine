@@ -50,9 +50,11 @@ export default function TopicSelectionBar({
     }
     if (onStartAttunement) {
       onStartAttunement(selectedTopicId, selectedCards);
+      selectTopic(null);
       return;
     }
     onStartTopicStudySession?.(selectedTopicId, selectedCards);
+    selectTopic(null);
   };
 
   const handleClear = () => {

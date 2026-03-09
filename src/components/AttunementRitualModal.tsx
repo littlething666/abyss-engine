@@ -24,6 +24,7 @@ import { Button } from './ui/button';
 import { NativeSelect } from './ui/native-select';
 import { Switch } from './ui/switch';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
+import { ModalWrapper } from './ui/modal-wrapper';
 
 interface AttunementRitualModalProps {
   isOpen: boolean;
@@ -162,13 +163,21 @@ export function AttunementRitualModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center">
+    <ModalWrapper onClose={onClose} panelClassName="w-[min(95%,48rem)]">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[min(90%,720px)] max-h-[90vh] overflow-y-auto"
+        className="w-full h-full overflow-y-auto"
       >
+        <button
+          type="button"
+          onClick={handleSkip}
+          className="absolute top-3 right-4 text-slate-300 hover:text-white text-2xl leading-none"
+          aria-label="Skip ritual and close"
+        >
+          ×
+        </button>
         <h2 className="text-2xl mb-2 text-cyan-200">🧪 Attunement Ritual</h2>
         {!submittedResult && (
           <>
@@ -387,6 +396,6 @@ export function AttunementRitualModal({
           </motion.div>
         )}
       </motion.div>
-    </div>
+    </ModalWrapper>
   );
 }

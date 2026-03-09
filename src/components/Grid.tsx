@@ -106,14 +106,6 @@ export const Grid: React.FC = () => {
     return material;
   }, [centerTileColor]);
 
-  const groundMaterial = useMemo(() => {
-    return new THREE.MeshStandardNodeMaterial({
-      color: '#050510',
-      metalness: 0.2,
-      roughness: 0.8,
-    });
-  }, []);
-
   return (
     <group>
       {/* Grid helper for visual reference */}
@@ -133,14 +125,6 @@ export const Grid: React.FC = () => {
           {/* Material moved to useMemo for stable node graphs and reduced rebuilds. */}
         </mesh>
       ))}
-      {/* Ground plane - using shared memoized geometry */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -0.02, 0]}
-        geometry={groundGeometry}
-        material={groundMaterial}
-      >
-      </mesh>
     </group>
   );
 };
