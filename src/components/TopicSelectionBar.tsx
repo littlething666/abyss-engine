@@ -43,7 +43,13 @@ export default function TopicSelectionBar({
     return null;
   }
 
-  const handleBegin = () => {
+  const stopPropagation = (event: React.SyntheticEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleBegin: React.MouseEventHandler<HTMLButtonElement> = (event) => {
+    stopPropagation(event);
     if (!selectedCards?.length) {
       console.warn(`[TopicSelectionBar] No cards available for topic ${selectedTopicId}`);
       return;
@@ -57,7 +63,8 @@ export default function TopicSelectionBar({
     selectTopic(null);
   };
 
-  const handleClear = () => {
+  const handleClear: React.MouseEventHandler<HTMLButtonElement> = (event) => {
+    stopPropagation(event);
     selectTopic(null);
   };
 
@@ -78,16 +85,24 @@ export default function TopicSelectionBar({
         <div className="w-px h-8 bg-white/20" />
 
         <button
+          type="button"
           onClick={handleBegin}
+          onPointerDown={stopPropagation}
+          onMouseDown={stopPropagation}
+          onTouchStart={stopPropagation}
           className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded transition-colors duration-200"
         >
           Begin
         </button>
 
         <button
-          onClick={handleClear}
-          className="p-1.5 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors duration-200"
+          type="button"
           aria-label="Clear selection"
+          onClick={handleClear}
+          onPointerDown={stopPropagation}
+          onMouseDown={stopPropagation}
+          onTouchStart={stopPropagation}
+          className="p-1.5 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors duration-200"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
