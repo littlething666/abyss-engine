@@ -44,7 +44,6 @@ export default function TopicSelectionBar({
   }
 
   const stopPropagation = (event: React.SyntheticEvent) => {
-    event.preventDefault();
     event.stopPropagation();
   };
 

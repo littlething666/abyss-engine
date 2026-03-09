@@ -5,7 +5,7 @@ import { useFrame, useThree, useUniforms, type ThreeEvent } from '@react-three/f
 import * as THREE from 'three/webgpu';
 import { color } from 'three/tsl';
 import { ActiveCrystal } from '../types';
-import { calculateLevelFromXP } from '../features/progression';
+import { calculateLevelFromXP, getCrystalScale } from '../features/progression';
 import { useUIStore } from '../store/uiStore';
 import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
 import { useTopicMetadata } from '../features/content';
@@ -21,12 +21,6 @@ interface TopicMetadata {
   subjectId: string;
   subjectName?: string;
   topicName?: string;
-}
-
-export function getCrystalScale(level: number): number {
-  const baseScale = 0.6;
-  const scaleIncrement = 0.15;
-  return baseScale + level * scaleIncrement;
 }
 
 interface CrystalsProps {

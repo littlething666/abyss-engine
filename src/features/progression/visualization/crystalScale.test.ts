@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { getCrystalScale } from './Crystals';
+
+import { getCrystalScale } from './crystalScale';
 
 describe('crystal scale mapping', () => {
   it('keeps base scale for level zero crystals', () => {

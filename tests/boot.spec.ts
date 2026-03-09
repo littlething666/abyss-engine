@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 import {
   waitForPageHydrated,
   getCanvas,
+  startConsoleErrorCapture,
+  expectWebGPUAvailable,
 } from './utils/test-helpers';
 
 /**
@@ -13,18 +15,12 @@ import {
 
 test.describe('Boot Test', () => {
   test('should load the app with all UI elements and no critical errors', async ({ page }) => {
-    const errors: string[] = [];
-
-    // Collect console errors
-    page.on('console', msg => {
-      if (msg.type() === 'error') {
-        errors.push(msg.text());
-      }
-    });
+    const { errors, stop } = startConsoleErrorCapture(page);
 
     // Navigate to the home page
     await page.goto('/');
     await waitForPageHydrated(page);
+    await expectWebGPUAvailable(page);
 
     // 1. Check the page title
     await expect(page).toHaveTitle(/Abyss Engine/i);
@@ -36,10 +32,10 @@ test.describe('Boot Test', () => {
     // 3. Find canvas element
     const canvas = await getCanvas(page);
     expect(canvas).not.toBeNull();
+    await expect(canvas!).toBeVisible({ timeout: 8000 });
 
     // 4. Verify canvas has dimensions
-    const canvasElement = await canvas!.elementHandle();
-    const box = await canvasElement?.boundingBox();
+    const box = await canvas!.boundingBox();
     expect(box).toBeDefined();
     expect(box!.width).toBeGreaterThan(0);
     expect(box!.height).toBeGreaterThan(0);
@@ -77,14 +73,21 @@ test.describe('Boot Test', () => {
     await page.waitForTimeout(1000);
 
     // Filter out known non-critical errors
-    const criticalErrors = errors.filter(error => {
-      if (error.includes('Warning:')) return false;
-      if (error.includes('ReactDOM.render')) return false;
-      if (error.includes('Cannot read properties of undefined')) return false;
-      if (error.includes('404') || error.includes('Failed to load resource')) return false;
-      return true;
-    });
+    const criticalErrors = errors.filter((error) => !isKnownNonCriticalError(error));
 
+    if (criticalErrors.length > 0) {
+      console.log('[boot.spec] critical console errors:', JSON.stringify(criticalErrors, null, 2));
+    }
     expect(criticalErrors.length).toBe(0);
+    stop();
   });
 });
+
+const isKnownNonCriticalError = (error: string): boolean =>
+  error.includes('Warning:') ||
+  error.includes('ReactDOM.render') ||
+  error.includes('Cannot read properties of undefined') ||
+  error.includes('404') ||
+  error.includes('Failed to load resource') ||
+  error.includes('ResizeObserver loop limit exceeded') ||
+  error.includes('ResizeObserver loop completed with undelivered notifications');

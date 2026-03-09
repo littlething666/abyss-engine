@@ -3,6 +3,9 @@ import {
   waitForPageHydrated,
   getCanvas,
   clearLocalStorage,
+  startConsoleErrorCapture,
+  expectWebGPUAvailable,
+  waitForStudyPanelReady,
 } from './utils/test-helpers';
 
 /**
@@ -34,6 +37,8 @@ async function openCardByType(
   page: any,
   cardType: 'FLASHCARD' | 'SINGLE_CHOICE' | 'MULTI_CHOICE',
 ) {
+  const { errors, stop } = startConsoleErrorCapture(page);
+  await expectWebGPUAvailable(page);
   await page.evaluate(async (type: 'FLASHCARD' | 'SINGLE_CHOICE' | 'MULTI_CHOICE') => {
     await (window as any).abyssDev.makeAllCardsDue();
     const selection = await (window as any).abyssDev.setCurrentCardByType(type);
@@ -43,6 +48,16 @@ async function openCardByType(
 
     (window as any).abyssDev.openStudyPanel();
   }, cardType);
+
+  await waitForStudyPanelReady(page);
+
+  const criticalErrors = errors.filter((error) => {
+    if (error.includes('Warning:')) return false;
+    if (error.includes('favicon')) return false;
+    return true;
+  });
+  stop();
+  expect(criticalErrors.length).toBe(0);
 
   await page.waitForTimeout(500);
 }
@@ -86,13 +101,13 @@ test.describe('Study Session', () => {
       await page.waitForTimeout(1000);
 
       // Click Show Answer if present (flashcard)
-      const showAnswerButton = page.locator('button:has-text("Show Answer")');
+      const showAnswerButton = page.getByTestId('study-card-show-answer');
       if (await showAnswerButton.count() > 0) {
         await showAnswerButton.click();
         await page.waitForTimeout(500);
 
         // Click a rating button
-        const goodButton = page.locator('button:has-text("Good")');
+      const goodButton = page.locator('button:has-text("Good")');
         if (await goodButton.count() > 0) {
           await goodButton.click();
           await page.waitForTimeout(1000);
@@ -115,19 +130,18 @@ test.describe('Challenge Format Types', () => {
     // Spawn crystal and make due, set to flashcard
     await openCardByType(page, 'FLASHCARD');
 
-    // Verify modal is open
-    await expect(page.locator('text=Study Session')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('study-session-title')).toBeVisible({ timeout: 5000 });
 
     // Verify flashcard badge
-    await expect(page.locator('text=📝 Flashcard')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('study-card-format-flashcard')).toBeVisible({ timeout: 3000 });
 
     // Click Show Answer button
-    const showAnswerButton = page.locator('button:has-text("Show Answer")');
+    const showAnswerButton = page.getByTestId('study-card-show-answer');
     await showAnswerButton.click();
     await page.waitForTimeout(300);
 
     // Verify answer is shown
-    await expect(page.locator('text=Answer')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('study-card-answer-section')).toBeVisible({ timeout: 3000 });
 
     // Click a rating button (Good)
     const goodButton = page.locator('button:has-text("Good")');
@@ -135,7 +149,7 @@ test.describe('Challenge Format Types', () => {
     await page.waitForTimeout(500);
 
     // Verify we can still see the current card's content (feedback visible)
-    await expect(page.locator('text=Question')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('study-card-question-label')).toBeVisible({ timeout: 3000 });
   });
 
   /**
@@ -147,30 +161,26 @@ test.describe('Challenge Format Types', () => {
     // Spawn crystal and make due, set to single choice
     await openCardByType(page, 'SINGLE_CHOICE');
 
-    // Verify modal is open
-    await expect(page.locator('text=Study Session')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('study-session-title')).toBeVisible({ timeout: 5000 });
 
     // Verify single choice badge
-    await expect(page.locator('text=⭕ Single Choice')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('study-card-format-single-choice')).toBeVisible({ timeout: 3000 });
 
     // Find and click an option
-    const questionArea = page.locator('[class*="bg-slate-900"]').first();
-    const optionButton = questionArea.locator('button').nth(0);
+    const optionButton = page.getByTestId('study-card-choice-options').locator('button').nth(0);
     await optionButton.click();
     await page.waitForTimeout(200);
 
     // Click Submit Answer
-    const submitButton = page.locator('button:has-text("Submit Answer")');
+    const submitButton = page.getByTestId('study-card-submit-answer');
     await submitButton.click();
     await page.waitForTimeout(500);
 
     // Verify feedback is visible
-    const feedbackVisible = await page.locator('text=Correct!').isVisible().catch(() => false) ||
-                           await page.locator('text=Incorrect').isVisible().catch(() => false);
-    expect(feedbackVisible).toBe(true);
+    await expect(page.getByTestId('study-card-feedback')).toBeVisible({ timeout: 3000 });
 
     // Verify Continue button exists
-    await expect(page.locator('button:has-text("Continue")')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('study-card-continue')).toBeVisible({ timeout: 3000 });
   });
 
   /**
@@ -183,19 +193,17 @@ test.describe('Challenge Format Types', () => {
     await openCardByType(page, 'MULTI_CHOICE');
 
     // Verify modal is open
-    await expect(page.locator('text=Study Session')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('study-session-title')).toBeVisible({ timeout: 5000 });
 
     // Verify multi choice badge
-    await expect(page.locator('text=☑️ Multiple Choice')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('study-card-format-multi-choice')).toBeVisible({ timeout: 3000 });
 
     // Verify submit is disabled initially
-    const submitButton = page.locator('button:has-text("Submit Answer")');
+    const submitButton = page.getByTestId('study-card-submit-answer');
     expect(await submitButton.isDisabled()).toBe(true);
 
     // Select an option to enable Submit
-    const questionArea = page.locator('[class*="bg-slate-900"]').first();
-    const optionButtons = questionArea.locator('button');
-    await optionButtons.nth(0).click();
+    await page.getByTestId('study-card-choice-options').locator('button').nth(0).click();
     await page.waitForTimeout(200);
 
     // Now Submit should be enabled
@@ -206,11 +214,9 @@ test.describe('Challenge Format Types', () => {
     await page.waitForTimeout(500);
 
     // Verify feedback is visible
-    const feedbackVisible = await page.locator('text=Correct!').isVisible().catch(() => false) ||
-                           await page.locator('text=Incorrect').isVisible().catch(() => false);
-    expect(feedbackVisible).toBe(true);
+    await expect(page.getByTestId('study-card-feedback')).toBeVisible({ timeout: 3000 });
 
     // Verify Continue button exists
-    await expect(page.locator('button:has-text("Continue")')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('study-card-continue')).toBeVisible({ timeout: 3000 });
   });
 });
