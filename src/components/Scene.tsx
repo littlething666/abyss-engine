@@ -8,6 +8,7 @@ import * as THREE from 'three/webgpu'
 import { Grid } from './Grid'
 import { WisdomAltar } from './WisdomAltar'
 import { Crystals } from './Crystals'
+import { MeshTree } from './MeshTree'
 import { CrystalGlowPostProcessing } from '../graphics/glowPostProcessing'
 import { SceneDebugStats } from './debug/SceneDebugStats'
 import TopicSelectionBar from './TopicSelectionBar'
@@ -312,6 +313,9 @@ export const Scene: React.FC<SceneProps> = ({
 
         {/* Wisdom Altar at center [0,0] */}
         <WisdomAltar />
+
+        {/* Recursive mesh box-tree near grid edge */}
+        <MeshTree position={[3.75, 0, 0]} scale={0.06} />
 
         {/* Crystals from props (data from parent/store) */}
         <Suspense fallback={null}>
