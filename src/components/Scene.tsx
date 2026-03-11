@@ -1,7 +1,7 @@
 'use client'
 
 import React, { Suspense, useRef, useMemo, useEffect, useState } from 'react'
-import { Canvas, useThree } from '@react-three/fiber/webgpu'
+import { Canvas } from '@react-three/fiber/webgpu'
 import { PerspectiveCamera, Html, OrbitControls, Environment } from '@react-three/drei/webgpu'
 import { useQueries } from '@tanstack/react-query'
 import * as THREE from 'three/webgpu'
@@ -17,6 +17,7 @@ import { useUIStore } from '../store/uiStore'
 import { useTopicMetadata, type TopicMetadata } from '../features/content'
 import { Card } from '../types/core'
 import { deckRepository } from '../infrastructure/di'
+import { useSceneInvalidator } from '../hooks/useSceneInvalidator'
 import '../graphics/nodeMaterialRegistration'
 
 /**
@@ -89,9 +90,13 @@ interface OrbitCameraControlsProps {
 }
 
 const SceneFrameLimiter: React.FC = () => {
-  const invalidate = useThree((state) => state.invalidate)
+  const { invalidate, isPaused } = useSceneInvalidator()
 
   useEffect(() => {
+    if (isPaused) {
+      return
+    }
+
     const interval = setInterval(() => {
       invalidate()
     }, TARGET_FRAME_INTERVAL_MS)
@@ -99,7 +104,7 @@ const SceneFrameLimiter: React.FC = () => {
     return () => {
       clearInterval(interval)
     }
-  }, [invalidate])
+  }, [invalidate, isPaused])
 
   return null
 }
@@ -112,12 +117,17 @@ const SceneRenderInvalidator: React.FC<SceneRenderInvalidatorProps> = ({
   currentSubjectId,
   selectedTopicCardsCount,
 }) => {
-  const invalidate = useThree((state) => state.invalidate)
+  const { invalidate, isPaused } = useSceneInvalidator()
 
   useEffect(() => {
+    if (isPaused) {
+      return;
+    }
+
     invalidate()
   }, [
     invalidate,
+    isPaused,
     activeCrystals,
     filteredCrystals,
     selectedTopicId,
@@ -130,12 +140,13 @@ const SceneRenderInvalidator: React.FC<SceneRenderInvalidatorProps> = ({
 }
 
 const OrbitCameraControls: React.FC<OrbitCameraControlsProps> = ({ isCameraAngleUnlocked }) => {
-  const invalidate = useThree((state) => state.invalidate)
+  const { invalidate, isPaused } = useSceneInvalidator()
   const minPolarAngle = isCameraAngleUnlocked ? CAMERA_UNLOCKED_MIN_POLAR_ANGLE : CAMERA_START_POLAR_ANGLE
   const maxPolarAngle = isCameraAngleUnlocked ? CAMERA_UNLOCKED_MAX_POLAR_ANGLE : CAMERA_START_POLAR_ANGLE
 
   return (
     <OrbitControls
+      enabled={!isPaused}
       enablePan={false}
       enableZoom
       enableRotate
@@ -145,7 +156,9 @@ const OrbitCameraControls: React.FC<OrbitCameraControlsProps> = ({ isCameraAngle
       maxPolarAngle={maxPolarAngle}
       target={ORBIT_TARGET}
       onChange={() => {
-        invalidate()
+        if (!isPaused) {
+          invalidate()
+        }
       }}
     />
   )
@@ -313,7 +326,7 @@ export const Scene: React.FC<SceneProps> = ({
         <WisdomAltar />
 
         {/* Recursive mesh box-tree near grid edge */}
-        <MeshTree position={[3.75, 0, 0]} scale={0.06} />
+        {/* <MeshTree position={[3.75, 0, 0]} scale={0.06} /> */}
 
         {/* Crystals from props (data from parent/store) */}
         <Suspense fallback={null}>

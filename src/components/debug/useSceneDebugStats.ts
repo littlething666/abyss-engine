@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber/webgpu';
+import { useSceneInvalidator } from '../../hooks/useSceneInvalidator';
 
 export interface SceneDebugStatsSnapshot {
   fps: number;
@@ -34,6 +35,7 @@ export function useSceneDebugStats(
   options: UseSceneDebugStatsOptions = {},
 ) {
   const { enabled = true } = options;
+  const { isPaused } = useSceneInvalidator();
   const sampleWindowMs = useRef(options.sampleWindowMs ?? DEFAULT_SAMPLE_WINDOW_MS);
   const state = useRef({
     lastSampleTime: performance.now(),
@@ -44,6 +46,10 @@ export function useSceneDebugStats(
 
   useFrame(
     ({ gl }) => {
+      if (isPaused) {
+        return;
+      }
+
       if (!enabled) {
         state.current.lastSampleTime = performance.now();
         state.current.frameCount = 0;

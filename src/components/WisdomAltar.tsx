@@ -7,6 +7,7 @@ import { Billboard, Sparkles } from '@react-three/drei/webgpu';
 import { uiStore } from '../store/uiStore';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
+import { useSceneInvalidator } from '../hooks/useSceneInvalidator';
 
 // ============================================================================
 // Module-level shared geometries (created once, reused across all renders)
@@ -56,6 +57,7 @@ export const WisdomAltar: React.FC = () => {
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
   const getRemainingAttunementCooldownMs = useStudyStore((state) => state.getRemainingAttunementCooldownMs);
   const [isRitualSubmissionAvailable, setIsRitualSubmissionAvailable] = useState(true);
+  const { isPaused } = useSceneInvalidator();
 
   // Get subject-specific altar geometry
   const altarGeometry = useSubjectGeometry(currentSubjectId, 'altar');
@@ -132,6 +134,10 @@ export const WisdomAltar: React.FC = () => {
 
   useEffect(() => {
     const updateSubmissionAvailability = () => {
+      if (uiStore.getState().isAnyModalOpen) {
+        return;
+      }
+
       const remaining = getRemainingAttunementCooldownMs(Date.now());
       setIsRitualSubmissionAvailable(remaining <= 0);
     };
@@ -145,6 +151,10 @@ export const WisdomAltar: React.FC = () => {
   }, [getRemainingAttunementCooldownMs]);
 
   useFrame(() => {
+    if (isPaused) {
+      return;
+    }
+
     const elapsedTime = performance.now() / 1000;
     if (rotatingRingRef.current) {
       rotatingRingRef.current.rotation.y = elapsedTime * 0.3;
@@ -186,9 +196,9 @@ export const WisdomAltar: React.FC = () => {
       </mesh>
 
       {/* Ritual availability glow */}
-      {isRitualSubmissionAvailable && (
+      {isRitualSubmissionAvailable && !isPaused && (
         <Billboard position={[0, 0.75, 0]}>
-          <Sparkles count={28} scale={1.6} size={1.1} speed={0.45} color={'white'} />
+          <Sparkles count={17} scale={1.2} size={2.0} speed={8.0} color={'white'} />
         </Billboard>
       )}
 

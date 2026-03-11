@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useUniform } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
+import { useSceneInvalidator } from '../hooks/useSceneInvalidator';
 
 interface GrowthParticlesProps {
   position: [number, number, number];
@@ -15,6 +16,7 @@ const sanitizeUniformName = (value: string) => `u_${value.replace(/[^a-zA-Z0-9_]
 export function GrowthParticles({ position, active, scope }: GrowthParticlesProps) {
   const pointsRef = useRef<THREE.Points>(null);
   const count = 24;
+  const { isPaused } = useSceneInvalidator();
   const scopeId = useMemo(
     () => scope ?? `growth_particles_${position[0]}_${position[1]}_${position[2]}`,
     [scope, position],
@@ -72,7 +74,7 @@ export function GrowthParticles({ position, active, scope }: GrowthParticlesProp
   }, [active, opacity]);
 
   useFrame((_state, delta) => {
-    if (!pointsRef.current || !active) {
+    if (isPaused || !pointsRef.current || !active) {
       return;
     }
 

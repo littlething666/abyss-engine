@@ -1,5 +1,38 @@
-import { motion } from 'motion/react';
 import type { CSSProperties } from 'react';
+
+const PARTICLE_ANIMATION_STYLE = `
+@keyframes abyss-ritual-particle {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) scale(0);
+  }
+  15% {
+    opacity: 0.9;
+    transform: translate3d(var(--tx-mid), var(--ty-mid), 0) scale(1);
+  }
+  65% {
+    opacity: 0.2;
+    transform: translate3d(var(--tx), var(--ty), 0) scale(0.45);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--tx), var(--ty), 0) scale(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .abyss-ritual-particle {
+    animation: none !important;
+  }
+}
+`;
+
+type ParticleCustomCSSProperties = CSSProperties & {
+  ['--tx']: string;
+  ['--ty']: string;
+  ['--tx-mid']: string;
+  ['--ty-mid']: string;
+};
 
 export interface ParticleAnimationPoint {
   x: number;
@@ -42,30 +75,27 @@ export function ParticlesAnimation({
 
   return (
     <>
+      <style>{PARTICLE_ANIMATION_STYLE}</style>
       {particles.map((particle) => (
-        <motion.span
+        <span
           key={`${particle.x}-${particle.y}-${particle.delay}`}
-          className={`absolute rounded-full pointer-events-none ${particleClassName}`}
+          className={`absolute rounded-full pointer-events-none abyss-ritual-particle ${particleClassName}`}
           style={{
             width: `${particleSize}px`,
             height: `${particleSize}px`,
             boxShadow: particleGlow,
+            left: '50%',
+            top: '50%',
+            transform: 'translate3d(0, 0, 0) scale(0)',
+            animation: `abyss-ritual-particle ${particle.duration}s ease-out infinite`,
+            animationDelay: `${particle.delay}s`,
+            ['--tx']: `${particle.x}px`,
+            ['--ty']: `${particle.y}px`,
+            ['--tx-mid']: `${Math.round(particle.x * 0.4)}px`,
+            ['--ty-mid']: `${Math.round(particle.y * 0.4)}px`,
             ...particleStyle,
-          }}
+          } as ParticleCustomCSSProperties}
           aria-hidden="true"
-          initial={{ opacity: 0, scale: 0, x: 0, y: 0 }}
-          animate={{
-            opacity: [0, 0.85, 0],
-            scale: [0, 1.1, 0],
-            x: [0, particle.x, 0],
-            y: [0, particle.y, 0],
-          }}
-          transition={{
-            duration: particle.duration,
-            repeat: Number.POSITIVE_INFINITY,
-            delay: particle.delay,
-            ease: 'easeOut',
-          }}
         />
       ))}
     </>

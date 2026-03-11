@@ -11,6 +11,7 @@ import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
 import { useTopicMetadata } from '../features/content';
 import { GrowthParticles } from '../graphics/GrowthParticles';
 import { playLevelUpSound } from '../utils/sound';
+import { useSceneInvalidator } from '../hooks/useSceneInvalidator';
 
 const crystalInnerGeometry = new THREE.SphereGeometry(0.15, 8, 6);
 const levelIndicatorGeometry = new THREE.SphereGeometry(0.08, 16, 16);
@@ -51,7 +52,7 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
   const innerRef = useRef<THREE.Mesh>(null);
   const levelRef = useRef<THREE.Mesh>(null);
   const glowRingRef = useRef<THREE.Mesh>(null);
-  const invalidate = useThree((state) => state.invalidate);
+  const { invalidate, isPaused } = useSceneInvalidator();
   const animationRef = useRef({
     start: performance.now(),
     from: 0,
@@ -268,6 +269,10 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
   );
 
   useFrame(() => {
+    if (isPaused) {
+      return;
+    }
+
     const state = animationRef.current;
     const elapsedTime = performance.now() / 1000;
 

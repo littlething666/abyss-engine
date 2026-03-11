@@ -219,4 +219,3 @@ export const MeshTree: React.FC<MeshTreeProps> = ({ position = [3.75, 0, 0], sca
     </group>
   )
 }
-

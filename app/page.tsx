@@ -80,12 +80,14 @@ const HomeContent: React.FC = () => {
   // UI store - modal state - stable selectors
   const isDiscoveryModalOpen = useUIStore(s => s.isDiscoveryModalOpen);
   const isStudyPanelOpen = useUIStore(s => s.isStudyPanelOpen);
+  const isRitualModalOpen = useUIStore(s => s.isRitualModalOpen);
   const closeDiscoveryModal = useUIStore(s => s.closeDiscoveryModal);
   const closeStudyPanel = useUIStore(s => s.closeStudyPanel);
+  const openRitualModal = useUIStore(s => s.openRitualModal);
+  const closeRitualModal = useUIStore(s => s.closeRitualModal);
 
   // Study panel feedback state
   const [studyFeedback, setStudyFeedback] = useState<string | null>(null);
-  const [isRitualModalOpen, setIsRitualModalOpen] = useState(false);
   const ritualCooldownRemainingMs = getRemainingAttunementCooldownMs(Date.now());
 
   const latestSession = attunementSessions.length > 0 ? attunementSessions[attunementSessions.length - 1] : null;
@@ -162,7 +164,7 @@ const HomeContent: React.FC = () => {
 
   const handleOpenRitualModal = () => {
     closeDiscoveryModal();
-    setIsRitualModalOpen(true);
+    openRitualModal();
   };
 
   const handleAttunementSubmit = (payload: AttunementPayload) => {
@@ -180,7 +182,7 @@ const HomeContent: React.FC = () => {
 
   const handleCloseAttunement = () => {
     clearPendingAttunement();
-    setIsRitualModalOpen(false);
+    closeRitualModal();
   };
 
   if (!isClient) {

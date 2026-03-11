@@ -7,16 +7,20 @@ export interface UIStore {
   // State
   isDiscoveryModalOpen: boolean;
   isStudyPanelOpen: boolean;
+  isRitualModalOpen: boolean;
   selectedTopicId: string | null;
 
   // Computed
   isSelectionMode: boolean;
+  isAnyModalOpen: boolean;
 
   // Actions
   openDiscoveryModal: () => void;
   closeDiscoveryModal: () => void;
   openStudyPanel: () => void;
   closeStudyPanel: () => void;
+  openRitualModal: () => void;
+  closeRitualModal: () => void;
   selectTopic: (topicId: string | null) => void;
 }
 
@@ -27,18 +31,67 @@ const createUIStore = () =>
     // Initial state
     isDiscoveryModalOpen: false,
     isStudyPanelOpen: false,
+    isRitualModalOpen: false,
+  isAnyModalOpen: false,
     selectedTopicId: null,
 
-    // Computed state - derived from selectedTopicId
-    get isSelectionMode() {
-      return get().selectedTopicId !== null;
-    },
+  // Computed state - derived from selectedTopicId
+  get isSelectionMode() {
+    return get().selectedTopicId !== null;
+  },
 
     // Actions
-    openDiscoveryModal: () => set({ isDiscoveryModalOpen: true }),
-    closeDiscoveryModal: () => set({ isDiscoveryModalOpen: false }),
-    openStudyPanel: () => set({ isStudyPanelOpen: true }),
-    closeStudyPanel: () => set({ isStudyPanelOpen: false }),
+    openDiscoveryModal: () => {
+      const state = get()
+      if (state.isDiscoveryModalOpen) {
+      return
+    }
+      set({
+        isDiscoveryModalOpen: true,
+        isAnyModalOpen: true,
+      })
+    },
+    closeDiscoveryModal: () => {
+      const state = get()
+      set({
+      isDiscoveryModalOpen: false,
+      isAnyModalOpen: state.isStudyPanelOpen || state.isRitualModalOpen,
+    })
+    },
+    openStudyPanel: () => {
+      const state = get()
+      if (state.isStudyPanelOpen) {
+      return
+    }
+      set({
+        isStudyPanelOpen: true,
+        isAnyModalOpen: true,
+      })
+    },
+    closeStudyPanel: () => {
+      const state = get()
+      set({
+      isStudyPanelOpen: false,
+      isAnyModalOpen: state.isDiscoveryModalOpen || state.isRitualModalOpen,
+    })
+    },
+    openRitualModal: () => {
+      const state = get()
+      if (state.isRitualModalOpen) {
+      return
+    }
+      set({
+        isRitualModalOpen: true,
+        isAnyModalOpen: true,
+      })
+    },
+    closeRitualModal: () => {
+      const state = get()
+      set({
+      isRitualModalOpen: false,
+      isAnyModalOpen: state.isDiscoveryModalOpen || state.isStudyPanelOpen,
+    })
+    },
 
     // Select a topic (or clear selection if null)
     selectTopic: (topicId: string | null) => set({ selectedTopicId: topicId }),

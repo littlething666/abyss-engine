@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import { motion } from 'motion/react';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useAllGraphs, useSubjects } from '../features/content';
 import { ModalWrapper } from './ui/modal-wrapper';
@@ -265,17 +264,14 @@ export function DiscoveryModal({
                   aria-label="Open attunement ritual"
                   title="Open attunement ritual"
                 >
-                  <motion.span
-                    className="relative z-10 text-lg leading-none text-white"
-                    animate={isRitualSubmissionAvailable ? { rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] } : {}}
-                    transition={{
-                      duration: 2,
-                      repeat: isRitualSubmissionAvailable ? Number.POSITIVE_INFINITY : 0,
-                      ease: 'easeInOut',
-                    }}
+                  <span
+                    className={`relative z-10 text-lg leading-none text-white ${
+                      isRitualSubmissionAvailable ? 'animate-pulse' : ''
+                    }`}
+                    aria-hidden="true"
                   >
                     🧪
-                  </motion.span>
+                  </span>
                   <ParticlesAnimation
                     isActive={isRitualSubmissionAvailable}
                     particles={RITUAL_PARTICLE_ANIMATION}
