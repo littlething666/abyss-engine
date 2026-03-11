@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
+import { motion } from 'motion/react';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useAllGraphs, useSubjects } from '../features/content';
 import { ModalWrapper } from './ui/modal-wrapper';
+import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from './ui/particles-animation';
 
 // ============================================================================
 // Types
@@ -38,6 +40,8 @@ interface DiscoveryModalProps {
   lockedTopicsCount: number;
   unlockPoints: number;
   getTopicUnlockStatus?: (topicId: string, allGraphs?: unknown[]) => UnlockStatus;
+  onOpenRitual?: () => void;
+  ritualCooldownRemainingMs?: number;
   onClose: () => void;
 }
 
@@ -154,9 +158,12 @@ export function DiscoveryModal({
   lockedTopicsCount,
   unlockPoints,
   getTopicUnlockStatus,
+  onOpenRitual,
+  ritualCooldownRemainingMs = 0,
   onClose,
 }: DiscoveryModalProps) {
   const [selectedTopic, setSelectedTopic] = useState<TopicTierData['topics'][0] | null>(null);
+  const isRitualSubmissionAvailable = ritualCooldownRemainingMs <= 0;
 
   // Get store actions
   const getTopicsByTier = useStudyStore((state) => state.getTopicsByTier);
@@ -243,10 +250,37 @@ export function DiscoveryModal({
 
             {/* Unlock Points Display */}
             <div className="text-center mb-6">
-              <div className="inline-block bg-amber-900/40 border border-amber-500 rounded-full py-2 px-6">
-                <span className="text-amber-400 font-bold text-lg">
-                  ✨ {unlockPoints} Unlock Point{unlockPoints !== 1 ? 's' : ''}
-                </span>
+              <div className="inline-flex flex-wrap items-center justify-center gap-3">
+                <div className="inline-block bg-amber-900/40 border border-amber-500 rounded-full py-2 px-6">
+                  <span className="text-amber-400 font-bold text-lg">
+                    ✨ {unlockPoints} Unlock Point{unlockPoints !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenRitual?.()}
+                  className={`relative inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+                    isRitualSubmissionAvailable ? 'bg-violet-600 hover:bg-violet-500' : 'bg-violet-700'
+                  }`}
+                  aria-label="Open attunement ritual"
+                  title="Open attunement ritual"
+                >
+                  <motion.span
+                    className="relative z-10 text-lg leading-none text-white"
+                    animate={isRitualSubmissionAvailable ? { rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] } : {}}
+                    transition={{
+                      duration: 2,
+                      repeat: isRitualSubmissionAvailable ? Number.POSITIVE_INFINITY : 0,
+                      ease: 'easeInOut',
+                    }}
+                  >
+                    🧪
+                  </motion.span>
+                  <ParticlesAnimation
+                    isActive={isRitualSubmissionAvailable}
+                    particles={RITUAL_PARTICLE_ANIMATION}
+                  />
+                </button>
               </div>
             </div>
           </div>

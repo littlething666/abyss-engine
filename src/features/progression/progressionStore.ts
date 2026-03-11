@@ -32,6 +32,7 @@ import {
 type ProgressionStore = ProgressionState & ProgressionActions;
 const PROGRESSION_STORAGE_KEY = 'abyss-progression';
 const ATTUNEMENT_SESSIONS_STORAGE_KEY = `${PROGRESSION_STORAGE_KEY}-attunement-sessions`;
+export const ATTUNEMENT_SUBMISSION_COOLDOWN_MS = 8 * 60 * 60 * 1000;
 
 function safeParseJSON<T>(raw: string): T | null {
   try {
@@ -69,6 +70,30 @@ function getInitialAttunementSessions(): AttunementSessionRecord[] {
   }
 
   return [];
+}
+
+function getLatestRitualSession(records: AttunementSessionRecord[]): AttunementSessionRecord | null {
+  const ritualSessions = records.filter((session) => Object.keys(session.checklist).length > 0);
+  if (ritualSessions.length === 0) {
+    return null;
+  }
+
+  return ritualSessions.reduce<AttunementSessionRecord | null>((latest, session) => {
+    if (!latest) {
+      return session;
+    }
+    return session.startedAt > latest.startedAt ? session : latest;
+  }, null);
+}
+
+function getRemainingAttunementCooldownMs(records: AttunementSessionRecord[], atMs: number): number {
+  const latestSession = getLatestRitualSession(records);
+  if (!latestSession) {
+    return 0;
+  }
+  const elapsed = atMs - latestSession.startedAt;
+  const remaining = ATTUNEMENT_SUBMISSION_COOLDOWN_MS - elapsed;
+  return Math.max(0, remaining);
 }
 
 function persistAttunementSessions(sessions: AttunementSessionRecord[]) {
@@ -178,11 +203,19 @@ export const useProgressionStore = create<ProgressionStore>()(
 
       submitAttunement: (payload) => {
         const state = get();
-        if (!state.pendingAttunement || state.pendingAttunement.topicId !== payload.topicId) {
+        const now = Date.now();
+        if (getRemainingAttunementCooldownMs(state.attunementSessions, now) > 0) {
           return null;
         }
 
-        const sessionId = state.pendingAttunement.sessionId;
+        const sessionId = state.pendingAttunement?.topicId === payload.topicId
+          ? state.pendingAttunement.sessionId
+          : makeSessionId(payload.topicId);
+        const nextPendingAttunement = {
+          topicId: payload.topicId,
+          cards: [],
+          sessionId,
+        };
         const { harmonyScore, readinessBucket } = calculateHarmonyScore(payload.checklist);
         const buffs = generateActiveBuffs(payload);
 
@@ -197,17 +230,23 @@ export const useProgressionStore = create<ProgressionStore>()(
           buffs,
         };
 
+        const nextAttunementSessions = upsertAttunementRecord(state.attunementSessions, sessionRecord);
         set({
           activeBuffs: normalizeActiveBuffs(state, buffs),
-          attunementSessions: upsertAttunementRecord(state.attunementSessions, sessionRecord),
+          attunementSessions: nextAttunementSessions,
+          pendingAttunement: nextPendingAttunement,
         });
-        persistAttunementSessions(upsertAttunementRecord(state.attunementSessions, sessionRecord));
+        persistAttunementSessions(nextAttunementSessions);
 
         return {
           harmonyScore,
           readinessBucket,
           buffs,
         };
+      },
+
+      getRemainingAttunementCooldownMs: (atMs) => {
+        return getRemainingAttunementCooldownMs(get().attunementSessions, atMs);
       },
 
       clearActiveBuffs: () => set({ activeBuffs: [] }),

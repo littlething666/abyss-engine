@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
+import { Billboard, Sparkles } from '@react-three/drei/webgpu';
 import { uiStore } from '../store/uiStore';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
@@ -53,6 +54,8 @@ export const WisdomAltar: React.FC = () => {
 
   // Get current subject ID from store
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
+  const getRemainingAttunementCooldownMs = useStudyStore((state) => state.getRemainingAttunementCooldownMs);
+  const [isRitualSubmissionAvailable, setIsRitualSubmissionAvailable] = useState(true);
 
   // Get subject-specific altar geometry
   const altarGeometry = useSubjectGeometry(currentSubjectId, 'altar');
@@ -127,6 +130,20 @@ export const WisdomAltar: React.FC = () => {
     };
   }, [subjectColor, environmentMap]);
 
+  useEffect(() => {
+    const updateSubmissionAvailability = () => {
+      const remaining = getRemainingAttunementCooldownMs(Date.now());
+      setIsRitualSubmissionAvailable(remaining <= 0);
+    };
+
+    updateSubmissionAvailability();
+    const timer = window.setInterval(updateSubmissionAvailability, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [getRemainingAttunementCooldownMs]);
+
   useFrame(() => {
     const elapsedTime = performance.now() / 1000;
     if (rotatingRingRef.current) {
@@ -167,6 +184,13 @@ export const WisdomAltar: React.FC = () => {
           attach="material"
         />
       </mesh>
+
+      {/* Ritual availability glow */}
+      {isRitualSubmissionAvailable && (
+        <Billboard position={[0, 0.75, 0]}>
+          <Sparkles count={28} scale={1.6} size={1.1} speed={0.45} color={'white'} />
+        </Billboard>
+      )}
 
       {/* Rotating ritual glow ring */}
       <mesh

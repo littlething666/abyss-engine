@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useProgressionStore } from '.';
 import { Card, ActiveCrystal } from '../../types';
 import { SubjectGraph } from '../../types/core';
-import { AttunementPayload } from '../../types/progression';
+import { ATTUNEMENT_SUBMISSION_COOLDOWN_MS, AttunementPayload, useProgressionStore } from '.';
 
 function createCard(id: string): Card {
   return {
@@ -156,7 +155,6 @@ describe('progressionStore card-only canonical API', () => {
       lockedTopics: ['topic-b'],
     });
 
-    useProgressionStore.getState().openAttunementForTopic('topic-a', cards);
     const result = useProgressionStore.getState().submitAttunement(ritualPayload('topic-a'));
     expect(result).not.toBeNull();
     expect(result?.buffs.length).toBeGreaterThan(0);
@@ -185,5 +183,57 @@ describe('progressionStore card-only canonical API', () => {
     expect(sessionRecord?.sessionDurationMs).toBeGreaterThanOrEqual(0);
     expect(sessionRecord?.correctRate).toBe(1);
     expect(useProgressionStore.getState().activeBuffs).toHaveLength(0);
+  });
+
+  it('blocks attunement submission while cooldown is active', () => {
+    const now = Date.now();
+    useProgressionStore.setState({
+      unlockedTopicIds: ['topic-a'],
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+      lockedTopics: ['topic-b'],
+      attunementSessions: [
+        {
+          sessionId: 'previous-session',
+          topicId: 'topic-a',
+          startedAt: now,
+          completedAt: now + 60000,
+          harmonyScore: 1,
+          readinessBucket: 'low',
+          checklist: { microGoal: 'goal' },
+          buffs: [],
+        },
+      ],
+    });
+
+    const result = useProgressionStore.getState().submitAttunement(ritualPayload('topic-a'));
+    expect(result).toBeNull();
+    expect(useProgressionStore.getState().getRemainingAttunementCooldownMs(now + 60 * 60 * 1000)).toBeGreaterThan(0);
+  });
+
+  it('allows attunement submission once cooldown window has passed', () => {
+    const now = Date.now();
+    useProgressionStore.setState({
+      unlockedTopicIds: ['topic-a'],
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+      lockedTopics: ['topic-b'],
+      attunementSessions: [
+        {
+          sessionId: 'previous-session',
+          topicId: 'topic-a',
+          startedAt: now - (ATTUNEMENT_SUBMISSION_COOLDOWN_MS + 60 * 60 * 1000),
+          completedAt: now - (ATTUNEMENT_SUBMISSION_COOLDOWN_MS + 60 * 60 * 1000 - 60000),
+          harmonyScore: 1,
+          readinessBucket: 'low',
+          checklist: { microGoal: 'goal' },
+          buffs: [],
+        },
+      ],
+    });
+
+    const result = useProgressionStore.getState().submitAttunement(ritualPayload('topic-a'));
+    expect(result).not.toBeNull();
+    expect(result?.buffs.length).toBeGreaterThan(0);
   });
 });

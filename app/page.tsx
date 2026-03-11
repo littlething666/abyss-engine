@@ -11,9 +11,7 @@ import DebugControls from '@/components/debug/DebugControls';
 import { playPositiveSound } from '@/utils/sound';
 import { initAbyssDev } from '@/utils/abyssDev';
 import { Card } from '@/types/core';
-import { AttunementPayload } from '@/types/progression';
-
-const ATTUNEMENT_RITUAL_COOLDOWN_MS = 4 * 60 * 60 * 1000;
+import { AttunementPayload, AttunementResult } from '@/types/progression';
 
 // Components
 import StatsOverlay from '@/components/StatsOverlay';
@@ -67,12 +65,12 @@ const HomeContent: React.FC = () => {
   const unlockPoints = useStudyStore(s => s.unlockPoints);
   const activeBuffs = useStudyStore((state) => state.activeBuffs);
   const attunementSessions = useStudyStore((state) => state.attunementSessions);
+  const getRemainingAttunementCooldownMs = useStudyStore((state) => state.getRemainingAttunementCooldownMs);
 
   // Get store actions - stable references
   const initialize = useStudyStore(s => s.initialize);
   const flipCurrentCard = useStudyStore(s => s.flipCurrentCard);
   const submitStudyResult = useStudyStore(s => s.submitStudyResult);
-  const openAttunementForTopic = useStudyStore(s => s.openAttunementForTopic);
   const submitAttunement = useStudyStore(s => s.submitAttunement);
   const startTopicStudySession = useStudyStore(s => s.startTopicStudySession);
   const clearPendingAttunement = useStudyStore(s => s.clearPendingAttunement);
@@ -87,25 +85,12 @@ const HomeContent: React.FC = () => {
 
   // Study panel feedback state
   const [studyFeedback, setStudyFeedback] = useState<string | null>(null);
-  const [attunementContext, setAttunementContext] = useState<{ topicId: string; cards: Card[] } | null>(null);
-  const [skipRitualForSession, setSkipRitualForSession] = useState(false);
+  const [isRitualModalOpen, setIsRitualModalOpen] = useState(false);
+  const ritualCooldownRemainingMs = getRemainingAttunementCooldownMs(Date.now());
 
   const latestSession = attunementSessions.length > 0 ? attunementSessions[attunementSessions.length - 1] : null;
 
   const currentTopicId = currentSession?.topicId || null;
-
-  const latestRitualSubmissionAt = React.useMemo(() => {
-    const ritualSessions = attunementSessions.filter((session) => Object.keys(session.checklist).length > 0);
-    if (ritualSessions.length === 0) {
-      return null;
-    }
-    return ritualSessions.reduce<number | null>((latest, session) => {
-      if (latest === null) {
-        return session.startedAt;
-      }
-      return Math.max(latest, session.startedAt);
-    }, null);
-  }, [attunementSessions]);
 
   // Initialize on mount - only once
   useEffect(() => {
@@ -175,50 +160,27 @@ const HomeContent: React.FC = () => {
     closeStudyPanel();
   };
 
-  const handleStartAttunement = (topicId: string, cards: Card[]) => {
-    const canSkipRitual = latestRitualSubmissionAt !== null && Date.now() - latestRitualSubmissionAt < ATTUNEMENT_RITUAL_COOLDOWN_MS;
-    if (skipRitualForSession) {
-      startTopicStudySession(topicId, cards);
-      openStudyPanel();
-      setSkipRitualForSession(false);
-      setAttunementContext(null);
-      return;
-    }
-    if (canSkipRitual) {
-      startTopicStudySession(topicId, cards);
-      openStudyPanel();
-      return;
-    }
-
-    openAttunementForTopic(topicId, cards);
-    setAttunementContext({ topicId, cards });
+  const handleOpenRitualModal = () => {
+    closeDiscoveryModal();
+    setIsRitualModalOpen(true);
   };
 
   const handleAttunementSubmit = (payload: AttunementPayload) => {
     return submitAttunement(payload);
   };
 
-  const handleAttunementStart = () => {
-    if (!attunementContext) {
+  const handleAttunementStart = (_result: AttunementResult, topicId: string, cards: Card[]) => {
+    if (!topicId || cards.length === 0) {
       return;
     }
-    startTopicStudySession(attunementContext.topicId, attunementContext.cards);
+    startTopicStudySession(topicId, cards);
     openStudyPanel();
+    handleCloseAttunement();
   };
 
   const handleCloseAttunement = () => {
     clearPendingAttunement();
-    setAttunementContext(null);
-  };
-
-  const handleSkipAttunement = () => {
-    if (!attunementContext) {
-      return;
-    }
-    setSkipRitualForSession(true);
-    startTopicStudySession(attunementContext.topicId, attunementContext.cards);
-    openStudyPanel();
-    handleCloseAttunement();
+    setIsRitualModalOpen(false);
   };
 
   if (!isClient) {
@@ -237,7 +199,6 @@ const HomeContent: React.FC = () => {
       {/* Full Screen 3D Scene */}
       <div className="absolute inset-0">
         <Scene
-          onStartAttunement={handleStartAttunement}
           showStats={isDebugMode && showStats}
           isCameraAngleUnlocked={isCameraAngleUnlocked}
         />
@@ -255,12 +216,11 @@ const HomeContent: React.FC = () => {
         />
 
         <AttunementRitualModal
-          isOpen={attunementContext !== null}
-          topicId={attunementContext?.topicId || ''}
+          isOpen={isRitualModalOpen}
+          cooldownRemainingMs={ritualCooldownRemainingMs}
           onClose={handleCloseAttunement}
           onSubmit={handleAttunementSubmit}
           onStartSession={handleAttunementStart}
-          onSkip={handleSkipAttunement}
         />
 
         {/* Title */}
@@ -280,6 +240,8 @@ const HomeContent: React.FC = () => {
           isOpen={isDiscoveryModalOpen}
           lockedTopicsCount={lockedTopics.length}
           unlockPoints={unlockPoints}
+          onOpenRitual={handleOpenRitualModal}
+          ritualCooldownRemainingMs={ritualCooldownRemainingMs}
           onClose={handleCloseDiscoveryModal}
         />
 

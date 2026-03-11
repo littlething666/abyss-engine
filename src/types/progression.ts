@@ -121,6 +121,7 @@ export interface ProgressionActions {
   startTopicStudySession: (topicId: string, cards: Card[]) => void;
   openAttunementForTopic: (topicId: string, cards: Card[]) => void;
   submitAttunement: (payload: AttunementPayload) => AttunementResult | null;
+  getRemainingAttunementCooldownMs: (atMs: number) => number;
   clearActiveBuffs: () => void;
   clearPendingAttunement: () => void;
   submitStudyResult: (cardId: string, rating: Rating) => void;

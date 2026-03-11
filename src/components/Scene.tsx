@@ -24,7 +24,6 @@ import '../graphics/nodeMaterialRegistration'
  * Uses a perspective camera with locked polar angle for isometric-like framing
  */
 interface SceneProps {
-  onStartAttunement?: (topicId: string, cards: Card[]) => void
   showStats?: boolean
   isCameraAngleUnlocked?: boolean
 }
@@ -153,7 +152,6 @@ const OrbitCameraControls: React.FC<OrbitCameraControlsProps> = ({ isCameraAngle
 }
 
 export const Scene: React.FC<SceneProps> = ({
-  onStartAttunement,
   showStats = false,
   isCameraAngleUnlocked = false,
 }) => {
@@ -218,10 +216,6 @@ export const Scene: React.FC<SceneProps> = ({
       console.warn(`[Scene] No cards available for topic ${topicId}; unable to start study session.`)
       return
     }
-    if (onStartAttunement) {
-      onStartAttunement(topicId, cards)
-      return
-    }
     startTopicStudySessionFromCards(topicId, cards)
   }
 
@@ -274,7 +268,11 @@ export const Scene: React.FC<SceneProps> = ({
           selectedTopicCardsCount={selectedTopicCards.length}
         />
 
-        <Environment preset="forest" background />
+        <Environment
+          preset="forest"
+          background
+          backgroundIntensity={0.5}
+        />
 
         {/* Orthographic camera with isometric view */}
         <PerspectiveCamera
@@ -340,7 +338,6 @@ export const Scene: React.FC<SceneProps> = ({
             <TopicSelectionBar
               isEmbedded
               onStartTopicStudySession={startTopicStudySessionFromCards}
-              onStartAttunement={onStartAttunement}
               selectedMetadata={selectedTopicMetadata}
               selectedCards={selectedTopicCards}
               selectedXp={selectedTopicXp}
