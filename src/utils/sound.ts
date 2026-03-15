@@ -112,3 +112,35 @@ export function playLevelUpSound(): void {
     console.warn('Audio playback failed:', error);
   }
 }
+
+export function playTimerFinishedSound(): void {
+  try {
+    const ctx = getAudioContext();
+
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+
+    const currentTime = ctx.currentTime;
+
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(523.25, currentTime);
+    oscillator.frequency.setValueAtTime(783.99, currentTime + 0.12);
+    oscillator.frequency.setValueAtTime(987.77, currentTime + 0.24);
+
+    gainNode.gain.setValueAtTime(0, currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.25, currentTime + 0.03);
+    gainNode.gain.linearRampToValueAtTime(0, currentTime + 0.45);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    oscillator.start(currentTime);
+    oscillator.stop(currentTime + 0.45);
+  } catch (error) {
+    console.warn('Audio playback failed:', error);
+  }
+}

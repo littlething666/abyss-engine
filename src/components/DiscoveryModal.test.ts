@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act } from 'react-dom/test-utils';
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 
 import DiscoveryModal from './DiscoveryModal';
 
@@ -32,7 +32,7 @@ vi.mock('../features/content', () => ({
 function renderDiscoveryModal(props: Parameters<typeof DiscoveryModal>[0]) {
   const container = document.createElement('div');
   const root = createRoot(container);
-  act(() => {
+  flushSync(() => {
     root.render(createElement(DiscoveryModal, props));
   });
   return { container, root };
@@ -59,9 +59,7 @@ describe('DiscoveryModal', () => {
       | HTMLButtonElement
       | null;
     expect(openRitualButton).not.toBeNull();
-    act(() => {
-      openRitualButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+    openRitualButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(onOpenRitual).toHaveBeenCalledTimes(1);
 
     root.unmount();

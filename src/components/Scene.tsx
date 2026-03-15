@@ -15,6 +15,7 @@ import { GlowPostProcessing } from '../graphics/glowPostProcessing'
 import { SceneDebugStats } from './debug/SceneDebugStats'
 import TopicSelectionBar from './TopicSelectionBar'
 import { useProgressionStore as useStudyStore } from '../features/progression'
+import { PomodoroTimer3D } from './PomodoroTimer3D'
 import { useUIStore } from '../store/uiStore'
 import { useTopicMetadata, type TopicMetadata } from '../features/content'
 import { Card } from '../types/core'
@@ -352,6 +353,7 @@ export const Scene: React.FC<SceneProps> = ({
           scale={0.06}
           bloomExcludeLayer={BLOOM_EXCLUDE_LAYER}
         />
+        <PomodoroTimer3D />
 
         {/* Crystals from props (data from parent/store) */}
         <Suspense fallback={null}>
