@@ -58,6 +58,8 @@ const gridGeometryFactories: Record<CoreSubjectGeometry['gridTile'], () => THREE
   plane: createPlaneGeometry,
 };
 
+const DEFAULT_SUBJECT_COLOR = '#777AAA';
+
 const geometryCache = new Map<string, THREE.BufferGeometry>();
 
 function defaultSubjectGeometry(): CoreSubjectGeometry {
@@ -84,7 +86,7 @@ function toSubjectColorMap(subjects: Subject[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const subject of subjects) {
     const castSubject = subject as { id: string; color?: string };
-    map[castSubject.id] = castSubject.color || '#6366f1';
+    map[castSubject.id] = castSubject.color || DEFAULT_SUBJECT_COLOR;
   }
   return map;
 }
@@ -122,10 +124,10 @@ export function getSubjectColor(
   subjects: Subject[] = [],
 ): string {
   if (!subjectId) {
-    return '#6366f1';
+    return DEFAULT_SUBJECT_COLOR;
   }
   const colorMap = toSubjectColorMap(subjects);
-  return colorMap[subjectId] || '#6366f1';
+  return colorMap[subjectId] || DEFAULT_SUBJECT_COLOR;
 }
 
 export function getSubjectColorByMap(
@@ -133,9 +135,9 @@ export function getSubjectColorByMap(
   colorMap: Record<string, string>,
 ): string {
   if (!subjectId) {
-    return '#6366f1';
+    return DEFAULT_SUBJECT_COLOR;
   }
-  return colorMap[subjectId] || '#6366f1';
+  return colorMap[subjectId] || DEFAULT_SUBJECT_COLOR;
 }
 
 export function getGeometryForSubject(
@@ -201,7 +203,7 @@ export function getAllSubjectsFromMap(subjectsMap: SubjectGeometryMap): Subject[
     name: id,
     description: '',
     themeId: '',
-    color: '#6366f1',
+    color: DEFAULT_SUBJECT_COLOR,
     geometry: subjectsMap[id],
   }));
 }

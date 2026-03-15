@@ -197,7 +197,7 @@ export function AttunementRitualModal({
         </button>
         <h2 className="text-2xl mb-2 text-cyan-200">🧪 Attunement Ritual</h2>
         <p className="text-sm text-slate-300 mb-4">
-          Opened ritual channels on an unlocked topic to unlock focused growth effects.
+          Filling out the ritual will unlock focused growth effects.
         </p>
         {isSubmitBlockedByCooldown && (
           <p className="text-sm text-amber-300 mb-4">

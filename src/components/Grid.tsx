@@ -8,7 +8,7 @@ import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
 /**
  * Grid configuration
  */
-const GRID_SIZE = 9;
+export const GRID_SIZE = 9;
 const TILE_SIZE = 1;
 
 /**

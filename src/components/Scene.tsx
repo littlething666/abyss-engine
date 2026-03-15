@@ -5,7 +5,8 @@ import { Canvas } from '@react-three/fiber/webgpu'
 import { PerspectiveCamera, Html, OrbitControls, Environment } from '@react-three/drei/webgpu'
 import { useQueries } from '@tanstack/react-query'
 import * as THREE from 'three/webgpu'
-import { Grid } from './Grid'
+import { Grid, GRID_SIZE } from './Grid'
+import { ReflectiveFloor } from './ReflectiveFloor'
 import { WisdomAltar } from './WisdomAltar'
 import { Crystals } from './Crystals'
 import { MeshTree } from './MeshTree'
@@ -29,6 +30,7 @@ import '../graphics/nodeMaterialRegistration'
 interface SceneProps {
   showStats?: boolean
   isCameraAngleUnlocked?: boolean
+  dynamicReflections?: boolean
 }
 
 interface SceneRenderInvalidatorProps {
@@ -170,6 +172,7 @@ const OrbitCameraControls: React.FC<OrbitCameraControlsProps> = ({ isCameraAngle
 export const Scene: React.FC<SceneProps> = ({
   showStats = false,
   isCameraAngleUnlocked = false,
+  dynamicReflections = false,
 }) => {
   const cameraRef = useRef<THREE.PerspectiveCamera>(null)
   const activeCrystals = useStudyStore((state) => state.activeCrystals)
@@ -327,6 +330,16 @@ export const Scene: React.FC<SceneProps> = ({
         {/* Fog for depth */}
         <fog attach="fog" args={['#0a0a1a', 10, 50]} />
 
+        {/* Reflective floor */}
+        <Suspense fallback={null}>
+          <ReflectiveFloor
+            size={GRID_SIZE}
+            floorHeight={-0.01}
+            dynamicReflections={dynamicReflections}
+            receiveShadow
+          />
+        </Suspense>
+
         {/* Grid floor */}
         <Grid />
 
@@ -374,13 +387,14 @@ export const Scene: React.FC<SceneProps> = ({
         <mesh
           position={[0, -0.01, 0]}
           rotation={[-Math.PI / 2, 0, 0]}
+          receiveShadow={false}
           onClick={() => {
             // Clear selection when clicking on empty space
             const { selectTopic } = useUIStore.getState()
             selectTopic(null)
           }}
         >
-          <planeGeometry args={[100, 100]} />
+          <planeGeometry args={[GRID_SIZE, GRID_SIZE]} />
           <meshBasicNodeMaterial visible={false} />
         </mesh>
       </Canvas>
