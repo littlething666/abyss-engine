@@ -7,6 +7,14 @@ import { SM2Data } from '../features/progression';
 import { deckRepository } from '../infrastructure/di';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { SubjectGraph, Card } from '../types/core';
+import {
+  playLevelUpSound,
+  playPositiveSound,
+  playTimerFinishedSound,
+  playSproutSound,
+  playVictoryFanfare,
+  playTuturuSound,
+} from './sound';
 
 interface StoreStateLike {
   sm2Data: Record<string, SM2Data>;
@@ -38,6 +46,14 @@ export interface AbyssDev {
   getCardByType: (cardType: Card['type']) => Promise<TopicCardSelection | null>;
   openStudyPanel: () => void;
   getState: () => AbyssDevState;
+  sounds: {
+    playPositiveSound: () => void;
+    playLevelUpSound: () => void;
+    playTimerFinishedSound: () => void;
+    playVictoryFanfare: () => void;
+    playSproutSound: () => void;
+    playTuturuSound: () => void;
+  };
 }
 
 function getStore() {
@@ -218,6 +234,15 @@ const abyssDev: AbyssDev = {
 
     console.log('[AbyssDev] Current state:', state);
     return state;
+  },
+
+  sounds: {
+    playPositiveSound,
+    playLevelUpSound,
+    playTimerFinishedSound,
+    playSproutSound,
+    playVictoryFanfare,
+    playTuturuSound,
   },
 };
 
