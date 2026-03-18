@@ -11,11 +11,13 @@ Be rigorous but clear. Include equations, analogies, applications, and diagrams 
 </constraints>
 
 <sections>
+In exact order:
 1. question - the question you are answering
 2. intuition - mental models and analogies
-3. applications - 3 application examples related to the sibling topics, parent topics, and child topics
+3. applications - 3 applications of the concept related to the sibling topics, parent topics, and child topics
 4. summary - concise overview
 5. definition - formal definitions and notations required to answer the question
-6. examples - 3 practical examples with diagrams
+6. examples - 3 practical examples
 7. formulas_methods - key formulas, algorithms, principles with description
 </sections>
+</system_prompt>

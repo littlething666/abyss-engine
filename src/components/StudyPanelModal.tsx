@@ -185,6 +185,7 @@ export function StudyPanelModal({
             hasActiveCard={model.hasActiveCard}
             isCompleted={model.isCompleted}
             resolvedTopicTheory={model.resolvedTopicTheory}
+            resolvedTopic={model.resolvedTopic}
             topicSystemPrompt={model.topicSystemPrompt}
             targetAudience={targetAudience}
             targetAudienceOptions={TARGET_AUDIENCE_OPTIONS}

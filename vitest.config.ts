@@ -1,7 +1,21 @@
 import { defineConfig } from 'vitest/config';
+import { readFileSync } from 'node:fs';
 import path from 'path';
 
 export default defineConfig({
+  plugins: [
+    {
+      name: 'prompt-raw-loader',
+      enforce: 'pre',
+      load(id) {
+        if (!id.endsWith('.prompt')) {
+          return null;
+        }
+
+        return `export default ${JSON.stringify(readFileSync(id, 'utf8'))};`;
+      },
+    },
+  ],
   test: {
     environment: 'jsdom',
     globals: true,
