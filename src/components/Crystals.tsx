@@ -281,6 +281,7 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
       }),
     [colors.emissiveColor, isSelected],
   );
+  const labelLayerRange = isStudyPanelOpen ? [0, 10] : isSelected ? [50, 100] : [0, 10];
 
   useFrame(() => {
     if (isPaused) {
@@ -408,7 +409,7 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
           transform
           sprite
           position={[0, -0.7, 0]}
-          zIndexRange={isSelected ? [50, 100] : [0, 10]}
+          zIndexRange={labelLayerRange}
           style={{
             pointerEvents: 'none',
             width: '100px',

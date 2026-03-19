@@ -178,36 +178,34 @@ export function StudyPanelStateViews({
       {activeTab === 'system_prompt' && (
         <div className="w-full">
           <div className="bg-card rounded-[15px] p-5" data-testid="study-panel-system-prompt">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div className="flex items-center justify-between gap-3 mb-3">
               <Button
                 size="sm"
                 variant="outline"
                 onClick={onSystemPromptSelect}
                 data-testid="study-panel-system-prompt-title"
               >
-                <TextSelect className="h-3.5 w-3.5 mr-1.5" />
+                <TextSelect className="h-3.5 w-3.5" />
                 Prompt
+              </Button>
+              <Button
+                onClick={openSystemPromptSearch}
+                variant="outline"
+                size="sm"
+                className="mr-auto"
+                data-testid="study-panel-system-prompt-search"
+              >
+                <FileTerminal className="h-3.5 w-3.5" />
               </Button>
               <div className="flex gap-2">
                 <Button
                   onClick={openDiagramPromptDialog}
                   variant="outline"
                   size="sm"
-                  className="h-7 px-3 text-[10px] uppercase tracking-wider"
                   data-testid="study-panel-system-prompt-diagram-open"
                 >
-                  <ChartNetwork className="h-3.5 w-3.5 mr-1.5" />
+                  <ChartNetwork className="h-3.5 w-3.5" />
                   Diagram
-                </Button>
-                <Button
-                  onClick={openSystemPromptSearch}
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-3 text-[10px] uppercase tracking-wider"
-                  data-testid="study-panel-system-prompt-search"
-                >
-                  <FileTerminal className="h-3.5 w-3.5 mr-1.5" />
-                  Google AI
                 </Button>
               </div>
             </div>
