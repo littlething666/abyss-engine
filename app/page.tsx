@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import dynamic from 'next/dynamic';
+import { useQueries } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { useProgressionStore as useStudyStore } from '@/features/progression';
 import { useUIStore } from '@/store/uiStore';
@@ -11,6 +12,8 @@ import DebugControls from '@/components/debug/DebugControls';
 import { initAbyssDev } from '@/utils/abyssDev';
 import { Card } from '@/types/core';
 import { AttunementPayload, AttunementResult } from '@/types/progression';
+import { useTopicMetadata } from '@/features/content';
+import { deckRepository } from '@/infrastructure/di';
 
 // Components
 import StatsOverlay from '@/components/StatsOverlay';
@@ -49,21 +52,50 @@ const HomeContent: React.FC = () => {
 
   // Get data for StatsOverlay - stable selectors
   const currentSession = useStudyStore((state) => state.currentSession);
-  const dueCards = useStudyStore((state) => {
-    const queueCardIds = state.currentSession?.queueCardIds ?? [];
-    const queueCardRefs = queueCardIds.map((cardId) => ({ id: cardId }));
-    return state.getDueCardsCount ? state.getDueCardsCount(queueCardRefs) : queueCardIds.length;
-  });
-  const totalCards = useStudyStore((state) => {
-    const queueCardIds = state.currentSession?.queueCardIds ?? [];
-    const queueCardRefs = queueCardIds.map((cardId) => ({ id: cardId }));
-    return state.getTotalCardsCount ? state.getTotalCardsCount(queueCardRefs) : queueCardIds.length;
-  });
   const activeCrystals = useStudyStore(s => s.activeCrystals);
+  const currentSubjectId = useStudyStore(s => s.currentSubjectId);
+  const sm2Data = useStudyStore(s => s.sm2Data);
   const levelUpMessage = useStudyStore(s => s.levelUpMessage);
   const unlockPoints = useStudyStore(s => s.unlockPoints);
   const activeBuffs = useStudyStore((state) => state.activeBuffs);
   const getRemainingAttunementCooldownMs = useStudyStore((state) => state.getRemainingAttunementCooldownMs);
+  const getDueCardsCount = useStudyStore((state) => state.getDueCardsCount);
+
+  const activeTopicIds = useMemo(() => Array.from(new Set(activeCrystals.map((crystal) => crystal.topicId))), [activeCrystals]);
+  const allTopicMetadata = useTopicMetadata(activeTopicIds);
+  const subjectFilteredTopicIds = useMemo(() => {
+    if (!currentSubjectId) {
+      return activeTopicIds;
+    }
+
+    return activeTopicIds.filter((topicId) => allTopicMetadata[topicId]?.subjectId === currentSubjectId);
+  }, [activeTopicIds, allTopicMetadata, currentSubjectId]);
+  const topicCardQueries = useQueries({
+    queries: subjectFilteredTopicIds.map((topicId) => {
+      const subjectId = allTopicMetadata[topicId]?.subjectId || '';
+      return {
+        queryKey: ['content', 'topic-cards', subjectId, topicId],
+        queryFn: () => deckRepository.getTopicCards(subjectId, topicId),
+        enabled: Boolean(subjectId),
+        staleTime: Infinity,
+      };
+    }),
+  });
+  const allTopicsCardCounts = useMemo(() => {
+    let due = 0;
+    let total = 0;
+
+    topicCardQueries.forEach((query) => {
+      const cards = query?.data ?? [];
+      const refs = cards.map((card) => ({ id: card.id }));
+      due += getDueCardsCount ? getDueCardsCount(refs) : refs.length;
+      total += refs.length;
+    });
+
+    return { due, total };
+  }, [getDueCardsCount, sm2Data, topicCardQueries]);
+  const dueCards = allTopicsCardCounts.due;
+  const totalCards = allTopicsCardCounts.total;
 
   // Get store actions - stable references
   const initialize = useStudyStore(s => s.initialize);
@@ -184,7 +216,6 @@ const HomeContent: React.FC = () => {
         <StatsOverlay
           totalCards={totalCards}
           dueCards={dueCards}
-          activeTopics={activeCrystals.length}
           activeBuffs={activeBuffs}
         />
 

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useUIStore } from '../store/uiStore';
-import { calculateLevelFromXP } from '../features/progression';
+import { calculateLevelFromXP, useProgressionStore as useStudyStore } from '../features/progression';
 import type { TopicMetadata } from '../features/content';
 import type { Card } from '../types/core';
 import { Button } from '@/components/ui/button';
@@ -30,10 +30,20 @@ export default function TopicSelectionBar({
   const selectTopic = useUIStore((state) => state.selectTopic);
   const isSelectionMode = selectedTopicId !== null;
   const xp = selectedXp;
+  const getDueCardsCount = useStudyStore((state) => state.getDueCardsCount);
+  const sm2Data = useStudyStore((state) => state.sm2Data);
 
   const topicName = selectedMetadata?.topicName || 'Selected topic';
   const subjectName = selectedMetadata?.subjectName || 'Unknown subject';
   const level = calculateLevelFromXP(xp);
+  const selectedDueCards = React.useMemo(() => {
+    if (!selectedCards.length) {
+      return 0;
+    }
+    const refs = selectedCards.map((card) => ({ id: card.id }));
+    return getDueCardsCount ? getDueCardsCount(refs) : refs.length;
+  }, [getDueCardsCount, sm2Data, selectedCards]);
+  const selectedTotalCards = selectedCards.length;
 
   if (!isSelectionMode || !selectedTopicId) {
     return null;
@@ -75,6 +85,7 @@ export default function TopicSelectionBar({
             <span className="text-foreground/40">•</span>
             <span className="text-sm text-muted-foreground min-w-[50px]">Level {level} ({xp} XP)</span>
           </div>
+          <span className="text-xs text-muted-foreground">Due {selectedDueCards}/{selectedTotalCards}</span>
         </div>
 
         <div className="w-px h-8 bg-foreground/20" />
