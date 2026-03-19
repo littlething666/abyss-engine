@@ -18,6 +18,7 @@ import { AttunementRitualModal } from '@/components/AttunementRitualModal';
 import DiscoveryModal from '@/components/DiscoveryModal';
 import StudyPanelModal from '@/components/StudyPanelModal';
 import SubjectNavigation from '@/components/SubjectNavigation';
+import PomodoroTimerOverlay from '@/components/PomodoroTimer3D';
 
 // Dynamic import for Scene to avoid SSR issues with Three.js
 const Scene = dynamic(() => import('@/components/Scene'), {
@@ -177,6 +178,7 @@ const HomeContent: React.FC = () => {
           isCameraAngleUnlocked={isCameraAngleUnlocked}
         />
       </div>
+      <PomodoroTimerOverlay />
 
         {/* Stats Overlay */}
         <StatsOverlay

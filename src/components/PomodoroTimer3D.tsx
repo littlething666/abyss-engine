@@ -1,17 +1,11 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Html } from '@react-three/drei/webgpu';
+import { Pause, Play, RotateCcw } from 'lucide-react';
 
-import { useSceneInvalidator } from '../hooks/useSceneInvalidator';
-import { useUIStore } from '../store/uiStore';
 import { playTimerFinishedSound } from '../utils/sound';
 import { formatPomodoroRemaining, pomodoroStore } from '../features/pomodoro';
-import { GRID_SIZE } from './Grid';
 import { Button } from '@/components/ui/button';
 
-const TIMER_CORNER_OFFSET = 0.72;
-const TIMER_HEIGHT = 2.45;
-
-export const PomodoroTimer3D: React.FC = () => {
+export const PomodoroTimerOverlay: React.FC = () => {
   const remainingMs = pomodoroStore((state) => state.remainingMs);
   const isRunning = pomodoroStore((state) => state.isRunning);
   const phaseCompleted = pomodoroStore((state) => state.phaseCompleted);
@@ -20,8 +14,6 @@ export const PomodoroTimer3D: React.FC = () => {
   const resume = pomodoroStore((state) => state.resume);
   const reset = pomodoroStore((state) => state.reset);
   const tick = pomodoroStore((state) => state.tick);
-  const { invalidate, isPaused } = useSceneInvalidator();
-  const isAnyModalOpen = useUIStore((state) => state.isAnyModalOpen);
   const hasStarted = useRef(false);
 
   useEffect(() => {
@@ -34,17 +26,13 @@ export const PomodoroTimer3D: React.FC = () => {
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      if (isPaused) {
-        return;
-      }
       tick();
-      invalidate();
     }, 1000);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [tick, isPaused, invalidate]);
+  }, [tick]);
 
   const timerText = useMemo(
     () => formatPomodoroRemaining(remainingMs),
@@ -58,104 +46,42 @@ export const PomodoroTimer3D: React.FC = () => {
     playTimerFinishedSound();
   }, [phaseCompleted]);
 
-  const position: [number, number, number] = useMemo(
-    () => [
-      GRID_SIZE / 2 - TIMER_CORNER_OFFSET,
-      TIMER_HEIGHT,
-      -GRID_SIZE / 2 + TIMER_CORNER_OFFSET,
-    ],
-    [],
-  );
-
   return (
-    <Html
-      position={position}
-      center
-      transform
-      sprite
-      zIndexRange={isAnyModalOpen ? [-1, 0] : [0, 0]}
-      style={{
-        color: '#7dd3fc',
-        fontFamily: 'monospace',
-        fontWeight: 600,
-        fontSize: '28px',
-        letterSpacing: '0.08em',
-        whiteSpace: 'nowrap',
-        userSelect: 'none',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-end',
-        gap: '8px',
-        textAlign: 'right',
-        background: 'rgba(8, 15, 26, 0.55)',
-        border: '1px solid rgba(125, 211, 252, 0.3)',
-        borderRadius: '8px',
-        padding: '8px 10px',
-        pointerEvents: isAnyModalOpen ? 'none' : 'auto',
-        zIndex: isAnyModalOpen ? -1 : 0,
-      }}
+    <div
+      className="fixed bottom-3 left-3 z-20 flex items-center gap-1 rounded-lg border border-cyan-300/40 bg-[#070b16]/80 px-2 py-1.5 text-[11px] font-medium shadow-[0_0_0_1px_rgba(125,211,252,0.25)] backdrop-blur-sm"
+      aria-live="polite"
     >
-      <div>{timerText}</div>
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <Button
-          type="button"
-          onClick={() => {
-            if (isRunning) {
-              pause();
-            } else {
-              resume();
-            }
-          }}
-          style={{
-            border: '1px solid rgba(125, 211, 252, 0.5)',
-            borderRadius: '999px',
-            background: 'rgba(15, 23, 42, 0.7)',
-            color: '#7dd3fc',
-            width: '30px',
-            height: '30px',
-            padding: 0,
-            margin: 0,
-            cursor: 'pointer',
-            lineHeight: '28px',
-            textAlign: 'center',
-            display: 'inline-flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            fontSize: '16px',
-            fontWeight: 600,
-          }}
-          aria-label={isRunning ? 'Pause timer' : 'Resume timer'}
-        >
-          {isRunning ? '⏸' : '▶'}
-        </Button>
-        <Button
-          type="button"
-          onClick={reset}
-          style={{
-            border: '1px solid rgba(125, 211, 252, 0.5)',
-            borderRadius: '999px',
-            background: 'rgba(15, 23, 42, 0.7)',
-            color: '#7dd3fc',
-            width: '30px',
-            height: '30px',
-            padding: 0,
-            margin: 0,
-            cursor: 'pointer',
-            lineHeight: '28px',
-            textAlign: 'center',
-            display: 'inline-flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            fontSize: '16px',
-            fontWeight: 600,
-          }}
-          aria-label="Reset timer"
-        >
-          ⟲
-        </Button>
-      </div>
-    </Html>
+      <span className="font-mono tabular-nums text-cyan-200">{timerText}</span>
+      <span className="mx-1 h-4 w-px bg-cyan-400/40" aria-hidden="true" />
+      <Button
+        type="button"
+        size="icon-xs"
+        variant="outline"
+        onClick={() => {
+          if (isRunning) {
+            pause();
+          } else {
+            resume();
+          }
+        }}
+        className="ml-1 h-6 w-6 border-cyan-300/40 bg-slate-950/60 text-cyan-200 hover:bg-slate-900/70"
+        aria-label={isRunning ? 'Pause timer' : 'Resume timer'}
+      >
+        {isRunning ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+      </Button>
+      <Button
+        type="button"
+        size="icon-xs"
+        variant="outline"
+        onClick={reset}
+        className="h-6 w-6 border-cyan-300/40 bg-slate-950/60 text-cyan-200 hover:bg-slate-900/70"
+        aria-label="Reset timer"
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+      </Button>
+      <span className="sr-only" aria-live="polite">Timer continues in background</span>
+    </div>
   );
 };
 
-export default PomodoroTimer3D;
+export default PomodoroTimerOverlay;
