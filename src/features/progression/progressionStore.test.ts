@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Card, ActiveCrystal } from '../../types';
 import { SubjectGraph } from '../../types/core';
-import { ATTUNEMENT_SUBMISSION_COOLDOWN_MS, AttunementPayload, MAX_UNDO_DEPTH, useProgressionStore } from '.';
+import { ATTUNEMENT_SUBMISSION_COOLDOWN_MS, AttunementRitualPayload, MAX_UNDO_DEPTH, useProgressionStore } from '.';
 
 function createCard(id: string): Card {
   return {
@@ -56,8 +56,9 @@ function resetStore() {
     sm2Data: {},
     activeCrystals: [],
     activeBuffs: [],
-    attunementSessions: [],
-    pendingAttunement: null,
+    attunementRituals: [],
+    studySessionHistory: [],
+    pendingRitual: null,
     currentSubjectId: null,
     currentSession: null,
     levelUpMessage: null,
@@ -65,7 +66,7 @@ function resetStore() {
   });
 }
 
-function ritualPayload(topicId: string): AttunementPayload {
+function ritualPayload(topicId: string): AttunementRitualPayload {
   return {
     topicId,
     checklist: {
@@ -171,33 +172,38 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 3,
     });
 
-    const result = useProgressionStore.getState().submitAttunement(ritualPayload('topic-a'));
+    const result = useProgressionStore.getState().submitAttunementRitual(ritualPayload('topic-a'));
     expect(result).not.toBeNull();
     expect(result?.buffs.length).toBeGreaterThan(0);
 
     const stateAfterSubmission = useProgressionStore.getState();
-    const expectedSessionId = stateAfterSubmission.pendingAttunement?.sessionId;
+    const expectedSessionId = stateAfterSubmission.pendingRitual?.sessionId;
     expect(expectedSessionId).toBeDefined();
-    expect(stateAfterSubmission.pendingAttunement?.topicId).toBe('topic-a');
-    expect(stateAfterSubmission.attunementSessions).toHaveLength(1);
+    expect(stateAfterSubmission.pendingRitual?.topicId).toBe('topic-a');
+    expect(stateAfterSubmission.attunementRituals).toHaveLength(1);
     expect(stateAfterSubmission.activeBuffs).toHaveLength(result?.buffs.length || 0);
     expect(stateAfterSubmission.activeBuffs[0]?.condition).toBeDefined();
 
     useProgressionStore.getState().startTopicStudySession('topic-a', cards);
     const startedState = useProgressionStore.getState().currentSession;
-    expect(useProgressionStore.getState().pendingAttunement).toBeNull();
+    expect(useProgressionStore.getState().pendingRitual).toBeNull();
     expect(startedState?.sessionId).toBe(expectedSessionId);
     expect(startedState?.activeBuffIds).toEqual(expect.arrayContaining(result?.buffs.map((buff) => buff.buffId) ?? []));
 
     useProgressionStore.getState().submitStudyResult('a-1', 4);
     useProgressionStore.getState().submitStudyResult('a-2', 4);
 
-    const allSessions = useProgressionStore.getState().attunementSessions;
-    const sessionRecord = allSessions[allSessions.length - 1];
-    expect(sessionRecord?.completedAt).not.toBeNull();
-    expect(sessionRecord?.totalAttempts).toBe(2);
-    expect(sessionRecord?.sessionDurationMs).toBeGreaterThanOrEqual(0);
-    expect(sessionRecord?.correctRate).toBe(1);
+    const allRituals = useProgressionStore.getState().attunementRituals;
+    const ritualRecord = allRituals[allRituals.length - 1];
+    expect(ritualRecord?.completedAt).toBeNull();
+
+    const allSessions = useProgressionStore.getState().studySessionHistory;
+    const telemetryRecord = allSessions[allSessions.length - 1];
+    expect(telemetryRecord?.completedAt).toBeTruthy();
+    expect(telemetryRecord?.totalAttempts).toBe(2);
+    expect(telemetryRecord?.sessionDurationMs).toBeGreaterThanOrEqual(0);
+    expect(telemetryRecord?.correctRate).toBe(1);
+    expect(telemetryRecord?.ritualSessionId).toBe(ritualRecord?.sessionId);
     expect(useProgressionStore.getState().activeBuffs).toHaveLength(0);
   });
 
@@ -207,7 +213,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockedTopicIds: ['topic-a'],
       activeCrystals: [crystal('topic-a')],
       unlockPoints: 3,
-      attunementSessions: [
+      attunementRituals: [
         {
           sessionId: 'previous-session',
           topicId: 'topic-a',
@@ -221,9 +227,9 @@ describe('progressionStore card-only canonical API', () => {
       ],
     });
 
-    const result = useProgressionStore.getState().submitAttunement(ritualPayload('topic-a'));
+    const result = useProgressionStore.getState().submitAttunementRitual(ritualPayload('topic-a'));
     expect(result).toBeNull();
-    expect(useProgressionStore.getState().getRemainingAttunementCooldownMs(now + 60 * 60 * 1000)).toBeGreaterThan(0);
+    expect(useProgressionStore.getState().getRemainingRitualCooldownMs(now + 60 * 60 * 1000)).toBeGreaterThan(0);
   });
 
   it('allows attunement submission once cooldown window has passed', () => {
@@ -232,7 +238,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockedTopicIds: ['topic-a'],
       activeCrystals: [crystal('topic-a')],
       unlockPoints: 3,
-      attunementSessions: [
+      attunementRituals: [
         {
           sessionId: 'previous-session',
           topicId: 'topic-a',
@@ -246,7 +252,7 @@ describe('progressionStore card-only canonical API', () => {
       ],
     });
 
-    const result = useProgressionStore.getState().submitAttunement(ritualPayload('topic-a'));
+    const result = useProgressionStore.getState().submitAttunementRitual(ritualPayload('topic-a'));
     expect(result).not.toBeNull();
     expect(result?.buffs.length).toBeGreaterThan(0);
   });

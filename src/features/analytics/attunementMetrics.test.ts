@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { AttunementPayload } from '../../types/progression';
-import { buildSessionMetrics, calculateHarmonyScore, extractAdaptationSignals, generateActiveBuffs } from './attunementMetrics';
+import { AttunementRitualPayload } from '../../types/progression';
+import {
+  buildStudySessionMetrics,
+  calculateRitualHarmony,
+  extractStudyAdaptationSignals,
+  deriveRitualBuffs,
+} from './attunementMetrics';
 
-const highPayload: AttunementPayload = {
+const highPayload: AttunementRitualPayload = {
   topicId: 'topic-a',
   checklist: {
     sleepHours: 8,
@@ -18,7 +23,7 @@ const highPayload: AttunementPayload = {
   },
 };
 
-const lowPayload: AttunementPayload = {
+const lowPayload: AttunementRitualPayload = {
   topicId: 'topic-a',
   checklist: {
     sleepHours: 3,
@@ -29,7 +34,7 @@ const lowPayload: AttunementPayload = {
   },
 };
 
-const completeBiologicalPayload: AttunementPayload = {
+const completeBiologicalPayload: AttunementRitualPayload = {
   topicId: 'topic-a',
   checklist: {
     sleepHours: 7,
@@ -39,7 +44,7 @@ const completeBiologicalPayload: AttunementPayload = {
   },
 };
 
-const incompleteBiologicalPayload: AttunementPayload = {
+const incompleteBiologicalPayload: AttunementRitualPayload = {
   topicId: 'topic-a',
   checklist: {
     sleepHours: 7,
@@ -50,8 +55,8 @@ const incompleteBiologicalPayload: AttunementPayload = {
 
 describe('attunement metrics', () => {
   it('computes harmony score and readiness bucket from checklist', () => {
-    const high = calculateHarmonyScore(highPayload.checklist);
-    const low = calculateHarmonyScore(lowPayload.checklist);
+    const high = calculateRitualHarmony(highPayload.checklist);
+    const low = calculateRitualHarmony(lowPayload.checklist);
 
     expect(high.harmonyScore).toBeGreaterThan(low.harmonyScore);
     expect(high.readinessBucket).toBe('high');
@@ -59,7 +64,7 @@ describe('attunement metrics', () => {
   });
 
   it('derives session buffs from attunement payload', () => {
-    const buffs = generateActiveBuffs(highPayload);
+    const buffs = deriveRitualBuffs(highPayload);
     const buffIds = buffs.map((buff) => buff.buffId);
     expect(buffs.length).toBeGreaterThan(0);
     expect(buffs.some((buff) => buff.modifierType === 'xp_multiplier')).toBe(true);
@@ -70,8 +75,8 @@ describe('attunement metrics', () => {
   });
 
   it('grants biological buffs only when biological section is complete', () => {
-    const completeBuffs = generateActiveBuffs(completeBiologicalPayload);
-    const incompleteBuffs = generateActiveBuffs(incompleteBiologicalPayload);
+    const completeBuffs = deriveRitualBuffs(completeBiologicalPayload);
+    const incompleteBuffs = deriveRitualBuffs(incompleteBiologicalPayload);
 
     const biologicalXpBuffs = completeBuffs.filter((buff) => buff.source === 'biological' && buff.modifierType === 'xp_multiplier');
     expect(biologicalXpBuffs).toHaveLength(1);
@@ -80,7 +85,7 @@ describe('attunement metrics', () => {
   });
 
   it('builds session metrics and adaptation signals', () => {
-    const metrics = buildSessionMetrics('session-1', 'topic-a', [
+    const metrics = buildStudySessionMetrics('session-1', 'topic-a', [
       { cardId: 'a-1', rating: 4, difficulty: 3, timestamp: 1, isCorrect: true },
       { cardId: 'a-2', rating: 3, difficulty: 2, timestamp: 2, isCorrect: false },
       { cardId: 'a-3', rating: 3, difficulty: 1, timestamp: 3, isCorrect: true },
@@ -91,7 +96,7 @@ describe('attunement metrics', () => {
     expect(metrics.avgRating).toBeCloseTo(3.5, 2);
     expect(metrics.correctRate).toBeCloseTo(3 / 4, 5);
 
-    const adaptation = extractAdaptationSignals(metrics);
+    const adaptation = extractStudyAdaptationSignals(metrics);
     expect(adaptation.xpMultiplierHint).toBeGreaterThan(1);
     expect(adaptation.growthSpeedBoost).toBe(1);
     expect(adaptation.clarityBoost).toBe(1.05);

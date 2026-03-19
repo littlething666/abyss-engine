@@ -10,8 +10,7 @@ import { Rating } from '@/types';
 import DebugControls from '@/components/debug/DebugControls';
 
 import { initAbyssDev } from '@/utils/abyssDev';
-import { Card } from '@/types/core';
-import { AttunementPayload, AttunementResult } from '@/types/progression';
+import { AttunementRitualPayload } from '@/types/progression';
 import { useTopicMetadata } from '@/features/content';
 import { deckRepository } from '@/infrastructure/di';
 import { Badge } from '@/components/ui/badge';
@@ -59,7 +58,7 @@ const HomeContent: React.FC = () => {
   const levelUpMessage = useStudyStore(s => s.levelUpMessage);
   const unlockPoints = useStudyStore(s => s.unlockPoints);
   const activeBuffs = useStudyStore((state) => state.activeBuffs);
-  const getRemainingAttunementCooldownMs = useStudyStore((state) => state.getRemainingAttunementCooldownMs);
+  const getRemainingRitualCooldownMs = useStudyStore((state) => state.getRemainingRitualCooldownMs);
   const getDueCardsCount = useStudyStore((state) => state.getDueCardsCount);
 
   const activeTopicIds = useMemo(() => Array.from(new Set(activeCrystals.map((crystal) => crystal.topicId))), [activeCrystals]);
@@ -104,11 +103,9 @@ const HomeContent: React.FC = () => {
   const submitStudyResult = useStudyStore(s => s.submitStudyResult);
   const undoLastStudyResult = useStudyStore(s => s.undoLastStudyResult);
   const redoLastStudyResult = useStudyStore(s => s.redoLastStudyResult);
-  const submitAttunement = useStudyStore(s => s.submitAttunement);
-  const startTopicStudySession = useStudyStore(s => s.startTopicStudySession);
-  const clearPendingAttunement = useStudyStore(s => s.clearPendingAttunement);
+  const submitAttunementRitual = useStudyStore(s => s.submitAttunementRitual);
+  const clearPendingRitual = useStudyStore(s => s.clearPendingRitual);
   const isCurrentCardFlipped = useStudyStore(s => s.isCurrentCardFlipped);
-  const openStudyPanel = useUIStore(s => s.openStudyPanel);
 
   // UI store - modal state - stable selectors
   const isDiscoveryModalOpen = useUIStore(s => s.isDiscoveryModalOpen);
@@ -119,7 +116,7 @@ const HomeContent: React.FC = () => {
   const openRitualModal = useUIStore(s => s.openRitualModal);
   const closeRitualModal = useUIStore(s => s.closeRitualModal);
 
-  const ritualCooldownRemainingMs = getRemainingAttunementCooldownMs(Date.now());
+  const ritualCooldownRemainingMs = getRemainingRitualCooldownMs(Date.now());
 
   const currentTopicId = currentSession?.topicId || null;
 
@@ -173,21 +170,12 @@ const HomeContent: React.FC = () => {
     openRitualModal();
   };
 
-  const handleAttunementSubmit = (payload: AttunementPayload) => {
-    return submitAttunement(payload);
-  };
-
-  const handleAttunementStart = (_result: AttunementResult, topicId: string, cards: Card[]) => {
-    if (!topicId || cards.length === 0) {
-      return;
-    }
-    startTopicStudySession(topicId, cards);
-    openStudyPanel();
-    handleCloseAttunement();
+  const handleAttunementSubmit = (payload: AttunementRitualPayload) => {
+    return submitAttunementRitual(payload);
   };
 
   const handleCloseAttunement = () => {
-    clearPendingAttunement();
+    clearPendingRitual();
     closeRitualModal();
   };
 
@@ -225,7 +213,6 @@ const HomeContent: React.FC = () => {
           cooldownRemainingMs={ritualCooldownRemainingMs}
           onClose={handleCloseAttunement}
           onSubmit={handleAttunementSubmit}
-          onStartSession={handleAttunementStart}
         />
 
         {/* Title */}

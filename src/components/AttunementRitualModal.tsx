@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import {
-  AttunementPayload,
-  AttunementResult,
-  AttunementChecklistSubmission,
+  AttunementRitualPayload,
+  AttunementRitualResult,
+  AttunementRitualChecklist,
 } from '../types/progression';
 import {
   BuffEngine,
@@ -47,8 +47,7 @@ import { Card } from '../types/core';
 interface AttunementRitualModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (payload: AttunementPayload) => AttunementResult | null;
-  onStartSession: (result: AttunementResult, topicId: string, cards: Card[]) => void;
+  onSubmit: (payload: AttunementRitualPayload) => AttunementRitualResult | null;
   cooldownRemainingMs?: number;
 }
 
@@ -56,7 +55,6 @@ export function AttunementRitualModal({
   isOpen,
   onClose,
   onSubmit,
-  onStartSession,
   cooldownRemainingMs = 0,
 }: AttunementRitualModalProps) {
   const [sleepQuality, setSleepQuality] = useState('');
@@ -155,7 +153,7 @@ export function AttunementRitualModal({
   const isCognitiveComplete = digitalSilence && visualClarity && lightingAndAir;
   const isQuestComplete = confidenceRating > 0 && targetCrystal.trim().length > 0 && microGoal.trim().length > 0;
   const sanitizedChecklist = useMemo(() => {
-    const checklist: AttunementChecklistSubmission = {};
+    const checklist: AttunementRitualChecklist = {};
     if (isBiologicalComplete) {
       Object.assign(checklist, getChecklistForSelection(SLEEP_OPTIONS, sleepQuality));
       Object.assign(checklist, getChecklistForSelection(MOVEMENT_OPTIONS, movementQuality));
@@ -191,7 +189,6 @@ export function AttunementRitualModal({
     if (!result) {
       return;
     }
-    onStartSession(result, targetCrystal, selectedTopicCards);
     onClose();
   };
 

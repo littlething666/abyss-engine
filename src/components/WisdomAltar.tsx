@@ -55,7 +55,7 @@ export const WisdomAltar: React.FC = () => {
 
   // Get current subject ID from store
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
-  const getRemainingAttunementCooldownMs = useStudyStore((state) => state.getRemainingAttunementCooldownMs);
+  const getRemainingRitualCooldownMs = useStudyStore((state) => state.getRemainingRitualCooldownMs);
   const [isRitualSubmissionAvailable, setIsRitualSubmissionAvailable] = useState(true);
   const { isPaused } = useSceneInvalidator();
 
@@ -140,7 +140,7 @@ export const WisdomAltar: React.FC = () => {
         return;
       }
 
-      const remaining = getRemainingAttunementCooldownMs(Date.now());
+      const remaining = getRemainingRitualCooldownMs(Date.now());
       setIsRitualSubmissionAvailable(remaining <= 0);
     };
 
@@ -150,7 +150,7 @@ export const WisdomAltar: React.FC = () => {
     return () => {
       window.clearInterval(timer);
     };
-  }, [getRemainingAttunementCooldownMs]);
+  }, [getRemainingRitualCooldownMs]);
 
   useFrame(() => {
     if (isPaused) {

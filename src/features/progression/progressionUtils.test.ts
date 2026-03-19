@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AttunementSessionRecord } from '../../types/progression';
+import { AttunementRitualRecord } from '../../types/progression';
 import { BuffEngine } from './buffs/buffEngine';
 import { captureUndoSnapshot, restoreUndoSnapshot, trimUndoSnapshotStack } from './progressionUtils';
 
@@ -24,7 +24,7 @@ function createProgressState() {
     ],
     cardDifficultyById: { 'card-1': 1, 'card-2': 1 },
   };
-  const attunementSession: AttunementSessionRecord = {
+  const attunementSession: AttunementRitualRecord = {
     sessionId: 'session-1',
     topicId: 'topic-a',
     startedAt: Date.now() - 1000,
@@ -33,10 +33,6 @@ function createProgressState() {
     readinessBucket: 'low',
     checklist: {},
     buffs: [activeBuff],
-    totalAttempts: 1,
-    correctRate: 1,
-    avgRating: 3,
-    sessionDurationMs: 1000,
   };
 
   return {
@@ -63,8 +59,9 @@ function createProgressState() {
     levelUpMessage: null,
     isCurrentCardFlipped: true,
     activeBuffs: [activeBuff],
-    attunementSessions: [attunementSession],
-    pendingAttunement: null,
+    attunementRituals: [attunementSession],
+    studySessionHistory: [],
+    pendingRitual: null,
   };
 }
 
@@ -107,7 +104,8 @@ describe('progressionUtils', () => {
       cardDifficultyById: state.currentSession.cardDifficultyById,
     });
     expect(restored.currentSession.topicId).toBe('topic-a');
-    expect(restored.attunementSessions).toEqual(state.attunementSessions);
+    expect(restored.attunementRituals).toEqual(state.attunementRituals);
+    expect(restored.studySessionHistory).toEqual(state.studySessionHistory);
     expect(restored.isCurrentCardFlipped).toBe(false);
   });
 

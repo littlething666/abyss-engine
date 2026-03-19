@@ -1,12 +1,12 @@
 import {
-  AttunementChecklistSubmission,
-  AttunementPayload,
-  AttunementReadinessBucket,
+  AttunementRitualChecklist,
+  AttunementRitualPayload,
   Buff,
+  StudySessionAttempt,
 } from '../../types/progression';
 import { BuffEngine } from '../progression/buffs/buffEngine';
 
-export interface AttunementDimensionScores {
+export interface RitualDimensionScores {
   readiness: number;
   biological: number;
   environmental: number;
@@ -14,39 +14,36 @@ export interface AttunementDimensionScores {
   confidence: number;
 }
 
-export interface SessionAttempt {
-  cardId: string;
-  rating: 1 | 2 | 3 | 4;
-  difficulty: number;
-  timestamp: number;
-  isCorrect: boolean;
+export interface RitualHarmonyResult {
+  harmonyScore: number;
+  readinessBucket: 'low' | 'medium' | 'high';
+  dimensionScores: RitualDimensionScores;
 }
 
-export interface SessionMetrics {
+export interface StudySessionTelemetryMetrics {
   topicId: string;
   sessionId: string;
   sessionDurationMs: number;
-  attempts: SessionAttempt[];
+  attempts: StudySessionAttempt[];
   avgDifficulty: number;
   avgRating: number;
   correctRate: number;
   cardsCompleted: number;
 }
 
-export interface AdaptationSignals {
+export interface StudyAdaptationSignals {
   xpMultiplierHint: number;
   growthSpeedBoost: number;
   clarityBoost: number;
 }
 
 const MAX_HARMONY_SCORE = 12;
-const DEFAULT_SESSION_ID_PREFIX = 'attunement-session';
 
 function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));
 }
 
-function toBucket(score: number): AttunementReadinessBucket {
+function toBucket(score: number): RitualHarmonyResult['readinessBucket'] {
   if (score >= 9) {
     return 'high';
   }
@@ -56,13 +53,9 @@ function toBucket(score: number): AttunementReadinessBucket {
   return 'low';
 }
 
-export function calculateHarmonyScore(
-  checklist: AttunementChecklistSubmission,
-): {
-  harmonyScore: number;
-  readinessBucket: AttunementReadinessBucket;
-  dimensionScores: AttunementDimensionScores;
-} {
+export function calculateRitualHarmony(
+  checklist: AttunementRitualChecklist,
+): RitualHarmonyResult {
   const readiness = checklist.confidenceRating ? clamp01((checklist.confidenceRating - 1) / 4) * 3 : 0;
   const biological = 0 +
     (checklist.sleepHours !== undefined && checklist.sleepHours >= 7 ? 2 : checklist.sleepHours !== undefined && checklist.sleepHours >= 5 ? 1 : 0) +
@@ -80,6 +73,7 @@ export function calculateHarmonyScore(
 
   const score = biological + environmental + intent + readiness;
   const normalized = Math.round((score / MAX_HARMONY_SCORE) * 100);
+
   return {
     harmonyScore: Math.max(0, Math.min(100, normalized)),
     readinessBucket: toBucket(Math.round(score)),
@@ -93,7 +87,7 @@ export function calculateHarmonyScore(
   };
 }
 
-export function generateActiveBuffs(payload: AttunementPayload): Buff[] {
+export function deriveRitualBuffs(payload: AttunementRitualPayload): Buff[] {
   const checklist = payload.checklist;
   const buffs: Buff[] = [];
   const isBiologicalComplete = checklist.sleepHours !== undefined
@@ -122,7 +116,12 @@ export function generateActiveBuffs(payload: AttunementPayload): Buff[] {
   return buffs;
 }
 
-export function buildSessionMetrics(sessionId: string, topicId: string, attempts: SessionAttempt[], sessionStartedAt: number): SessionMetrics {
+export function buildStudySessionMetrics(
+  sessionId: string,
+  topicId: string,
+  attempts: StudySessionAttempt[],
+  sessionStartedAt: number,
+): StudySessionTelemetryMetrics {
   const cardsCompleted = attempts.length;
   const avgDifficulty = cardsCompleted === 0
     ? 0
@@ -145,7 +144,7 @@ export function buildSessionMetrics(sessionId: string, topicId: string, attempts
   };
 }
 
-export function extractAdaptationSignals(metrics: SessionMetrics): AdaptationSignals {
+export function extractStudyAdaptationSignals(metrics: StudySessionTelemetryMetrics): StudyAdaptationSignals {
   return {
     xpMultiplierHint: metrics.correctRate >= 0.67 ? 1.05 : 1,
     growthSpeedBoost: metrics.correctRate >= 0.8 ? 1.08 : 1,
@@ -153,6 +152,13 @@ export function extractAdaptationSignals(metrics: SessionMetrics): AdaptationSig
   };
 }
 
-export function makeSessionId(topicId: string) {
-  return `${DEFAULT_SESSION_ID_PREFIX}-${topicId}-${Date.now()}`;
+const RITUAL_SESSION_ID_PREFIX = 'attunement-session';
+const STUDY_SESSION_ID_PREFIX = 'study-session';
+
+export function makeRitualSessionId(topicId: string) {
+  return `${RITUAL_SESSION_ID_PREFIX}-${topicId}-${Date.now()}`;
+}
+
+export function makeStudySessionId(topicId: string) {
+  return `${STUDY_SESSION_ID_PREFIX}-${topicId}-${Date.now()}`;
 }

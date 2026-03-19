@@ -17,8 +17,10 @@ import type { ProgressionEventPayload, ProgressionEventType } from './events';
 import { defaultSM2, sm2, SM2Data } from './sm2';
 import { Card, SubjectGraph } from '../../types/core';
 import {
-  AttunementPayload,
-  AttunementSessionRecord,
+  AttunementRitualPayload,
+  AttunementRitualRecord,
+  StudySessionAttempt,
+  StudySessionTelemetryRecord,
   INITIAL_UNLOCK_POINTS,
   ProgressionActions,
   ProgressionState,
@@ -28,15 +30,17 @@ import {
 import { BuffEngine } from './buffs/buffEngine';
 import { findNextGridPosition } from './gridUtils';
 import {
-  buildSessionMetrics,
-  calculateHarmonyScore,
-  generateActiveBuffs,
-  makeSessionId,
+  buildStudySessionMetrics,
+  calculateRitualHarmony,
+  deriveRitualBuffs,
+  makeRitualSessionId,
+  makeStudySessionId,
 } from '../analytics/attunementMetrics';
 
 type ProgressionStore = ProgressionState & ProgressionActions;
 const PROGRESSION_STORAGE_KEY = 'abyss-progression';
-const ATTUNEMENT_SESSIONS_STORAGE_KEY = `${PROGRESSION_STORAGE_KEY}-attunement-sessions`;
+const ATTUNEMENT_RITUALS_STORAGE_KEY = `${PROGRESSION_STORAGE_KEY}-attunement-rituals`;
+const STUDY_SESSIONS_STORAGE_KEY = `${PROGRESSION_STORAGE_KEY}-study-sessions`;
 export const ATTUNEMENT_SUBMISSION_COOLDOWN_MS = 8 * 60 * 60 * 1000;
 
 function safeParseJSON<T>(raw: string): T | null {
@@ -68,8 +72,8 @@ function writeToStorage(key: string, value: unknown) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
-function getInitialAttunementSessions(): AttunementSessionRecord[] {
-  const separateStore = readFromStorage<AttunementSessionRecord[]>(ATTUNEMENT_SESSIONS_STORAGE_KEY);
+function getInitialAttunementRituals(): AttunementRitualRecord[] {
+  const separateStore = readFromStorage<AttunementRitualRecord[]>(ATTUNEMENT_RITUALS_STORAGE_KEY);
   if (Array.isArray(separateStore)) {
     return separateStore;
   }
@@ -77,13 +81,22 @@ function getInitialAttunementSessions(): AttunementSessionRecord[] {
   return [];
 }
 
-function getLatestRitualSession(records: AttunementSessionRecord[]): AttunementSessionRecord | null {
+function getInitialStudySessionHistory(): StudySessionTelemetryRecord[] {
+  const separateStore = readFromStorage<StudySessionTelemetryRecord[]>(STUDY_SESSIONS_STORAGE_KEY);
+  if (Array.isArray(separateStore)) {
+    return separateStore;
+  }
+
+  return [];
+}
+
+function getLatestRitualSession(records: AttunementRitualRecord[]): AttunementRitualRecord | null {
   const ritualSessions = records.filter((session) => Object.keys(session.checklist).length > 0);
   if (ritualSessions.length === 0) {
     return null;
   }
 
-  return ritualSessions.reduce<AttunementSessionRecord | null>((latest, session) => {
+  return ritualSessions.reduce<AttunementRitualRecord | null>((latest, session) => {
     if (!latest) {
       return session;
     }
@@ -91,7 +104,7 @@ function getLatestRitualSession(records: AttunementSessionRecord[]): AttunementS
   }, null);
 }
 
-function getRemainingAttunementCooldownMs(records: AttunementSessionRecord[], atMs: number): number {
+function getRemainingRitualCooldownMs(records: AttunementRitualRecord[], atMs: number): number {
   const latestSession = getLatestRitualSession(records);
   if (!latestSession) {
     return 0;
@@ -101,20 +114,16 @@ function getRemainingAttunementCooldownMs(records: AttunementSessionRecord[], at
   return Math.max(0, remaining);
 }
 
-function persistAttunementSessions(sessions: AttunementSessionRecord[]) {
-  writeToStorage(ATTUNEMENT_SESSIONS_STORAGE_KEY, sessions);
+function persistAttunementRituals(sessions: AttunementRitualRecord[]) {
+  writeToStorage(ATTUNEMENT_RITUALS_STORAGE_KEY, sessions);
+}
+
+function persistStudySessionHistory(sessions: StudySessionTelemetryRecord[]) {
+  writeToStorage(STUDY_SESSIONS_STORAGE_KEY, sessions);
 }
 
 interface CardWithSm2 extends Card {
   sm2: SM2Data;
-}
-
-interface SessionAttempt {
-  cardId: string;
-  rating: Rating;
-  difficulty: number;
-  timestamp: number;
-  isCorrect: boolean;
 }
 
 function normalizeActiveBuffs(state: { activeBuffs: Buff[] }, incoming: Buff[]): Buff[] {
@@ -141,10 +150,10 @@ function dedupeBuffsById(buffs: Buff[]): Buff[] {
   return deduped.reverse();
 }
 
-function upsertAttunementRecord(
-  records: AttunementSessionRecord[],
-  record: AttunementSessionRecord,
-): AttunementSessionRecord[] {
+function upsertRitualRecord(
+  records: AttunementRitualRecord[],
+  record: AttunementRitualRecord,
+): AttunementRitualRecord[] {
   const index = records.findIndex((item) => item.sessionId === record.sessionId);
   if (index === -1) {
     return [...records, record];
@@ -176,54 +185,58 @@ export const useProgressionStore = create<ProgressionStore>()(
       levelUpMessage: null,
       isCurrentCardFlipped: false,
       activeBuffs: [],
-      attunementSessions: [],
-      pendingAttunement: null,
+      attunementRituals: [],
+      studySessionHistory: [],
+      pendingRitual: null,
 
       initialize: () => {
-        const initialAttunementSessions = getInitialAttunementSessions();
-        persistAttunementSessions(initialAttunementSessions);
+        const initialAttunementSessions = getInitialAttunementRituals();
+        const initialStudySessionHistory = getInitialStudySessionHistory();
+        persistAttunementRituals(initialAttunementSessions);
+        persistStudySessionHistory(initialStudySessionHistory);
         const currentState = get();
         const hydratedActiveBuffs = currentState.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
         const activeBuffsAfterSessionEnd = BuffEngine.get().consumeForEvent(hydratedActiveBuffs, 'session_ended');
         const activeBuffs = BuffEngine.get().pruneExpired(activeBuffsAfterSessionEnd);
         set((state) => ({
           levelUpMessage: state.levelUpMessage || null,
-          attunementSessions: initialAttunementSessions,
+          attunementRituals: initialAttunementSessions,
+          studySessionHistory: initialStudySessionHistory,
           activeBuffs: dedupeBuffsById(activeBuffs),
         }));
       },
 
       setCurrentSubject: (subjectId) => set({ currentSubjectId: subjectId }),
 
-      openAttunementForTopic: (topicId, cards) => {
+      openRitualForTopic: (topicId, cards) => {
         set({
-          pendingAttunement: {
+          pendingRitual: {
             topicId,
             cards,
-            sessionId: makeSessionId(topicId),
+            sessionId: makeRitualSessionId(topicId),
           },
         });
       },
 
-      submitAttunement: (payload) => {
+      submitAttunementRitual: (payload) => {
         const state = get();
         const now = Date.now();
-        if (getRemainingAttunementCooldownMs(state.attunementSessions, now) > 0) {
+        if (getRemainingRitualCooldownMs(state.attunementRituals, now) > 0) {
           return null;
         }
 
-        const sessionId = state.pendingAttunement?.topicId === payload.topicId
-          ? state.pendingAttunement.sessionId
-          : makeSessionId(payload.topicId);
+        const sessionId = state.pendingRitual?.topicId === payload.topicId
+          ? state.pendingRitual.sessionId
+          : makeRitualSessionId(payload.topicId);
         const nextPendingAttunement = {
           topicId: payload.topicId,
           cards: [],
           sessionId,
         };
-        const { harmonyScore, readinessBucket } = calculateHarmonyScore(payload.checklist);
-        const buffs = generateActiveBuffs(payload);
+        const { harmonyScore, readinessBucket } = calculateRitualHarmony(payload.checklist);
+        const buffs = deriveRitualBuffs(payload);
 
-        const sessionRecord: AttunementSessionRecord = {
+        const sessionRecord: AttunementRitualRecord = {
           sessionId,
           topicId: payload.topicId,
           startedAt: Date.now(),
@@ -234,13 +247,13 @@ export const useProgressionStore = create<ProgressionStore>()(
           buffs,
         };
 
-        const nextAttunementSessions = upsertAttunementRecord(state.attunementSessions, sessionRecord);
+        const nextAttunementRituals = upsertRitualRecord(state.attunementRituals, sessionRecord);
         set({
           activeBuffs: normalizeActiveBuffs(state, buffs),
-          attunementSessions: nextAttunementSessions,
-          pendingAttunement: nextPendingAttunement,
+          attunementRituals: nextAttunementRituals,
+          pendingRitual: nextPendingAttunement,
         });
-        persistAttunementSessions(nextAttunementSessions);
+        persistAttunementRituals(nextAttunementRituals);
 
         return {
           harmonyScore,
@@ -249,8 +262,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         };
       },
 
-      getRemainingAttunementCooldownMs: (atMs) => {
-        return getRemainingAttunementCooldownMs(get().attunementSessions, atMs);
+      getRemainingRitualCooldownMs: (atMs) => {
+        return getRemainingRitualCooldownMs(get().attunementRituals, atMs);
       },
 
       emitEvent: <T extends ProgressionEventType>(type: T, payload: ProgressionEventPayload<T>) => {
@@ -261,7 +274,7 @@ export const useProgressionStore = create<ProgressionStore>()(
       },
 
       clearActiveBuffs: () => set({ activeBuffs: [] }),
-      clearPendingAttunement: () => set({ pendingAttunement: null }),
+      clearPendingRitual: () => set({ pendingRitual: null }),
 
       startTopicStudySession: (topicId, cards) => {
         const state = get();
@@ -279,16 +292,16 @@ export const useProgressionStore = create<ProgressionStore>()(
           acc[card.id] = card.difficulty;
           return acc;
         }, {});
-        const sessionId = state.pendingAttunement?.topicId === topicId
-          ? state.pendingAttunement.sessionId
-          : makeSessionId(topicId);
+        const sessionId = state.pendingRitual?.topicId === topicId
+          ? state.pendingRitual.sessionId
+          : makeStudySessionId(topicId);
         const startedAt = Date.now();
         const activeBuffIds = state.activeBuffs.map((buff) => buff.buffId);
-        let attunementSessions = state.attunementSessions;
+        let attunementRituals = state.attunementRituals;
         if (sessionId) {
-          const existingSession = state.attunementSessions.find((record) => record.sessionId === sessionId);
+          const existingSession = state.attunementRituals.find((record) => record.sessionId === sessionId);
           if (existingSession) {
-            attunementSessions = state.attunementSessions.map((record) => (
+            attunementRituals = state.attunementRituals.map((record) => (
               record.sessionId === sessionId
                 ? { ...record, startedAt }
                 : record
@@ -311,10 +324,10 @@ export const useProgressionStore = create<ProgressionStore>()(
             redoStack: [],
           },
           isCurrentCardFlipped: false,
-          pendingAttunement: null,
-          attunementSessions,
+          pendingRitual: null,
+          attunementRituals,
         });
-        persistAttunementSessions(attunementSessions);
+        persistAttunementRituals(attunementRituals);
       },
 
       submitStudyResult: (cardId, rating) => {
@@ -346,8 +359,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         const unlockedLevels = nextLevel - previousLevel;
         const difficulty = session.cardDifficultyById?.[cardId] ?? 1;
         const isCorrect = rating >= 3;
-        const sessionId = session.sessionId ?? makeSessionId(session.topicId);
-        const attempt: SessionAttempt = {
+        const sessionId = session.sessionId ?? makeStudySessionId(session.topicId);
+        const attempt: StudySessionAttempt = {
           cardId,
           rating,
           difficulty,
@@ -363,46 +376,36 @@ export const useProgressionStore = create<ProgressionStore>()(
           : BuffEngine.get().consumeForEvent(buffsAfterUsage, 'session_ended');
         const isSessionComplete = nextQueue.length === 0;
         const sessionMetrics = isSessionComplete
-          ? buildSessionMetrics(sessionId, session.topicId, nextAttempts, session.startedAt ?? Date.now())
+          ? buildStudySessionMetrics(sessionId, session.topicId, nextAttempts, session.startedAt ?? Date.now())
           : null;
-        let attunementSessions = state.attunementSessions;
+        let studySessionHistory = state.studySessionHistory;
         if (sessionId) {
-          const existingRecord = state.attunementSessions.find((record) => record.sessionId === sessionId);
           if (isSessionComplete) {
-            if (existingRecord) {
-              attunementSessions = state.attunementSessions.map((record) => {
-                if (record.sessionId !== sessionId) {
-                  return record;
-                }
-                return {
-                  ...record,
-                  completedAt: Date.now(),
-                  totalAttempts: sessionMetrics?.cardsCompleted ?? record.totalAttempts ?? 0,
-                  correctRate: sessionMetrics?.correctRate ?? record.correctRate ?? 0,
-                  avgRating: sessionMetrics?.avgRating ?? record.avgRating ?? 0,
-                  sessionDurationMs: sessionMetrics?.sessionDurationMs ?? record.sessionDurationMs ?? 0,
-                  readinessBucket: record.readinessBucket || 'low',
-                };
-              });
-            } else {
-              attunementSessions = [
-                ...state.attunementSessions,
-                {
-                  sessionId,
-                  topicId: session.topicId,
-                  startedAt: session.startedAt ?? Date.now(),
-                  completedAt: Date.now(),
-                  harmonyScore: 0,
-                  readinessBucket: 'low',
-                  checklist: {},
-                  buffs: dedupeBuffsById(state.activeBuffs),
-                  totalAttempts: sessionMetrics?.cardsCompleted ?? 0,
-                  correctRate: sessionMetrics?.correctRate ?? 0,
-                  avgRating: sessionMetrics?.avgRating ?? 0,
-                  sessionDurationMs: sessionMetrics?.sessionDurationMs ?? 0,
-                },
+            const existingRecord = state.studySessionHistory.find((record) => record.sessionId === sessionId);
+            const studySessionRecord: StudySessionTelemetryRecord = {
+              sessionId,
+              topicId: session.topicId,
+              startedAt: session.startedAt ?? Date.now(),
+              completedAt: Date.now(),
+              attempts: nextAttempts,
+              totalAttempts: sessionMetrics?.cardsCompleted ?? 0,
+              cardsCompleted: sessionMetrics?.cardsCompleted ?? 0,
+              avgRating: sessionMetrics?.avgRating ?? 0,
+              correctRate: sessionMetrics?.correctRate ?? 0,
+              sessionDurationMs: sessionMetrics?.sessionDurationMs ?? 0,
+              ritualSessionId: state.attunementRituals.find((record) => record.sessionId === sessionId)?.sessionId,
+            };
+
+            studySessionHistory = existingRecord
+              ? state.studySessionHistory.map((record) => (
+                record.sessionId === sessionId
+                  ? { ...record, ...studySessionRecord }
+                  : record
+              ))
+              : [
+                ...state.studySessionHistory,
+                studySessionRecord,
               ];
-            }
           }
         }
 
@@ -420,7 +423,7 @@ export const useProgressionStore = create<ProgressionStore>()(
                 }
               : item,
           ),
-          attunementSessions,
+          studySessionHistory,
           currentSession: {
             ...session,
             attempts: nextAttempts,
@@ -434,7 +437,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           activeBuffs: nextBuffs,
           isCurrentCardFlipped: false,
         }));
-        persistAttunementSessions(attunementSessions);
+        persistStudySessionHistory(studySessionHistory);
         get().emitEvent('xp-gained', {
           amount: buffedReward,
           rating,
@@ -616,7 +619,7 @@ export const useProgressionStore = create<ProgressionStore>()(
         currentSubjectId: state.currentSubjectId,
         currentSession: state.currentSession,
         activeBuffs: state.activeBuffs,
-        pendingAttunement: state.pendingAttunement,
+        pendingRitual: state.pendingRitual,
       }),
     },
   ),

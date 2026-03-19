@@ -2,7 +2,6 @@ import { ActiveCrystal, GraphNode, SubjectGraph } from '../../types/core';
 import { Rating } from '../../types';
 import { BuffEngine } from './buffs/buffEngine';
 import {
-  AttunementSessionRecord,
   ProgressionState,
   StudySessionCore,
   StudyUndoSnapshot,
@@ -85,7 +84,8 @@ export function captureUndoSnapshot(state: ProgressionState): StudyUndoSnapshot 
     activeBuffs: cloneDeep(state.activeBuffs),
     unlockPoints: state.unlockPoints,
     currentSession: coreSession,
-    attunementSessions: cloneDeep(state.attunementSessions),
+    attunementRituals: cloneDeep(state.attunementRituals),
+    studySessionHistory: cloneDeep(state.studySessionHistory),
   };
 }
 
@@ -105,7 +105,8 @@ export function restoreUndoSnapshot(state: ProgressionState, snapshot: StudyUndo
     activeBuffs: restoredActiveBuffs,
     unlockPoints: snapshot.unlockPoints,
     currentSession: snapshot.currentSession,
-    attunementSessions: snapshot.attunementSessions,
+    attunementRituals: snapshot.attunementRituals,
+    studySessionHistory: snapshot.studySessionHistory,
     isCurrentCardFlipped: false,
   };
 }

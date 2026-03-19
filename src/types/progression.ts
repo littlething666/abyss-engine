@@ -31,7 +31,7 @@ export interface Buff {
 
 export type AttunementReadinessBucket = 'low' | 'medium' | 'high';
 
-export interface AttunementChecklistSubmission {
+export interface AttunementRitualChecklist {
   sleepHours?: number;
   movementMinutes?: number;
   fuelQuality?: 'underfueled' | 'sugar-rush' | 'steady-fuel' | 'food-coma';
@@ -44,37 +44,57 @@ export interface AttunementChecklistSubmission {
   confidenceRating?: number;
 }
 
-export interface AttunementPayload {
+export interface AttunementRitualPayload {
   topicId: string;
-  checklist: AttunementChecklistSubmission;
+  checklist: AttunementRitualChecklist;
 }
 
-export interface AttunementResult {
+export interface AttunementRitualResult {
   harmonyScore: number;
   readinessBucket: AttunementReadinessBucket;
   buffs: Buff[];
 }
 
-export interface AttunementSessionRecord {
+export interface AttunementRitualRecord {
   sessionId: string;
   topicId: string;
   startedAt: number;
   completedAt: number | null;
   harmonyScore: number;
   readinessBucket: AttunementReadinessBucket;
-  checklist: AttunementChecklistSubmission;
+  checklist: AttunementRitualChecklist;
   buffs: Buff[];
-  totalAttempts?: number;
-  correctRate?: number;
-  avgRating?: number;
-  sessionDurationMs?: number;
 }
 
-export interface PendingAttunementState {
+export interface StudySessionAttempt {
+  cardId: string;
+  rating: 1 | 2 | 3 | 4;
+  difficulty: number;
+  timestamp: number;
+  isCorrect: boolean;
+}
+
+export interface StudySessionTelemetryRecord {
+  sessionId: string;
+  topicId: string;
+  startedAt: number;
+  completedAt: number;
+  attempts: StudySessionAttempt[];
+  totalAttempts: number;
+  cardsCompleted: number;
+  avgRating: number;
+  correctRate: number;
+  sessionDurationMs: number;
+  ritualSessionId?: string;
+}
+
+export interface PendingRitualState {
   topicId: string;
   cards: Card[];
   sessionId: string;
 }
+
+export interface PendingAttunementState extends PendingRitualState {}
 
 export type Rating = 1 | 2 | 3 | 4;
 
@@ -86,13 +106,7 @@ export interface StudySession {
   sessionId?: string;
   startedAt?: number;
   activeBuffIds?: string[];
-  attempts?: Array<{
-    cardId: string;
-    rating: Rating;
-    difficulty: number;
-    timestamp: number;
-    isCorrect: boolean;
-  }>;
+  attempts?: StudySessionAttempt[];
   cardDifficultyById?: Record<string, number>;
   undoStack: StudyUndoSnapshot[];
   redoStack: StudyUndoSnapshot[];
@@ -112,7 +126,8 @@ export interface StudyUndoSnapshot {
   activeBuffs: Buff[];
   unlockPoints: number;
   currentSession: StudySessionCore;
-  attunementSessions: AttunementSessionRecord[];
+  attunementRituals: AttunementRitualRecord[];
+  studySessionHistory: StudySessionTelemetryRecord[];
 }
 
 export interface ProgressionState {
@@ -130,19 +145,20 @@ export interface ProgressionState {
   levelUpMessage: string | null;
   isCurrentCardFlipped: boolean;
   activeBuffs: Buff[];
-  attunementSessions: AttunementSessionRecord[];
-  pendingAttunement: PendingAttunementState | null;
+  attunementRituals: AttunementRitualRecord[];
+  studySessionHistory: StudySessionTelemetryRecord[];
+  pendingRitual: PendingRitualState | null;
 }
 
 export interface ProgressionActions {
   initialize: () => void;
   setCurrentSubject: (subjectId: string | null) => void;
   startTopicStudySession: (topicId: string, cards: Card[]) => void;
-  openAttunementForTopic: (topicId: string, cards: Card[]) => void;
-  submitAttunement: (payload: AttunementPayload) => AttunementResult | null;
-  getRemainingAttunementCooldownMs: (atMs: number) => number;
+  openRitualForTopic: (topicId: string, cards: Card[]) => void;
+  submitAttunementRitual: (payload: AttunementRitualPayload) => AttunementRitualResult | null;
+  getRemainingRitualCooldownMs: (atMs: number) => number;
   clearActiveBuffs: () => void;
-  clearPendingAttunement: () => void;
+  clearPendingRitual: () => void;
   submitStudyResult: (cardId: string, rating: Rating) => void;
   undoLastStudyResult: () => void;
   redoLastStudyResult: () => void;
