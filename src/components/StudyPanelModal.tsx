@@ -45,9 +45,8 @@ export function StudyPanelModal({
   const targetAudience = useStudySettingsStore((state) => state.targetAudience);
   const setTargetAudience = useStudySettingsStore((state) => state.setTargetAudience);
   const currentSession = useStudyStore((state) => state.currentSession);
-  const studyLevelUpQueue = useStudyStore((state) => state.studyLevelUpQueue);
-  const unlockPoints = useStudyStore((state) => state.unlockPoints);
-  const clearStudyLevelUpQueue = useStudyStore((state) => state.clearStudyLevelUpQueue);
+  const studyLevelUp = useStudyStore((state) => state.studyLevelUp);
+  const clearStudyLevelUp = useStudyStore((state) => state.clearStudyLevelUp);
 
   const model = useStudyPanelModel({
     currentCardId,
@@ -245,13 +244,12 @@ export function StudyPanelModal({
             />
           )}
       </div>
-        {studyLevelUpQueue && studyLevelUpQueue.topicId === (currentSession?.topicId ?? currentTopicId) && (
+        {studyLevelUp && studyLevelUp.topicId === (currentSession?.topicId ?? currentTopicId) && (
           <StudyLevelUpOverlay
-            key={`${studyLevelUpQueue.sessionId}-${studyLevelUpQueue.steps.map((s) => s.newLevel).join('-')}`}
-            queue={studyLevelUpQueue}
-            topicDisplayName={model.resolvedTopic.trim() || studyLevelUpQueue.topicId}
-            totalUnlockPoints={unlockPoints}
-            onComplete={clearStudyLevelUpQueue}
+            key={`${studyLevelUp.sessionId}-${studyLevelUp.newLevel}`}
+            celebration={studyLevelUp}
+            topicDisplayName={model.resolvedTopic.trim() || studyLevelUp.topicId}
+            onComplete={clearStudyLevelUp}
           />
         )}
       </DialogContent>

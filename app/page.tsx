@@ -127,7 +127,7 @@ const HomeContent: React.FC = () => {
   const isStudyTimelineOpen = useUIStore((state) => state.isStudyTimelineOpen);
   const closeDiscoveryModal = useUIStore(s => s.closeDiscoveryModal);
   const closeStudyPanel = useUIStore(s => s.closeStudyPanel);
-  const clearStudyLevelUpQueue = useStudyStore((s) => s.clearStudyLevelUpQueue);
+  const clearStudyLevelUp = useStudyStore((s) => s.clearStudyLevelUp);
   const openRitualModal = useUIStore(s => s.openRitualModal);
   const closeRitualModal = useUIStore(s => s.closeRitualModal);
   const openStudyTimeline = useUIStore((state) => state.openStudyTimeline);
@@ -166,7 +166,7 @@ const HomeContent: React.FC = () => {
 
   // Study Panel Modal handlers
   const handleCloseStudyPanel = () => {
-    clearStudyLevelUpQueue();
+    clearStudyLevelUp();
     closeStudyPanel();
   };
 

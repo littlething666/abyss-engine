@@ -8,8 +8,8 @@ import { calculateLevelFromXP, getXpTierLabel, getXpTierProgress01 } from '@/fea
 export interface StudyLevelUpXpBarProps {
   fromXp: number;
   toXp: number;
-  /** Bump when the step changes so the animation restarts. */
-  animationKey: number;
+  /** Bump when the celebration changes so the animation restarts. */
+  animationKey: string | number;
   className?: string;
 }
 

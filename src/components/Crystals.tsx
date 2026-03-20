@@ -92,7 +92,7 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
   const burstTimerRef = useRef<number | null>(null);
   const initialized = useRef(false);
   const suppressNextClickRef = useRef(false);
-  const studyLevelUpQueue = useProgressionStore((state) => state.studyLevelUpQueue);
+  const studyLevelUp = useProgressionStore((state) => state.studyLevelUp);
 
   const handleCrystalSelection = () => {
     onSelect(crystal);
@@ -149,10 +149,7 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
       return;
     }
 
-    const deferForStudyOverlay =
-      isStudyPanelOpen &&
-      studyLevelUpQueue !== null &&
-      studyLevelUpQueue.topicId === crystal.topicId;
+    const deferForStudyOverlay = isStudyPanelOpen && studyLevelUp !== null;
 
     if (level > previousLevel.current && deferForStudyOverlay) {
       pendingTargetScale.current = nextScale;
@@ -173,13 +170,10 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
         invalidate();
       }
     }
-  }, [level, isStudyPanelOpen, studyLevelUpQueue, crystal.topicId, invalidate]);
+  }, [level, isStudyPanelOpen, studyLevelUp, invalidate]);
 
   useEffect(() => {
-    const blockedByLevelUpOverlay =
-      isStudyPanelOpen &&
-      studyLevelUpQueue !== null &&
-      studyLevelUpQueue.topicId === crystal.topicId;
+    const blockedByLevelUpOverlay = isStudyPanelOpen && studyLevelUp !== null;
 
     if (blockedByLevelUpOverlay || pendingTargetScale.current === null) {
       return;
@@ -203,14 +197,11 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
       triggerParticleBurst();
     }
     invalidate();
-  }, [isStudyPanelOpen, studyLevelUpQueue, crystal.topicId, invalidate]);
+  }, [isStudyPanelOpen, studyLevelUp, invalidate]);
 
   useEffect(() => {
     if (level > previousLevel.current && level > 0) {
-      const deferParticlesForOverlay =
-        isStudyPanelOpen &&
-        studyLevelUpQueue !== null &&
-        studyLevelUpQueue.topicId === crystal.topicId;
+      const deferParticlesForOverlay = isStudyPanelOpen && studyLevelUp !== null;
 
       if (deferParticlesForOverlay) {
         pendingParticles.current = true;
@@ -221,7 +212,7 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
     }
 
     previousLevel.current = level;
-  }, [level, isStudyPanelOpen, studyLevelUpQueue, crystal.topicId]);
+  }, [level, isStudyPanelOpen, studyLevelUp]);
 
   useEffect(() => () => {
     if (burstTimerRef.current !== null) {

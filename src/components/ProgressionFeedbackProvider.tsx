@@ -19,12 +19,7 @@ const HISTORY_MESSAGE: Record<'undo' | 'redo', string> = {
 
 export function ProgressionFeedbackProvider() {
   useEffect(() => {
-    const eventTypes: ProgressionEventType[] = [
-      'study-panel-history',
-      'xp-gained',
-      'session-complete',
-      'level-up',
-    ];
+    const eventTypes: ProgressionEventType[] = ['study-panel-history', 'xp-gained', 'session-complete'];
 
     const handleProgressionEvent = (event: Event) => {
       const payload = (event as CustomEvent).detail as ProgressionEventMap[keyof ProgressionEventMap];
@@ -56,9 +51,6 @@ export function ProgressionFeedbackProvider() {
             `Session complete: ${sessionPayload.totalAttempts} attempt${sessionPayload.totalAttempts === 1 ? '' : 's'}.`,
             { duration: 2000 },
           );
-          break;
-        }
-        case 'level-up': {
           break;
         }
       }

@@ -61,7 +61,7 @@ function resetStore() {
     pendingRitual: null,
     currentSubjectId: null,
     currentSession: null,
-    studyLevelUpQueue: null,
+    studyLevelUp: null,
     unlockPoints: 0,
   });
   telemetry.getStore.setState({ events: [] });
@@ -172,13 +172,8 @@ describe('progressionStore card-only canonical API', () => {
     expect(updatedState.unlockPoints).toBe(1);
   });
 
-  it('enqueues study level-up steps and emits a level-up progression event', () => {
+  it('stores a single study level-up celebration payload when tiers increase', () => {
     const cards = [createCard('a-1')];
-    const received: unknown[] = [];
-    const handler = (event: Event) => {
-      received.push((event as CustomEvent).detail);
-    };
-    window.addEventListener('abyss-progression-level-up', handler);
 
     useProgressionStore.setState({
       unlockedTopicIds: ['topic-a'],
@@ -189,23 +184,18 @@ describe('progressionStore card-only canonical API', () => {
     useProgressionStore.getState().startTopicStudySession('topic-a', cards);
     useProgressionStore.getState().submitStudyResult('a-1', 4);
 
-    const queue = useProgressionStore.getState().studyLevelUpQueue;
-    expect(queue?.topicId).toBe('topic-a');
-    expect(queue?.steps).toHaveLength(1);
-    expect(queue?.steps[0]).toMatchObject({ newLevel: 1, unlockPointsDelta: 1 });
-
-    expect(received).toHaveLength(1);
-    expect(received[0]).toMatchObject({
-      fromLevel: 0,
-      toLevel: 1,
+    const celebration = useProgressionStore.getState().studyLevelUp;
+    expect(celebration?.topicId).toBe('topic-a');
+    expect(celebration).toMatchObject({
+      newLevel: 1,
+      previousLevel: 0,
       unlockPointsGained: 1,
-      stepsCount: 1,
+      previousXp: 95,
+      finalXp: 110,
     });
 
-    useProgressionStore.getState().clearStudyLevelUpQueue();
-    expect(useProgressionStore.getState().studyLevelUpQueue).toBeNull();
-
-    window.removeEventListener('abyss-progression-level-up', handler);
+    useProgressionStore.getState().clearStudyLevelUp();
+    expect(useProgressionStore.getState().studyLevelUp).toBeNull();
   });
 
   it('uses graph prerequisites and unlock points when unlocking topics', () => {

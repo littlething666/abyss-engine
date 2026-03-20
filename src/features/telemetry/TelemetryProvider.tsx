@@ -18,12 +18,7 @@ function toString(value: unknown): string {
 
 export function TelemetryProvider() {
   useEffect(() => {
-    const eventTypes: ProgressionEventType[] = [
-      'study-panel-history',
-      'xp-gained',
-      'session-complete',
-      'level-up',
-    ];
+    const eventTypes: ProgressionEventType[] = ['study-panel-history', 'xp-gained', 'session-complete'];
 
     const handleProgressionEvent = (event: Event) => {
       const eventType = event.type.replace(PREFIX, '');
@@ -89,21 +84,6 @@ export function TelemetryProvider() {
           topicId: toString((detail as { topicId?: unknown }).topicId),
           sessionId: toString((detail as { sessionId?: unknown }).sessionId) || 'legacy-session',
           cardId: toString((detail as { cardId?: unknown }).cardId),
-        });
-        return;
-      }
-
-      if (eventType === 'level-up') {
-        telemetry.log('level_up', {
-          topicId: toString((detail as { topicId?: unknown }).topicId),
-          fromLevel: toNumber((detail as { fromLevel?: unknown }).fromLevel, 0),
-          toLevel: toNumber((detail as { toLevel?: unknown }).toLevel, 0),
-          sessionId: toString((detail as { sessionId?: unknown }).sessionId) || undefined,
-          unlockPointsGained: toNumber((detail as { unlockPointsGained?: unknown }).unlockPointsGained, 0) || undefined,
-          stepsCount: toNumber((detail as { stepsCount?: unknown }).stepsCount, 1) || undefined,
-        }, {
-          topicId: toString((detail as { topicId?: unknown }).topicId),
-          sessionId: toString((detail as { sessionId?: unknown }).sessionId) || null,
         });
         return;
       }

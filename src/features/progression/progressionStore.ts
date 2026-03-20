@@ -3,7 +3,6 @@ import { persist } from 'zustand/middleware';
 
 import {
   MAX_UNDO_DEPTH,
-  buildStudyLevelUpSteps,
   calculateLevelFromXP,
   calculateXPReward,
   calculateTopicTier,
@@ -105,7 +104,7 @@ export const useProgressionStore = create<ProgressionStore>()(
       unlockPoints: INITIAL_UNLOCK_POINTS,
       currentSubjectId: null,
       currentSession: null,
-      studyLevelUpQueue: null,
+      studyLevelUp: null,
       isCurrentCardFlipped: false,
       activeBuffs: [],
       pendingRitual: null,
@@ -116,7 +115,7 @@ export const useProgressionStore = create<ProgressionStore>()(
         const activeBuffsAfterSessionEnd = BuffEngine.get().consumeForEvent(hydratedActiveBuffs, 'session_ended');
         const activeBuffs = BuffEngine.get().pruneExpired(activeBuffsAfterSessionEnd);
         set(() => ({
-          studyLevelUpQueue: null,
+          studyLevelUp: null,
           activeBuffs: dedupeBuffsById(activeBuffs),
         }));
       },
@@ -174,7 +173,7 @@ export const useProgressionStore = create<ProgressionStore>()(
         window.dispatchEvent(new CustomEvent(`abyss-progression-${type}`, { detail: payload }));
       },
 
-      clearStudyLevelUpQueue: () => set({ studyLevelUpQueue: null }),
+      clearStudyLevelUp: () => set({ studyLevelUp: null }),
 
       clearActiveBuffs: () => set({ activeBuffs: [] }),
       clearPendingRitual: () => set({ pendingRitual: null }),
@@ -317,11 +316,6 @@ export const useProgressionStore = create<ProgressionStore>()(
           ? buildStudySessionMetrics(sessionId, session.topicId, nextAttempts, session.startedAt ?? Date.now())
           : null;
 
-        const levelUpSteps =
-          unlockedLevels > 0
-            ? buildStudyLevelUpSteps(previousLevel, nextLevel, crystal.xp, xp)
-            : [];
-
         set((current) => ({
           unlockPoints: unlockedLevels > 0 ? current.unlockPoints + unlockedLevels : current.unlockPoints,
           sm2Data: {
@@ -355,12 +349,16 @@ export const useProgressionStore = create<ProgressionStore>()(
           },
           activeBuffs: nextBuffs,
           isCurrentCardFlipped: false,
-          studyLevelUpQueue:
-            unlockedLevels > 0 && levelUpSteps.length > 0
+          studyLevelUp:
+            unlockedLevels > 0
               ? {
                   topicId: session.topicId,
                   sessionId,
-                  steps: levelUpSteps,
+                  newLevel: nextLevel,
+                  previousLevel,
+                  unlockPointsGained: unlockedLevels,
+                  previousXp: crystal.xp,
+                  finalXp: xp,
                 }
               : null,
         }));
@@ -376,16 +374,6 @@ export const useProgressionStore = create<ProgressionStore>()(
           buffMultiplier,
           reward,
         });
-        if (unlockedLevels > 0) {
-          get().emitEvent('level-up', {
-            topicId: session.topicId,
-            sessionId,
-            fromLevel: previousLevel,
-            toLevel: nextLevel,
-            unlockPointsGained: unlockedLevels,
-            stepsCount: levelUpSteps.length,
-          });
-        }
         if (isSessionComplete && sessionMetrics) {
           get().emitEvent('session-complete', {
             topicId: session.topicId,
@@ -415,7 +403,7 @@ export const useProgressionStore = create<ProgressionStore>()(
 
         set({
           ...restored,
-          studyLevelUpQueue: null,
+          studyLevelUp: null,
           currentSession: {
             ...restored.currentSession,
             undoStack: nextUndoStack,
@@ -449,7 +437,7 @@ export const useProgressionStore = create<ProgressionStore>()(
 
         set({
           ...restored,
-          studyLevelUpQueue: null,
+          studyLevelUp: null,
           currentSession: {
             ...restored.currentSession,
             undoStack: nextUndoStack,
