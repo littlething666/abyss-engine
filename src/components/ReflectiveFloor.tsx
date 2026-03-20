@@ -14,7 +14,7 @@ const DEFAULT_METALNESS = 0.05;
 const DEFAULT_ENV_MAP_INTENSITY = 1;
 const DEFAULT_ROUGHNESS_REPEAT: [number, number] = [2, 2];
 const PROJECTION_BOX_HEIGHT = 2;
-const TEXTURE_PATH = '/textures/lava/lavatile.jpg';
+const TEXTURE_PATH = `${process.env.NEXT_PUBLIC_BASE_PATH || ''}/textures/lava/lavatile.jpg`;
 
 const useBoxProjectedEnv = (
   envMap: THREE.Texture,
