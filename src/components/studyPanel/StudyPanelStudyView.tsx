@@ -42,17 +42,21 @@ const optionPresentation: Record<OptionState, OptionPresentation> = {
   },
   selected: {
     marker: null,
-    style: 'bg-primary/20 border-primary',
+    // Ghost buttons use hover:bg-muted; on mobile, sticky :hover overrides resting bg until tap elsewhere.
+    style:
+      'bg-primary/20 border-primary hover:bg-primary/25 hover:border-primary active:bg-primary/30 active:border-primary',
     markerClass: '',
   },
   'selected-correct': {
     marker: '✓',
-    style: 'bg-accent/20 border-accent',
+    style:
+      'bg-accent/20 border-accent hover:bg-accent/30 hover:border-accent active:bg-accent/35 active:border-accent',
     markerClass: 'text-accent-foreground',
   },
   'selected-incorrect': {
     marker: '✗',
-    style: 'bg-destructive/20 border-destructive',
+    style:
+      'bg-destructive/20 border-destructive hover:bg-destructive/30 hover:border-destructive active:bg-destructive/35 active:border-destructive',
     markerClass: 'text-destructive',
   },
   'unselected-correct': {
