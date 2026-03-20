@@ -9,7 +9,7 @@ import { telemetry } from '../features/telemetry';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { TARGET_AUDIENCE_OPTIONS, useStudySettingsStore } from '../store/studySettingsStore';
-import { StudyLevelUpOverlay } from './studyPanel/StudyLevelUpOverlay';
+import { StudyLevelUpDialog } from './studyPanel/StudyLevelUpDialog';
 import { StudyPanelStateViews } from './studyPanel/StudyPanelStateViews';
 import { StudyPanelStudyView } from './studyPanel/StudyPanelStudyView';
 import { useStudyPanelModel } from '../hooks/useStudyPanelModel';
@@ -60,6 +60,11 @@ export function StudyPanelModal({
   const [isCorrect, setIsCorrect] = useState(false);
   const systemPromptRef = useRef<HTMLPreElement>(null);
   const previousActiveTabRef = useRef<StudyPanelTab>('study');
+
+  const levelUpCelebration =
+    studyLevelUp && studyLevelUp.topicId === (currentSession?.topicId ?? currentTopicId)
+      ? studyLevelUp
+      : null;
 
   useEffect(() => {
     if (previousActiveTabRef.current !== activeTab) {
@@ -157,103 +162,109 @@ export function StudyPanelModal({
   if (!isOpen) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => {
-      if (!open) {
-        onClose();
-      }
-    }}>
-      <DialogContent
-        className="max-h-[95vh] flex flex-col relative"
-      >
-      <DialogHeader>
-        <DialogTitle className="sr-only" data-testid="study-session-title">
-          📚 Study Session
-        </DialogTitle>
-        <DialogDescription className="sr-only">
-          Review cards, answer prompts, and track your study session progress.
-        </DialogDescription>
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StudyPanelTab)}>
-            <TabsList className="mx-auto">
-              <TabsTrigger value="study" data-testid="study-tab-study">
-                📖 Study
-              </TabsTrigger>
-              {model.hasTheory && (
-                <TabsTrigger value="theory" data-testid="study-tab-theory">
-                  💡 Theory
+    <>
+      <Dialog open={isOpen} onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}>
+        <DialogContent
+          className="max-h-[95vh] flex flex-col"
+        >
+          <DialogHeader>
+            <DialogTitle className="sr-only" data-testid="study-session-title">
+              📚 Study Session
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Review cards, answer prompts, and track your study session progress.
+            </DialogDescription>
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StudyPanelTab)}>
+              <TabsList className="mx-auto">
+                <TabsTrigger value="study" data-testid="study-tab-study">
+                  📖 Study
                 </TabsTrigger>
-              )}
-              <TabsTrigger
-                value="system_prompt"
-                disabled={!model.resolvedTopicId}
-                data-testid="study-tab-system-prompt"
-              >
-                🧠
-              </TabsTrigger>
-              <TabsTrigger value="settings" data-testid="study-tab-settings">
-                ⚙️
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-      </DialogHeader>
-        <div data-testid="study-panel-modal-content" className="-mx-4 px-4 no-scrollbar overflow-y-auto">
-          <StudyPanelStateViews
-            activeTab={activeTab}
-            hasTheory={model.hasTheory}
-            isEmptyDeck={model.isEmptyDeck}
-            isLoadingCards={model.isLoadingCards}
-            isCardsLoadError={model.isCardsLoadError}
-            hasActiveCard={model.hasActiveCard}
-            isCompleted={model.isCompleted}
-            resolvedTopicTheory={model.resolvedTopicTheory}
-            resolvedTopic={model.resolvedTopic}
-            topicSystemPrompt={model.topicSystemPrompt}
-            targetAudience={targetAudience}
-            targetAudienceOptions={TARGET_AUDIENCE_OPTIONS}
-            onClose={onClose}
-            onSetTargetAudience={setTargetAudience}
-            onSystemPromptSelect={handleSelectSystemPrompt}
-            systemPromptRef={systemPromptRef}
-          />
-
-          {model.renderedCard && activeTab === 'study' && (
-            <StudyPanelStudyView
-              renderedCard={model.renderedCard}
-              isFlashcard={model.isFlashcard}
-              isSingleChoice={model.isSingleChoice}
-              isMultiChoice={model.isMultiChoice}
-              isChoiceQuestion={model.isChoiceQuestion}
-              selectedAnswers={selectedAnswers}
-              isAnswerSubmitted={isAnswerSubmitted}
-              isCorrect={isCorrect}
-              isCardFlipped={isCardFlipped}
-              sm2State={model.sm2State}
-              activeCard={model.activeCard}
-              onSelectAnswer={handleAnswerSelect}
-              onChoiceSubmit={handleChoiceSubmit}
-              onChoiceContinue={handleChoiceContinue}
-              onFlip={onFlip}
-              onRate={handleRating}
-              getRatingLabel={getRatingLabel}
-              getRatingColor={getRatingColor}
-              onUndo={onUndo}
-              onRedo={onRedo}
-              canUndo={model.canUndo}
-              canRedo={model.canRedo}
-              undoCount={model.undoCount}
-              redoCount={model.redoCount}
+                {model.hasTheory && (
+                  <TabsTrigger value="theory" data-testid="study-tab-theory">
+                    💡 Theory
+                  </TabsTrigger>
+                )}
+                <TabsTrigger
+                  value="system_prompt"
+                  disabled={!model.resolvedTopicId}
+                  data-testid="study-tab-system-prompt"
+                >
+                  🧠
+                </TabsTrigger>
+                <TabsTrigger value="settings" data-testid="study-tab-settings">
+                  ⚙️
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </DialogHeader>
+          <div
+            data-testid="study-panel-modal-content"
+            className="-mx-4 flex-1 min-h-0 overflow-y-auto px-4 no-scrollbar"
+          >
+            <StudyPanelStateViews
+              activeTab={activeTab}
+              hasTheory={model.hasTheory}
+              isEmptyDeck={model.isEmptyDeck}
+              isLoadingCards={model.isLoadingCards}
+              isCardsLoadError={model.isCardsLoadError}
+              hasActiveCard={model.hasActiveCard}
+              isCompleted={model.isCompleted}
+              resolvedTopicTheory={model.resolvedTopicTheory}
+              resolvedTopic={model.resolvedTopic}
+              topicSystemPrompt={model.topicSystemPrompt}
+              targetAudience={targetAudience}
+              targetAudienceOptions={TARGET_AUDIENCE_OPTIONS}
+              onClose={onClose}
+              onSetTargetAudience={setTargetAudience}
+              onSystemPromptSelect={handleSelectSystemPrompt}
+              systemPromptRef={systemPromptRef}
             />
-          )}
-      </div>
-        {studyLevelUp && studyLevelUp.topicId === (currentSession?.topicId ?? currentTopicId) && (
-          <StudyLevelUpOverlay
-            key={`${studyLevelUp.sessionId}-${studyLevelUp.newLevel}`}
-            celebration={studyLevelUp}
-            topicDisplayName={model.resolvedTopic.trim() || studyLevelUp.topicId}
-            onComplete={clearStudyLevelUp}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
+
+            {model.renderedCard && activeTab === 'study' && (
+              <StudyPanelStudyView
+                renderedCard={model.renderedCard}
+                isFlashcard={model.isFlashcard}
+                isSingleChoice={model.isSingleChoice}
+                isMultiChoice={model.isMultiChoice}
+                isChoiceQuestion={model.isChoiceQuestion}
+                selectedAnswers={selectedAnswers}
+                isAnswerSubmitted={isAnswerSubmitted}
+                isCorrect={isCorrect}
+                isCardFlipped={isCardFlipped}
+                sm2State={model.sm2State}
+                activeCard={model.activeCard}
+                onSelectAnswer={handleAnswerSelect}
+                onChoiceSubmit={handleChoiceSubmit}
+                onChoiceContinue={handleChoiceContinue}
+                onFlip={onFlip}
+                onRate={handleRating}
+                getRatingLabel={getRatingLabel}
+                getRatingColor={getRatingColor}
+                onUndo={onUndo}
+                onRedo={onRedo}
+                canUndo={model.canUndo}
+                canRedo={model.canRedo}
+                undoCount={model.undoCount}
+                redoCount={model.redoCount}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <StudyLevelUpDialog
+        open={!!levelUpCelebration}
+        celebration={levelUpCelebration}
+        topicDisplayName={
+          levelUpCelebration ? model.resolvedTopic.trim() || levelUpCelebration.topicId : ''
+        }
+        onDismiss={clearStudyLevelUp}
+      />
+    </>
   );
 }
 
