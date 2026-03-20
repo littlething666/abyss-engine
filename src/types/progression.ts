@@ -104,6 +104,17 @@ export interface StudyUndoSnapshot {
   currentSession: StudySessionCore;
 }
 
+/** Pending level-up celebration inside the study modal (single screen); cleared when dismissed or modal closes. */
+export interface StudyLevelUpCelebration {
+  topicId: string;
+  sessionId: string;
+  newLevel: number;
+  previousLevel: number;
+  unlockPointsGained: number;
+  previousXp: number;
+  finalXp: number;
+}
+
 export interface ProgressionState {
   activeCrystals: ActiveCrystal[];
   sm2Data: Record<string, {
@@ -116,7 +127,7 @@ export interface ProgressionState {
   unlockPoints: number;
   currentSubjectId: string | null;
   currentSession: StudySession | null;
-  levelUpMessage: string | null;
+  studyLevelUp: StudyLevelUpCelebration | null;
   isCurrentCardFlipped: boolean;
   activeBuffs: Buff[];
   pendingRitual: PendingRitualState | null;
@@ -138,6 +149,7 @@ export interface ProgressionActions {
   redoLastStudyResult: () => void;
   flipCurrentCard: () => void;
   emitEvent: <T extends ProgressionEventType>(type: T, payload: ProgressionEventPayload<T>) => void;
+  clearStudyLevelUp: () => void;
   unlockTopic: (topicId: string, allGraphs: SubjectGraph[]) => [number, number] | null;
   getTopicUnlockStatus: (topicId: string, allGraphs: SubjectGraph[]) => {
     canUnlock: boolean;

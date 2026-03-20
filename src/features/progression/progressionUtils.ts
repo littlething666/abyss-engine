@@ -118,6 +118,23 @@ export function calculateLevelFromXP(xp: number): number {
   return Math.min(5, Math.floor(Math.max(0, xp) / 100));
 }
 
+const XP_PER_TIER = 100;
+
+/** Progress within the current growth tier (0–5), for XP bar display. Returns 0–1 fill for the tier band. */
+export function getXpTierProgress01(xp: number): number {
+  const tier = calculateLevelFromXP(xp);
+  if (tier >= 5) {
+    return 1;
+  }
+  const tierFloor = tier * XP_PER_TIER;
+  const tierCeil = (tier + 1) * XP_PER_TIER;
+  return Math.min(1, Math.max(0, (xp - tierFloor) / (tierCeil - tierFloor)));
+}
+
+export function getXpTierLabel(tier: number): string {
+  return `Growth tier ${tier}`;
+}
+
 function findGraphNode(topicId: string, allGraphs: SubjectGraph[]): GraphNode | undefined {
   for (const graph of allGraphs) {
     const node = graph.nodes.find((item) => item.topicId === topicId);

@@ -57,7 +57,6 @@ const HomeContent: React.FC = () => {
   const activeCrystals = useStudyStore(s => s.activeCrystals);
   const currentSubjectId = useStudyStore(s => s.currentSubjectId);
   const sm2Data = useStudyStore(s => s.sm2Data);
-  const levelUpMessage = useStudyStore(s => s.levelUpMessage);
   const unlockPoints = useStudyStore(s => s.unlockPoints);
   const activeBuffs = useStudyStore((state) => state.activeBuffs);
   const getRemainingRitualCooldownMs = useStudyStore((state) => state.getRemainingRitualCooldownMs);
@@ -128,6 +127,7 @@ const HomeContent: React.FC = () => {
   const isStudyTimelineOpen = useUIStore((state) => state.isStudyTimelineOpen);
   const closeDiscoveryModal = useUIStore(s => s.closeDiscoveryModal);
   const closeStudyPanel = useUIStore(s => s.closeStudyPanel);
+  const clearStudyLevelUp = useStudyStore((s) => s.clearStudyLevelUp);
   const openRitualModal = useUIStore(s => s.openRitualModal);
   const closeRitualModal = useUIStore(s => s.closeRitualModal);
   const openStudyTimeline = useUIStore((state) => state.openStudyTimeline);
@@ -166,6 +166,7 @@ const HomeContent: React.FC = () => {
 
   // Study Panel Modal handlers
   const handleCloseStudyPanel = () => {
+    clearStudyLevelUp();
     closeStudyPanel();
   };
 
@@ -285,7 +286,6 @@ const HomeContent: React.FC = () => {
           currentTopicId={currentTopicId}
           isCardFlipped={isCurrentCardFlipped}
           totalCards={currentSession?.totalCards ?? totalCards}
-          levelUpMessage={levelUpMessage}
           onClose={handleCloseStudyPanel}
           onFlip={flipCurrentCard}
           onSubmitResult={handleRate}

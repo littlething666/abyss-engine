@@ -61,7 +61,7 @@ function resetStore() {
     pendingRitual: null,
     currentSubjectId: null,
     currentSession: null,
-    levelUpMessage: null,
+    studyLevelUp: null,
     unlockPoints: 0,
   });
   telemetry.getStore.setState({ events: [] });
@@ -170,6 +170,32 @@ describe('progressionStore card-only canonical API', () => {
     const updatedState = useProgressionStore.getState();
     expect(updatedState.activeCrystals[0]).toMatchObject({ xp: 110 });
     expect(updatedState.unlockPoints).toBe(1);
+  });
+
+  it('stores a single study level-up celebration payload when tiers increase', () => {
+    const cards = [createCard('a-1')];
+
+    useProgressionStore.setState({
+      unlockedTopicIds: ['topic-a'],
+      activeCrystals: [crystal('topic-a', 95)],
+      unlockPoints: 0,
+    });
+
+    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().submitStudyResult('a-1', 4);
+
+    const celebration = useProgressionStore.getState().studyLevelUp;
+    expect(celebration?.topicId).toBe('topic-a');
+    expect(celebration).toMatchObject({
+      newLevel: 1,
+      previousLevel: 0,
+      unlockPointsGained: 1,
+      previousXp: 95,
+      finalXp: 110,
+    });
+
+    useProgressionStore.getState().clearStudyLevelUp();
+    expect(useProgressionStore.getState().studyLevelUp).toBeNull();
   });
 
   it('uses graph prerequisites and unlock points when unlocking topics', () => {

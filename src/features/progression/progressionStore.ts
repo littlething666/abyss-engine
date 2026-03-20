@@ -104,7 +104,7 @@ export const useProgressionStore = create<ProgressionStore>()(
       unlockPoints: INITIAL_UNLOCK_POINTS,
       currentSubjectId: null,
       currentSession: null,
-      levelUpMessage: null,
+      studyLevelUp: null,
       isCurrentCardFlipped: false,
       activeBuffs: [],
       pendingRitual: null,
@@ -114,8 +114,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         const hydratedActiveBuffs = currentState.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
         const activeBuffsAfterSessionEnd = BuffEngine.get().consumeForEvent(hydratedActiveBuffs, 'session_ended');
         const activeBuffs = BuffEngine.get().pruneExpired(activeBuffsAfterSessionEnd);
-        set((state) => ({
-          levelUpMessage: state.levelUpMessage || null,
+        set(() => ({
+          studyLevelUp: null,
           activeBuffs: dedupeBuffsById(activeBuffs),
         }));
       },
@@ -172,6 +172,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         }
         window.dispatchEvent(new CustomEvent(`abyss-progression-${type}`, { detail: payload }));
       },
+
+      clearStudyLevelUp: () => set({ studyLevelUp: null }),
 
       clearActiveBuffs: () => set({ activeBuffs: [] }),
       clearPendingRitual: () => set({ pendingRitual: null }),
@@ -347,6 +349,18 @@ export const useProgressionStore = create<ProgressionStore>()(
           },
           activeBuffs: nextBuffs,
           isCurrentCardFlipped: false,
+          studyLevelUp:
+            unlockedLevels > 0
+              ? {
+                  topicId: session.topicId,
+                  sessionId,
+                  newLevel: nextLevel,
+                  previousLevel,
+                  unlockPointsGained: unlockedLevels,
+                  previousXp: crystal.xp,
+                  finalXp: xp,
+                }
+              : null,
         }));
         get().emitEvent('xp-gained', {
           amount: buffedReward,
@@ -389,6 +403,7 @@ export const useProgressionStore = create<ProgressionStore>()(
 
         set({
           ...restored,
+          studyLevelUp: null,
           currentSession: {
             ...restored.currentSession,
             undoStack: nextUndoStack,
@@ -422,6 +437,7 @@ export const useProgressionStore = create<ProgressionStore>()(
 
         set({
           ...restored,
+          studyLevelUp: null,
           currentSession: {
             ...restored.currentSession,
             undoStack: nextUndoStack,

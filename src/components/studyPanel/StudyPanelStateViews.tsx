@@ -21,7 +21,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 
 interface StudyPanelStateViewsProps {
-  levelUpMessage?: string | null;
   activeTab: StudyPanelTab;
   hasTheory: boolean;
   isEmptyDeck: boolean;
@@ -41,7 +40,6 @@ interface StudyPanelStateViewsProps {
 }
 
 export function StudyPanelStateViews({
-  levelUpMessage,
   activeTab,
   hasTheory,
   isEmptyDeck,
@@ -192,17 +190,6 @@ export function StudyPanelStateViews({
 
   return (
     <div className="min-h-0 pr-1" data-testid="study-panel-state">
-      {/* Level Up Banner */}
-      {levelUpMessage && (
-        <div className="mb-4 p-4 bg-gradient-to-r from-accent to-secondary rounded-xl text-center animate-pulse">
-          <div className="mb-2 flex justify-center">
-            <Badge variant="secondary">🎉 Level Up</Badge>
-          </div>
-          <div className="text-xl font-bold text-foreground">{levelUpMessage}</div>
-          <div className="text-accent-foreground text-sm mt-1">Keep up the great work!</div>
-        </div>
-      )}
-
       {/* Empty State */}
       {isEmptyDeck && (
         <div className="text-center py-8 px-5">
