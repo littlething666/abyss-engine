@@ -60,9 +60,10 @@ const optionPresentation: Record<OptionState, OptionPresentation> = {
     markerClass: 'text-destructive',
   },
   'unselected-correct': {
-    marker: '✗',
-    style: 'bg-transparent border-destructive',
-    markerClass: 'text-destructive',
+    marker: '✓',
+    style:
+      'bg-accent/10 border-accent hover:bg-accent/15 hover:border-accent active:bg-accent/20 active:border-accent',
+    markerClass: 'text-accent-foreground',
   },
   'unselected-incorrect': {
     marker: null,
@@ -223,7 +224,9 @@ export function StudyPanelStudyView({
                   variant="ghost"
                   multiline
                   className={`w-full text-left p-3 rounded-lg border-2 transition-colors ${optionStyle} ${
-                    isAnswerSubmitted ? 'cursor-default' : 'cursor-pointer'
+                    isAnswerSubmitted
+                      ? 'cursor-default disabled:opacity-100'
+                      : 'cursor-pointer'
                   }`}
                   data-testid={`study-card-choice-option-${index}`}
                   aria-label={`${option} ${isAnswerSubmitted ? optionState : 'not submitted'}`}

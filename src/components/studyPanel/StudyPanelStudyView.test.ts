@@ -120,16 +120,18 @@ describe('StudyPanelStudyView', () => {
     const optionThree = container.querySelector('[data-testid="study-card-choice-option-2"]') as HTMLButtonElement;
     const optionFour = container.querySelector('[data-testid="study-card-choice-option-3"]') as HTMLButtonElement;
 
-    expect(optionOne?.textContent).toContain('✗');
-    expect(optionOne?.className).toContain('border-destructive');
+    expect(optionOne?.textContent).toContain('✓');
+    expect(optionOne?.className).toContain('border-accent');
+    expect(optionOne?.className).toContain('bg-accent/10');
     expect(optionOne?.className).not.toContain('bg-destructive/20');
 
     expect(optionTwo?.textContent).toContain('✗');
     expect(optionTwo?.className).toContain('bg-destructive/20');
     expect(optionTwo?.className).toContain('border-destructive');
 
-    expect(optionThree?.textContent).toContain('✗');
-    expect(optionThree?.className).toContain('border-destructive');
+    expect(optionThree?.textContent).toContain('✓');
+    expect(optionThree?.className).toContain('border-accent');
+    expect(optionThree?.className).toContain('bg-accent/10');
     expect(optionThree?.className).not.toContain('bg-destructive/20');
     expect(optionFour?.textContent).not.toContain('✓');
     expect(optionFour?.textContent).not.toContain('✗');
@@ -141,7 +143,7 @@ describe('StudyPanelStudyView', () => {
 
   it('hides markers before submit and keeps selected option highlighted', () => {
     const { container, unmount } = renderStudyPanelView({
-      selectedAnswers: ['4'],
+      selectedAnswers: ['B'],
       isAnswerSubmitted: false,
       isSingleChoice: true,
       isMultiChoice: false,
@@ -185,4 +187,15 @@ describe('StudyPanelStudyView', () => {
     unmount();
   });
 
+  it('keeps full opacity on choice rows after submit so feedback backgrounds stay visible', () => {
+    const { container, unmount } = renderStudyPanelView({
+      selectedAnswers: ['4'],
+      isAnswerSubmitted: true,
+    });
+
+    const optionTwo = container.querySelector('[data-testid="study-card-choice-option-1"]') as HTMLButtonElement;
+    expect(optionTwo?.className).toContain('disabled:opacity-100');
+
+    unmount();
+  });
 });
