@@ -163,8 +163,9 @@ export function StudyPanelModal({
       }
     }}>
       <DialogContent
-        className="max-h-[95vh] flex flex-col relative"
+        className="max-h-[95vh] flex flex-col"
       >
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <DialogHeader>
         <DialogTitle className="sr-only" data-testid="study-session-title">
           📚 Study Session
@@ -195,7 +196,7 @@ export function StudyPanelModal({
             </TabsList>
           </Tabs>
       </DialogHeader>
-        <div data-testid="study-panel-modal-content" className="-mx-4 px-4 no-scrollbar overflow-y-auto">
+        <div data-testid="study-panel-modal-content" className="-mx-4 px-4 no-scrollbar flex-1 min-h-0 overflow-y-auto">
           <StudyPanelStateViews
             activeTab={activeTab}
             hasTheory={model.hasTheory}
@@ -252,6 +253,7 @@ export function StudyPanelModal({
             onComplete={clearStudyLevelUp}
           />
         )}
+      </div>
       </DialogContent>
     </Dialog>
   );
