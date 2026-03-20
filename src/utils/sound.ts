@@ -313,13 +313,13 @@ export function playTimerFinishedSound(): void {
     const oscillator = ctx.createOscillator();
     const gainNode = ctx.createGain();
 
-    oscillator.type = 'square';
+    oscillator.type = 'sine';
     oscillator.frequency.setValueAtTime(523.25, currentTime);
     oscillator.frequency.setValueAtTime(783.99, currentTime + 0.12);
     oscillator.frequency.setValueAtTime(987.77, currentTime + 0.24);
 
     gainNode.gain.setValueAtTime(0, currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.25, currentTime + 0.03);
+    gainNode.gain.linearRampToValueAtTime(0.1, currentTime + 0.04);
     gainNode.gain.linearRampToValueAtTime(0, currentTime + 0.45);
 
     oscillator.connect(gainNode);
