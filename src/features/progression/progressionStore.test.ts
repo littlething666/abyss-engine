@@ -61,7 +61,7 @@ function resetStore() {
     pendingRitual: null,
     currentSubjectId: null,
     currentSession: null,
-    levelUpMessage: null,
+    studyLevelUpQueue: null,
     unlockPoints: 0,
   });
   telemetry.getStore.setState({ events: [] });
@@ -170,6 +170,42 @@ describe('progressionStore card-only canonical API', () => {
     const updatedState = useProgressionStore.getState();
     expect(updatedState.activeCrystals[0]).toMatchObject({ xp: 110 });
     expect(updatedState.unlockPoints).toBe(1);
+  });
+
+  it('enqueues study level-up steps and emits a level-up progression event', () => {
+    const cards = [createCard('a-1')];
+    const received: unknown[] = [];
+    const handler = (event: Event) => {
+      received.push((event as CustomEvent).detail);
+    };
+    window.addEventListener('abyss-progression-level-up', handler);
+
+    useProgressionStore.setState({
+      unlockedTopicIds: ['topic-a'],
+      activeCrystals: [crystal('topic-a', 95)],
+      unlockPoints: 0,
+    });
+
+    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().submitStudyResult('a-1', 4);
+
+    const queue = useProgressionStore.getState().studyLevelUpQueue;
+    expect(queue?.topicId).toBe('topic-a');
+    expect(queue?.steps).toHaveLength(1);
+    expect(queue?.steps[0]).toMatchObject({ newLevel: 1, unlockPointsDelta: 1 });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({
+      fromLevel: 0,
+      toLevel: 1,
+      unlockPointsGained: 1,
+      stepsCount: 1,
+    });
+
+    useProgressionStore.getState().clearStudyLevelUpQueue();
+    expect(useProgressionStore.getState().studyLevelUpQueue).toBeNull();
+
+    window.removeEventListener('abyss-progression-level-up', handler);
   });
 
   it('uses graph prerequisites and unlock points when unlocking topics', () => {

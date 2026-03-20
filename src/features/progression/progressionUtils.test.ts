@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { ActiveCrystal } from '../../types';
 import { BuffEngine } from './buffs/buffEngine';
-import { captureUndoSnapshot, restoreUndoSnapshot, trimUndoSnapshotStack } from './progressionUtils';
+import {
+  buildStudyLevelUpSteps,
+  captureUndoSnapshot,
+  getXpTierProgress01,
+  restoreUndoSnapshot,
+  trimUndoSnapshotStack,
+} from './progressionUtils';
 
 function createActiveCrystal(topicId: string, xp = 0): ActiveCrystal {
   return {
@@ -52,7 +58,7 @@ function createProgressState() {
     unlockPoints: 3,
     currentSubjectId: 'subject-a',
     currentSession: studySession,
-    levelUpMessage: null,
+    studyLevelUpQueue: null,
     isCurrentCardFlipped: true,
     activeBuffs: [activeBuff],
     pendingRitual: null,
@@ -106,5 +112,41 @@ describe('progressionUtils', () => {
     const stack = [1, 2, 3, 4, 5];
     expect(trimUndoSnapshotStack(stack, 3)).toEqual([3, 4, 5]);
     expect(trimUndoSnapshotStack(stack, 1)).toEqual([5]);
+  });
+
+  it('buildStudyLevelUpSteps returns empty when no tier change', () => {
+    expect(buildStudyLevelUpSteps(1, 1, 150, 180)).toEqual([]);
+  });
+
+  it('buildStudyLevelUpSteps returns one step for a single tier jump', () => {
+    expect(buildStudyLevelUpSteps(0, 1, 95, 120)).toEqual([
+      {
+        newLevel: 1,
+        unlockPointsDelta: 1,
+        crystalXpAfterStep: 120,
+        xpBeforeStep: 95,
+      },
+    ]);
+  });
+
+  it('buildStudyLevelUpSteps chains milestones for multi-tier jumps', () => {
+    expect(buildStudyLevelUpSteps(0, 2, 50, 250)).toEqual([
+      {
+        newLevel: 1,
+        unlockPointsDelta: 1,
+        crystalXpAfterStep: 100,
+        xpBeforeStep: 50,
+      },
+      {
+        newLevel: 2,
+        unlockPointsDelta: 1,
+        crystalXpAfterStep: 250,
+        xpBeforeStep: 100,
+      },
+    ]);
+  });
+
+  it('getXpTierProgress01 is 1 at max tier', () => {
+    expect(getXpTierProgress01(600)).toBe(1);
   });
 });

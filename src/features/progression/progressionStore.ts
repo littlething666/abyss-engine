@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 
 import {
   MAX_UNDO_DEPTH,
+  buildStudyLevelUpSteps,
   calculateLevelFromXP,
   calculateXPReward,
   calculateTopicTier,
@@ -104,7 +105,7 @@ export const useProgressionStore = create<ProgressionStore>()(
       unlockPoints: INITIAL_UNLOCK_POINTS,
       currentSubjectId: null,
       currentSession: null,
-      levelUpMessage: null,
+      studyLevelUpQueue: null,
       isCurrentCardFlipped: false,
       activeBuffs: [],
       pendingRitual: null,
@@ -114,8 +115,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         const hydratedActiveBuffs = currentState.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
         const activeBuffsAfterSessionEnd = BuffEngine.get().consumeForEvent(hydratedActiveBuffs, 'session_ended');
         const activeBuffs = BuffEngine.get().pruneExpired(activeBuffsAfterSessionEnd);
-        set((state) => ({
-          levelUpMessage: state.levelUpMessage || null,
+        set(() => ({
+          studyLevelUpQueue: null,
           activeBuffs: dedupeBuffsById(activeBuffs),
         }));
       },
@@ -172,6 +173,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         }
         window.dispatchEvent(new CustomEvent(`abyss-progression-${type}`, { detail: payload }));
       },
+
+      clearStudyLevelUpQueue: () => set({ studyLevelUpQueue: null }),
 
       clearActiveBuffs: () => set({ activeBuffs: [] }),
       clearPendingRitual: () => set({ pendingRitual: null }),
@@ -314,6 +317,11 @@ export const useProgressionStore = create<ProgressionStore>()(
           ? buildStudySessionMetrics(sessionId, session.topicId, nextAttempts, session.startedAt ?? Date.now())
           : null;
 
+        const levelUpSteps =
+          unlockedLevels > 0
+            ? buildStudyLevelUpSteps(previousLevel, nextLevel, crystal.xp, xp)
+            : [];
+
         set((current) => ({
           unlockPoints: unlockedLevels > 0 ? current.unlockPoints + unlockedLevels : current.unlockPoints,
           sm2Data: {
@@ -347,6 +355,14 @@ export const useProgressionStore = create<ProgressionStore>()(
           },
           activeBuffs: nextBuffs,
           isCurrentCardFlipped: false,
+          studyLevelUpQueue:
+            unlockedLevels > 0 && levelUpSteps.length > 0
+              ? {
+                  topicId: session.topicId,
+                  sessionId,
+                  steps: levelUpSteps,
+                }
+              : null,
         }));
         get().emitEvent('xp-gained', {
           amount: buffedReward,
@@ -360,6 +376,16 @@ export const useProgressionStore = create<ProgressionStore>()(
           buffMultiplier,
           reward,
         });
+        if (unlockedLevels > 0) {
+          get().emitEvent('level-up', {
+            topicId: session.topicId,
+            sessionId,
+            fromLevel: previousLevel,
+            toLevel: nextLevel,
+            unlockPointsGained: unlockedLevels,
+            stepsCount: levelUpSteps.length,
+          });
+        }
         if (isSessionComplete && sessionMetrics) {
           get().emitEvent('session-complete', {
             topicId: session.topicId,
@@ -389,6 +415,7 @@ export const useProgressionStore = create<ProgressionStore>()(
 
         set({
           ...restored,
+          studyLevelUpQueue: null,
           currentSession: {
             ...restored.currentSession,
             undoStack: nextUndoStack,
@@ -422,6 +449,7 @@ export const useProgressionStore = create<ProgressionStore>()(
 
         set({
           ...restored,
+          studyLevelUpQueue: null,
           currentSession: {
             ...restored.currentSession,
             undoStack: nextUndoStack,

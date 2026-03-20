@@ -8,7 +8,6 @@ import { StudyPanelStateViews } from './StudyPanelStateViews';
 type StudyPanelStateViewsProps = ComponentProps<typeof StudyPanelStateViews>;
 
 const baseProps: StudyPanelStateViewsProps = {
-  levelUpMessage: null,
   activeTab: 'theory',
   hasTheory: true,
   isEmptyDeck: false,

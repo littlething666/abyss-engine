@@ -9,6 +9,7 @@ import { telemetry } from '../features/telemetry';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { TARGET_AUDIENCE_OPTIONS, useStudySettingsStore } from '../store/studySettingsStore';
+import { StudyLevelUpOverlay } from './studyPanel/StudyLevelUpOverlay';
 import { StudyPanelStateViews } from './studyPanel/StudyPanelStateViews';
 import { StudyPanelStudyView } from './studyPanel/StudyPanelStudyView';
 import { useStudyPanelModel } from '../hooks/useStudyPanelModel';
@@ -21,7 +22,6 @@ interface StudyPanelModalProps {
   currentTopicId: string | null;
   isCardFlipped: boolean;
   totalCards: number;
-  levelUpMessage?: string | null;
   onClose: () => void;
   onFlip: () => void;
   onSubmitResult: (cardId: string, isCorrect?: boolean, rating?: Rating) => void;
@@ -35,7 +35,6 @@ export function StudyPanelModal({
   currentTopicId,
   isCardFlipped,
   totalCards,
-  levelUpMessage,
   onClose,
   onFlip,
   onSubmitResult,
@@ -46,6 +45,9 @@ export function StudyPanelModal({
   const targetAudience = useStudySettingsStore((state) => state.targetAudience);
   const setTargetAudience = useStudySettingsStore((state) => state.setTargetAudience);
   const currentSession = useStudyStore((state) => state.currentSession);
+  const studyLevelUpQueue = useStudyStore((state) => state.studyLevelUpQueue);
+  const unlockPoints = useStudyStore((state) => state.unlockPoints);
+  const clearStudyLevelUpQueue = useStudyStore((state) => state.clearStudyLevelUpQueue);
 
   const model = useStudyPanelModel({
     currentCardId,
@@ -162,7 +164,7 @@ export function StudyPanelModal({
       }
     }}>
       <DialogContent
-        className="max-h-[95vh] flex flex-col"
+        className="max-h-[95vh] flex flex-col relative"
       >
       <DialogHeader>
         <DialogTitle className="sr-only" data-testid="study-session-title">
@@ -196,7 +198,6 @@ export function StudyPanelModal({
       </DialogHeader>
         <div data-testid="study-panel-modal-content" className="-mx-4 px-4 no-scrollbar overflow-y-auto">
           <StudyPanelStateViews
-            levelUpMessage={levelUpMessage}
             activeTab={activeTab}
             hasTheory={model.hasTheory}
             isEmptyDeck={model.isEmptyDeck}
@@ -244,6 +245,15 @@ export function StudyPanelModal({
             />
           )}
       </div>
+        {studyLevelUpQueue && studyLevelUpQueue.topicId === (currentSession?.topicId ?? currentTopicId) && (
+          <StudyLevelUpOverlay
+            key={`${studyLevelUpQueue.sessionId}-${studyLevelUpQueue.steps.map((s) => s.newLevel).join('-')}`}
+            queue={studyLevelUpQueue}
+            topicDisplayName={model.resolvedTopic.trim() || studyLevelUpQueue.topicId}
+            totalUnlockPoints={unlockPoints}
+            onComplete={clearStudyLevelUpQueue}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

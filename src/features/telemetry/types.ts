@@ -96,6 +96,9 @@ export const LevelUpPayloadSchema = z.object({
   topicId: z.string(),
   fromLevel: z.number().int().nonnegative(),
   toLevel: z.number().int().nonnegative(),
+  sessionId: z.string().optional(),
+  unlockPointsGained: z.number().int().nonnegative().optional(),
+  stepsCount: z.number().int().positive().optional(),
 });
 export type LevelUpPayload = z.infer<typeof LevelUpPayloadSchema>;
 

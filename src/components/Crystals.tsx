@@ -5,7 +5,7 @@ import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber/webgpu';
 import { Html } from '@react-three/drei/webgpu';
 import * as THREE from 'three/webgpu';
 import { ActiveCrystal } from '../types';
-import { calculateLevelFromXP, getCrystalScale } from '../features/progression';
+import { calculateLevelFromXP, getCrystalScale, useProgressionStore } from '../features/progression';
 import { useUIStore } from '../store/uiStore';
 import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
 import { useTopicMetadata } from '../features/content';
@@ -89,10 +89,10 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
   const previousLevel = useRef(level);
   const pendingTargetScale = useRef<number | null>(null);
   const pendingParticles = useRef(false);
-  const pendingLevelUpSound = useRef(false);
   const burstTimerRef = useRef<number | null>(null);
   const initialized = useRef(false);
   const suppressNextClickRef = useRef(false);
+  const studyLevelUpQueue = useProgressionStore((state) => state.studyLevelUpQueue);
 
   const handleCrystalSelection = () => {
     onSelect(crystal);
@@ -149,11 +149,16 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
       return;
     }
 
-    if (level > previousLevel.current && isStudyPanelOpen) {
+    const deferForStudyOverlay =
+      isStudyPanelOpen &&
+      studyLevelUpQueue !== null &&
+      studyLevelUpQueue.topicId === crystal.topicId;
+
+    if (level > previousLevel.current && deferForStudyOverlay) {
       pendingTargetScale.current = nextScale;
     } else {
       pendingTargetScale.current = null;
-      if (!isStudyPanelOpen) {
+      if (!isStudyPanelOpen || (level > previousLevel.current && !deferForStudyOverlay)) {
         const currentScale = groupRef.current?.scale.x ?? 0;
         animationRef.current = {
           start: performance.now(),
@@ -168,10 +173,15 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
         invalidate();
       }
     }
-  }, [level, isStudyPanelOpen, invalidate]);
+  }, [level, isStudyPanelOpen, studyLevelUpQueue, crystal.topicId, invalidate]);
 
   useEffect(() => {
-    if (isStudyPanelOpen || pendingTargetScale.current === null) {
+    const blockedByLevelUpOverlay =
+      isStudyPanelOpen &&
+      studyLevelUpQueue !== null &&
+      studyLevelUpQueue.topicId === crystal.topicId;
+
+    if (blockedByLevelUpOverlay || pendingTargetScale.current === null) {
       return;
     }
     const nextScale = pendingTargetScale.current;
@@ -188,14 +198,22 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
       phase: 0,
       progress: 0,
     };
+    if (pendingParticles.current) {
+      pendingParticles.current = false;
+      triggerParticleBurst();
+    }
     invalidate();
-  }, [isStudyPanelOpen, invalidate]);
+  }, [isStudyPanelOpen, studyLevelUpQueue, crystal.topicId, invalidate]);
 
   useEffect(() => {
     if (level > previousLevel.current && level > 0) {
-      if (isStudyPanelOpen) {
+      const deferParticlesForOverlay =
+        isStudyPanelOpen &&
+        studyLevelUpQueue !== null &&
+        studyLevelUpQueue.topicId === crystal.topicId;
+
+      if (deferParticlesForOverlay) {
         pendingParticles.current = true;
-        pendingLevelUpSound.current = true;
       } else {
         playLevelUpSound();
         triggerParticleBurst();
@@ -203,18 +221,7 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
     }
 
     previousLevel.current = level;
-  }, [level, isStudyPanelOpen]);
-
-  useEffect(() => {
-    if (!isStudyPanelOpen && pendingParticles.current) {
-      pendingParticles.current = false;
-      triggerParticleBurst();
-      if (pendingLevelUpSound.current) {
-        pendingLevelUpSound.current = false;
-        playLevelUpSound();
-      }
-    }
-  }, [isStudyPanelOpen]);
+  }, [level, isStudyPanelOpen, studyLevelUpQueue, crystal.topicId]);
 
   useEffect(() => () => {
     if (burstTimerRef.current !== null) {

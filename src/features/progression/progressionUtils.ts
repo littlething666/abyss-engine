@@ -3,6 +3,7 @@ import { Rating } from '../../types';
 import { BuffEngine } from './buffs/buffEngine';
 import {
   ProgressionState,
+  StudyLevelUpStep,
   StudySessionCore,
   StudyUndoSnapshot,
 } from '../../types/progression';
@@ -116,6 +117,54 @@ export function trimUndoSnapshotStack<T>(
 
 export function calculateLevelFromXP(xp: number): number {
   return Math.min(5, Math.floor(Math.max(0, xp) / 100));
+}
+
+const XP_PER_TIER = 100;
+
+/**
+ * Builds ordered steps for the study-modal level-up overlay when `nextLevel > previousLevel`.
+ * Each step ends at a tier boundary (or final XP on the last step) for sequential bar animation.
+ */
+export function buildStudyLevelUpSteps(
+  previousLevel: number,
+  nextLevel: number,
+  previousXp: number,
+  finalXp: number,
+): StudyLevelUpStep[] {
+  if (nextLevel <= previousLevel) {
+    return [];
+  }
+
+  const steps: StudyLevelUpStep[] = [];
+  let xpBefore = previousXp;
+
+  for (let lvl = previousLevel + 1; lvl <= nextLevel; lvl += 1) {
+    const atMilestone = lvl === nextLevel ? finalXp : lvl * XP_PER_TIER;
+    steps.push({
+      newLevel: lvl,
+      unlockPointsDelta: 1,
+      crystalXpAfterStep: atMilestone,
+      xpBeforeStep: xpBefore,
+    });
+    xpBefore = atMilestone;
+  }
+
+  return steps;
+}
+
+/** Progress within the current growth tier (0–5), for XP bar display. Returns 0–1 fill for the tier band. */
+export function getXpTierProgress01(xp: number): number {
+  const tier = calculateLevelFromXP(xp);
+  if (tier >= 5) {
+    return 1;
+  }
+  const tierFloor = tier * XP_PER_TIER;
+  const tierCeil = (tier + 1) * XP_PER_TIER;
+  return Math.min(1, Math.max(0, (xp - tierFloor) / (tierCeil - tierFloor)));
+}
+
+export function getXpTierLabel(tier: number): string {
+  return `Growth tier ${tier}`;
 }
 
 function findGraphNode(topicId: string, allGraphs: SubjectGraph[]): GraphNode | undefined {

@@ -29,6 +29,14 @@ export interface ProgressionEventMap {
     sessionDurationMs?: number;
     totalAttempts: number;
   };
+  'level-up': {
+    topicId: string;
+    sessionId: string;
+    fromLevel: number;
+    toLevel: number;
+    unlockPointsGained: number;
+    stepsCount: number;
+  };
 }
 
 export type ProgressionEventType = keyof ProgressionEventMap;
