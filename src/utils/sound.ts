@@ -98,9 +98,9 @@ export function playLevelUpSound(): void {
 
     const gainNode = ctx.createGain();
     gainNode.gain.setValueAtTime(0, currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.22, currentTime + 0.01);
-    gainNode.gain.linearRampToValueAtTime(0.12, currentTime + 0.2);
-    gainNode.gain.linearRampToValueAtTime(0.04, currentTime + 0.4);
+    gainNode.gain.linearRampToValueAtTime(0.09, currentTime + 0.01);
+    gainNode.gain.linearRampToValueAtTime(0.05, currentTime + 0.2);
+    gainNode.gain.linearRampToValueAtTime(0.017, currentTime + 0.4);
     gainNode.gain.linearRampToValueAtTime(0, currentTime + duration);
 
     const tones = [
@@ -123,7 +123,7 @@ export function playLevelUpSound(): void {
     sparkle.detune.value = -140;
     sparkle.frequency.setValueAtTime(880, currentTime);
     sparkle.frequency.exponentialRampToValueAtTime(1760, currentTime + 0.22);
-    sparkleGain.gain.setValueAtTime(0.06, currentTime);
+    sparkleGain.gain.setValueAtTime(0.025, currentTime);
     sparkleGain.gain.linearRampToValueAtTime(0, currentTime + 0.35);
 
     oscillator.connect(filter);
