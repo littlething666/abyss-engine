@@ -35,6 +35,8 @@ jobs:
         run: npm ci
 
       - name: Build static site for GitHub Pages root
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ vars.NEXT_PUBLIC_BASE_PATH }}
         run: npm run build
 
       - name: Configure GitHub Pages
