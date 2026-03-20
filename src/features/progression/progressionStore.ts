@@ -18,9 +18,7 @@ import { defaultSM2, sm2, SM2Data } from './sm2';
 import { Card, SubjectGraph } from '../../types/core';
 import {
   AttunementRitualPayload,
-  AttunementRitualRecord,
   StudySessionAttempt,
-  StudySessionTelemetryRecord,
   INITIAL_UNLOCK_POINTS,
   ProgressionActions,
   ProgressionState,
@@ -36,90 +34,30 @@ import {
   makeRitualSessionId,
   makeStudySessionId,
 } from '../analytics/attunementMetrics';
+import { telemetry } from '../telemetry';
 
 type ProgressionStore = ProgressionState & ProgressionActions;
 const PROGRESSION_STORAGE_KEY = 'abyss-progression';
-const ATTUNEMENT_RITUALS_STORAGE_KEY = `${PROGRESSION_STORAGE_KEY}-attunement-rituals`;
-const STUDY_SESSIONS_STORAGE_KEY = `${PROGRESSION_STORAGE_KEY}-study-sessions`;
 export const ATTUNEMENT_SUBMISSION_COOLDOWN_MS = 8 * 60 * 60 * 1000;
 
-function safeParseJSON<T>(raw: string): T | null {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-function readFromStorage<T>(key: string): T | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  const raw = window.localStorage.getItem(key);
-  if (!raw) {
-    return null;
-  }
-
-  return safeParseJSON<T>(raw);
-}
-
-function writeToStorage(key: string, value: unknown) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-
-function getInitialAttunementRituals(): AttunementRitualRecord[] {
-  const separateStore = readFromStorage<AttunementRitualRecord[]>(ATTUNEMENT_RITUALS_STORAGE_KEY);
-  if (Array.isArray(separateStore)) {
-    return separateStore;
-  }
-
-  return [];
-}
-
-function getInitialStudySessionHistory(): StudySessionTelemetryRecord[] {
-  const separateStore = readFromStorage<StudySessionTelemetryRecord[]>(STUDY_SESSIONS_STORAGE_KEY);
-  if (Array.isArray(separateStore)) {
-    return separateStore;
-  }
-
-  return [];
-}
-
-function getLatestRitualSession(records: AttunementRitualRecord[]): AttunementRitualRecord | null {
-  const ritualSessions = records.filter((session) => Object.keys(session.checklist).length > 0);
-  if (ritualSessions.length === 0) {
-    return null;
-  }
-
-  return ritualSessions.reduce<AttunementRitualRecord | null>((latest, session) => {
-    if (!latest) {
-      return session;
+function getRemainingRitualCooldownMs(atMs: number): number {
+  const latestSubmission = telemetry.getStore.getState().events.reduce<number | null>((acc, event) => {
+    if (event.type !== 'attunement_ritual_submitted') {
+      return acc;
     }
-    return session.startedAt > latest.startedAt ? session : latest;
+    if (acc === null || event.timestamp > acc) {
+      return event.timestamp;
+    }
+    return acc;
   }, null);
-}
 
-function getRemainingRitualCooldownMs(records: AttunementRitualRecord[], atMs: number): number {
-  const latestSession = getLatestRitualSession(records);
-  if (!latestSession) {
+  if (latestSubmission === null) {
     return 0;
   }
-  const elapsed = atMs - latestSession.startedAt;
+
+  const elapsed = atMs - latestSubmission;
   const remaining = ATTUNEMENT_SUBMISSION_COOLDOWN_MS - elapsed;
   return Math.max(0, remaining);
-}
-
-function persistAttunementRituals(sessions: AttunementRitualRecord[]) {
-  writeToStorage(ATTUNEMENT_RITUALS_STORAGE_KEY, sessions);
-}
-
-function persistStudySessionHistory(sessions: StudySessionTelemetryRecord[]) {
-  writeToStorage(STUDY_SESSIONS_STORAGE_KEY, sessions);
 }
 
 interface CardWithSm2 extends Card {
@@ -150,22 +88,6 @@ function dedupeBuffsById(buffs: Buff[]): Buff[] {
   return deduped.reverse();
 }
 
-function upsertRitualRecord(
-  records: AttunementRitualRecord[],
-  record: AttunementRitualRecord,
-): AttunementRitualRecord[] {
-  const index = records.findIndex((item) => item.sessionId === record.sessionId);
-  if (index === -1) {
-    return [...records, record];
-  }
-  const next = [...records];
-  next[index] = {
-    ...next[index],
-    ...record,
-  };
-  return next;
-}
-
 function attachSm2(cards: Card[], sm2Map: Record<string, SM2Data>): CardWithSm2[] {
   return cards.map((card) => ({
     ...card,
@@ -185,23 +107,15 @@ export const useProgressionStore = create<ProgressionStore>()(
       levelUpMessage: null,
       isCurrentCardFlipped: false,
       activeBuffs: [],
-      attunementRituals: [],
-      studySessionHistory: [],
       pendingRitual: null,
 
       initialize: () => {
-        const initialAttunementSessions = getInitialAttunementRituals();
-        const initialStudySessionHistory = getInitialStudySessionHistory();
-        persistAttunementRituals(initialAttunementSessions);
-        persistStudySessionHistory(initialStudySessionHistory);
         const currentState = get();
         const hydratedActiveBuffs = currentState.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
         const activeBuffsAfterSessionEnd = BuffEngine.get().consumeForEvent(hydratedActiveBuffs, 'session_ended');
         const activeBuffs = BuffEngine.get().pruneExpired(activeBuffsAfterSessionEnd);
         set((state) => ({
           levelUpMessage: state.levelUpMessage || null,
-          attunementRituals: initialAttunementSessions,
-          studySessionHistory: initialStudySessionHistory,
           activeBuffs: dedupeBuffsById(activeBuffs),
         }));
       },
@@ -221,7 +135,7 @@ export const useProgressionStore = create<ProgressionStore>()(
       submitAttunementRitual: (payload) => {
         const state = get();
         const now = Date.now();
-        if (getRemainingRitualCooldownMs(state.attunementRituals, now) > 0) {
+        if (getRemainingRitualCooldownMs(now) > 0) {
           return null;
         }
 
@@ -236,24 +150,10 @@ export const useProgressionStore = create<ProgressionStore>()(
         const { harmonyScore, readinessBucket } = calculateRitualHarmony(payload.checklist);
         const buffs = deriveRitualBuffs(payload);
 
-        const sessionRecord: AttunementRitualRecord = {
-          sessionId,
-          topicId: payload.topicId,
-          startedAt: Date.now(),
-          completedAt: null,
-          harmonyScore,
-          readinessBucket,
-          checklist: payload.checklist,
-          buffs,
-        };
-
-        const nextAttunementRituals = upsertRitualRecord(state.attunementRituals, sessionRecord);
         set({
           activeBuffs: normalizeActiveBuffs(state, buffs),
-          attunementRituals: nextAttunementRituals,
           pendingRitual: nextPendingAttunement,
         });
-        persistAttunementRituals(nextAttunementRituals);
 
         return {
           harmonyScore,
@@ -263,7 +163,7 @@ export const useProgressionStore = create<ProgressionStore>()(
       },
 
       getRemainingRitualCooldownMs: (atMs) => {
-        return getRemainingRitualCooldownMs(get().attunementRituals, atMs);
+        return getRemainingRitualCooldownMs(atMs);
       },
 
       emitEvent: <T extends ProgressionEventType>(type: T, payload: ProgressionEventPayload<T>) => {
@@ -297,18 +197,6 @@ export const useProgressionStore = create<ProgressionStore>()(
           : makeStudySessionId(topicId);
         const startedAt = Date.now();
         const activeBuffIds = state.activeBuffs.map((buff) => buff.buffId);
-        let attunementRituals = state.attunementRituals;
-        if (sessionId) {
-          const existingSession = state.attunementRituals.find((record) => record.sessionId === sessionId);
-          if (existingSession) {
-            attunementRituals = state.attunementRituals.map((record) => (
-              record.sessionId === sessionId
-                ? { ...record, startedAt }
-                : record
-            ));
-          }
-        }
-
         set({
           currentSession: {
             topicId,
@@ -317,6 +205,7 @@ export const useProgressionStore = create<ProgressionStore>()(
             totalCards: queue.length,
             sessionId,
             startedAt,
+            lastCardStart: startedAt,
             activeBuffIds,
             attempts: [],
             cardDifficultyById,
@@ -325,9 +214,52 @@ export const useProgressionStore = create<ProgressionStore>()(
           },
           isCurrentCardFlipped: false,
           pendingRitual: null,
-          attunementRituals,
         });
-        persistAttunementRituals(attunementRituals);
+        get().emitEvent('study-panel-history', {
+          action: 'submit',
+          topicId,
+          sessionId,
+          undoCount: 0,
+          redoCount: 0,
+        });
+      },
+
+      focusStudyCard: (topicId, cards, focusCardId = null) => {
+        get().startTopicStudySession(topicId, cards);
+        if (!focusCardId) {
+          return;
+        }
+
+        const session = get().currentSession;
+        if (!session || session.topicId !== topicId) {
+          return;
+        }
+
+        if (!cards.some((card) => card.id === focusCardId)) {
+          return;
+        }
+
+        if (session.queueCardIds.includes(focusCardId)) {
+          set({
+            currentSession: {
+              ...session,
+              currentCardId: focusCardId,
+            },
+            isCurrentCardFlipped: false,
+          });
+          return;
+        }
+
+        const queue = [focusCardId, ...session.queueCardIds.filter((id) => id !== focusCardId)];
+        set({
+          currentSession: {
+            ...session,
+            queueCardIds: queue,
+            currentCardId: focusCardId,
+            totalCards: queue.length,
+          },
+          isCurrentCardFlipped: false,
+        });
       },
 
       submitStudyResult: (cardId, rating) => {
@@ -341,6 +273,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         if (!crystal) {
           return;
         }
+        const now = Date.now();
+        const timeTakenMs = Math.max(0, now - (session.lastCardStart ?? now));
 
         const undoSnapshot = captureUndoSnapshot(state);
         const nextUndoStack = trimUndoSnapshotStack([
@@ -352,7 +286,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         const updatedSM2 = sm2.calculateNextReview(previousSM2, rating);
         const reward = calculateXPReward(undefined, rating);
         const activeBuffs = state.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
-        const buffedReward = Math.max(0, Math.round(reward * BuffEngine.get().getModifierTotal('xp_multiplier', activeBuffs)));
+        const buffMultiplier = BuffEngine.get().getModifierTotal('xp_multiplier', activeBuffs);
+        const buffedReward = Math.max(0, Math.round(reward * buffMultiplier));
         const xp = crystal.xp + buffedReward;
         const previousLevel = calculateLevelFromXP(crystal.xp);
         const nextLevel = calculateLevelFromXP(xp);
@@ -364,7 +299,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           cardId,
           rating,
           difficulty,
-          timestamp: Date.now(),
+          timestamp: now,
           isCorrect,
         };
         const nextAttempts = [...(session.attempts ?? []), attempt];
@@ -378,36 +313,6 @@ export const useProgressionStore = create<ProgressionStore>()(
         const sessionMetrics = isSessionComplete
           ? buildStudySessionMetrics(sessionId, session.topicId, nextAttempts, session.startedAt ?? Date.now())
           : null;
-        let studySessionHistory = state.studySessionHistory;
-        if (sessionId) {
-          if (isSessionComplete) {
-            const existingRecord = state.studySessionHistory.find((record) => record.sessionId === sessionId);
-            const studySessionRecord: StudySessionTelemetryRecord = {
-              sessionId,
-              topicId: session.topicId,
-              startedAt: session.startedAt ?? Date.now(),
-              completedAt: Date.now(),
-              attempts: nextAttempts,
-              totalAttempts: sessionMetrics?.cardsCompleted ?? 0,
-              cardsCompleted: sessionMetrics?.cardsCompleted ?? 0,
-              avgRating: sessionMetrics?.avgRating ?? 0,
-              correctRate: sessionMetrics?.correctRate ?? 0,
-              sessionDurationMs: sessionMetrics?.sessionDurationMs ?? 0,
-              ritualSessionId: state.attunementRituals.find((record) => record.sessionId === sessionId)?.sessionId,
-            };
-
-            studySessionHistory = existingRecord
-              ? state.studySessionHistory.map((record) => (
-                record.sessionId === sessionId
-                  ? { ...record, ...studySessionRecord }
-                  : record
-              ))
-              : [
-                ...state.studySessionHistory,
-                studySessionRecord,
-              ];
-          }
-        }
 
         set((current) => ({
           unlockPoints: unlockedLevels > 0 ? current.unlockPoints + unlockedLevels : current.unlockPoints,
@@ -423,7 +328,6 @@ export const useProgressionStore = create<ProgressionStore>()(
                 }
               : item,
           ),
-          studySessionHistory,
           currentSession: {
             ...session,
             attempts: nextAttempts,
@@ -432,22 +336,36 @@ export const useProgressionStore = create<ProgressionStore>()(
             totalCards: Math.max(session.totalCards - 1, 0),
             undoStack: nextUndoStack,
             redoStack: [],
-            ...(isSessionComplete ? { startedAt: session.startedAt ?? Date.now() } : {}),
+            ...(isSessionComplete
+              ? {
+                startedAt: session.startedAt ?? Date.now(),
+                lastCardStart: now,
+              }
+              : {
+                lastCardStart: now,
+              }),
           },
           activeBuffs: nextBuffs,
           isCurrentCardFlipped: false,
         }));
-        persistStudySessionHistory(studySessionHistory);
         get().emitEvent('xp-gained', {
           amount: buffedReward,
           rating,
           cardId,
           topicId: session.topicId,
+          sessionId,
+          difficulty,
+          isCorrect,
+          timeTakenMs,
+          buffMultiplier,
+          reward,
         });
         if (isSessionComplete && sessionMetrics) {
           get().emitEvent('session-complete', {
             topicId: session.topicId,
+            sessionId,
             correctRate: sessionMetrics.correctRate,
+            sessionDurationMs: sessionMetrics.sessionDurationMs,
             totalAttempts: sessionMetrics.cardsCompleted,
           });
         }
@@ -480,6 +398,7 @@ export const useProgressionStore = create<ProgressionStore>()(
         get().emitEvent('study-panel-history', {
           action: 'undo',
           topicId: restored.currentSession?.topicId,
+          sessionId: restored.currentSession?.sessionId,
           undoCount: nextUndoStack.length,
           redoCount: nextRedoStack.length,
         });
@@ -512,6 +431,7 @@ export const useProgressionStore = create<ProgressionStore>()(
         get().emitEvent('study-panel-history', {
           action: 'redo',
           topicId: restored.currentSession?.topicId,
+          sessionId: restored.currentSession?.sessionId,
           undoCount: nextUndoStack.length,
           redoCount: nextRedoStack.length,
         });

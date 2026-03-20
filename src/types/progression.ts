@@ -55,37 +55,12 @@ export interface AttunementRitualResult {
   buffs: Buff[];
 }
 
-export interface AttunementRitualRecord {
-  sessionId: string;
-  topicId: string;
-  startedAt: number;
-  completedAt: number | null;
-  harmonyScore: number;
-  readinessBucket: AttunementReadinessBucket;
-  checklist: AttunementRitualChecklist;
-  buffs: Buff[];
-}
-
 export interface StudySessionAttempt {
   cardId: string;
   rating: 1 | 2 | 3 | 4;
   difficulty: number;
   timestamp: number;
   isCorrect: boolean;
-}
-
-export interface StudySessionTelemetryRecord {
-  sessionId: string;
-  topicId: string;
-  startedAt: number;
-  completedAt: number;
-  attempts: StudySessionAttempt[];
-  totalAttempts: number;
-  cardsCompleted: number;
-  avgRating: number;
-  correctRate: number;
-  sessionDurationMs: number;
-  ritualSessionId?: string;
 }
 
 export interface PendingRitualState {
@@ -105,6 +80,7 @@ export interface StudySession {
   totalCards: number;
   sessionId?: string;
   startedAt?: number;
+  lastCardStart?: number;
   activeBuffIds?: string[];
   attempts?: StudySessionAttempt[];
   cardDifficultyById?: Record<string, number>;
@@ -126,8 +102,6 @@ export interface StudyUndoSnapshot {
   activeBuffs: Buff[];
   unlockPoints: number;
   currentSession: StudySessionCore;
-  attunementRituals: AttunementRitualRecord[];
-  studySessionHistory: StudySessionTelemetryRecord[];
 }
 
 export interface ProgressionState {
@@ -145,8 +119,6 @@ export interface ProgressionState {
   levelUpMessage: string | null;
   isCurrentCardFlipped: boolean;
   activeBuffs: Buff[];
-  attunementRituals: AttunementRitualRecord[];
-  studySessionHistory: StudySessionTelemetryRecord[];
   pendingRitual: PendingRitualState | null;
 }
 
@@ -154,6 +126,8 @@ export interface ProgressionActions {
   initialize: () => void;
   setCurrentSubject: (subjectId: string | null) => void;
   startTopicStudySession: (topicId: string, cards: Card[]) => void;
+  /** Starts (or restarts) a topic session, then focuses `focusCardId` when present and valid. */
+  focusStudyCard: (topicId: string, cards: Card[], focusCardId?: string | null) => void;
   openRitualForTopic: (topicId: string, cards: Card[]) => void;
   submitAttunementRitual: (payload: AttunementRitualPayload) => AttunementRitualResult | null;
   getRemainingRitualCooldownMs: (atMs: number) => number;

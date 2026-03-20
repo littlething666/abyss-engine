@@ -1,4 +1,14 @@
 import { create } from 'zustand';
+import { telemetry } from '../features/telemetry';
+
+function emitModalOpened(modalId: string, topicId: string | null = null, sessionId: string | null = null) {
+  telemetry.log('modal_opened', {
+    modalId,
+    action: 'opened',
+    sessionId,
+    topicId,
+  });
+}
 
 /**
  * UI Store interface for managing UI state
@@ -8,6 +18,7 @@ export interface UIStore {
   isDiscoveryModalOpen: boolean;
   isStudyPanelOpen: boolean;
   isRitualModalOpen: boolean;
+  isStudyTimelineOpen: boolean;
   selectedTopicId: string | null;
 
   // Computed
@@ -21,6 +32,8 @@ export interface UIStore {
   closeStudyPanel: () => void;
   openRitualModal: () => void;
   closeRitualModal: () => void;
+  openStudyTimeline: () => void;
+  closeStudyTimeline: () => void;
   selectTopic: (topicId: string | null) => void;
 }
 
@@ -32,6 +45,7 @@ const createUIStore = () =>
     isDiscoveryModalOpen: false,
     isStudyPanelOpen: false,
     isRitualModalOpen: false,
+    isStudyTimelineOpen: false,
   isAnyModalOpen: false,
     selectedTopicId: null,
 
@@ -50,12 +64,13 @@ const createUIStore = () =>
         isDiscoveryModalOpen: true,
         isAnyModalOpen: true,
       })
+      emitModalOpened('discovery', null, null);
     },
     closeDiscoveryModal: () => {
       const state = get()
       set({
       isDiscoveryModalOpen: false,
-      isAnyModalOpen: state.isStudyPanelOpen || state.isRitualModalOpen,
+      isAnyModalOpen: state.isStudyPanelOpen || state.isRitualModalOpen || state.isStudyTimelineOpen,
     })
     },
     openStudyPanel: () => {
@@ -67,12 +82,13 @@ const createUIStore = () =>
         isStudyPanelOpen: true,
         isAnyModalOpen: true,
       })
+      emitModalOpened('study_panel', state.selectedTopicId);
     },
     closeStudyPanel: () => {
       const state = get()
       set({
       isStudyPanelOpen: false,
-      isAnyModalOpen: state.isDiscoveryModalOpen || state.isRitualModalOpen,
+      isAnyModalOpen: state.isDiscoveryModalOpen || state.isRitualModalOpen || state.isStudyTimelineOpen,
     })
     },
     openRitualModal: () => {
@@ -84,12 +100,32 @@ const createUIStore = () =>
         isRitualModalOpen: true,
         isAnyModalOpen: true,
       })
+      emitModalOpened('attunement_ritual', state.selectedTopicId);
     },
     closeRitualModal: () => {
       const state = get()
       set({
       isRitualModalOpen: false,
-      isAnyModalOpen: state.isDiscoveryModalOpen || state.isStudyPanelOpen,
+      isAnyModalOpen: state.isDiscoveryModalOpen || state.isStudyPanelOpen || state.isStudyTimelineOpen,
+    })
+    },
+    openStudyTimeline: () => {
+      const state = get()
+      if (state.isStudyTimelineOpen) {
+      return
+    }
+      set({
+        isStudyTimelineOpen: true,
+        isAnyModalOpen: true,
+      })
+      emitModalOpened('study_timeline', state.selectedTopicId);
+    },
+    closeStudyTimeline: () => {
+      const state = get()
+      set({
+      isStudyTimelineOpen: false,
+      isAnyModalOpen:
+        state.isDiscoveryModalOpen || state.isStudyPanelOpen || state.isRitualModalOpen,
     })
     },
 

@@ -84,8 +84,6 @@ export function captureUndoSnapshot(state: ProgressionState): StudyUndoSnapshot 
     activeBuffs: cloneDeep(state.activeBuffs),
     unlockPoints: state.unlockPoints,
     currentSession: coreSession,
-    attunementRituals: cloneDeep(state.attunementRituals),
-    studySessionHistory: cloneDeep(state.studySessionHistory),
   };
 }
 
@@ -105,8 +103,6 @@ export function restoreUndoSnapshot(state: ProgressionState, snapshot: StudyUndo
     activeBuffs: restoredActiveBuffs,
     unlockPoints: snapshot.unlockPoints,
     currentSession: snapshot.currentSession,
-    attunementRituals: snapshot.attunementRituals,
-    studySessionHistory: snapshot.studySessionHistory,
     isCurrentCardFlipped: false,
   };
 }

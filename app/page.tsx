@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation';
 import { useProgressionStore as useStudyStore } from '@/features/progression';
 import { useUIStore } from '@/store/uiStore';
 import { Rating } from '@/types';
+import type { Card } from '@/types/core';
 import DebugControls from '@/components/debug/DebugControls';
 
 import { initAbyssDev } from '@/utils/abyssDev';
@@ -20,6 +21,7 @@ import StatsOverlay from '@/components/StatsOverlay';
 import { AttunementRitualModal } from '@/components/AttunementRitualModal';
 import DiscoveryModal from '@/components/DiscoveryModal';
 import StudyPanelModal from '@/components/StudyPanelModal';
+import StudyTimelineModal from '@/components/StudyTimelineModal';
 import SubjectNavigation from '@/components/SubjectNavigation';
 import PomodoroTimerOverlay from '@/components/PomodoroTimer3D';
 
@@ -60,6 +62,7 @@ const HomeContent: React.FC = () => {
   const activeBuffs = useStudyStore((state) => state.activeBuffs);
   const getRemainingRitualCooldownMs = useStudyStore((state) => state.getRemainingRitualCooldownMs);
   const getDueCardsCount = useStudyStore((state) => state.getDueCardsCount);
+  const focusStudyCard = useStudyStore((state) => state.focusStudyCard);
 
   const activeTopicIds = useMemo(() => Array.from(new Set(activeCrystals.map((crystal) => crystal.topicId))), [activeCrystals]);
   const allTopicMetadata = useTopicMetadata(activeTopicIds);
@@ -97,6 +100,17 @@ const HomeContent: React.FC = () => {
   const dueCards = allTopicsCardCounts.due;
   const totalCards = allTopicsCardCounts.total;
 
+  const topicCardsById = useMemo(() => {
+    const map = new Map<string, Card[]>();
+    subjectFilteredTopicIds.forEach((topicId, index) => {
+      const cards = topicCardQueries[index]?.data;
+      if (cards) {
+        map.set(topicId, cards);
+      }
+    });
+    return map;
+  }, [subjectFilteredTopicIds, topicCardQueries]);
+
   // Get store actions - stable references
   const initialize = useStudyStore(s => s.initialize);
   const flipCurrentCard = useStudyStore(s => s.flipCurrentCard);
@@ -111,10 +125,15 @@ const HomeContent: React.FC = () => {
   const isDiscoveryModalOpen = useUIStore(s => s.isDiscoveryModalOpen);
   const isStudyPanelOpen = useUIStore(s => s.isStudyPanelOpen);
   const isRitualModalOpen = useUIStore(s => s.isRitualModalOpen);
+  const isStudyTimelineOpen = useUIStore((state) => state.isStudyTimelineOpen);
   const closeDiscoveryModal = useUIStore(s => s.closeDiscoveryModal);
   const closeStudyPanel = useUIStore(s => s.closeStudyPanel);
   const openRitualModal = useUIStore(s => s.openRitualModal);
   const closeRitualModal = useUIStore(s => s.closeRitualModal);
+  const openStudyTimeline = useUIStore((state) => state.openStudyTimeline);
+  const closeStudyTimeline = useUIStore((state) => state.closeStudyTimeline);
+  const selectTopic = useUIStore((state) => state.selectTopic);
+  const openStudyPanel = useUIStore((state) => state.openStudyPanel);
 
   const ritualCooldownRemainingMs = getRemainingRitualCooldownMs(Date.now());
 
@@ -179,6 +198,28 @@ const HomeContent: React.FC = () => {
     closeRitualModal();
   };
 
+  const handleOpenStudyTimeline = () => {
+    openStudyTimeline();
+  };
+
+  const handleCloseStudyTimeline = () => {
+    closeStudyTimeline();
+  };
+
+  const handleTimelineOpenStudy = useCallback(
+    (payload: { topicId: string; cardId?: string }) => {
+      const cards = topicCardsById.get(payload.topicId);
+      if (!cards?.length) {
+        return;
+      }
+      focusStudyCard(payload.topicId, cards, payload.cardId ?? null);
+      selectTopic(payload.topicId);
+      closeStudyTimeline();
+      openStudyPanel();
+    },
+    [topicCardsById, focusStudyCard, selectTopic, closeStudyTimeline, openStudyPanel],
+  );
+
   if (!isClient) {
     return (
       <div className="w-screen h-screen flex items-center justify-center bg-background text-foreground text-2xl">
@@ -206,6 +247,7 @@ const HomeContent: React.FC = () => {
           totalCards={totalCards}
           dueCards={dueCards}
           activeBuffs={activeBuffs}
+          onOpenStudyTimeline={handleOpenStudyTimeline}
         />
 
         <AttunementRitualModal
@@ -216,13 +258,13 @@ const HomeContent: React.FC = () => {
         />
 
         {/* Title */}
-        <div className="absolute top-5 right-5 z-10 text-right">
-          <h1 className="text-2xl m-0 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-            🌊 Abyss Engine
+        <div className="absolute right-3 top-3 z-10 max-w-[min(100%,11rem)] text-right">
+          <h1 className="m-0 text-sm font-semibold tracking-tight text-foreground">
+            Abyss Engine
           </h1>
           {unlockPoints > 0 && (
-            <Badge variant="secondary" className="text-xs">
-              🔓 {unlockPoints} Unlock Point{unlockPoints !== 1 ? 's' : ''} available
+            <Badge variant="secondary" className="mt-1 h-5 px-1.5 text-[10px] font-normal">
+              {unlockPoints} unlock{unlockPoints !== 1 ? 's' : ''}
             </Badge>
           )}
         </div>
@@ -249,6 +291,13 @@ const HomeContent: React.FC = () => {
           onSubmitResult={handleRate}
           onUndo={handleUndo}
           onRedo={handleRedo}
+        />
+
+        <StudyTimelineModal
+          isOpen={isStudyTimelineOpen}
+          onClose={handleCloseStudyTimeline}
+          topicMetadata={allTopicMetadata}
+          onOpenEntryStudy={handleTimelineOpenStudy}
         />
 
       {isDebugMode && (

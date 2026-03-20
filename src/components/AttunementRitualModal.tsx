@@ -43,6 +43,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { useTopicMetadata } from '../features/content';
 import { deckRepository } from '../infrastructure/di';
 import { Card } from '../types/core';
+import { telemetry } from '../features/telemetry';
 
 interface AttunementRitualModalProps {
   isOpen: boolean;
@@ -189,6 +190,14 @@ export function AttunementRitualModal({
     if (!result) {
       return;
     }
+    telemetry.log('attunement_ritual_submitted', {
+      harmonyScore: result.harmonyScore,
+      readinessBucket: result.readinessBucket,
+      checklistKeys: Object.keys(sanitizedChecklist),
+      buffsGranted: result.buffs.map((buff) => buff.buffId),
+    }, {
+      topicId: targetCrystal,
+    });
     onClose();
   };
 

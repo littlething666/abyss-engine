@@ -1,5 +1,9 @@
 import { vi } from 'vitest';
 
+// Enables React `act()` in Vitest jsdom without console noise (see react.dev/link/wrap-tests-with-act).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

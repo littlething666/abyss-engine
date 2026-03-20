@@ -6,7 +6,6 @@ import { calculateLevelFromXP, useProgressionStore as useStudyStore } from '../f
 import type { TopicMetadata } from '../features/content';
 import type { Card } from '../types/core';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 
 interface TopicSelectionBarProps {
   onStartTopicStudySession?: (topicId: string, cards: Card[]) => void;
@@ -30,13 +29,12 @@ export default function TopicSelectionBar({
   const selectedTopicId = useUIStore((state) => state.selectedTopicId);
   const selectTopic = useUIStore((state) => state.selectTopic);
   const isSelectionMode = selectedTopicId !== null;
-  const xp = selectedXp;
   const getDueCardsCount = useStudyStore((state) => state.getDueCardsCount);
   const sm2Data = useStudyStore((state) => state.sm2Data);
 
   const topicName = selectedMetadata?.topicName || 'Selected topic';
   const subjectName = selectedMetadata?.subjectName || 'Unknown subject';
-  const level = calculateLevelFromXP(xp);
+  const level = calculateLevelFromXP(selectedXp);
   const selectedDueCards = React.useMemo(() => {
     if (!selectedCards.length) {
       return 0;
@@ -69,39 +67,37 @@ export default function TopicSelectionBar({
     selectTopic(null);
   };
 
-  const containerClass = 'fixed z-50 flex justify-center px-3';
+  const containerClass =
+    'fixed z-50 flex justify-center px-2 sm:px-3';
   const containerStyle: React.CSSProperties = {
-    left: '0.5rem',
-    right: '0.5rem',
-    bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+    left: '0.25rem',
+    right: '0.25rem',
+    bottom: 'calc(3.5rem + env(safe-area-inset-bottom))',
   };
 
   return (
     <div className={containerClass} style={containerStyle}>
-      <div className="inline-flex items-center gap-2 px-2 py-2 w-full sm:w-auto bg-card/80 backdrop-blur-sm rounded-lg border border-border shadow-lg">
-        <div className="flex flex-col items-start">
-          <Badge variant="outline" className="h-5 px-2 text-[10px] font-semibold">
-            Selected
-          </Badge>
-          <div className="flex items-center gap-2 text-foreground">
-            <span className="font-semibold min-w-[100px]">{topicName}</span>
-            <span className="text-foreground/40">•</span>
-            <span className="text-sm text-muted-foreground min-w-[50px]">Level {level} ({xp} XP)</span>
+      <div className="inline-flex w-full max-w-lg items-center gap-2 rounded-lg border border-border bg-card/80 px-2 py-1.5 shadow-sm backdrop-blur-sm sm:w-auto">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="truncate text-xs font-semibold text-foreground">{topicName}</span>
+            <span className="shrink-0 text-[10px] text-muted-foreground">
+              Lv{level} · {selectedDueCards}/{selectedTotalCards}
+            </span>
           </div>
-          <Badge variant="secondary" className="mt-1.5 text-[10px]">
-            Due {selectedDueCards}/{selectedTotalCards}
-          </Badge>
+          <p className="truncate text-[10px] text-muted-foreground">{subjectName}</p>
         </div>
 
-        <div className="w-px h-8 bg-foreground/20" />
+        <div className="h-6 w-px shrink-0 bg-border/60" />
 
         <Button
           type="button"
+          size="sm"
           onClick={handleBegin}
           onPointerDown={stopPropagation}
           onMouseDown={stopPropagation}
           onTouchStart={stopPropagation}
-          className="px-4 py-1.5 text-sm font-medium rounded transition-colors duration-200"
+          className="h-8 shrink-0 px-3 text-xs"
         >
           Begin
         </Button>
@@ -114,11 +110,12 @@ export default function TopicSelectionBar({
           onMouseDown={stopPropagation}
           onTouchStart={stopPropagation}
           variant="outline"
-          className="p-1.5 rounded transition-colors duration-200"
+          size="icon-sm"
+          className="size-8 shrink-0"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            className="h-5 w-5"
+            className="h-4 w-4"
             viewBox="0 0 20 20"
             fill="currentColor"
           >

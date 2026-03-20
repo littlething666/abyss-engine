@@ -18,14 +18,9 @@ import {
  */
 export const SubjectNavigation: React.FC = () => {
   const { data: subjects = [] } = useSubjects();
-  // Get current subject ID from store
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
   const setCurrentSubject = useStudyStore((state) => state.setCurrentSubject);
 
-  // Get current subject object
-  const currentSubject = subjects.find((s) => s.id === currentSubjectId) || null;
-
-  // Handle subject selection
   const handleSelectSubject = (subjectId: string) => {
     setCurrentSubject(subjectId === '__all_floors__' ? null : subjectId);
   };
@@ -33,77 +28,41 @@ export const SubjectNavigation: React.FC = () => {
   return (
     <div
       data-slot="subject-navigation"
+      className="fixed z-20"
       style={{
-        position: 'fixed',
-        bottom: '20px',
-        right: '20px',
-        zIndex: 1,
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+        right: 'calc(0.75rem + env(safe-area-inset-right))',
       }}
     >
       <Select value={currentSubjectId || '__all_floors__'} onValueChange={handleSelectSubject}>
         <SelectTrigger
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 12px',
-            backgroundColor: currentSubject
-              ? `${currentSubject.color}20`
-              : 'rgba(30, 41, 59, 0.9)',
-            border: `1px solid ${currentSubject ? currentSubject.color : '#475569'}`,
-            borderRadius: '8px',
-            color: currentSubject ? currentSubject.color : '#e2e8f0',
-            fontSize: '14px',
-            fontWeight: 500,
-            backdropFilter: 'blur(8px)',
-            boxShadow: currentSubject
-              ? `0 0 20px ${currentSubject.color}30`
-              : '0 4px 6px rgba(0, 0, 0, 0.3)',
-            minWidth: '180px',
-          }}
+          size="sm"
+          className="h-auto min-h-8 min-w-[9.5rem] gap-2 border-border bg-card/90 py-2 text-xs font-medium text-foreground shadow-sm backdrop-blur-sm"
           aria-label="Select floor"
         >
-          <span style={{ fontSize: '16px' }}>🏢</span>
           <SelectValue placeholder="All Floors" />
         </SelectTrigger>
 
         <SelectContent>
-          <SelectItem
-            value="__all_floors__"
-            style={{
-              color: !currentSubjectId ? '#818cf8' : '#94a3b8',
-              backgroundColor: !currentSubjectId ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
-            }}
-          >
-            <span style={{ fontSize: '14px' }}>🌌</span>
-            <span>All Floors</span>
+          <SelectItem value="__all_floors__">
+            <span className="flex w-full items-center gap-2">
+              <span className="size-2 shrink-0 rounded-sm bg-muted" aria-hidden />
+              <span>All Floors</span>
+            </span>
           </SelectItem>
 
           {subjects.map((subject) => (
-            <SelectItem
-              key={subject.id}
-              value={subject.id}
-              style={{
-                backgroundColor:
-                  currentSubjectId === subject.id
-                    ? `${subject.color}20`
-                    : 'transparent',
-                color: currentSubjectId === subject.id ? subject.color : '#e2e8f0',
-              }}
-            >
-              <span
-                style={{
-                  width: '12px',
-                  height: '12px',
-                  borderRadius: '3px',
-                  backgroundColor: subject.color,
-                  boxShadow: `0 0 8px ${subject.color}60`,
-                }}
-              />
-              <span style={{ flex: 1 }}>{subject.name}</span>
-              <span style={{ fontSize: '10px', opacity: 0.5 }}>
-                {subject.geometry.gridTile}/{subject.geometry.crystal}
+            <SelectItem key={subject.id} value={subject.id}>
+              <span className="flex w-full min-w-0 items-center gap-2">
+                <span
+                  className="size-2 shrink-0 rounded-sm border border-border/60"
+                  style={{ backgroundColor: subject.color }}
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1 truncate">{subject.name}</span>
+                <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                  {subject.geometry.gridTile}/{subject.geometry.crystal}
+                </span>
               </span>
             </SelectItem>
           ))}

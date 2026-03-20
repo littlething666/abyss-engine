@@ -48,11 +48,15 @@ export const PomodoroTimerOverlay: React.FC = () => {
 
   return (
     <div
-      className="fixed bottom-3 left-3 z-20 flex items-center gap-1 rounded-lg border border-cyan-300/40 bg-[#070b16]/80 px-2 py-1.5 text-[11px] font-medium shadow-[0_0_0_1px_rgba(125,211,252,0.25)] backdrop-blur-sm"
+      className="fixed z-20 flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 px-2 py-1 text-[10px] font-medium text-foreground shadow-sm backdrop-blur-sm"
+      style={{
+        bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+        left: 'calc(0.75rem + env(safe-area-inset-left))',
+      }}
       aria-live="polite"
     >
-      <span className="font-mono tabular-nums text-cyan-200">{timerText}</span>
-      <span className="mx-1 h-4 w-px bg-cyan-400/40" aria-hidden="true" />
+      <span className="font-mono tabular-nums text-foreground">{timerText}</span>
+      <span className="mx-0.5 h-4 w-px bg-border/60" aria-hidden="true" />
       <Button
         type="button"
         size="icon-xs"
@@ -64,7 +68,7 @@ export const PomodoroTimerOverlay: React.FC = () => {
             resume();
           }
         }}
-        className="ml-1 h-6 w-6 border-cyan-300/40 bg-slate-950/60 text-cyan-200 hover:bg-slate-900/70"
+        className="ml-0.5 h-6 w-6"
         aria-label={isRunning ? 'Pause timer' : 'Resume timer'}
       >
         {isRunning ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
@@ -74,7 +78,7 @@ export const PomodoroTimerOverlay: React.FC = () => {
         size="icon-xs"
         variant="outline"
         onClick={reset}
-        className="h-6 w-6 border-cyan-300/40 bg-slate-950/60 text-cyan-200 hover:bg-slate-900/70"
+        className="h-6 w-6"
         aria-label="Reset timer"
       >
         <RotateCcw className="h-3.5 w-3.5" />

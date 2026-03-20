@@ -6,18 +6,27 @@ export interface ProgressionEventMap {
   'study-panel-history': {
     action: StudyPanelHistoryAction;
     topicId?: string;
+    sessionId?: string;
     undoCount?: number;
     redoCount?: number;
   };
   'xp-gained': {
     amount: number;
     rating: RatingValue;
+    sessionId: string;
     cardId?: string;
     topicId?: string;
+    difficulty?: number;
+    isCorrect?: boolean;
+    timeTakenMs?: number;
+    buffMultiplier?: number;
+    reward?: number;
   };
   'session-complete': {
     topicId: string;
+    sessionId?: string;
     correctRate: number;
+    sessionDurationMs?: number;
     totalAttempts: number;
   };
 }

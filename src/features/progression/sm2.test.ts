@@ -11,7 +11,7 @@ import {
   getDueCards,
   SM2Data,
 } from './sm2';
-import { Rating } from '../types';
+import { Rating } from '../../types';
 
 // Helper to create a mock card review state
 type MockCardWithSM2 = {

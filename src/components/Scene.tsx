@@ -385,20 +385,7 @@ export const Scene: React.FC<SceneProps> = ({
         selectedXp={selectedTopicXp}
       />
       {showStats && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 8,
-            left: 8,
-            zIndex: 20,
-            color: '#8ef',
-            pointerEvents: 'none',
-            fontFamily: 'monospace',
-            fontSize: 12,
-            textShadow: '0 0 3px rgba(0, 0, 0, 0.8)',
-            whiteSpace: 'pre',
-          }}
-        >
+        <div className="pointer-events-none absolute left-2 top-2 z-20 max-w-[min(calc(100%-1rem),22rem)] whitespace-pre rounded-md border border-border/40 bg-card/70 px-2 py-1 font-mono text-[10px] leading-tight text-muted-foreground shadow-sm backdrop-blur-sm">
           {statsText}
         </div>
       )}

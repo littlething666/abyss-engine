@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Rating } from '../types';
 import { getRatingColor, getRatingLabel, useProgressionStore as useStudyStore } from '../features/progression';
 import { evaluateAnswer as evaluateChoiceAnswer } from '../features/content';
+import { telemetry } from '../features/telemetry';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { TARGET_AUDIENCE_OPTIONS, useStudySettingsStore } from '../store/studySettingsStore';
@@ -57,6 +58,23 @@ export function StudyPanelModal({
   const [isAnswerSubmitted, setIsAnswerSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const systemPromptRef = useRef<HTMLPreElement>(null);
+  const previousActiveTabRef = useRef<StudyPanelTab>('study');
+
+  useEffect(() => {
+    if (previousActiveTabRef.current !== activeTab) {
+      telemetry.log('study_panel_tab_switched', {
+        topicId: currentSession?.topicId ?? currentTopicId,
+        sessionId: currentSession?.sessionId ?? null,
+        tab: activeTab,
+        fromTab: previousActiveTabRef.current,
+        toTab: activeTab,
+      }, {
+        topicId: currentSession?.topicId ?? currentTopicId,
+        sessionId: currentSession?.sessionId ?? null,
+      });
+      previousActiveTabRef.current = activeTab;
+    }
+  }, [activeTab, currentSession?.sessionId, currentSession?.topicId, currentTopicId]);
 
   useEffect(() => {
     if (!model.resolvedTopicId || (activeTab === 'theory' && !model.hasTheory)) {

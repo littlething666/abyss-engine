@@ -42,20 +42,20 @@ function setupSpeechSynthesisMock() {
     }
   }
 
-  const mockWindow = window as Window & {
-    speechSynthesis?: {
-      speak: (_utterance: unknown) => void;
-      cancel: () => void;
-    };
-    SpeechSynthesisUtterance?: typeof MockSpeechSynthesisUtterance;
-  };
+  const mockWindow = window as unknown as Record<string, unknown>;
+  const originalSpeechSynthesis = window.speechSynthesis;
+  const originalSpeechSynthesisUtterance = window.SpeechSynthesisUtterance;
+
   mockWindow.speechSynthesis = {
-    speak: mockSpeak,
+    ...originalSpeechSynthesis,
+    speak: (utterance: SpeechSynthesisUtterance) => {
+      mockSpeak(utterance);
+    },
     cancel: mockCancel,
   };
   mockWindow.SpeechSynthesisUtterance = MockSpeechSynthesisUtterance;
 
-  return { mockSpeak, mockCancel, utteranceTexts };
+  return { mockSpeak, mockCancel, utteranceTexts, originalSpeechSynthesis, originalSpeechSynthesisUtterance };
 }
 
 function renderStateViews(overrides: Partial<StudyPanelStateViewsProps> = {}) {
@@ -86,12 +86,13 @@ function renderStateViews(overrides: Partial<StudyPanelStateViewsProps> = {}) {
 
 afterEach(() => {
   document.body.innerHTML = '';
-  const mockWindow = window as Window & {
-    speechSynthesis?: { speak: () => void; cancel: () => void };
-    SpeechSynthesisUtterance?: { new (text: string): { text: string } };
-  };
-  delete mockWindow.speechSynthesis;
-  delete mockWindow.SpeechSynthesisUtterance;
+  const mockWindow = window as unknown as Record<string, unknown>;
+  if ('speechSynthesis' in mockWindow) {
+    mockWindow.speechSynthesis = window.speechSynthesis;
+  }
+  if ('SpeechSynthesisUtterance' in mockWindow) {
+    mockWindow.SpeechSynthesisUtterance = window.SpeechSynthesisUtterance;
+  }
   vi.restoreAllMocks();
 });
 

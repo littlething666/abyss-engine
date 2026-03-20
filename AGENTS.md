@@ -68,7 +68,6 @@ Before generating code, the agent must evaluate the request against the architec
 1. Identify affected execution paths.
 2. Locate and update existing related tests (`src/**/*.test.ts` for unit, `tests/` for e2e) before writing implementation code.
 3. Provide necessary unit or e2e tests for new feature paths.
-4. Run `npm run build` to ensure the codebase compiles.
 
 ### III. Mandatory Collaboration Output
 Every agent response proposing code changes must begin with an **Architecture Alignment Plan** containing:

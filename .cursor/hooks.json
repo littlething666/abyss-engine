@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/track-edits.sh"
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/on-stop.sh"
+      }
+    ]
+  }
+}

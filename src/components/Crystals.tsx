@@ -420,25 +420,8 @@ const SingleCrystal: React.FC<SingleCrystalProps> = ({
         >
           <div
             ref={labelRef}
-            style={{
-              pointerEvents: 'none',
-              fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI',
-              fontSize: '5px',
-              fontWeight: 400,
-              lineHeight: 1,
-              letterSpacing: '0.01em',
-              textShadow: '0 1px 3px rgba(3, 7, 18, 0.75)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              opacity: 0,
-              maxWidth: '100px',
-              padding: '2px 2px',
-              borderRadius: '2px',
-              background: 'rgba(15, 23, 42, 0.65)',
-              // border: '1px solid rgba(148, 163, 184, 0.35)',
-              color: 'white',
-            }}
+            style={{ opacity: 0 }}
+            className="pointer-events-none max-w-[100px] truncate rounded-sm border border-border/50 bg-card/75 px-0.5 py-0.5 text-center font-sans text-[5px] font-normal leading-none tracking-wide text-foreground shadow-sm backdrop-blur-sm"
           >
             {topicMeta.topicName}
           </div>

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Card, ActiveCrystal } from '../../types';
 import { SubjectGraph } from '../../types/core';
-import { ATTUNEMENT_SUBMISSION_COOLDOWN_MS, AttunementRitualPayload, MAX_UNDO_DEPTH, useProgressionStore } from '.';
+import { ATTUNEMENT_SUBMISSION_COOLDOWN_MS, MAX_UNDO_DEPTH, useProgressionStore } from '.';
+import { AttunementRitualPayload } from '../../types/progression';
+import { telemetry } from '../telemetry';
 
 function createCard(id: string): Card {
   return {
@@ -56,13 +58,29 @@ function resetStore() {
     sm2Data: {},
     activeCrystals: [],
     activeBuffs: [],
-    attunementRituals: [],
-    studySessionHistory: [],
     pendingRitual: null,
     currentSubjectId: null,
     currentSession: null,
     levelUpMessage: null,
     unlockPoints: 0,
+  });
+  telemetry.getStore.setState({ events: [] });
+}
+
+function seedAttunementSubmissionEvent(topicId: string, timestamp: number) {
+  telemetry.getStore.getState().log({
+    id: '00000000-0000-0000-0000-000000000000',
+    version: 'v1',
+    timestamp,
+    sessionId: null,
+    topicId,
+    type: 'attunement_ritual_submitted',
+    payload: {
+      harmonyScore: 50,
+      readinessBucket: 'low',
+      checklistKeys: [],
+      buffsGranted: [],
+    },
   });
 }
 
@@ -116,6 +134,26 @@ describe('progressionStore card-only canonical API', () => {
     const updated = useProgressionStore.getState().sm2Data['a-1'];
     expect(updated).toBeDefined();
     expect(updated.interval).toBeGreaterThan(0);
+  });
+
+  it('focusStudyCard selects a different queued card without reordering the queue', () => {
+    const cards = [createCard('a-1'), createCard('a-2')];
+    useProgressionStore.setState({
+      unlockedTopicIds: ['topic-a'],
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+    });
+
+    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    expect(useProgressionStore.getState().currentSession?.currentCardId).toBe('a-1');
+
+    useProgressionStore.getState().focusStudyCard('topic-a', cards, 'a-2');
+    const session = useProgressionStore.getState().currentSession;
+    expect(session?.currentCardId).toBe('a-2');
+    expect(session?.queueCardIds).toEqual(['a-1', 'a-2']);
+
+    useProgressionStore.getState().submitStudyResult('a-2', 4);
+    expect(useProgressionStore.getState().currentSession?.currentCardId).toBe('a-1');
   });
 
   it('adds an unlock point when a study result levels up a crystal', () => {
@@ -180,7 +218,6 @@ describe('progressionStore card-only canonical API', () => {
     const expectedSessionId = stateAfterSubmission.pendingRitual?.sessionId;
     expect(expectedSessionId).toBeDefined();
     expect(stateAfterSubmission.pendingRitual?.topicId).toBe('topic-a');
-    expect(stateAfterSubmission.attunementRituals).toHaveLength(1);
     expect(stateAfterSubmission.activeBuffs).toHaveLength(result?.buffs.length || 0);
     expect(stateAfterSubmission.activeBuffs[0]?.condition).toBeDefined();
 
@@ -193,38 +230,16 @@ describe('progressionStore card-only canonical API', () => {
     useProgressionStore.getState().submitStudyResult('a-1', 4);
     useProgressionStore.getState().submitStudyResult('a-2', 4);
 
-    const allRituals = useProgressionStore.getState().attunementRituals;
-    const ritualRecord = allRituals[allRituals.length - 1];
-    expect(ritualRecord?.completedAt).toBeNull();
-
-    const allSessions = useProgressionStore.getState().studySessionHistory;
-    const telemetryRecord = allSessions[allSessions.length - 1];
-    expect(telemetryRecord?.completedAt).toBeTruthy();
-    expect(telemetryRecord?.totalAttempts).toBe(2);
-    expect(telemetryRecord?.sessionDurationMs).toBeGreaterThanOrEqual(0);
-    expect(telemetryRecord?.correctRate).toBe(1);
-    expect(telemetryRecord?.ritualSessionId).toBe(ritualRecord?.sessionId);
     expect(useProgressionStore.getState().activeBuffs).toHaveLength(0);
   });
 
   it('blocks attunement submission while cooldown is active', () => {
     const now = Date.now();
+    seedAttunementSubmissionEvent('topic-a', now);
     useProgressionStore.setState({
       unlockedTopicIds: ['topic-a'],
       activeCrystals: [crystal('topic-a')],
       unlockPoints: 3,
-      attunementRituals: [
-        {
-          sessionId: 'previous-session',
-          topicId: 'topic-a',
-          startedAt: now,
-          completedAt: now + 60000,
-          harmonyScore: 1,
-          readinessBucket: 'low',
-          checklist: { microGoal: 'goal' },
-          buffs: [],
-        },
-      ],
     });
 
     const result = useProgressionStore.getState().submitAttunementRitual(ritualPayload('topic-a'));
@@ -234,22 +249,11 @@ describe('progressionStore card-only canonical API', () => {
 
   it('allows attunement submission once cooldown window has passed', () => {
     const now = Date.now();
+    seedAttunementSubmissionEvent('topic-a', now - (ATTUNEMENT_SUBMISSION_COOLDOWN_MS + 60 * 60 * 1000));
     useProgressionStore.setState({
       unlockedTopicIds: ['topic-a'],
       activeCrystals: [crystal('topic-a')],
       unlockPoints: 3,
-      attunementRituals: [
-        {
-          sessionId: 'previous-session',
-          topicId: 'topic-a',
-          startedAt: now - (ATTUNEMENT_SUBMISSION_COOLDOWN_MS + 60 * 60 * 1000),
-          completedAt: now - (ATTUNEMENT_SUBMISSION_COOLDOWN_MS + 60 * 60 * 1000 - 60000),
-          harmonyScore: 1,
-          readinessBucket: 'low',
-          checklist: { microGoal: 'goal' },
-          buffs: [],
-        },
-      ],
     });
 
     const result = useProgressionStore.getState().submitAttunementRitual(ritualPayload('topic-a'));

@@ -48,10 +48,9 @@ describe('DiscoveryModal', () => {
     const onClose = vi.fn();
     const { container, root } = renderDiscoveryModal({
       isOpen: true,
-      lockedTopicsCount: 0,
-      unlockPoints: 3,
-      onOpenRitual,
-      onClose,
+    unlockPoints: 3,
+    onOpenRitual,
+    onClose,
     });
 
     const openRitualButton = document.body.querySelector('[aria-label="Open attunement ritual"]') as
@@ -67,11 +66,10 @@ describe('DiscoveryModal', () => {
   it('renders an icon-only ritual action button', () => {
     const { container, root } = renderDiscoveryModal({
       isOpen: true,
-      lockedTopicsCount: 0,
-      unlockPoints: 1,
-      ritualCooldownRemainingMs: 5400000, // 1h 30m
-      onOpenRitual: vi.fn(),
-      onClose: vi.fn(),
+    unlockPoints: 1,
+    ritualCooldownRemainingMs: 5400000, // 1h 30m
+    onOpenRitual: vi.fn(),
+    onClose: vi.fn(),
     });
 
     const openRitualButton = document.body.querySelector('[aria-label="Open attunement ritual"]') as
