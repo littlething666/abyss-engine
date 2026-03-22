@@ -1,13 +1,12 @@
  'use client'
 
-import React, { useEffect, useMemo, useRef } from 'react'
+import React, { useMemo } from 'react'
 import * as THREE from 'three/webgpu'
 import { abs, float, Fn, instancedBufferAttribute, max, normalWorldGeometry, positionGeometry, positionLocal, pow2, sin, sub, time, uv, vec2, vec3 } from 'three/tsl'
 
 interface MeshTreeProps {
   position?: [number, number, number]
   scale?: number
-  bloomExcludeLayer?: number
 }
 
 const TREE_MAX_STEPS = 5
@@ -130,23 +129,9 @@ const generateTreePayload = (): TreePayload => {
 
 export const MeshTree: React.FC<MeshTreeProps> = ({
   position = [3.75, 0, 0],
-  scale = 0.06,
-  bloomExcludeLayer = 1,
+  scale = 0.02,
 }) => {
-  const treeRef = useRef<THREE.InstancedMesh>(null)
   const treePayload = useMemo(() => generateTreePayload(), [])
-
-  useEffect(() => {
-    if (!treeRef.current) {
-      return
-    }
-
-    treeRef.current.layers.set(bloomExcludeLayer)
-
-    return () => {
-      treeRef.current?.layers.set(0)
-    }
-  }, [bloomExcludeLayer])
 
   const treeGeometry = useMemo(() => {
     const geometry = new THREE.BoxGeometry()
@@ -167,10 +152,10 @@ export const MeshTree: React.FC<MeshTreeProps> = ({
       opacity: 0.95,
     })
 
-    const instancePosition = instancedBufferAttribute(treePayload.attributes.position)
-    const instanceNormal = instancedBufferAttribute(treePayload.attributes.normal)
-    const instanceColor = instancedBufferAttribute(treePayload.attributes.color)
-    const instanceData = instancedBufferAttribute(treePayload.attributes.data)
+    const instancePosition = instancedBufferAttribute<'vec3'>(treePayload.attributes.position, 'vec3')
+    const instanceNormal = instancedBufferAttribute<'vec3'>(treePayload.attributes.normal, 'vec3')
+    const instanceColor = instancedBufferAttribute<'vec3'>(treePayload.attributes.color, 'vec3')
+    const instanceData = instancedBufferAttribute<'vec3'>(treePayload.attributes.data, 'vec3')
 
     material.positionNode = Fn(() => {
       const instanceSize = instanceData.x
@@ -229,7 +214,6 @@ export const MeshTree: React.FC<MeshTreeProps> = ({
   return (
     <group position={position} scale={scale}>
       <instancedMesh
-        ref={treeRef}
         args={[treeGeometry, treeMaterial, treePayload.instanceCount]}
         castShadow
         receiveShadow

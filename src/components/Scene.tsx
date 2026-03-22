@@ -348,8 +348,6 @@ export const Scene: React.FC<SceneProps> = ({
         {/* Recursive mesh box-tree near grid edge */}
         <MeshTree
           position={[3.75, 0, 0]}
-          scale={0.06}
-          bloomExcludeLayer={BLOOM_EXCLUDE_LAYER}
         />
 
         {/* Crystals from props (data from parent/store) */}
