@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import MathMarkdownRenderer from '../MathMarkdownRenderer';
 import { RenderableCard } from '../../features/studyPanel/cardPresenter';
 import type { StudyFormulaExplainContext } from '../../features/studyPanel/formulaExplainLlmMessages';
@@ -10,13 +10,25 @@ import { SM2Data } from '../../features/progression/sm2';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
 import { Redo2, Sparkles, Undo2 } from 'lucide-react';
 import { StudyKatexInteractive } from './StudyKatexInteractive';
+import { useMediaQuery } from '@/hooks/use-media-query';
 
 export type StudyPanelLlmExplainProps = {
   isPending: boolean;
@@ -33,6 +45,56 @@ export type StudyPanelFormulaExplainProps = {
   requestExplain: (latex: string, context: StudyFormulaExplainContext) => void;
   cancelInflight: () => void;
 };
+
+type LlmStreamBlockProps = {
+  isPending: boolean;
+  errorMessage: string | null;
+  assistantText: string | null;
+  contentTestId: string;
+  errorTestId: string;
+  loadingTestId: string;
+};
+
+function LlmStreamBlock({
+  isPending,
+  errorMessage,
+  assistantText,
+  contentTestId,
+  errorTestId,
+  loadingTestId,
+}: LlmStreamBlockProps) {
+  return (
+    <div
+      className="max-h-80 overflow-y-auto text-sm"
+      data-testid={contentTestId}
+    >
+      {errorMessage && !isPending && (
+        <p className="text-destructive" data-testid={errorTestId}>
+          {errorMessage}
+        </p>
+      )}
+      {isPending && !(assistantText && assistantText.length > 0) && (
+        <p className="text-muted-foreground" data-testid={loadingTestId}>
+          Thinking…
+        </p>
+      )}
+      {assistantText && assistantText.length > 0 && (
+        <div className="min-h-[1em]">
+          <MathMarkdownRenderer
+            source={assistantText}
+            className="text-foreground markdown-body markdown-body--block text-sm"
+          />
+          {isPending && (
+            <span
+              className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-foreground/50 align-middle"
+              aria-hidden
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 type OptionState =
   | 'default'
@@ -59,9 +121,6 @@ type OptionPresentation = {
   style: string;
   markerClass: string;
 };
-
-/** Matches `duration-100` on PopoverContent plus a small buffer so the anchor outlives the exit animation. */
-const FORMULA_POPOVER_ANCHOR_TEARDOWN_MS = 150;
 
 const optionPresentation: Record<OptionState, OptionPresentation> = {
   default: {
@@ -125,6 +184,20 @@ interface StudyPanelStudyViewProps {
   llmFormulaExplain: StudyPanelFormulaExplainProps;
 }
 
+const inferenceSurfaceZ = 'z-[60]';
+
+const QUESTION_EXPLAIN_DESCRIPTION = 'AI explanation for the current card question.';
+
+/** Inline LaTeX as remark-math; escapes `$` inside the expression. */
+function formulaDescriptionMarkdown(latex: string | null): string {
+  if (!latex) {
+    return 'The expression you tapped in the question or answer.';
+  }
+  const truncated = latex.length > 120 ? `${latex.slice(0, 117)}…` : latex;
+  const escaped = truncated.replace(/\$/g, '\\$');
+  return `$${escaped}$`;
+}
+
 export function StudyPanelStudyView({
   renderedCard,
   isFlashcard,
@@ -153,96 +226,37 @@ export function StudyPanelStudyView({
   llmExplain,
   llmFormulaExplain,
 }: StudyPanelStudyViewProps) {
+  const isDesktop = useMediaQuery('(min-width: 768px)');
   const [explainOpen, setExplainOpen] = useState(false);
-  const [formulaPopoverOpen, setFormulaPopoverOpen] = useState(false);
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const [formulaOpen, setFormulaOpen] = useState(false);
   const [activeFormulaLatex, setActiveFormulaLatex] = useState<string | null>(null);
-  const formulaAnchorElRef = useRef<HTMLElement | null>(null);
-  const formulaAnchorTeardownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const clearFormulaAnchorTeardownTimer = useCallback(() => {
-    if (formulaAnchorTeardownTimerRef.current !== null) {
-      clearTimeout(formulaAnchorTeardownTimerRef.current);
-      formulaAnchorTeardownTimerRef.current = null;
-    }
-  }, []);
-
-  const scheduleFormulaAnchorTeardown = useCallback(() => {
-    clearFormulaAnchorTeardownTimer();
-    formulaAnchorTeardownTimerRef.current = setTimeout(() => {
-      formulaAnchorTeardownTimerRef.current = null;
-      formulaAnchorElRef.current = null;
-      setAnchorRect(null);
-      setActiveFormulaLatex(null);
-    }, FORMULA_POPOVER_ANCHOR_TEARDOWN_MS);
-  }, [clearFormulaAnchorTeardownTimer]);
-
-  useEffect(
-    () => () => {
-      clearFormulaAnchorTeardownTimer();
-    },
-    [clearFormulaAnchorTeardownTimer],
-  );
-
-  const syncFormulaAnchorRect = useCallback(() => {
-    const el = formulaAnchorElRef.current;
-    if (el) {
-      setAnchorRect(el.getBoundingClientRect());
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!formulaPopoverOpen) return;
-    syncFormulaAnchorRect();
-    window.addEventListener('scroll', syncFormulaAnchorRect, true);
-    window.addEventListener('resize', syncFormulaAnchorRect);
-    return () => {
-      window.removeEventListener('scroll', syncFormulaAnchorRect, true);
-      window.removeEventListener('resize', syncFormulaAnchorRect);
-    };
-  }, [formulaPopoverOpen, syncFormulaAnchorRect]);
-
-  useEffect(() => {
-    if (!formulaPopoverOpen) return;
-    const el = formulaAnchorElRef.current;
-    if (!el) return;
-    const activeClass = 'study-katex-formula-anchor-active';
-    el.classList.add(activeClass);
-    return () => {
-      el.classList.remove(activeClass);
-    };
-  }, [formulaPopoverOpen, activeFormulaLatex]);
-
-  const closeFormulaPopover = useCallback(() => {
+  const closeFormulaExplain = useCallback(() => {
     llmFormulaExplain.cancelInflight();
-    setFormulaPopoverOpen(false);
-    scheduleFormulaAnchorTeardown();
-  }, [llmFormulaExplain, scheduleFormulaAnchorTeardown]);
+    setFormulaOpen(false);
+    setActiveFormulaLatex(null);
+  }, [llmFormulaExplain]);
 
   const requestFormulaExplain = llmFormulaExplain.requestExplain;
   const openFormulaExplain = useCallback(
-    (latex: string, context: StudyFormulaExplainContext, anchorElement: HTMLElement) => {
-      clearFormulaAnchorTeardownTimer();
+    (latex: string, context: StudyFormulaExplainContext, _anchorElement: HTMLElement) => {
       llmExplain.cancelInflight();
       setExplainOpen(false);
-      formulaAnchorElRef.current = anchorElement;
-      setAnchorRect(anchorElement.getBoundingClientRect());
       setActiveFormulaLatex(latex);
-      setFormulaPopoverOpen(true);
+      setFormulaOpen(true);
       requestFormulaExplain(latex, context);
     },
-    [clearFormulaAnchorTeardownTimer, llmExplain, requestFormulaExplain],
+    [llmExplain, requestFormulaExplain],
   );
 
-  const handleFormulaPopoverOpenChange = (open: boolean) => {
-    if (open) {
-      clearFormulaAnchorTeardownTimer();
-      setFormulaPopoverOpen(true);
+  const handleFormulaOpenChange = (open: boolean) => {
+    if (!open) {
+      setFormulaOpen(false);
+      llmFormulaExplain.cancelInflight();
+      setActiveFormulaLatex(null);
       return;
     }
-    setFormulaPopoverOpen(false);
-    llmFormulaExplain.cancelInflight();
-    scheduleFormulaAnchorTeardown();
+    setFormulaOpen(true);
   };
 
   const handleExplainOpenChange = (open: boolean) => {
@@ -251,12 +265,20 @@ export function StudyPanelStudyView({
       llmExplain.cancelInflight();
       return;
     }
-    closeFormulaPopover();
+    closeFormulaExplain();
     const shouldRequest =
       !llmExplain.isPending && (llmExplain.assistantText === null || llmExplain.errorMessage !== null);
     if (shouldRequest) {
       llmExplain.requestExplain();
     }
+  };
+
+  /** Non-modal nested `Dialog`/`Sheet`: outside dismiss is explicit so closing stays reliable when stacked on the study panel. */
+  const dismissExplainInference = () => {
+    handleExplainOpenChange(false);
+  };
+  const dismissFormulaInference = () => {
+    handleFormulaOpenChange(false);
   };
 
   const formatTestId = isFlashcard
@@ -273,6 +295,30 @@ export function StudyPanelStudyView({
       ? '⭕ Single Choice'
       : '☑️ Multiple Choice';
 
+  const questionExplainBody = (
+    <LlmStreamBlock
+      isPending={llmExplain.isPending}
+      errorMessage={llmExplain.errorMessage}
+      assistantText={llmExplain.assistantText}
+      contentTestId="study-card-llm-explain-content"
+      errorTestId="study-card-llm-explain-error"
+      loadingTestId="study-card-llm-explain-loading"
+    />
+  );
+
+  const formulaExplainBody = (
+    <LlmStreamBlock
+      isPending={llmFormulaExplain.isPending}
+      errorMessage={llmFormulaExplain.errorMessage}
+      assistantText={llmFormulaExplain.assistantText}
+      contentTestId="study-card-formula-llm-content"
+      errorTestId="study-card-formula-llm-error"
+      loadingTestId="study-card-formula-llm-loading"
+    />
+  );
+
+  const formulaDescSource = formulaDescriptionMarkdown(activeFormulaLatex);
+
   return (
     <div className="w-full relative" data-testid="study-panel-card-root">
       <div className="bg-card rounded-[15px] p-5 min-h-[150px] flex flex-col justify-center">
@@ -285,48 +331,18 @@ export function StudyPanelStudyView({
             {formatLabel}
           </Badge>
           <div className="flex items-center gap-1" data-testid="study-card-history-actions">
-            <Popover open={explainOpen} onOpenChange={handleExplainOpenChange}>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-xs"
-                  aria-label="Explain question with AI"
-                  title="Explain question with AI"
-                  data-testid="study-card-llm-explain-trigger"
-                >
-                  <Sparkles className="h-3.5 w-3.5" aria-hidden />
-                  <span className="sr-only">Explain question with AI</span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                className="w-[min(100vw-2rem,22rem)] max-h-80 overflow-y-auto p-3 text-sm"
-                data-testid="study-card-llm-explain-content"
-              >
-                {llmExplain.errorMessage && !llmExplain.isPending && (
-                  <p className="text-destructive" data-testid="study-card-llm-explain-error">
-                    {llmExplain.errorMessage}
-                  </p>
-                )}
-                {llmExplain.isPending && !(llmExplain.assistantText && llmExplain.assistantText.length > 0) && (
-                  <p className="text-muted-foreground" data-testid="study-card-llm-explain-loading">
-                    Thinking…
-                  </p>
-                )}
-                {llmExplain.assistantText && llmExplain.assistantText.length > 0 && (
-                  <div className="min-h-[1em]">
-                    <MathMarkdownRenderer
-                      source={llmExplain.assistantText}
-                      className="text-foreground markdown-body markdown-body--block text-sm"
-                    />
-                    {llmExplain.isPending && (
-                      <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-foreground/50 align-middle" aria-hidden />
-                    )}
-                  </div>
-                )}
-              </PopoverContent>
-            </Popover>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-xs"
+              aria-label="Explain question with AI"
+              title="Explain question with AI"
+              data-testid="study-card-llm-explain-trigger"
+              onClick={() => handleExplainOpenChange(true)}
+            >
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              <span className="sr-only">Explain question with AI</span>
+            </Button>
             <Button
               onClick={onUndo}
               disabled={!canUndo}
@@ -462,57 +478,123 @@ export function StudyPanelStudyView({
         </div>
       </div>
 
-      <Popover open={formulaPopoverOpen} onOpenChange={handleFormulaPopoverOpenChange}>
-        {anchorRect ? (
-          <PopoverAnchor asChild>
-            <div
-              style={{
-                position: 'fixed',
-                top: anchorRect.top,
-                left: anchorRect.left,
-                width: Math.max(anchorRect.width, 1),
-                height: Math.max(anchorRect.height, 1),
-                pointerEvents: 'none',
-                visibility: 'hidden',
-              }}
-              aria-hidden
-            />
-          </PopoverAnchor>
-        ) : null}
-        <PopoverContent
-          side="top"
-          sideOffset={8}
-          align="start"
-          className="w-[min(100vw-2rem,22rem)] max-h-80 overflow-y-auto p-3 text-sm"
-          data-testid="study-card-formula-llm-content"
+      {/* Inference surfaces stack above study `Dialog`. `modal={false}` avoids nested Radix
+          aria-hidden / focus conflicts; mobile uses bottom `Sheet` (radix-ui Dialog primitive). */}
+      {isDesktop ? (
+        <Dialog
+          open={explainOpen}
+          onOpenChange={handleExplainOpenChange}
+          modal={false}
         >
-          {llmFormulaExplain.errorMessage && !llmFormulaExplain.isPending && (
-            <p className="text-destructive" data-testid="study-card-formula-llm-error">
-              {llmFormulaExplain.errorMessage}
-            </p>
-          )}
-          {llmFormulaExplain.isPending
-            && !(llmFormulaExplain.assistantText && llmFormulaExplain.assistantText.length > 0) && (
-            <p className="text-muted-foreground" data-testid="study-card-formula-llm-loading">
-              Thinking…
-            </p>
-          )}
-          {llmFormulaExplain.assistantText && llmFormulaExplain.assistantText.length > 0 && (
-            <div className="min-h-[1em]">
-              <MathMarkdownRenderer
-                source={llmFormulaExplain.assistantText}
-                className="text-foreground markdown-body markdown-body--block text-sm"
-              />
-              {llmFormulaExplain.isPending && (
-                <span
-                  className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-foreground/50 align-middle"
-                  aria-hidden
-                />
-              )}
+          <DialogContent
+            className={`${inferenceSurfaceZ} sm:max-w-md`}
+            onPointerDownOutside={dismissExplainInference}
+            onInteractOutside={dismissExplainInference}
+          >
+            <DialogHeader>
+              <DialogTitle>Explain question</DialogTitle>
+              <DialogDescription className="sr-only">
+                {QUESTION_EXPLAIN_DESCRIPTION}
+              </DialogDescription>
+            </DialogHeader>
+            {questionExplainBody}
+          </DialogContent>
+        </Dialog>
+      ) : (
+        <Sheet
+          open={explainOpen}
+          onOpenChange={handleExplainOpenChange}
+          modal={false}
+        >
+          <SheetContent
+            side="bottom"
+            className={cn(
+              inferenceSurfaceZ,
+              'gap-0 p-0 data-[side=bottom]:max-h-[70vh]',
+            )}
+            onPointerDownOutside={dismissExplainInference}
+            onInteractOutside={dismissExplainInference}
+          >
+            <SheetHeader className="text-left">
+              <SheetTitle>Explain question</SheetTitle>
+              <SheetDescription className="sr-only">
+                {QUESTION_EXPLAIN_DESCRIPTION}
+              </SheetDescription>
+            </SheetHeader>
+            <div className="no-scrollbar max-h-[min(40vh,32rem)] overflow-y-auto px-4">
+              {questionExplainBody}
             </div>
-          )}
-        </PopoverContent>
-      </Popover>
+            <SheetFooter className="border-t bg-background pt-2">
+              <SheetClose asChild>
+                <Button type="button" variant="outline">
+                  Close
+                </Button>
+              </SheetClose>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      )}
+
+      {isDesktop ? (
+        <Dialog
+          open={formulaOpen}
+          onOpenChange={handleFormulaOpenChange}
+          modal={false}
+        >
+          <DialogContent
+            className={`${inferenceSurfaceZ} sm:max-w-md`}
+            onPointerDownOutside={dismissFormulaInference}
+            onInteractOutside={dismissFormulaInference}
+          >
+            <DialogHeader>
+              <DialogTitle>Formula explanation</DialogTitle>
+              <DialogDescription asChild>
+                <MathMarkdownRenderer
+                  source={formulaDescSource}
+                  className="text-lg text-muted-foreground markdown-body markdown-body--inline break-all"
+                />
+              </DialogDescription>
+            </DialogHeader>
+            {formulaExplainBody}
+          </DialogContent>
+        </Dialog>
+      ) : (
+        <Sheet
+          open={formulaOpen}
+          onOpenChange={handleFormulaOpenChange}
+          modal={false}
+        >
+          <SheetContent
+            side="bottom"
+            className={cn(
+              inferenceSurfaceZ,
+              'gap-0 p-0 data-[side=bottom]:max-h-[70vh]',
+            )}
+            onPointerDownOutside={dismissFormulaInference}
+            onInteractOutside={dismissFormulaInference}
+          >
+            <SheetHeader className="text-left">
+              <SheetTitle>Formula explanation</SheetTitle>
+              <SheetDescription asChild>
+                <MathMarkdownRenderer
+                  source={formulaDescSource}
+                  className="text-lg text-muted-foreground markdown-body markdown-body--inline break-all"
+                />
+              </SheetDescription>
+            </SheetHeader>
+            <div className="no-scrollbar max-h-[min(40vh,32rem)] overflow-y-auto px-4">
+              {formulaExplainBody}
+            </div>
+            <SheetFooter className="border-t bg-background pt-2">
+              <SheetClose asChild>
+                <Button type="button" variant="outline">
+                  Close
+                </Button>
+              </SheetClose>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      )}
 
       {/* Actions */}
       <div className="mt-4 text-center sticky bottom-0 z-10 bg-card pt-3">

@@ -79,7 +79,7 @@ afterEach(() => {
 });
 
 describe('StudyPanelStudyView', () => {
-  it('renders Explain control for LLM popover', () => {
+  it('renders Explain control for LLM inference', () => {
     const { container, unmount } = renderStudyPanelView();
     const trigger = container.querySelector('[data-testid="study-card-llm-explain-trigger"]');
     expect(trigger).not.toBeNull();
@@ -111,7 +111,7 @@ describe('StudyPanelStudyView', () => {
     unmount();
   });
 
-  it('requests LLM explanation when Explain popover opens', () => {
+  it('requests LLM explanation when Explain inference surface opens', () => {
     const requestExplain = vi.fn();
     const { container, unmount } = renderStudyPanelView({
       llmExplain: {
@@ -129,7 +129,7 @@ describe('StudyPanelStudyView', () => {
     unmount();
   });
 
-  it('shows loading text in explain popover while pending', () => {
+  it('shows loading text in explain inference surface while pending', () => {
     const requestExplain = vi.fn();
     const cancelInflight = vi.fn();
     const { container, rerender, unmount } = renderStudyPanelView({
