@@ -16,12 +16,12 @@
   - Cognitive & Biosecurity Engineer: cybersecurity + national defense combined
   - Validation & Reality Alignment Engineer: truth = power
 
-### Builders | Timeline 3–6 years | Bottlenecks: domain-specific capital (labs/fabs) | Entry: specialized engineering/CS + AI/ML tools proficiency
+### Builders | Timeline > 3 years | Bottlenecks: domain-specific capital (labs/fabs) | Entry: specialized engineering/CS + AI/ML tools proficiency
   - Quantum-Classical Systems Engineer (materials, cryptography, physics simulation)
   - Biological Systems Programmer
   - Embodied Intelligence Engineer enable robots to function in real world
 
-### Operators | Timeline 1–3 years | Bottlenecks: obsolescence as loops close | Entry: vocational + certification in autonomous systems
+### Operators | Timeline > 1 year | Bottlenecks: obsolescence as loops close | Entry: vocational + certification in autonomous systems
   - AI Compute architects
   - Materials discovery engineers
   - Autonomous Infrastructure Orchestrator (Robotics + Dense energy usage, durable metamaterials + Space + Deep Ocean)

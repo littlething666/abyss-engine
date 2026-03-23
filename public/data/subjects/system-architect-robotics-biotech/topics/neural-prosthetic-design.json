@@ -1,0 +1,13 @@
+{
+  "topicId": "neural-prosthetic-design",
+  "title": "Neural Prosthetic Design",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "The engineering of advanced prosthetic limbs that are controlled directly by the user's nervous system, integrating robotics, neuroscience, and signal processing.",
+  "theory": "## Brain-Machine Interfaces (BMI)\n\n### Neural Decoding\nApplying machine learning to **Sensor Fusion** data from EEG or Intracortical arrays to predict intended motion. This involves high-speed feature extraction in an **RTOS** environment.\n\n### Closed-Loop Control\nProviding sensory feedback (haptics) back to the nervous system. This requires an architectural understanding of **Bio-Robotic Interfacing** to stimulate nerves in a way the brain can interpret.\n\n### High-DOF Control\nMapping low-dimensional neural signals to high-degree-of-freedom robotic hands using **Robot Kinematics** and synergy-based control models.",
+  "keyTakeaways": [
+    "Decode motor intent from complex neural signals.",
+    "Implement sensory feedback loops for haptic perception.",
+    "Design low-power embedded hardware for wearable prosthetics.",
+    "Apply kinematics to multi-link prosthetic digits."
+  ]
+}

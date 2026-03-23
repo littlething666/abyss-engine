@@ -6,7 +6,7 @@ import { flushSync } from 'react-dom';
 import DiscoveryModal from './DiscoveryModal';
 
 const progressionState = {
-  getTopicsByTier: () => [],
+  getTopicsByTier: vi.fn(() => [] as { tier: number; topics: unknown[] }[]),
   unlockTopic: () => null,
   unlockedTopicIds: [],
   activeCrystals: [],
@@ -39,6 +39,7 @@ function renderDiscoveryModal(props: Parameters<typeof DiscoveryModal>[0]) {
 
 afterEach(() => {
   vi.clearAllMocks();
+  progressionState.getTopicsByTier.mockReturnValue([]);
   document.body.innerHTML = '';
 });
 
@@ -91,6 +92,36 @@ describe('DiscoveryModal', () => {
 
     expect(document.body.textContent).toMatch(/3\/12 cards due/);
     expect(document.body.textContent).toMatch(/locked topic/);
+    root.unmount();
+  });
+
+  it('renders subject name badge on each topic card', () => {
+    progressionState.getTopicsByTier.mockReturnValue([
+      {
+        tier: 1,
+        topics: [
+          {
+            id: 'topic-a',
+            name: 'Alpha Topic',
+            description: 'Description text',
+            subjectId: 'sub-x',
+            subjectName: 'Quantum Physics',
+            isContentAvailable: true,
+            isLocked: false,
+            isUnlocked: true,
+          },
+        ],
+      },
+    ]);
+
+    const { root } = renderDiscoveryModal({
+      isOpen: true,
+      unlockPoints: 1,
+      onClose: vi.fn(),
+    });
+
+    expect(document.body.textContent).toContain('Quantum Physics');
+    expect(document.body.textContent).toContain('Alpha Topic');
     root.unmount();
   });
 });

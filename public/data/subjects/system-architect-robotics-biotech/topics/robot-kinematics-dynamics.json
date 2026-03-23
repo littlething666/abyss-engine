@@ -1,0 +1,13 @@
+{
+  "topicId": "robot-kinematics-dynamics",
+  "title": "Robot Kinematics and Dynamics",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "Mathematical modeling of robot motion (kinematics) and the forces/torques required to produce that motion (dynamics). This forms the basis for precise control in surgical and laboratory automation.",
+  "theory": "## Kinematics and Dynamics Modeling\n\n### Forward and Inverse Kinematics\n- **Forward Kinematics**: Mapping joint space $\\theta$ to task space $x$ using the **Denavit-Hartenberg (D-H)** convention.\n- **Inverse Kinematics**: Determining joint angles required for a specific end-effector pose, often solved via numerical methods like **Levenberg-Marquardt**.\n\n### The Jacobian Matrix\nThe Jacobian $J(q)$ relates joint velocities to end-effector velocities:\n$$\\dot{x} = J(q)\\dot{q}$$\nIt is critical for identifying **singularities** where the robot loses degrees of freedom.\n\n### Dynamics\nUtilizing the **Euler-Lagrange** formulation to derive equations of motion:\n$$M(q)\\ddot{q} + C(q, \\dot{q})\\dot{q} + g(q) = \\tau$$\nThis allows for the calculation of torques $\\tau$ needed for high-speed biotech sample handling.",
+  "keyTakeaways": [
+    "Define D-H parameters for serial manipulators.",
+    "Solve Inverse Kinematics for complex robotic geometries.",
+    "Utilize the Jacobian for velocity and force mapping.",
+    "Derive dynamic equations for high-performance motion control."
+  ]
+}

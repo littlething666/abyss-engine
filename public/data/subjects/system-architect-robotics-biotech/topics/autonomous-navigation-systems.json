@@ -1,0 +1,13 @@
+{
+  "topicId": "autonomous-navigation-systems",
+  "title": "Autonomous Navigation Systems",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "The capability of a robot to move safely and efficiently through an environment without human intervention, requiring simultaneous localization, mapping, and path planning.",
+  "theory": "## SLAM and Path Planning\n\n### Simultaneous Localization and Mapping (SLAM)\nUsing EKF-SLAM or Graph-SLAM to build a map of a laboratory or hospital environment while tracking the robot's pose within it. It leverages **Sensor Fusion** from Tier 1.\n\n### Global and Local Planning\n- **Global (A*, Dijkstra)**: Finding the shortest path through a known static map.\n- **Local (Dynamic Window Approach, MPC)**: Real-time obstacle avoidance using high-frequency sensor feedback.\n\n### Probabilistic Roadmaps (PRM)\nUseful in high-dimensional spaces (like a robot arm moving through a crowded biotech workbench) to find feasible trajectories by sampling the configuration space.",
+  "keyTakeaways": [
+    "Implement SLAM algorithms for indoor environments.",
+    "Navigate dynamic obstacles using local planners.",
+    "Understand the cost-map representation of environments.",
+    "Optimize paths for battery life and smooth motion."
+  ]
+}

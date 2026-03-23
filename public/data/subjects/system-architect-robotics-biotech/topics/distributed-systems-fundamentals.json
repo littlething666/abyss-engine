@@ -1,0 +1,13 @@
+{
+  "topicId": "distributed-systems-fundamentals",
+  "title": "Distributed Systems Fundamentals",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "The study of networked autonomous components that communicate and coordinate actions to achieve a common goal. It focuses on achieving reliability and consistency across physically separated nodes in a system.",
+  "theory": "## Distributed Systems Principles\n\nDistributed systems are foundational for modern robotics and biotech labs where sensors, actuators, and compute units are geographically or logically spread.\n\n### CAP Theorem\nEvery distributed system faces the trade-off between **Consistency**, **Availability**, and **Partition Tolerance**. In a biotech lab automation setup, ensuring Partition Tolerance is mandatory due to network instability.\n\n### Consensus Algorithms\nTo ensure all nodes in a robotic swarm agree on a state, we utilize consensus protocols:\n- **Paxos/Raft**: Leader-based protocols for maintaining a replicated log.\n- **Byzantine Fault Tolerance (BFT)**: Essential for security-critical biotech infrastructure to withstand malicious or failing nodes.\n\n### Clock Synchronization\nCritical for timestamping biological data, protocols like **NTP** or **PTP** (Precision Time Protocol) ensure sub-microsecond alignment across sensors.",
+  "keyTakeaways": [
+    "Understand the trade-offs of the CAP Theorem in system design.",
+    "Identify the role of Raft and Paxos in state replication.",
+    "Manage partial failures and network partitions effectively.",
+    "Implement logical vs. physical clocks for event ordering."
+  ]
+}

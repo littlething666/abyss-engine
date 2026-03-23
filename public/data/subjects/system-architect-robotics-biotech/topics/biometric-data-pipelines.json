@@ -1,0 +1,13 @@
+{
+  "topicId": "biometric-data-pipelines",
+  "title": "Biometric Data Pipelines",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "Architecting the end-to-end flow of biological data, from high-frequency sensor acquisition to secure storage and analytical processing.",
+  "theory": "## High-Throughput Bio-Data Systems\n\n### Data Ingestion\nHandling high-velocity streams from DNA sequencers or multi-electrode arrays using messaging brokers like **Apache Kafka**. This requires Tier 1 knowledge of distributed consistency.\n\n### ETL for Biology\nExtract, Transform, Load (ETL) processes tailored for genomics or proteomics data, including normalization, noise filtering (via **Sensor Fusion**), and metadata tagging.\n\n### Security and Compliance\nImplementing **HIPAA** or **GDPR** compliant storage using encryption-at-rest and robust Identity and Access Management (IAM) to protect sensitive biometric information.",
+  "keyTakeaways": [
+    "Build scalable data ingestion layers using Kafka.",
+    "Implement real-time stream processing for bio-signals.",
+    "Ensure data integrity and auditability in biotech labs.",
+    "Design schemas for heterogeneous biological datasets."
+  ]
+}

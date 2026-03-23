@@ -1,0 +1,13 @@
+{
+  "topicId": "synthetic-biology-automation",
+  "title": "Synthetic Biology Automation",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "The integration of robotics and microfluidics to automate the Design-Build-Test-Learn (DBTL) cycle in genetic engineering.",
+  "theory": "## The Automated Bio-Foundry\n\n### Design Automation\nUsing Computer-Aided Design (CAD) tools to specify genetic circuits, which are then converted into robotic instructions for liquid handling robots.\n\n### Automated 'Build'\nRobotic workstations perform DNA assembly (e.g., Gibson Assembly) and transformation into host cells. This relies on the **Kinematics** and **Embedded Control** from lower tiers.\n\n### Microfluidic 'Test'\nHigh-throughput screening of engineered variants using **Microfluidic Architectures** to measure phenotypic responses at the single-cell level.",
+  "keyTakeaways": [
+    "Close the DBTL loop with automated robotic workflows.",
+    "Program liquid-handling robots for genetic assembly.",
+    "Utilize microfluidics for high-speed phenotype screening.",
+    "Reduce human error in complex multi-step bio-protocols."
+  ]
+}

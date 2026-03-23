@@ -1,0 +1,13 @@
+{
+  "topicId": "bio-robotic-interfacing",
+  "title": "Bio-Robotic Interfacing",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "Designing the physical and signal-level connections between synthetic robotic components and biological entities, emphasizing biocompatibility and signal transduction.",
+  "theory": "## Transduction and Biocompatibility\n\n### Signal Transduction\nConverting biological signals (action potentials, glucose levels) into electrical signals. This requires high-impedance amplifiers and specialized electrodes (e.g., Ag/AgCl).\n\n### Surface Science\nTo prevent the **Foreign Body Response (FBR)**, robotic implants must be coated with biocompatible polymers (e.g., PEG) or use biomimetic materials. Physical interfacing involves matching the **Young's Modulus** of the robot to the soft tissue.\n\n### Actuation in Bio-environments\nUsing 'soft' actuators like **Shape Memory Alloys (SMA)** or **Dielectric Elastomers** that mimic muscle behavior, controlled by kinematics models derived in Tier 1.",
+  "keyTakeaways": [
+    "Select materials based on biocompatibility and mechanical matching.",
+    "Design amplifiers for low-noise biological signal acquisition.",
+    "Model the interface impedance between electrodes and tissue.",
+    "Apply soft robotics principles to minimize tissue trauma."
+  ]
+}

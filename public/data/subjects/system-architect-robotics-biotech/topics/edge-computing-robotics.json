@@ -1,0 +1,13 @@
+{
+  "topicId": "edge-computing-robotics",
+  "title": "Edge Computing for Robotics",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "A distributed computing paradigm that brings computation and data storage closer to the robots and sensors, reducing latency and bandwidth usage.",
+  "theory": "## Edge-to-Cloud Continuum\n\n### Offloading Strategies\nDeciding which tasks to run on the robot (e.g., real-time motor control) versus the edge server (e.g., SLAM optimization) or the cloud (e.g., long-term data trends). This is a **Distributed Systems** problem.\n\n### Containerization and Orchestration\nUsing **Docker** and **Kubernetes (K3s)** to deploy modular robotic microservices. This allows for rapid updates to biotech software without physical intervention.\n\n### Hardware Acceleration\nUtilizing FPGAs or TPUs at the edge to run deep learning models for visual inspection of biological samples with sub-millisecond latency.",
+  "keyTakeaways": [
+    "Architect low-latency communication between edge and robot.",
+    "Manage containerized workloads in a robotic environment.",
+    "Select appropriate hardware accelerators for edge AI.",
+    "Implement data reduction techniques at the sensor level."
+  ]
+}

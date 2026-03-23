@@ -1,0 +1,13 @@
+{
+  "topicId": "microfluidics-architectures",
+  "title": "Microfluidic System Architectures",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "Systems that manipulate minute amounts of fluids ($10^{-9}$ to $10^{-18}$ litres) using channels with dimensions in the micrometer range, often controlled by embedded RTOS.",
+  "theory": "## Lab-on-a-Chip Engineering\n\n### Fluid Dynamics at the Microscale\nAt this scale, the **Reynolds Number (Re)** is typically low ($Re < 1$), meaning flow is laminar. Mixing relies on diffusion rather than turbulence.\n\n### Digital Microfluidics (DMF)\nUsing **Electrowetting-on-Dielectric (EWOD)** to move individual droplets across an electrode array. This allows for 'programmable' biology where droplets are treated like data packets.\n\n### Control Logic\nIntegration of micro-valves and pumps with **Embedded Systems** to automate complex assays like PCR (Polymerase Chain Reaction) or ELISA.",
+  "keyTakeaways": [
+    "Calculate Reynolds numbers for microchannel flow.",
+    "Design EWOD electrode arrays for droplet manipulation.",
+    "Integrate thermal and optical sensors into microfluidic chips.",
+    "Automate sequential biochemical assays via RTOS scheduling."
+  ]
+}

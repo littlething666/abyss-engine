@@ -1,0 +1,144 @@
+{
+  "subjectId": "system-architect-robotics-biotech",
+  "title": "Cross-Domain Systems Architecture, Robotics, Biotech",
+  "themeId": "system-architect-robotics-biotech",
+  "maxTier": 3,
+  "nodes": [
+    {
+      "topicId": "distributed-systems-fundamentals",
+      "title": "Distributed Systems Fundamentals",
+      "tier": 1,
+      "prerequisites": [],
+      "learningObjective": "Master the core principles of scalability, fault tolerance, and consensus in distributed architectural design."
+    },
+    {
+      "topicId": "robot-kinematics-dynamics",
+      "title": "Robot Kinematics and Dynamics",
+      "tier": 1,
+      "prerequisites": [],
+      "learningObjective": "Analyze the mathematical foundations of motion, including spatial transformations and manipulator Jacobian matrices."
+    },
+    {
+      "topicId": "molecular-biology-basics",
+      "title": "Molecular Biology for Engineers",
+      "tier": 1,
+      "prerequisites": [],
+      "learningObjective": "Understand cellular structures, genetic coding, and protein synthesis as biological information systems."
+    },
+    {
+      "topicId": "sensor-fusion-theory",
+      "title": "Sensor Fusion Theory",
+      "tier": 1,
+      "prerequisites": [],
+      "learningObjective": "Apply probabilistic methods to integrate data from heterogeneous sensors for state estimation."
+    },
+    {
+      "topicId": "embedded-systems-real-time",
+      "title": "Embedded Systems and RTOS",
+      "tier": 1,
+      "prerequisites": [],
+      "learningObjective": "Design low-latency software architectures for deterministic control of physical hardware."
+    },
+    {
+      "topicId": "bio-robotic-interfacing",
+      "title": "Bio-Robotic Interfacing",
+      "tier": 2,
+      "prerequisites": [
+        "robot-kinematics-dynamics",
+        "molecular-biology-basics"
+      ],
+      "learningObjective": "Design physical and digital interfaces that bridge biological tissues with electromechanical actuators."
+    },
+    {
+      "topicId": "autonomous-navigation-systems",
+      "title": "Autonomous Navigation Systems",
+      "tier": 2,
+      "prerequisites": [
+        "robot-kinematics-dynamics",
+        "sensor-fusion-theory"
+      ],
+      "learningObjective": "Implement SLAM and path-planning algorithms for mobile robotic platforms in unstructured environments."
+    },
+    {
+      "topicId": "microfluidics-architectures",
+      "title": "Microfluidic System Architectures",
+      "tier": 2,
+      "prerequisites": [
+        "molecular-biology-basics",
+        "embedded-systems-real-time"
+      ],
+      "learningObjective": "Engineer Lab-on-a-Chip systems for automated biological sample processing and analysis."
+    },
+    {
+      "topicId": "edge-computing-robotics",
+      "title": "Edge Computing for Robotics",
+      "tier": 2,
+      "prerequisites": [
+        "distributed-systems-fundamentals",
+        "embedded-systems-real-time"
+      ],
+      "learningObjective": "Optimize computational workloads between local robotic controllers and distributed cloud infrastructure."
+    },
+    {
+      "topicId": "biometric-data-pipelines",
+      "title": "Biometric Data Pipelines",
+      "tier": 2,
+      "prerequisites": [
+        "distributed-systems-fundamentals",
+        "sensor-fusion-theory"
+      ],
+      "learningObjective": "Construct scalable architectures for the ingestion, storage, and processing of high-throughput biological sensor data."
+    },
+    {
+      "topicId": "synthetic-biology-automation",
+      "title": "Synthetic Biology Automation",
+      "tier": 3,
+      "prerequisites": [
+        "bio-robotic-interfacing",
+        "microfluidics-architectures"
+      ],
+      "learningObjective": "Automate the design-build-test-learn cycle of genetic engineering using robotic liquid handlers and bioreactors."
+    },
+    {
+      "topicId": "swarm-robotics-bio-logistics",
+      "title": "Swarm Robotics for Bio-Logistics",
+      "tier": 3,
+      "prerequisites": [
+        "autonomous-navigation-systems",
+        "edge-computing-robotics"
+      ],
+      "learningObjective": "Coordinate multi-agent robotic systems for high-efficient pharmaceutical manufacturing and laboratory logistics."
+    },
+    {
+      "topicId": "neural-prosthetic-design",
+      "title": "Neural Prosthetic Design",
+      "tier": 3,
+      "prerequisites": [
+        "bio-robotic-interfacing",
+        "sensor-fusion-theory"
+      ],
+      "learningObjective": "Develop closed-loop neural interfaces that interpret biological signals for high-degree-of-freedom limb control."
+    },
+    {
+      "topicId": "ai-driven-bioprocess-control",
+      "title": "AI-Driven Bioprocess Control",
+      "tier": 3,
+      "prerequisites": [
+        "biometric-data-pipelines",
+        "embedded-systems-real-time"
+      ],
+      "learningObjective": "Deploy machine learning models for real-time optimization of complex biological production environments."
+    },
+    {
+      "topicId": "tele-surgical-robotics-architecture",
+      "title": "Tele-Surgical Robotics Architecture",
+      "tier": 3,
+      "prerequisites": [
+        "autonomous-navigation-systems",
+        "edge-computing-robotics",
+        "bio-robotic-interfacing"
+      ],
+      "learningObjective": "Engineer ultra-reliable,low-latency architectures for remote surgical intervention and haptic feedback."
+    }
+  ]
+}

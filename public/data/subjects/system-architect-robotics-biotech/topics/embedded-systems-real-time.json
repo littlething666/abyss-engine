@@ -1,0 +1,13 @@
+{
+  "topicId": "embedded-systems-real-time",
+  "title": "Embedded Systems and RTOS",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "Design and implementation of dedicated computing systems that perform specific tasks with deterministic timing requirements, often utilizing a Real-Time Operating System (RTOS).",
+  "theory": "## Real-Time Computing Principles\n\n### Determinism and Latency\nIn robotics, the time taken to respond to an interrupt (Latency) must be bounded (Deterministic). Failure to meet a deadline in a **Hard Real-Time** system (like a surgical robot) can be catastrophic.\n\n### Scheduling Algorithms\n- **Rate Monotonic Scheduling (RMS)**: Fixed-priority based on task frequency.\n- **Earliest Deadline First (EDF)**: Dynamic-priority based on proximity to deadline.\n\n### Inter-task Communication\nUsing **Semaphores**, **Mutexes**, and **Queues** to manage shared resources. Engineers must prevent **Priority Inversion** using protocols like Priority Inheritance.",
+  "keyTakeaways": [
+    "Differentiate between Hard and Soft Real-Time systems.",
+    "Analyze task schedulability using Liu-Layland bounds.",
+    "Implement low-level drivers for biotech sensors.",
+    "Prevent deadlocks and race conditions in concurrent code."
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "topicId": "molecular-biology-basics",
+  "title": "Molecular Biology for Engineers",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "An engineering-centric view of cellular processes, focusing on the Central Dogma of biology: the flow of information from DNA to RNA to Protein.",
+  "theory": "## Biological Information Systems\n\n### The Central Dogma\n- **Transcription**: DNA sequences are transcribed into mRNA.\n- **Translation**: mRNA is decoded by ribosomes to synthesize specific proteins.\n\n### Cellular Architecture\nEngineers must understand the compartmentalization of eukaryotic cells (Nucleus, Mitochondria, Golgi) to design effective drug delivery robots or intracellular sensors.\n\n### Metabolic Pathways\nBiological systems function as complex chemical reactors. Key pathways like **Glycolysis** and the **Krebs Cycle** can be modeled as feedback control loops where enzyme concentrations regulate flux, analogous to PID control in mechanical systems.",
+  "keyTakeaways": [
+    "Map biological transcription to digital data processing.",
+    "Identify cellular organelles as functional system modules.",
+    "Model metabolic flux as a regulated flow system.",
+    "Understand the biochemical constraints of protein synthesis."
+  ]
+}

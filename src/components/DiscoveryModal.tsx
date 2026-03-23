@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useAllGraphs, useSubjects } from '../features/content';
 import {
@@ -11,6 +11,16 @@ import {
 import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from './ui/particles-animation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+
+/**
+ * Radix controlled Dialog: if we unmount the details layer synchronously inside
+ * onOpenChange(false) (or right after Close), dismiss handling can still reach the
+ * sibling Wisdom Altar dialog. Deferring one macrotask lets the inner dialog finish
+ * closing first (same effect as setTimeout(..., 0) in app code).
+ */
+function scheduleDetailsDismiss(onDismiss: () => void) {
+  window.setTimeout(onDismiss, 0);
+}
 
 // ============================================================================
 // Types
@@ -76,7 +86,14 @@ const DetailsPopup: React.FC<DetailsPopupProps> = ({
   isContentAvailable,
 }) => {
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          scheduleDetailsDismiss(onClose);
+        }
+      }}
+    >
       <DialogContent
         className="w-[min(95%,30rem)] max-h-[95vh] bg-card border border-border shadow-2xl rounded-[20px] overflow-hidden p-3 sm:p-6 flex flex-col min-h-0"
       >
@@ -169,6 +186,12 @@ export function DiscoveryModal({
   const [selectedTopic, setSelectedTopic] = useState<TopicTierData['topics'][0] | null>(null);
   const isRitualSubmissionAvailable = ritualCooldownRemainingMs <= 0;
 
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedTopic(null);
+    }
+  }, [isOpen]);
+
   // Get store actions
   const getTopicsByTier = useStudyStore((state) => state.getTopicsByTier);
   const unlockTopic = useStudyStore((state) => state.unlockTopic);
@@ -212,15 +235,25 @@ export function DiscoveryModal({
       console.log(`Unlocked ${selectedTopic.name} at position [${position[0]}, ${position[1]}]`);
     }
 
-    // Close the popup and the modal
-    setSelectedTopic(null);
-    onClose();
+    scheduleDetailsDismiss(() => {
+      setSelectedTopic(null);
+      onClose();
+    });
   };
 
   if (!isOpen) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          setSelectedTopic(null);
+          onClose();
+        }
+      }}
+    >
       <DialogContent
         className="max-h-[95vh] flex flex-col"
       >
@@ -308,6 +341,13 @@ export function DiscoveryModal({
                             }`}>
                               {topic.description}
                             </p>
+                            <Badge
+                              variant="outline"
+                              className="mt-1.5 max-w-full truncate font-normal text-[0.6875rem] leading-tight border-border/80 text-muted-foreground"
+                              title={topic.subjectName}
+                            >
+                              {topic.subjectName}
+                            </Badge>
                             {!topic.isContentAvailable && (
                               <p className="mt-2 text-accent-foreground text-xs">
                                 📦 Content not available yet
@@ -336,19 +376,19 @@ export function DiscoveryModal({
             )}
           </div>
       </DialogContent>
-
-      {/* Details Popup */}
-      {selectedTopic && selectedTopicStatus && (
-        <DetailsPopup
-          isOpen={Boolean(selectedTopic && selectedTopicStatus)}
-          topic={selectedTopic}
-          unlockStatus={selectedTopicStatus}
-          onClose={() => setSelectedTopic(null)}
-          onUnlock={handleUnlock}
-          isContentAvailable={selectedTopic.isContentAvailable}
-        />
-      )}
     </Dialog>
+
+    {selectedTopic && selectedTopicStatus && (
+      <DetailsPopup
+        isOpen
+        topic={selectedTopic}
+        unlockStatus={selectedTopicStatus}
+        onClose={() => setSelectedTopic(null)}
+        onUnlock={handleUnlock}
+        isContentAvailable={selectedTopic.isContentAvailable}
+      />
+    )}
+    </>
   );
 }
 

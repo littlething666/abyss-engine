@@ -1,0 +1,13 @@
+{
+  "topicId": "swarm-robotics-bio-logistics",
+  "title": "Swarm Robotics for Bio-Logistics",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "The coordination of large numbers of relatively simple robots to perform complex logistical tasks in pharmaceutical and biological settings.",
+  "theory": "## Emergent Coordination\n\n### Swarm Intelligence\nImplementing bio-inspired algorithms (e.g., Ant Colony Optimization) to coordinate robots in a warehouse or lab. Robots use **Autonomous Navigation** to avoid collisions while optimizing for throughput.\n\n### Decentralized Communication\nLeveraging **Distributed Systems** principles to ensure the swarm functions even if individual robots or central controllers fail. Decisions are made locally based on neighbor states.\n\n### Bio-Logistics Constraints\nManaging the transport of temperature-sensitive biological samples (Cold Chain) where robots must prioritize speed and environmental monitoring to maintain sample viability.",
+  "keyTakeaways": [
+    "Design decentralized control laws for robotic swarms.",
+    "Implement emergent behaviors for task allocation.",
+    "Optimize multi-agent path planning in constrained labs.",
+    "Manage cold-chain logistics using autonomous agents."
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "topicId": "sensor-fusion-theory",
+  "title": "Sensor Fusion Theory",
+  "subjectId": "system-architect-robotics-biotech",
+  "coreConcept": "The algorithmic integration of data from disparate sensors to create a more accurate and reliable estimation of a system's state than any single sensor could provide.",
+  "theory": "## Probabilistic State Estimation\n\n### Kalman Filtering\nThe **Kalman Filter (KF)** is the optimal estimator for linear systems with Gaussian noise. It operates in a Predict-Correct cycle:\n1. **Predict**: Project the state forward using the transition model.\n2. **Update**: Adjust the state using new measurements and the **Kalman Gain**.\n\n### Bayesian Inference\nUsing **Bayes' Rule** to update the probability of a hypothesis as more evidence (sensor data) becomes available:\n$$P(A|B) = \\frac{P(B|A)P(A)}{P(B)}$$\n\n### Complementary and Particle Filters\n- **Complementary Filters**: Used for merging high-frequency (IMU) and low-frequency (GPS) data.\n- **Particle Filters**: Non-parametric filters useful for non-linear, non-Gaussian biotech monitoring (e.g., tracking cell populations).",
+  "keyTakeaways": [
+    "Implement Kalman and Extended Kalman Filters (EKF).",
+    "Apply Bayesian logic to resolve sensor uncertainty.",
+    "Select appropriate fusion algorithms for specific hardware constraints.",
+    "Minimize estimation error through covariance tuning."
+  ]
+}

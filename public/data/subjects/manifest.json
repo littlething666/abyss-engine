@@ -13,6 +13,18 @@
       }
     },
     {
+      "id": "system-architect-robotics-biotech",
+      "name": "Robotics Architectures",
+      "description": "Master system architecture, robotics, and biotech fundamentals",
+      "themeId": "system-architect-robotics-biotech",
+      "color": "#777AAA",
+      "geometry": {
+        "gridTile": "cylinder",
+        "crystal": "sphere",
+        "altar": "box"
+      }
+    },
+    {
       "id": "physics",
       "name": "Physics",
       "description": "Explore the fundamental laws of the universe",
