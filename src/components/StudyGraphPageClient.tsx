@@ -7,7 +7,6 @@ import StudyPanelModal from '@/components/StudyPanelModal';
 import TopicSelectionBar from '@/components/TopicSelectionBar';
 import { useSubjects, useSubjectGraphs, useTopicCards, useTopicMetadata } from '@/features/content';
 import { useProgressionStore } from '@/features/progression';
-import { buildSubjectGraphsForceGraphData } from '@/lib/subjectGraphsForceGraphData';
 import { useUIStore } from '@/store/uiStore';
 import type { Card } from '@/types/core';
 import type { Rating } from '@/types';
@@ -45,13 +44,6 @@ export function StudyGraphPageClient() {
     [subjectsQuery.data],
   );
   const graphsQuery = useSubjectGraphs(subjectIds);
-
-  const graphData = useMemo(() => {
-    if (!graphsQuery.data?.length) {
-      return null;
-    }
-    return buildSubjectGraphsForceGraphData(graphsQuery.data);
-  }, [graphsQuery.data]);
 
   const isLoading = subjectsQuery.isLoading || (subjectIds.length > 0 && graphsQuery.isLoading);
   const error = subjectsQuery.error ?? graphsQuery.error;
@@ -134,9 +126,8 @@ export function StudyGraphPageClient() {
           </div>
         ) : null}
 
-        {!isLoading && !error && graphData && graphsQuery.data ? (
+        {!isLoading && !error && graphsQuery.data?.length ? (
           <StudyForceGraph
-            graphData={graphData}
             allGraphs={graphsQuery.data}
             unlockedTopicIds={unlockedTopicIds}
             activeCrystals={activeCrystals}

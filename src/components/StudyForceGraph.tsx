@@ -2,6 +2,7 @@
 
 import type { SimulationNodeDatum } from 'd3';
 import { zoom, zoomIdentity } from 'd3';
+import type { Force, Simulation } from 'd3-force';
 import {
   forceCollide,
   forceLink,
@@ -10,13 +11,14 @@ import {
   forceX,
   forceY,
 } from 'd3-force';
-import type { Simulation } from 'd3-force';
 import { select } from 'd3-selection';
+import 'd3-transition';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+import { useProgressionStore } from '@/features/progression';
 import { getTopicUnlockStatus } from '@/features/progression/progressionUtils';
 import type { SubjectGraphsForceGraphData, SubjectGraphForceNode } from '@/lib/subjectGraphsForceGraphData';
-import { clusterCentersOnCircle } from '@/lib/subjectGraphsForceGraphData';
+import { buildSubjectGraphsForceGraphData, clusterCentersOnCircle } from '@/lib/subjectGraphsForceGraphData';
 import type { ActiveCrystal, SubjectGraph } from '@/types/core';
 
 import { cn } from '@/lib/utils';
@@ -24,6 +26,11 @@ import { cn } from '@/lib/utils';
 type SimNode = SubjectGraphForceNode & SimulationNodeDatum;
 
 type LinkDatum = { source: string | SimNode; target: string | SimNode };
+
+type LayoutSnapshot = Pick<SimNode, 'x' | 'y' | 'vx' | 'vy' | 'fx' | 'fy'>;
+
+const NODE_FADE_MS = 340;
+const LINK_FADE_MS = 300;
 
 function linkNodeX(endpoint: string | SimNode): number {
   if (typeof endpoint === 'string') {
@@ -122,7 +129,7 @@ function paintTopicNodeVisuals(
 }
 
 export interface StudyForceGraphProps {
-  graphData: SubjectGraphsForceGraphData;
+  /** Full curriculum graphs from the manifest; filtered by `SubjectNavigation` floor (`currentSubjectId`). */
   allGraphs: SubjectGraph[];
   unlockedTopicIds: string[];
   activeCrystals: ActiveCrystal[];
@@ -197,8 +204,69 @@ function clampNodeCenterToViewport(d: SimNode, b: ViewportCenterBounds) {
   }
 }
 
+/**
+ * When two node centers lie within `xBand` px horizontally but are closer than `minCenterYGap`
+ * vertically, nudges them apart on y. Reduces stacked labels for topics that share a column.
+ */
+function forceVerticalSpreadWhenXNear(
+  xBand: number,
+  minCenterYGap: number,
+  strength: number,
+): Force<SimNode, undefined> {
+  let nodes: SimNode[];
+
+  function force(alpha: number) {
+    const k = strength * alpha;
+    const n = nodes.length;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const a = nodes[i];
+        const b = nodes[j];
+        const ax = a.x ?? 0;
+        const bx = b.x ?? 0;
+        const ay = a.y ?? 0;
+        const by = b.y ?? 0;
+        if (Math.abs(ax - bx) >= xBand) {
+          continue;
+        }
+
+        const dy = ay - by;
+        const ady = Math.abs(dy);
+        if (ady >= minCenterYGap) {
+          continue;
+        }
+
+        const deficit = minCenterYGap - ady;
+        const impulse = k * deficit;
+
+        if (Math.abs(dy) < 1e-6) {
+          const s = a.id < b.id ? 1 : -1;
+          const nudge = impulse * 0.5;
+          a.vy = (a.vy ?? 0) - s * nudge;
+          b.vy = (b.vy ?? 0) + s * nudge;
+        } else if (dy < 0) {
+          // a above b: push a up, b down
+          a.vy = (a.vy ?? 0) - impulse;
+          b.vy = (b.vy ?? 0) + impulse;
+        } else {
+          a.vy = (a.vy ?? 0) + impulse;
+          b.vy = (b.vy ?? 0) - impulse;
+        }
+      }
+    }
+  }
+
+  force.initialize = (initNodes: SimNode[]) => {
+    nodes = initNodes;
+  };
+
+  return force;
+}
+
+/** Horizontal proximity (px): centers within this band compete for vertical separation. */
+const X_NEIGHBOR_SPREAD_BAND_PX = 210;
+
 export function StudyForceGraph({
-  graphData,
   allGraphs,
   unlockedTopicIds,
   activeCrystals,
@@ -212,22 +280,42 @@ export function StudyForceGraph({
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
+  const currentSubjectId = useProgressionStore((s) => s.currentSubjectId);
+
+  const visibleGraphs = useMemo(() => {
+    if (!allGraphs.length) {
+      return [];
+    }
+    if (!currentSubjectId) {
+      return allGraphs;
+    }
+    return allGraphs.filter((g) => g.subjectId === currentSubjectId);
+  }, [allGraphs, currentSubjectId]);
+
+  const graphData = useMemo((): SubjectGraphsForceGraphData | null => {
+    if (!visibleGraphs.length) {
+      return null;
+    }
+    return buildSubjectGraphsForceGraphData(visibleGraphs);
+  }, [visibleGraphs]);
+
   const progressionRef = useRef({
     unlockedTopicIds,
     activeCrystals,
     unlockPoints,
   });
   progressionRef.current = { unlockedTopicIds, activeCrystals, unlockPoints };
-  const graphsRef = useRef(allGraphs);
-  graphsRef.current = allGraphs;
+  const graphsRef = useRef(visibleGraphs);
+  graphsRef.current = visibleGraphs;
   const selectedTopicIdRef = useRef(selectedTopicId);
   selectedTopicIdRef.current = selectedTopicId;
   const onSelectTopicRef = useRef(onSelectTopic);
   onSelectTopicRef.current = onSelectTopic;
   const onClearSelectionRef = useRef(onClearSelection);
   onClearSelectionRef.current = onClearSelection;
+  /** Preserves force layout between graph data updates for stable enter/exit transitions. */
+  const layoutSnapshotRef = useRef<Map<string, LayoutSnapshot>>(new Map());
   const simulationRef = useRef<Simulation<SimNode, undefined> | null>(null);
-
   /** Stable key so progression-driven node colors repaint without waiting for simulation ticks. */
   const progressionPaintKey = useMemo(() => {
     const unlocked = [...unlockedTopicIds].sort().join('\0');
@@ -255,7 +343,7 @@ export function StudyForceGraph({
 
   useEffect(() => {
     const svgEl = svgRef.current;
-    if (!svgEl || size.w < 32 || size.h < 32 || graphData.nodes.length === 0) {
+    if (!svgEl || size.w < 32 || size.h < 32 || !graphData || graphData.nodes.length === 0) {
       return;
     }
 
@@ -265,8 +353,27 @@ export function StudyForceGraph({
     const centers = clusterCentersOnCircle(graphData.subjectIdsOrdered.length, w, h, clusterPadding);
     const cx = w / 2;
     const cy = h / 2;
+    const snap = layoutSnapshotRef.current;
+    const nextIds = new Set(graphData.nodes.map((n) => n.id));
+    for (const id of snap.keys()) {
+      if (!nextIds.has(id)) {
+        snap.delete(id);
+      }
+    }
 
     const simNodes: SimNode[] = graphData.nodes.map((n) => {
+      const prev = snap.get(n.id);
+      if (prev && prev.x != null && prev.y != null) {
+        return {
+          ...n,
+          x: prev.x,
+          y: prev.y,
+          vx: prev.vx,
+          vy: prev.vy,
+          fx: prev.fx,
+          fy: prev.fy,
+        };
+      }
       const rawX = cx + (Math.random() - 0.5) * 24;
       const rawY = cy + (Math.random() - 0.5) * 24;
       return {
@@ -281,28 +388,47 @@ export function StudyForceGraph({
       target: l.target,
     }));
 
+    const linkKey = (d: LinkDatum) => {
+      const s = typeof d.source === 'object' ? d.source.id : d.source;
+      const t = typeof d.target === 'object' ? d.target.id : d.target;
+      return `${s}:${t}`;
+    };
+
     const svg = select(svgEl);
-    svg.selectAll('*').remove();
     svg.attr('width', w).attr('height', h).attr('role', 'img').attr('aria-label', 'Curriculum topic force graph');
 
-    const viewG = svg.append('g').attr('class', 'plot-view');
-    viewG.attr('transform', zoomIdentity.toString());
+    let viewG = svg.select<SVGGElement>('g.plot-view');
+    if (viewG.empty()) {
+      viewG = svg.append('g').attr('class', 'plot-view');
+      viewG.attr('transform', zoomIdentity.toString());
+      viewG
+        .append('rect')
+        .attr('class', 'hit-surface')
+        .attr('width', w)
+        .attr('height', h)
+        .attr('fill', 'transparent')
+        .attr('pointer-events', 'all')
+        .style('cursor', 'default')
+        .on('click', (event: MouseEvent) => {
+          event.stopPropagation();
+          onClearSelectionRef.current?.();
+        });
+      viewG.append('g').attr('class', 'links');
+      viewG.append('g').attr('class', 'nodes');
+      viewG.append('g').attr('class', 'labels');
+    } else {
+      viewG.select('rect.hit-surface').attr('width', w).attr('height', h);
+    }
 
-    viewG
-      .append('rect')
-      .attr('class', 'hit-surface')
-      .attr('width', w)
-      .attr('height', h)
-      .attr('fill', 'transparent')
-      .attr('pointer-events', 'all')
-      .style('cursor', 'default')
-      .on('click', (event: MouseEvent) => {
-        event.stopPropagation();
-        onClearSelectionRef.current?.();
-      });
-    const linkG = viewG.append('g').attr('class', 'links');
-    const nodeG = viewG.append('g').attr('class', 'nodes');
-    const labelG = viewG.append('g').attr('class', 'labels');
+    const linkG = viewG.select<SVGGElement>('g.links');
+    const nodeG = viewG.select<SVGGElement>('g.nodes');
+    const labelG = viewG.select<SVGGElement>('g.labels');
+
+    const prevSim = simulationRef.current;
+    if (prevSim) {
+      prevSim.on('tick', null);
+      prevSim.stop();
+    }
 
     const linkForce = forceLink<SimNode, LinkDatum>(linkData)
       .id((d) => d.id)
@@ -311,13 +437,16 @@ export function StudyForceGraph({
 
     const clusterStrength = graphData.subjectIdsOrdered.length <= 1 ? 0.08 : 0.14;
 
+    const minYGapForColumnNeighbors = LABEL_Y_OFFSET + NODE_RADIUS + 10;
+
     const simulation = forceSimulation(simNodes)
-      .force(
-        'link',
-        linkForce,
-      )
+      .force('link', linkForce)
       .force('charge', forceManyBody().strength(-140))
       .force('collide', forceCollide(NODE_RADIUS + 12))
+      .force(
+        'xNeighborY',
+        forceVerticalSpreadWhenXNear(X_NEIGHBOR_SPREAD_BAND_PX, minYGapForColumnNeighbors, 0.32),
+      )
       .force(
         'x',
         forceX<SimNode>((d) => centers[d.clusterIndex]?.x ?? cx).strength(clusterStrength),
@@ -329,48 +458,7 @@ export function StudyForceGraph({
       .alphaDecay(0.022)
       .velocityDecay(0.25);
 
-    const lineSel = linkG
-      .selectAll<SVGLineElement, LinkDatum>('line')
-      .data(linkData, (d) => {
-        const s = typeof d.source === 'object' ? d.source.id : d.source;
-        const t = typeof d.target === 'object' ? d.target.id : d.target;
-        return `${s}:${t}`;
-      });
-
-    lineSel.exit().remove();
-    const lineEnter = lineSel.enter().append('line');
-    const lineMerge = lineEnter.merge(lineSel);
-    lineMerge
-      .attr('stroke', 'var(--border)')
-      .attr('stroke-opacity', 0.55)
-      .attr('stroke-width', 1.25)
-      .style('pointer-events', 'none');
-
-    const circleSel = nodeG
-      .selectAll<SVGCircleElement, SimNode>('circle')
-      .data(simNodes, (d) => d.id);
-
-    circleSel.exit().remove();
-    const circleEnter = circleSel.enter().append('circle');
-    const circleMerge = circleEnter.merge(circleSel);
-    circleMerge
-      .attr('r', NODE_RADIUS)
-      .attr('tabindex', 0)
-      .each(function eachNode(d) {
-        const s = styleForNode(
-          d,
-          progressionRef.current.unlockedTopicIds,
-          progressionRef.current.activeCrystals,
-          progressionRef.current.unlockPoints,
-          graphsRef.current,
-          selectedTopicIdRef.current,
-        );
-        select(this)
-          .attr('fill', s.fill)
-          .attr('stroke', s.stroke)
-          .attr('stroke-width', s.strokeWidth)
-          .attr('aria-label', `${d.title}, tier ${d.tier}`);
-      });
+    simulationRef.current = simulation;
 
     const zoomBehavior = zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.35, 4])
@@ -393,16 +481,95 @@ export function StudyForceGraph({
         viewG.attr('transform', event.transform.toString());
       });
 
+    svg.on('.zoom', null);
     svg.call(zoomBehavior);
 
-    const textSel = labelG
-      .selectAll<SVGTextElement, SimNode>('text')
-      .data(simNodes, (d) => d.id);
+    const lineSel = linkG
+      .selectAll<SVGLineElement, LinkDatum>('line')
+      .data(linkData, linkKey);
 
-    textSel.exit().remove();
-    const textEnter = textSel.enter().append('text');
-    const textMerge = textEnter.merge(textSel);
-    textMerge
+    lineSel.interrupt();
+    lineSel
+      .exit()
+      .interrupt()
+      .transition()
+      .duration(LINK_FADE_MS)
+      .attr('opacity', 0)
+      .remove();
+
+    const lineEnter = lineSel
+      .enter()
+      .append('line')
+      .attr('opacity', 0)
+      .attr('stroke', 'var(--border)')
+      .attr('stroke-opacity', 0.55)
+      .attr('stroke-width', 1.25)
+      .style('pointer-events', 'none');
+
+    lineSel.attr('opacity', 1);
+
+    lineEnter.transition().duration(LINK_FADE_MS).attr('opacity', 1);
+
+    const lineMerge = lineEnter.merge(lineSel);
+
+    const circleSel = nodeG.selectAll<SVGCircleElement, SimNode>('circle').data(simNodes, (d) => d.id);
+
+    circleSel.interrupt();
+    circleSel
+      .exit()
+      .interrupt()
+      .transition()
+      .duration(NODE_FADE_MS)
+      .attr('opacity', 0)
+      .remove();
+
+    const circleEnter = circleSel
+      .enter()
+      .append('circle')
+      .attr('cx', (d) => d.x ?? 0)
+      .attr('cy', (d) => d.y ?? 0)
+      .attr('opacity', 0)
+      .attr('r', NODE_RADIUS)
+      .attr('tabindex', 0)
+      .each(function eachNode(d) {
+        const s = styleForNode(
+          d,
+          progressionRef.current.unlockedTopicIds,
+          progressionRef.current.activeCrystals,
+          progressionRef.current.unlockPoints,
+          graphsRef.current,
+          selectedTopicIdRef.current,
+        );
+        select(this)
+          .attr('fill', s.fill)
+          .attr('stroke', s.stroke)
+          .attr('stroke-width', s.strokeWidth)
+          .attr('aria-label', `${d.title}, tier ${d.tier}`);
+      });
+
+    circleSel.attr('opacity', 1);
+
+    circleEnter.transition().duration(NODE_FADE_MS).attr('opacity', 1);
+
+    const circleMerge = circleEnter.merge(circleSel);
+
+    const textSel = labelG.selectAll<SVGTextElement, SimNode>('text').data(simNodes, (d) => d.id);
+
+    textSel.interrupt();
+    textSel
+      .exit()
+      .interrupt()
+      .transition()
+      .duration(NODE_FADE_MS)
+      .attr('opacity', 0)
+      .remove();
+
+    const textEnter = textSel
+      .enter()
+      .append('text')
+      .attr('x', (d) => d.x ?? 0)
+      .attr('y', (d) => (d.y ?? 0) + LABEL_Y_OFFSET)
+      .attr('opacity', 0)
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'middle')
       .style('pointer-events', 'none')
@@ -410,6 +577,12 @@ export function StudyForceGraph({
       .attr('font-size', 11)
       .attr('fill', 'currentColor')
       .text((d) => truncateTopicTitle(d.title));
+
+    textSel.attr('opacity', 1);
+
+    textEnter.transition().duration(NODE_FADE_MS).attr('opacity', 1);
+
+    const textMerge = textEnter.merge(textSel);
 
     circleMerge.on('click', function handleCircleClick(this: SVGCircleElement, event: MouseEvent) {
       event.stopPropagation();
@@ -431,6 +604,14 @@ export function StudyForceGraph({
     simulation.on('tick', () => {
       for (const d of simNodes) {
         clampNodeCenterToViewport(d, vp);
+        snap.set(d.id, {
+          x: d.x,
+          y: d.y,
+          vx: d.vx,
+          vy: d.vy,
+          fx: d.fx,
+          fy: d.fy,
+        });
       }
 
       lineMerge
@@ -457,6 +638,7 @@ export function StudyForceGraph({
       textMerge
         .attr('x', (d) => d.x ?? 0)
         .attr('y', (d) => (d.y ?? 0) + LABEL_Y_OFFSET)
+        .text((d) => truncateTopicTitle(d.title))
         .each(function eachLabelTick(d) {
           const sel = selectedTopicIdRef.current;
           const isSelected = Boolean(sel && d.topicId === sel);
@@ -466,20 +648,19 @@ export function StudyForceGraph({
         });
     });
 
-    simulation.restart();
-    simulationRef.current = simulation;
+    simulation.alpha(1).restart();
 
     return () => {
       svg.on('.zoom', null);
-      simulationRef.current = null;
       simulation.on('tick', null);
       simulation.stop();
+      simulationRef.current = null;
     };
   }, [graphData, size.w, size.h]);
 
   useEffect(() => {
     const svgEl = svgRef.current;
-    if (!svgEl || graphData.nodes.length === 0) {
+    if (!svgEl || !graphData || graphData.nodes.length === 0) {
       return;
     }
     paintTopicNodeVisuals(
@@ -487,21 +668,27 @@ export function StudyForceGraph({
       unlockedTopicIds,
       activeCrystals,
       unlockPoints,
-      allGraphs,
+      visibleGraphs,
       selectedTopicId,
     );
-  }, [selectedTopicId, progressionPaintKey, graphData.nodes.length, allGraphs]);
+  }, [selectedTopicId, progressionPaintKey, graphData, visibleGraphs]);
 
   return (
     <div
       ref={containerRef}
       className={cn('h-full w-full min-h-0', className)}
     >
-      {size.w >= 32 && size.h >= 32 && graphData.nodes.length > 0 ? (
+      {size.w >= 32 && size.h >= 32 && graphData && graphData.nodes.length > 0 ? (
         <svg ref={svgRef} className="block h-full w-full text-foreground" />
       ) : (
         <div className="text-muted-foreground flex h-full min-h-[12rem] items-center justify-center text-sm">
-          {graphData.nodes.length === 0 ? 'No curriculum topics to display.' : 'Resizing…'}
+          {!allGraphs.length
+            ? 'No curriculum topics to display.'
+            : !visibleGraphs.length
+              ? 'No graph for this subject.'
+              : graphData && graphData.nodes.length === 0
+                ? 'No curriculum topics to display.'
+                : 'Resizing…'}
         </div>
       )}
     </div>

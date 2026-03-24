@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 
+import SubjectNavigation from '@/components/SubjectNavigation';
 import { StudyGraphPageClient } from '@/components/StudyGraphPageClient';
 
 export const metadata: Metadata = {
@@ -8,5 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default function StudyGraphPage() {
-  return <StudyGraphPageClient />;
+  return (
+    <>
+      <StudyGraphPageClient />
+      <SubjectNavigation />
+    </>
+  );
 }
