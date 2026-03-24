@@ -264,7 +264,7 @@ function forceVerticalSpreadWhenXNear(
 }
 
 /** Horizontal proximity (px): centers within this band compete for vertical separation. */
-const X_NEIGHBOR_SPREAD_BAND_PX = 210;
+const X_NEIGHBOR_SPREAD_BAND_PX = 250;
 
 export function StudyForceGraph({
   allGraphs,
@@ -456,7 +456,7 @@ export function StudyForceGraph({
         forceY<SimNode>((d) => centers[d.clusterIndex]?.y ?? cy).strength(clusterStrength),
       )
       .alphaDecay(0.022)
-      .velocityDecay(0.25);
+      .velocityDecay(0.45);
 
     simulationRef.current = simulation;
 

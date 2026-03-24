@@ -188,7 +188,7 @@ export function StudyPanelModal({
   if (!isOpen) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => {
+    <Dialog modal={false} open={isOpen} onOpenChange={(open) => {
       if (!open) {
         onClose();
       }
