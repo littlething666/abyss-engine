@@ -5,6 +5,11 @@ import { deckRepository } from '../infrastructure/di';
 
 const DEFAULT_STALE_TIME = Number.POSITIVE_INFINITY;
 
+/** Canonical TanStack Query key for topic deck cards (shared with useQueries in Scene, page, etc.). */
+export function topicCardsQueryKey(subjectId: string, topicId: string) {
+  return ['content', 'topic-cards', subjectId, topicId] as const;
+}
+
 export function useManifest(): UseQueryResult<Manifest, Error> {
   return useQuery({
     queryKey: ['content', 'subjects'] as const,
@@ -42,7 +47,7 @@ export function useTopicDetails(subjectId: string, topicId: string): UseQueryRes
 
 export function useTopicCards(subjectId: string, topicId: string): UseQueryResult<Card[], Error> {
   return useQuery({
-    queryKey: ['content', 'topic', subjectId, topicId, 'cards'],
+    queryKey: topicCardsQueryKey(subjectId, topicId),
     queryFn: async (): Promise<Card[]> => deckRepository.getTopicCards(subjectId, topicId),
     staleTime: DEFAULT_STALE_TIME,
     enabled: Boolean(subjectId) && Boolean(topicId),

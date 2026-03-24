@@ -42,6 +42,7 @@ import {
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { useTopicMetadata } from '../features/content';
 import { deckRepository } from '../infrastructure/di';
+import { topicCardsQueryKey } from '../hooks/useDeckData';
 import { Card } from '../types/core';
 import { telemetry } from '../features/telemetry';
 
@@ -77,7 +78,7 @@ export function AttunementRitualModal({
     queries: activeTopicIds.map((topicId) => {
       const subjectId = allTopicMetadata[topicId]?.subjectId || '';
       return {
-        queryKey: ['content', 'topic-cards', subjectId, topicId],
+        queryKey: topicCardsQueryKey(subjectId, topicId),
         queryFn: () => deckRepository.getTopicCards(subjectId, topicId),
         enabled: Boolean(subjectId),
         staleTime: Infinity,

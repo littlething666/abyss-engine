@@ -19,6 +19,7 @@ import { useUIStore } from '../store/uiStore'
 import { useTopicMetadata, type TopicMetadata } from '../features/content'
 import { Card } from '../types/core'
 import { deckRepository } from '../infrastructure/di'
+import { topicCardsQueryKey } from '../hooks/useDeckData'
 import { useSceneInvalidator } from '../hooks/useSceneInvalidator'
 import { useSelectedCrystalSpotlight } from '../hooks/useSelectedCrystalSpotlight'
 import '../graphics/nodeMaterialRegistration'
@@ -201,7 +202,7 @@ export const Scene: React.FC<SceneProps> = ({
     queries: activeTopicIds.map((topicId) => {
       const subjectId = allTopicMetadata[topicId]?.subjectId || ''
       return {
-        queryKey: ['content', 'topic-cards', subjectId, topicId],
+        queryKey: topicCardsQueryKey(subjectId, topicId),
         queryFn: () => deckRepository.getTopicCards(subjectId, topicId),
         enabled: Boolean(subjectId),
         staleTime: Infinity,

@@ -18,6 +18,13 @@ export interface IDeckRepository {
   getTopicCards(subjectId: string, topicId: string): Promise<Card[]>;
 }
 
+export interface IDeckContentWriter {
+  upsertSubject(subject: Subject & { themeId?: string }): Promise<void>;
+  upsertGraph(graph: SubjectGraph): Promise<void>;
+  upsertTopicDetails(details: TopicDetails): Promise<void>;
+  upsertTopicCards(subjectId: string, topicId: string, cards: Card[]): Promise<void>;
+}
+
 export interface StudyHistoryQuery {
   daysWindow?: number;
   fromTimestamp?: number;

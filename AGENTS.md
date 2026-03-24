@@ -70,9 +70,9 @@ Before generating code, the agent must evaluate the request against the architec
 3. Provide necessary unit or e2e tests for new feature paths.
 
 ### III. Mandatory Collaboration Output
-Every agent response proposing code changes must begin with an **Architecture Alignment Plan** containing:
-1. **Misalignment Risk**: A concise list of potential high-risk conflicts between the requested change and current architecture.
-2. **Implementation Strategy**: The selected architectural pattern and boundary defense strategy.
+Every agent response proposing code modifications must preface the technical implementation with an **Architectural Optimization Proposal** containing:
+1. **Optimized Design Rationale**: A technical justification for the selected architectural approach, detailing how the proposed structure enhances system scalability, maintainability, or performance relative to current constraints.
+2. **Structural Integration Strategy**: Specification of the architectural patterns and boundary enforcement mechanisms utilized to ensure seamless integration with the existing codebase.
 
 This file is authoritative.
 If something in the codebase contradicts AGENTS.md, the codebase is wrong.

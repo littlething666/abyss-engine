@@ -1,55 +1,27 @@
-import { IDeckRepository, Manifest } from '../../types/repository';
-import { Card, SubjectGraph, TopicDetails } from '../../types/core';
+import type { IDeckRepository, Manifest } from '../../types/repository';
+import type { Card, SubjectGraph, TopicDetails } from '../../types/core';
+import {
+  fetchManifest,
+  fetchSubjectGraph,
+  fetchTopicDetails,
+  fetchTopicCards,
+} from '../deckDb/deckStaticFetch';
 
+/** Direct HTTP reads (no IndexedDB). Useful for tooling or alternate DI wiring. */
 export class ApiDeckRepository implements IDeckRepository {
-  private baseUrl = `${process.env.NEXT_PUBLIC_BASE_PATH || ''}/data`;
-
-  private async fetchJson<T>(paths: string[]): Promise<T> {
-    for (const path of paths) {
-      const response = await fetch(path);
-      if (response.ok) {
-        return response.json();
-      }
-    }
-
-    throw new Error(`Failed to load JSON from paths: ${paths.join(', ')}`);
-  }
-
   async getManifest(): Promise<Manifest> {
-    return this.fetchJson<Manifest>([
-      `${this.baseUrl}/subjects/manifest.json`,
-    ]);
+    return fetchManifest();
   }
 
   async getSubjectGraph(subjectId: string): Promise<SubjectGraph> {
-    const response = await fetch(`${this.baseUrl}/subjects/${subjectId}/graph.json`);
-    return response.json();
+    return fetchSubjectGraph(subjectId);
   }
 
   async getTopicDetails(subjectId: string, topicId: string): Promise<TopicDetails> {
-    return this.fetchJson<TopicDetails>([
-      `${this.baseUrl}/subjects/${subjectId}/topics/${topicId}.json`,
-      `${this.baseUrl}/subjects/${subjectId}/topics/${topicId}/topic.json`,
-    ]);
+    return fetchTopicDetails(subjectId, topicId);
   }
 
   async getTopicCards(subjectId: string, topicId: string): Promise<Card[]> {
-    const payload = await this.fetchJson<unknown>([
-      `${this.baseUrl}/subjects/${subjectId}/cards/${topicId}.json`,
-      `${this.baseUrl}/subjects/${subjectId}/topics/${topicId}/cards.json`,
-    ]);
-
-    if (Array.isArray(payload)) {
-      return payload as Card[];
-    }
-
-    if (typeof payload === 'object' && payload !== null && 'cards' in payload) {
-      const maybeCards = (payload as { cards?: unknown }).cards;
-      if (Array.isArray(maybeCards)) {
-        return maybeCards as Card[];
-      }
-    }
-
-    return [];
+    return fetchTopicCards(subjectId, topicId);
   }
 }

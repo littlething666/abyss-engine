@@ -1,26 +1,35 @@
+import { forwardRef, type ComponentPropsWithoutRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
-interface MathMarkdownRendererProps {
+export type MathMarkdownRendererProps = Omit<
+  ComponentPropsWithoutRef<'div'>,
+  'children' | 'dangerouslySetInnerHTML'
+> & {
   source: string;
-  className?: string;
-}
+};
 
-export function MathMarkdownRenderer({ source, className }: MathMarkdownRendererProps) {
-  const markdownSource = source ?? '';
+export const MathMarkdownRenderer = forwardRef<HTMLDivElement, MathMarkdownRendererProps>(
+  function MathMarkdownRenderer({ source, className, ...props }, ref) {
+    const markdownSource = source ?? '';
 
-  try {
-    return (
-      <div className={className}>
-        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+    try {
+      return (
+        <div ref={ref} className={className} {...props}>
+          <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+            {markdownSource}
+          </ReactMarkdown>
+        </div>
+      );
+    } catch {
+      return (
+        <div ref={ref} className={className} {...props}>
           {markdownSource}
-        </ReactMarkdown>
-      </div>
-    );
-  } catch {
-    return <span className={className}>{markdownSource}</span>;
-  }
-}
+        </div>
+      );
+    }
+  },
+);
 
 export default MathMarkdownRenderer;

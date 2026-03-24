@@ -1,3 +1,5 @@
+import 'fake-indexeddb/auto';
+
 import { vi } from 'vitest';
 
 // Enables React `act()` in Vitest jsdom without console noise (see react.dev/link/wrap-tests-with-act).

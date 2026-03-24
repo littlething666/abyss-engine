@@ -9,6 +9,8 @@ Instructions:
 Output Constraint:
 - Provide only the requested information.
 - Use bold formatting for the headings.
+- Use markdown formatting for the text.
+- Be concise and to the point.
 </system_prompt>
 
 Topic: {{topic}}

@@ -63,12 +63,21 @@ export class PubSubClient {
     }
 
     switch (message.type) {
-      case 'topic-updated':
-      case 'cards-updated': {
+      case 'topic-updated': {
         const subjectId = message.subjectId ?? '';
         const topicId = message.topicId ?? '';
         if (subjectId && topicId) {
           this.queryClient.invalidateQueries({ queryKey: ['content', 'topic', subjectId, topicId] });
+        } else if (subjectId) {
+          this.queryClient.invalidateQueries({ queryKey: ['content', 'subject', subjectId, 'graph'] });
+        }
+        return;
+      }
+      case 'cards-updated': {
+        const subjectId = message.subjectId ?? '';
+        const topicId = message.topicId ?? '';
+        if (subjectId && topicId) {
+          this.queryClient.invalidateQueries({ queryKey: ['content', 'topic-cards', subjectId, topicId] });
         } else if (subjectId) {
           this.queryClient.invalidateQueries({ queryKey: ['content', 'subject', subjectId, 'graph'] });
         }

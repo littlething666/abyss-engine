@@ -14,6 +14,7 @@ import { initAbyssDev } from '@/utils/abyssDev';
 import { AttunementRitualPayload } from '@/types/progression';
 import { useTopicMetadata } from '@/features/content';
 import { deckRepository } from '@/infrastructure/di';
+import { syncDeckIndexedDbDebugFromApp } from '@/infrastructure/deckDb/deckDbDebugLog';
 import { Button } from '@/components/ui/button';
 import { Search } from 'lucide-react';
 
@@ -29,6 +30,7 @@ import SubjectNavigation from '@/components/SubjectNavigation';
 import PomodoroTimerOverlay from '@/components/PomodoroTimer3D';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useScreenCaptureLlmSummary } from '@/hooks/useScreenCaptureLlmSummary';
+import { topicCardsQueryKey } from '@/hooks/useDeckData';
 
 // Dynamic import for Scene to avoid SSR issues with Three.js
 const Scene = dynamic(() => import('@/components/Scene'), {
@@ -84,7 +86,7 @@ const HomeContent: React.FC = () => {
     queries: subjectFilteredTopicIds.map((topicId) => {
       const subjectId = allTopicMetadata[topicId]?.subjectId || '';
       return {
-        queryKey: ['content', 'topic-cards', subjectId, topicId],
+        queryKey: topicCardsQueryKey(subjectId, topicId),
         queryFn: () => deckRepository.getTopicCards(subjectId, topicId),
         enabled: Boolean(subjectId),
         staleTime: Infinity,
@@ -145,6 +147,11 @@ const HomeContent: React.FC = () => {
   const ritualCooldownRemainingMs = getRemainingRitualCooldownMs(Date.now());
 
   const currentTopicId = currentSession?.topicId || null;
+
+  useEffect(() => {
+    syncDeckIndexedDbDebugFromApp(isDebugMode);
+    return () => syncDeckIndexedDbDebugFromApp(null);
+  }, [isDebugMode]);
 
   // Initialize on mount - only once
   useEffect(() => {
