@@ -24,6 +24,9 @@ import { cn } from '@/lib/utils';
 
 export const LLM_INFERENCE_SURFACE_Z_CLASS = 'z-[60]';
 
+/** Use with `closest()` so parent `Dialog` layers ignore portaled inference UI as “outside”. */
+export const LLM_INFERENCE_SURFACE_OUTSIDE_GUARD_SELECTOR = '[data-llm-inference-surface]';
+
 export type ResponsiveLlmInferenceDescription =
   | { kind: 'srOnly'; text: string }
   | { kind: 'markdown'; source: string };
@@ -61,6 +64,7 @@ export function ResponsiveLlmInferenceSurface({
     return (
       <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
         <DialogContent
+          data-llm-inference-surface=""
           className={cn(LLM_INFERENCE_SURFACE_Z_CLASS, desktopContentClassName)}
           onPointerDownOutside={onDismissOutside}
           onInteractOutside={onDismissOutside}
@@ -87,6 +91,7 @@ export function ResponsiveLlmInferenceSurface({
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
+        data-llm-inference-surface=""
         side="bottom"
         className={cn(
           LLM_INFERENCE_SURFACE_Z_CLASS,

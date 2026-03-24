@@ -1,3 +1,4 @@
+import { resolveDefaultLlmModel } from '../llmDefaultModel';
 import type {
   ChatCompletionStreamInput,
   ChatMessage,
@@ -142,8 +143,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
 export function createHttpChatCompletionsRepositoryFromEnv(): HttpChatCompletionsRepository {
   const chatUrl =
     process.env.NEXT_PUBLIC_LLM_CHAT_URL ?? 'http://localhost:8080/v1/chat/completions';
-  /** Many local OpenAI-compatible servers accept any placeholder; override via NEXT_PUBLIC_LLM_MODEL. */
-  const defaultModel = process.env.NEXT_PUBLIC_LLM_MODEL ?? '';
+  const defaultModel = resolveDefaultLlmModel();
   const apiKey = process.env.NEXT_PUBLIC_LLM_API_KEY?.trim() || null;
   return new HttpChatCompletionsRepository(chatUrl, defaultModel, apiKey);
 }

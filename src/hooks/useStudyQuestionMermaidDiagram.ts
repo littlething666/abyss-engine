@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildStudyQuestionMermaidMessages } from '../features/studyPanel';
-import { chatCompletionsRepository } from '../infrastructure/di';
+import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInferenceRegistry';
+import { resolveModelForSurface } from '../infrastructure/llmInferenceSurfaceProviders';
+
+const chat = getChatCompletionsRepositoryForSurface('studyQuestionMermaid');
 
 export interface UseStudyQuestionMermaidDiagramParams {
   topicLabel: string;
@@ -103,12 +106,12 @@ export function useStudyQuestionMermaidDiagram({
     setPending(true);
 
     const messages = buildStudyQuestionMermaidMessages(topicLabel, questionText);
-    const model = process.env.NEXT_PUBLIC_LLM_MODEL?.trim() ?? '';
+    const model = resolveModelForSurface('studyQuestionMermaid');
 
     void (async () => {
       try {
         let acc = '';
-        for await (const chunk of chatCompletionsRepository.streamChat({
+        for await (const chunk of chat.streamChat({
           model,
           messages,
           signal: ac.signal,

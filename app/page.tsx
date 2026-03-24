@@ -20,6 +20,7 @@ import { Search } from 'lucide-react';
 
 // Components
 import StatsOverlay from '@/components/StatsOverlay';
+import { AscentWeaverModal } from '@/components/AscentWeaverModal';
 import { AttunementRitualModal } from '@/components/AttunementRitualModal';
 import DiscoveryModal from '@/components/DiscoveryModal';
 import StudyPanelModal from '@/components/StudyPanelModal';
@@ -53,6 +54,7 @@ const HomeContent: React.FC = () => {
   const [showStats, setShowStats] = useState(true);
   const [isCameraAngleUnlocked, setIsCameraAngleUnlocked] = useState(isDebugMode);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isAscentWeaverOpen, setIsAscentWeaverOpen] = useState(false);
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const screenCaptureLlm = useScreenCaptureLlmSummary();
 
@@ -309,7 +311,10 @@ const HomeContent: React.FC = () => {
         onOpenChange={setIsCommandPaletteOpen}
         isDebugMode={isDebugMode}
         onSummarizeScreen={screenCaptureLlm.startSummarize}
+        onOpenAscentWeaver={() => setIsAscentWeaverOpen(true)}
       />
+
+      <AscentWeaverModal isOpen={isAscentWeaverOpen} onClose={() => setIsAscentWeaverOpen(false)} />
 
       <ScreenCaptureLlmSummarySurface
         isDesktop={isDesktop}

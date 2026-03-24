@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildFormulaExplainMessages, type StudyFormulaExplainContext } from '../features/studyPanel';
-import { chatCompletionsRepository } from '../infrastructure/di';
+import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInferenceRegistry';
+import { resolveModelForSurface } from '../infrastructure/llmInferenceSurfaceProviders';
+
+const chat = getChatCompletionsRepositoryForSurface('studyFormulaExplain');
 
 export type { StudyFormulaExplainContext };
 
@@ -119,12 +122,12 @@ export function useStudyFormulaLlmExplain({
       setPending(true);
 
       const messages = buildFormulaExplainMessages(topicLabel, cardQuestionText, latex, context);
-      const model = process.env.NEXT_PUBLIC_LLM_MODEL?.trim() ?? '';
+      const model = resolveModelForSurface('studyFormulaExplain');
 
       void (async () => {
         try {
           let acc = '';
-          for await (const chunk of chatCompletionsRepository.streamChat({
+          for await (const chunk of chat.streamChat({
             model,
             messages,
             signal: ac.signal,

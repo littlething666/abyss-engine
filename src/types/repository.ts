@@ -7,6 +7,8 @@ export type {
   IChatCompletionsRepository,
 } from './llm';
 
+export type { InferenceSurfaceId, LlmInferenceProviderId } from './llmInference';
+
 export interface Manifest {
   subjects: Subject[];
 }

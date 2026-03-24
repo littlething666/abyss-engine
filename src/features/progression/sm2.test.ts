@@ -4,7 +4,7 @@
  * Tests the simplified SM-2 spaced repetition algorithm functions
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   calculateNextReview,
   calculateNextReviewForCard,
@@ -163,16 +163,21 @@ describe('calculateNextReview', () => {
 
 describe('calculateNextReviewForCard', () => {
   it('should be an alias for calculateNextReview', () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
     const card = createCardWithSM2({
       interval: 6,
       easeFactor: 2.5,
       repetitions: 2,
     });
 
-    const result1 = calculateNextReview(card, 3 as Rating);
-    const result2 = calculateNextReviewForCard(card, 3 as Rating);
+    try {
+      const result1 = calculateNextReview(card, 3 as Rating);
+      const result2 = calculateNextReviewForCard(card, 3 as Rating);
 
-    expect(result1).toEqual(result2);
+      expect(result1).toEqual(result2);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });
 

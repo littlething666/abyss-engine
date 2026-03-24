@@ -1,0 +1,37 @@
+Act as an expert curriculum designer and data scientist. Your task is to build a curriculum graph for the subject described below.
+
+Generate a curriculum graph for this subject as JSON (you may wrap it in a single markdown code block if needed, but the JSON must be valid).
+
+Requirements:
+
+1. The subjectId must be exactly: {{subjectId}}
+2. The themeId must be exactly: {{themeId}}
+3. Create exactly {{topicCount}} topics divided evenly across {{maxTier}} tiers (exactly {{topicsPerTier}} topics per tier).
+4. Tier 1 topics must be foundational and have empty `prerequisites` arrays `[]`.
+5. Tier 2 topics must list relevant Tier 1 `topicId` values as prerequisites only (no other tiers).
+6. Tier 3 topics must list relevant Tier 2 `topicId` values as prerequisites (and optionally Tier 1). For tiers above 3, each topic's prerequisites must reference only strictly lower tiers.
+7. The `topicId` must be lowercase kebab-case (e.g., "core-architectural-patterns", "multi-robot-systems").
+8. The `title` field at the root is the full human-readable curriculum title (may match or refine: {{subjectTitle}}).
+9. Target audience: {{audience}}
+10. Domain / scope to cover: {{domainDescription}}
+11. Every entry in nodes must include a non-empty string learningObjective (one sentence, learner-facing, specific to that topic—not a repeat of the title)
+
+Output valid JSON matching this schema:
+
+{
+  "subjectId": "{{subjectId}}",
+  "title": "string",
+  "themeId": "{{themeId}}",
+  "maxTier": {{maxTier}},
+  "nodes": [
+    {
+      "topicId": "example-topic",
+      "title": "Example Topic",
+      "tier": 1,
+      "prerequisites": [],
+      "learningObjective": "A clear, professional sentence describing what the learner will master."
+    }
+  ]
+}
+
+There must be exactly {{topicCount}} objects in `nodes`, with tiers ranging from 1 through {{maxTier}} and counts per tier exactly {{topicsPerTier}} each.

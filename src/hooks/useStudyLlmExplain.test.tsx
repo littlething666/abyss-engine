@@ -15,7 +15,6 @@ import {
 } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { chatCompletionsRepository } from '../infrastructure/di';
 import {
   clearStudyFormulaLlmExplainSessionCacheForTests,
   useStudyFormulaLlmExplain,
@@ -29,13 +28,15 @@ import {
   useStudyQuestionLlmExplain,
 } from './useStudyQuestionLlmExplain';
 
-vi.mock('../infrastructure/di', () => ({
-  chatCompletionsRepository: {
-    streamChat: vi.fn(),
-  },
+const { streamChatMock } = vi.hoisted(() => ({
+  streamChatMock: vi.fn(),
 }));
 
-const streamChatMock = vi.mocked(chatCompletionsRepository.streamChat);
+vi.mock('../infrastructure/llmInferenceRegistry', () => ({
+  getChatCompletionsRepositoryForSurface: vi.fn(() => ({
+    streamChat: streamChatMock,
+  })),
+}));
 
 type QuestionHarnessProps = {
   topicLabel: string;

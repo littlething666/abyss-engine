@@ -3,21 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildScreenCaptureSummaryMessages } from '../features/screenCaptureSummary';
+import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInferenceRegistry';
+import { resolveModelForSurface } from '../infrastructure/llmInferenceSurfaceProviders';
 import { captureDisplayMediaAsPngDataUrl } from '../lib/captureDisplayMediaFrame';
-import { chatCompletionsRepository } from '../infrastructure/di';
+
+const chat = getChatCompletionsRepositoryForSurface('screenCaptureSummary');
 
 function isAbortError(e: unknown): boolean {
   return (
     (e instanceof DOMException && e.name === 'AbortError')
     || (e instanceof Error && e.name === 'AbortError')
-  );
-}
-
-function visionModelFromEnv(): string {
-  return (
-    process.env.NEXT_PUBLIC_LLM_VISION_MODEL?.trim()
-    || process.env.NEXT_PUBLIC_LLM_MODEL?.trim()
-    || ''
   );
 }
 
@@ -97,13 +92,13 @@ export function useScreenCaptureLlmSummary() {
         }
 
         const messages = buildScreenCaptureSummaryMessages(dataUrl);
-        const model = visionModelFromEnv();
+        const model = resolveModelForSurface('screenCaptureSummary');
         setAssistantText('');
 
         void (async () => {
           try {
             let acc = '';
-            for await (const chunk of chatCompletionsRepository.streamChat({
+            for await (const chunk of chat.streamChat({
               model,
               messages,
               signal: ac.signal,

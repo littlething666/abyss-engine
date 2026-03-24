@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { Camera, History, Landmark, Minus, Sparkles, Zap } from 'lucide-react';
+import { Camera, History, Landmark, Minus, Network, Sparkles, Zap } from 'lucide-react';
 
 import {
   Command,
@@ -25,6 +25,8 @@ export interface AbyssCommandPaletteProps {
   isDebugMode: boolean;
   /** When set, shows “Summarize screen” which runs screen capture then vision LLM. */
   onSummarizeScreen?: () => void;
+  /** Opens AscentWeaver to generate a curriculum graph into IndexedDB. */
+  onOpenAscentWeaver?: () => void;
 }
 
 function matchesDevXpBuff(b: { buffId: string; source?: string }) {
@@ -36,6 +38,7 @@ export function AbyssCommandPalette({
   onOpenChange,
   isDebugMode,
   onSummarizeScreen,
+  onOpenAscentWeaver,
 }: AbyssCommandPaletteProps) {
   const selectedTopicId = uiStore((s) => s.selectedTopicId);
   const devXpBuffActive = useProgressionStore((s) => s.activeBuffs.some(matchesDevXpBuff));
@@ -161,6 +164,20 @@ export function AbyssCommandPalette({
               >
                 <Camera className="size-4" />
                 <span>Summarize screen with assistant</span>
+              </CommandItem>
+            </CommandGroup>
+          ) : null}
+          {onOpenAscentWeaver ? (
+            <CommandGroup heading="Curriculum">
+              <CommandItem
+                value="ascent weaver curriculum graph generate subject indexeddb"
+                onSelect={() => {
+                  onOpenAscentWeaver();
+                  onOpenChange(false);
+                }}
+              >
+                <Network className="size-4" />
+                <span>Open AscentWeaver (curriculum graph)</span>
               </CommandItem>
             </CommandGroup>
           ) : null}

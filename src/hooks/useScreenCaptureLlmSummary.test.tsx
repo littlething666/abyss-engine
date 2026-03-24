@@ -2,13 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, createRef, forwardRef, useImperativeHandle } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { chatCompletionsRepository } from '../infrastructure/di';
 import { useScreenCaptureLlmSummary } from './useScreenCaptureLlmSummary';
 
-vi.mock('../infrastructure/di', () => ({
-  chatCompletionsRepository: {
-    streamChat: vi.fn(),
-  },
+const { streamChatMock } = vi.hoisted(() => ({
+  streamChatMock: vi.fn(),
+}));
+
+vi.mock('../infrastructure/llmInferenceRegistry', () => ({
+  getChatCompletionsRepositoryForSurface: vi.fn(() => ({
+    streamChat: streamChatMock,
+  })),
 }));
 
 vi.mock('../lib/captureDisplayMediaFrame', () => ({
@@ -17,7 +20,6 @@ vi.mock('../lib/captureDisplayMediaFrame', () => ({
 
 import { captureDisplayMediaAsPngDataUrl } from '../lib/captureDisplayMediaFrame';
 
-const streamChatMock = vi.mocked(chatCompletionsRepository.streamChat);
 const captureMock = vi.mocked(captureDisplayMediaAsPngDataUrl);
 
 type Api = ReturnType<typeof useScreenCaptureLlmSummary>;
