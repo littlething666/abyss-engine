@@ -1,50 +1,26 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React from 'react';
 import MathMarkdownRenderer from '../MathMarkdownRenderer';
 import { RenderableCard } from '../../features/studyPanel/cardPresenter';
-import type { StudyFormulaExplainContext } from '../../features/studyPanel/formulaExplainLlmMessages';
+import {
+  type StudyPanelFormulaExplainProps,
+  type StudyPanelLlmExplainProps,
+  type StudyPanelMermaidDiagramProps,
+} from '../../features/studyPanel/studyPanelLlmSurfaceProps';
 import { Rating } from '../../types';
 import { Card } from '../../types/core';
 import { SM2Data } from '../../features/progression/sm2';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import { cn } from '@/lib/utils';
-import { Redo2, Sparkles, Undo2 } from 'lucide-react';
+import { ResponsiveLlmInferenceSurface } from '../ResponsiveLlmInferenceSurface';
+import { Network, Redo2, Sparkles, Undo2 } from 'lucide-react';
 import { StudyKatexInteractive } from './StudyKatexInteractive';
+import { StudyQuestionMermaidLlmBody } from './StudyQuestionMermaidLlmBody';
 import { useMediaQuery } from '@/hooks/use-media-query';
+import { useStudyPanelLlmSurfaces } from '@/hooks/useStudyPanelLlmSurfaces';
 
-export type StudyPanelLlmExplainProps = {
-  isPending: boolean;
-  errorMessage: string | null;
-  assistantText: string | null;
-  requestExplain: () => void;
-  cancelInflight: () => void;
-};
-
-export type StudyPanelFormulaExplainProps = {
-  isPending: boolean;
-  errorMessage: string | null;
-  assistantText: string | null;
-  requestExplain: (latex: string, context: StudyFormulaExplainContext) => void;
-  cancelInflight: () => void;
-};
+export type { StudyPanelFormulaExplainProps, StudyPanelLlmExplainProps, StudyPanelMermaidDiagramProps };
 
 type LlmStreamBlockProps = {
   isPending: boolean;
@@ -75,7 +51,7 @@ function LlmStreamBlock({
       )}
       {isPending && !(assistantText && assistantText.length > 0) && (
         <p className="text-muted-foreground" data-testid={loadingTestId}>
-          Thinking…
+          Warming up…
         </p>
       )}
       {assistantText && assistantText.length > 0 && (
@@ -182,11 +158,12 @@ interface StudyPanelStudyViewProps {
   redoCount: number;
   llmExplain: StudyPanelLlmExplainProps;
   llmFormulaExplain: StudyPanelFormulaExplainProps;
+  llmMermaidDiagram: StudyPanelMermaidDiagramProps;
 }
 
-const inferenceSurfaceZ = 'z-[60]';
-
 const QUESTION_EXPLAIN_DESCRIPTION = 'AI explanation for the current card question.';
+
+const QUESTION_MERMAID_DESCRIPTION = 'AI-generated Mermaid diagram for the current card question.';
 
 /** Inline LaTeX as remark-math; escapes `$` inside the expression. */
 function formulaDescriptionMarkdown(latex: string | null): string {
@@ -225,61 +202,22 @@ export function StudyPanelStudyView({
   redoCount,
   llmExplain,
   llmFormulaExplain,
+  llmMermaidDiagram,
 }: StudyPanelStudyViewProps) {
   const isDesktop = useMediaQuery('(min-width: 768px)');
-  const [explainOpen, setExplainOpen] = useState(false);
-  const [formulaOpen, setFormulaOpen] = useState(false);
-  const [activeFormulaLatex, setActiveFormulaLatex] = useState<string | null>(null);
-
-  const closeFormulaExplain = useCallback(() => {
-    llmFormulaExplain.cancelInflight();
-    setFormulaOpen(false);
-    setActiveFormulaLatex(null);
-  }, [llmFormulaExplain]);
-
-  const requestFormulaExplain = llmFormulaExplain.requestExplain;
-  const openFormulaExplain = useCallback(
-    (latex: string, context: StudyFormulaExplainContext, _anchorElement: HTMLElement) => {
-      llmExplain.cancelInflight();
-      setExplainOpen(false);
-      setActiveFormulaLatex(latex);
-      setFormulaOpen(true);
-      requestFormulaExplain(latex, context);
-    },
-    [llmExplain, requestFormulaExplain],
-  );
-
-  const handleFormulaOpenChange = (open: boolean) => {
-    if (!open) {
-      setFormulaOpen(false);
-      llmFormulaExplain.cancelInflight();
-      setActiveFormulaLatex(null);
-      return;
-    }
-    setFormulaOpen(true);
-  };
-
-  const handleExplainOpenChange = (open: boolean) => {
-    setExplainOpen(open);
-    if (!open) {
-      llmExplain.cancelInflight();
-      return;
-    }
-    closeFormulaExplain();
-    const shouldRequest =
-      !llmExplain.isPending && (llmExplain.assistantText === null || llmExplain.errorMessage !== null);
-    if (shouldRequest) {
-      llmExplain.requestExplain();
-    }
-  };
-
-  /** Non-modal nested `Dialog`/`Sheet`: outside dismiss is explicit so closing stays reliable when stacked on the study panel. */
-  const dismissExplainInference = () => {
-    handleExplainOpenChange(false);
-  };
-  const dismissFormulaInference = () => {
-    handleFormulaOpenChange(false);
-  };
+  const {
+    explainOpen,
+    mermaidOpen,
+    formulaOpen,
+    activeFormulaLatex,
+    openFormulaExplain,
+    handleExplainOpenChange,
+    handleMermaidOpenChange,
+    handleFormulaOpenChange,
+    dismissExplainInference,
+    dismissFormulaInference,
+    dismissMermaidInference,
+  } = useStudyPanelLlmSurfaces({ llmExplain, llmFormulaExplain, llmMermaidDiagram });
 
   const formatTestId = isFlashcard
     ? 'study-card-format-flashcard'
@@ -342,6 +280,18 @@ export function StudyPanelStudyView({
             >
               <Sparkles className="h-3.5 w-3.5" aria-hidden />
               <span className="sr-only">Explain question with AI</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-xs"
+              aria-label="Draw diagram with AI"
+              title="Draw diagram with AI"
+              data-testid="study-card-llm-mermaid-trigger"
+              onClick={() => handleMermaidOpenChange(true)}
+            >
+              <Network className="h-3.5 w-3.5" aria-hidden />
+              <span className="sr-only">Draw diagram with AI</span>
             </Button>
             <Button
               onClick={onUndo}
@@ -478,123 +428,48 @@ export function StudyPanelStudyView({
         </div>
       </div>
 
-      {/* Inference surfaces stack above study `Dialog`. `modal={false}` avoids nested Radix
-          aria-hidden / focus conflicts; mobile uses bottom `Sheet` (radix-ui Dialog primitive). */}
-      {isDesktop ? (
-        <Dialog
-          open={explainOpen}
-          onOpenChange={handleExplainOpenChange}
-          modal={false}
-        >
-          <DialogContent
-            className={`${inferenceSurfaceZ} sm:max-w-md`}
-            onPointerDownOutside={dismissExplainInference}
-            onInteractOutside={dismissExplainInference}
-          >
-            <DialogHeader>
-              <DialogTitle>Explain question</DialogTitle>
-              <DialogDescription className="sr-only">
-                {QUESTION_EXPLAIN_DESCRIPTION}
-              </DialogDescription>
-            </DialogHeader>
-            {questionExplainBody}
-          </DialogContent>
-        </Dialog>
-      ) : (
-        <Sheet
-          open={explainOpen}
-          onOpenChange={handleExplainOpenChange}
-          modal={false}
-        >
-          <SheetContent
-            side="bottom"
-            className={cn(
-              inferenceSurfaceZ,
-              'gap-0 p-0 data-[side=bottom]:max-h-[70vh]',
-            )}
-            onPointerDownOutside={dismissExplainInference}
-            onInteractOutside={dismissExplainInference}
-          >
-            <SheetHeader className="text-left">
-              <SheetTitle>Explain question</SheetTitle>
-              <SheetDescription className="sr-only">
-                {QUESTION_EXPLAIN_DESCRIPTION}
-              </SheetDescription>
-            </SheetHeader>
-            <div className="no-scrollbar max-h-[min(40vh,32rem)] overflow-y-auto px-4">
-              {questionExplainBody}
-            </div>
-            <SheetFooter className="border-t bg-background pt-2">
-              <SheetClose asChild>
-                <Button type="button" variant="outline">
-                  Close
-                </Button>
-              </SheetClose>
-            </SheetFooter>
-          </SheetContent>
-        </Sheet>
-      )}
+      {/* Inference surfaces: see ResponsiveLlmInferenceSurface (non-modal nested Radix). */}
+      <ResponsiveLlmInferenceSurface
+        open={explainOpen}
+        onOpenChange={handleExplainOpenChange}
+        isDesktop={isDesktop}
+        title="Explain question"
+        description={{ kind: 'srOnly', text: QUESTION_EXPLAIN_DESCRIPTION }}
+        onDismissOutside={dismissExplainInference}
+        desktopContentClassName="sm:max-w-md"
+        sheetMaxHeightClassName="data-[side=bottom]:max-h-[70vh]"
+        sheetBodyScrollClassName="max-h-[min(40vh,32rem)]"
+      >
+        {questionExplainBody}
+      </ResponsiveLlmInferenceSurface>
 
-      {isDesktop ? (
-        <Dialog
-          open={formulaOpen}
-          onOpenChange={handleFormulaOpenChange}
-          modal={false}
-        >
-          <DialogContent
-            className={`${inferenceSurfaceZ} sm:max-w-md`}
-            onPointerDownOutside={dismissFormulaInference}
-            onInteractOutside={dismissFormulaInference}
-          >
-            <DialogHeader>
-              <DialogTitle>Formula explanation</DialogTitle>
-              <DialogDescription asChild>
-                <MathMarkdownRenderer
-                  source={formulaDescSource}
-                  className="text-lg text-muted-foreground markdown-body markdown-body--inline break-all"
-                />
-              </DialogDescription>
-            </DialogHeader>
-            {formulaExplainBody}
-          </DialogContent>
-        </Dialog>
-      ) : (
-        <Sheet
-          open={formulaOpen}
-          onOpenChange={handleFormulaOpenChange}
-          modal={false}
-        >
-          <SheetContent
-            side="bottom"
-            className={cn(
-              inferenceSurfaceZ,
-              'gap-0 p-0 data-[side=bottom]:max-h-[70vh]',
-            )}
-            onPointerDownOutside={dismissFormulaInference}
-            onInteractOutside={dismissFormulaInference}
-          >
-            <SheetHeader className="text-left">
-              <SheetTitle>Formula explanation</SheetTitle>
-              <SheetDescription asChild>
-                <MathMarkdownRenderer
-                  source={formulaDescSource}
-                  className="text-lg text-muted-foreground markdown-body markdown-body--inline break-all"
-                />
-              </SheetDescription>
-            </SheetHeader>
-            <div className="no-scrollbar max-h-[min(40vh,32rem)] overflow-y-auto px-4">
-              {formulaExplainBody}
-            </div>
-            <SheetFooter className="border-t bg-background pt-2">
-              <SheetClose asChild>
-                <Button type="button" variant="outline">
-                  Close
-                </Button>
-              </SheetClose>
-            </SheetFooter>
-          </SheetContent>
-        </Sheet>
-      )}
+      <ResponsiveLlmInferenceSurface
+        open={mermaidOpen}
+        onOpenChange={handleMermaidOpenChange}
+        isDesktop={isDesktop}
+        title="Question diagram"
+        description={{ kind: 'srOnly', text: QUESTION_MERMAID_DESCRIPTION }}
+        onDismissOutside={dismissMermaidInference}
+        desktopContentClassName="sm:max-w-xl"
+        sheetMaxHeightClassName="data-[side=bottom]:max-h-[80vh]"
+        sheetBodyScrollClassName="max-h-[min(55vh,36rem)]"
+      >
+        <StudyQuestionMermaidLlmBody {...llmMermaidDiagram} />
+      </ResponsiveLlmInferenceSurface>
+
+      <ResponsiveLlmInferenceSurface
+        open={formulaOpen}
+        onOpenChange={handleFormulaOpenChange}
+        isDesktop={isDesktop}
+        title="Formula explanation"
+        description={{ kind: 'markdown', source: formulaDescSource }}
+        onDismissOutside={dismissFormulaInference}
+        desktopContentClassName="sm:max-w-md"
+        sheetMaxHeightClassName="data-[side=bottom]:max-h-[70vh]"
+        sheetBodyScrollClassName="max-h-[min(40vh,32rem)]"
+      >
+        {formulaExplainBody}
+      </ResponsiveLlmInferenceSurface>
 
       {/* Actions */}
       <div className="mt-4 text-center sticky bottom-0 z-10 bg-card pt-3">

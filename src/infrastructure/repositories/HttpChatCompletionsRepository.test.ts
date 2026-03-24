@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { ChatMessage } from '../../types/llm';
 import { HttpChatCompletionsRepository } from './HttpChatCompletionsRepository';
 
 const originalFetch = globalThis.fetch;
@@ -90,6 +91,39 @@ describe('HttpChatCompletionsRepository', () => {
     await expect(
       repo.completeChat({ model: 'm', messages: [{ role: 'user', content: 'a' }] }),
     ).rejects.toThrow(/missing assistant message content/);
+  });
+
+  it('serializes multimodal user content in stream request body', async () => {
+    const multimodalMessage: ChatMessage = {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'What is in this image?' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+      ],
+    };
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"choices":[{"delta":{"content":"ok"}}]}\n' + 'data: [DONE]\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    const parts: string[] = [];
+    for await (const p of repo.streamChat({ model: 'm', messages: [multimodalMessage] })) {
+      parts.push(p);
+    }
+    expect(parts.join('')).toBe('ok');
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
+    expect(body.messages[0].content).toEqual(multimodalMessage.content);
+    expect(body.stream).toBe(true);
   });
 
   it('yields streamed delta content (OpenAI-style SSE)', async () => {

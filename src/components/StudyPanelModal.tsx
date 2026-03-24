@@ -14,6 +14,7 @@ import { StudyPanelStudyView } from './studyPanel/StudyPanelStudyView';
 import { useStudyPanelModel } from '../hooks/useStudyPanelModel';
 import { useStudyKeyboardShortcuts } from '../hooks/useStudyKeyboardShortcuts';
 import { useStudyFormulaLlmExplain } from '../hooks/useStudyFormulaLlmExplain';
+import { useStudyQuestionMermaidDiagram } from '../hooks/useStudyQuestionMermaidDiagram';
 import { useStudyQuestionLlmExplain } from '../hooks/useStudyQuestionLlmExplain';
 import { StudyPanelTab } from './studyPanel/types';
 
@@ -62,11 +63,17 @@ export function StudyPanelModal({
     cardQuestionText: model.currentQuestion,
     cardId: model.activeCard?.id ?? null,
   });
+  const llmMermaidDiagram = useStudyQuestionMermaidDiagram({
+    topicLabel: model.resolvedTopic,
+    questionText: model.currentQuestion,
+    cardId: model.activeCard?.id ?? null,
+  });
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'study' || !model.renderedCard) {
       llmExplain.cancelInflight();
       llmFormulaExplain.cancelInflight();
+      llmMermaidDiagram.cancelInflight();
     }
   }, [
     isOpen,
@@ -74,6 +81,7 @@ export function StudyPanelModal({
     model.renderedCard,
     llmExplain.cancelInflight,
     llmFormulaExplain.cancelInflight,
+    llmMermaidDiagram.cancelInflight,
   ]);
 
   useStudyKeyboardShortcuts(onUndo, onRedo, model.canUndo, model.canRedo);
@@ -266,6 +274,7 @@ export function StudyPanelModal({
               redoCount={model.redoCount}
               llmExplain={llmExplain}
               llmFormulaExplain={llmFormulaExplain}
+              llmMermaidDiagram={llmMermaidDiagram}
             />
           )}
       </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { History, Landmark, Minus, Sparkles, Zap } from 'lucide-react';
+import { Camera, History, Landmark, Minus, Sparkles, Zap } from 'lucide-react';
 
 import {
   Command,
@@ -23,13 +23,20 @@ export interface AbyssCommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   isDebugMode: boolean;
+  /** When set, shows “Summarize screen” which runs screen capture then vision LLM. */
+  onSummarizeScreen?: () => void;
 }
 
 function matchesDevXpBuff(b: { buffId: string; source?: string }) {
   return b.buffId === DEV_XP_BUFF_ID && (b.source ?? 'legacy') === DEV_BUFF_SOURCE;
 }
 
-export function AbyssCommandPalette({ open, onOpenChange, isDebugMode }: AbyssCommandPaletteProps) {
+export function AbyssCommandPalette({
+  open,
+  onOpenChange,
+  isDebugMode,
+  onSummarizeScreen,
+}: AbyssCommandPaletteProps) {
   const selectedTopicId = uiStore((s) => s.selectedTopicId);
   const devXpBuffActive = useProgressionStore((s) => s.activeBuffs.some(matchesDevXpBuff));
 
@@ -143,6 +150,20 @@ export function AbyssCommandPalette({ open, onOpenChange, isDebugMode }: AbyssCo
               <span>Open Wisdom Altar (Discovery)</span>
             </CommandItem>
           </CommandGroup>
+          {onSummarizeScreen ? (
+            <CommandGroup heading="Assistant">
+              <CommandItem
+                value="screen capture summarize screenshot assistant vision"
+                onSelect={() => {
+                  onSummarizeScreen();
+                  onOpenChange(false);
+                }}
+              >
+                <Camera className="size-4" />
+                <span>Summarize screen with assistant</span>
+              </CommandItem>
+            </CommandGroup>
+          ) : null}
           {isDebugMode ? (
             <CommandGroup heading="Dev">
               <CommandItem

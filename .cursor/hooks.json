@@ -1,11 +1,6 @@
 {
   "version": 1,
   "hooks": {
-    "sessionStart": [
-      {
-        "command": ".cursor/hooks/session-start.sh"
-      }
-    ],
     "afterFileEdit": [
       {
         "command": ".cursor/hooks/track-edits.sh"

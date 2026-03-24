@@ -24,8 +24,11 @@ import DiscoveryModal from '@/components/DiscoveryModal';
 import StudyPanelModal from '@/components/StudyPanelModal';
 import StudyTimelineModal from '@/components/StudyTimelineModal';
 import { AbyssCommandPalette } from '@/components/AbyssCommandPalette';
+import { ScreenCaptureLlmSummarySurface } from '@/components/ScreenCaptureLlmSummarySurface';
 import SubjectNavigation from '@/components/SubjectNavigation';
 import PomodoroTimerOverlay from '@/components/PomodoroTimer3D';
+import { useMediaQuery } from '@/hooks/use-media-query';
+import { useScreenCaptureLlmSummary } from '@/hooks/useScreenCaptureLlmSummary';
 
 // Dynamic import for Scene to avoid SSR issues with Three.js
 const Scene = dynamic(() => import('@/components/Scene'), {
@@ -48,6 +51,8 @@ const HomeContent: React.FC = () => {
   const [showStats, setShowStats] = useState(true);
   const [isCameraAngleUnlocked, setIsCameraAngleUnlocked] = useState(isDebugMode);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const screenCaptureLlm = useScreenCaptureLlmSummary();
 
   // Track initialization to prevent infinite loops
   const initializedRef = useRef(false);
@@ -296,6 +301,17 @@ const HomeContent: React.FC = () => {
         open={isCommandPaletteOpen}
         onOpenChange={setIsCommandPaletteOpen}
         isDebugMode={isDebugMode}
+        onSummarizeScreen={screenCaptureLlm.startSummarize}
+      />
+
+      <ScreenCaptureLlmSummarySurface
+        isDesktop={isDesktop}
+        surfaceOpen={screenCaptureLlm.surfaceOpen}
+        onSurfaceOpenChange={screenCaptureLlm.handleSurfaceOpenChange}
+        onDismissOutside={screenCaptureLlm.dismissSurface}
+        isPending={screenCaptureLlm.isPending}
+        assistantText={screenCaptureLlm.assistantText}
+        errorMessage={screenCaptureLlm.errorMessage}
       />
 
       <AttunementRitualModal
