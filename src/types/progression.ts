@@ -142,6 +142,7 @@ export interface ProgressionActions {
     canUnlock: boolean;
     hasPrerequisites: boolean;
     hasEnoughPoints: boolean;
+    unlockPoints: number;
     missingPrerequisites: {
       topicId: string;
       topicName: string;

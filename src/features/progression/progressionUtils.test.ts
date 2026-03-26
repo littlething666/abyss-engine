@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { ActiveCrystal } from '../../types';
+import { ActiveCrystal, SubjectGraph } from '../../types';
 import { BuffEngine } from './buffs/buffEngine';
 import {
   captureUndoSnapshot,
   getCrystalLevelProgressToNext,
+  getTopicUnlockStatus,
   restoreUndoSnapshot,
   trimUndoSnapshotStack,
 } from './progressionUtils';
@@ -132,6 +133,43 @@ describe('progressionUtils', () => {
         isMax,
         totalXp,
       });
+    });
+  });
+
+  describe('getTopicUnlockStatus', () => {
+    const graphWithPrereq: SubjectGraph[] = [
+      {
+        subjectId: 's1',
+        title: 'S1',
+        themeId: 't1',
+        maxTier: 2,
+        nodes: [
+          { topicId: 'a', title: 'A', tier: 1, learningObjective: '', prerequisites: [] },
+          { topicId: 'b', title: 'B', tier: 2, learningObjective: '', prerequisites: ['a'] },
+        ],
+      },
+    ];
+
+    it('returns unlockPoints on the status object', () => {
+      const status = getTopicUnlockStatus('missing', [], 2, [], []);
+      expect(status.unlockPoints).toBe(2);
+    });
+
+    it('topic prereqs met but no points: canUnlock false, hasPrerequisites true, hasEnoughPoints false', () => {
+      const crystals = [createActiveCrystal('a', 100)];
+      const status = getTopicUnlockStatus('b', crystals, 0, graphWithPrereq, []);
+      expect(status.hasPrerequisites).toBe(true);
+      expect(status.hasEnoughPoints).toBe(false);
+      expect(status.canUnlock).toBe(false);
+      expect(status.unlockPoints).toBe(0);
+    });
+
+    it('topic prereqs met and has points: canUnlock true', () => {
+      const crystals = [createActiveCrystal('a', 100)];
+      const status = getTopicUnlockStatus('b', crystals, 1, graphWithPrereq, []);
+      expect(status.hasPrerequisites).toBe(true);
+      expect(status.hasEnoughPoints).toBe(true);
+      expect(status.canUnlock).toBe(true);
     });
   });
 });

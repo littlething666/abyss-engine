@@ -16,8 +16,11 @@ type RestorableProgressionState = Omit<ProgressionState, 'currentSession'> & {
  */
 export interface TopicUnlockStatus {
   canUnlock: boolean;
+  /** Topic graph prerequisites (crystal levels) satisfied; excludes unlock points. */
   hasPrerequisites: boolean;
   hasEnoughPoints: boolean;
+  /** Current unlock-point balance (for UI copy). */
+  unlockPoints: number;
   missingPrerequisites: {
     topicId: string;
     topicName: string;
@@ -254,6 +257,7 @@ export function getTopicUnlockStatus(
       canUnlock: false,
       hasPrerequisites: false,
       hasEnoughPoints: false,
+      unlockPoints,
       missingPrerequisites: [],
     };
   }
@@ -266,6 +270,7 @@ export function getTopicUnlockStatus(
       canUnlock: hasEnoughPoints,
       hasPrerequisites: true,
       hasEnoughPoints,
+      unlockPoints,
       missingPrerequisites: [],
     };
   }
@@ -292,6 +297,7 @@ export function getTopicUnlockStatus(
     canUnlock: allPrereqsMet && hasEnoughPoints,
     hasPrerequisites: allPrereqsMet,
     hasEnoughPoints,
+    unlockPoints,
     missingPrerequisites: missingPrereqs,
   };
 }

@@ -14,6 +14,7 @@ const progressionState = {
     canUnlock: false,
     hasPrerequisites: false,
     hasEnoughPoints: false,
+    unlockPoints: 0,
     missingPrerequisites: [],
   }),
 };

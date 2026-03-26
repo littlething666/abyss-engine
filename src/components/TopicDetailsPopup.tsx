@@ -65,14 +65,14 @@ export function TopicDetailsPopup({
 
           {topic.isLocked && (
             <div className="mb-4 space-y-2">
-              {unlockStatus.hasPrerequisites ? (
+              {unlockStatus.hasPrerequisites && unlockStatus.hasEnoughPoints ? (
                 <div className="bg-accent/10 border-accent rounded-lg border p-3">
                   <Badge variant="secondary" className="mb-2">
                     ✅ Prerequisites Met
                   </Badge>
                   <div className="text-muted-foreground text-sm">Cost: 1 Unlock Point</div>
                 </div>
-              ) : (
+              ) : !unlockStatus.hasPrerequisites ? (
                 <div className="bg-destructive/10 border-destructive rounded-lg border p-3">
                   <Badge variant="destructive" className="mb-2">
                     🔒 Requires Prerequisites
@@ -83,6 +83,16 @@ export function TopicDetailsPopup({
                       {prereq.currentLevel})
                     </div>
                   ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border bg-muted/40 p-3">
+                  <Badge variant="secondary" className="mb-2">
+                    ⭐ Unlock point required
+                  </Badge>
+                  <div className="text-muted-foreground text-sm">
+                    Topic prerequisites are met. You have {unlockStatus.unlockPoints} unlock point
+                    {unlockStatus.unlockPoints === 1 ? '' : 's'}; unlocking costs 1.
+                  </div>
                 </div>
               )}
             </div>
