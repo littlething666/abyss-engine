@@ -1,4 +1,4 @@
-# AGENTS.md
+# CLAUDE.md
 
 ## Scope
 Authoritative reference for repository architecture and agent workflows. Codebase contradictions to this document must be resolved in favor of this document.
@@ -75,6 +75,6 @@ Every agent response proposing code modifications must preface the technical imp
 2. **Structural Integration Strategy**: Specification of the architectural patterns and boundary enforcement mechanisms utilized to ensure seamless integration with the existing codebase.
 
 This file is authoritative.
-If something in the codebase contradicts AGENTS.md, the codebase is wrong.
+If something in the codebase contradicts CLAUDE.md, the codebase is wrong.
 Welcome, agent.
 Let’s build the most beautiful learning garden in existence. 🌌

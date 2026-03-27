@@ -11,7 +11,7 @@ A framework for building ui, components and design systems. Components are added
 
 ## Abyss Engine (this repository)
 
-**AGENTS.md** is authoritative. For 2D UI here: compose only from existing `src/components/ui/*` primitives. **Do not** run `shadcn add` (or otherwise add or edit files under `src/components/ui`) unless the user explicitly names the file to add or change. Use this skill for patterns, docs, and composition that respect installed primitives.
+**CLAUDE.md** is authoritative. For 2D UI here: compose only from existing `src/components/ui/*` primitives. **Do not** run `shadcn add` (or otherwise add or edit files under `src/components/ui`) unless the user explicitly names the file to add or change. Use this skill for patterns, docs, and composition that respect installed primitives.
 
 > **IMPORTANT:** Run all CLI commands using the project's package runner: `npx shadcn@latest`, `pnpm dlx shadcn@latest`, or `bunx --bun shadcn@latest` — based on the project's `packageManager`. Examples below use `npx shadcn@latest` but substitute the correct runner for the project.
 

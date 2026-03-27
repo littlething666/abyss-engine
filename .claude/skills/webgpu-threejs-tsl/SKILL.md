@@ -9,13 +9,13 @@ TSL (Three.js Shading Language) is a node-based shader abstraction that lets you
 
 ## Abyss Engine (this repository)
 
-Repository root **AGENTS.md** is authoritative (feature/layer boundaries, repositories, buff pattern, UI rules, and **§5 WebGPU & Mobile-First Graphics Engine**). Follow it when integrating this skill into the React app:
+Repository root **CLAUDE.md** is authoritative (feature/layer boundaries, repositories, buff pattern, UI rules, and **§5 WebGPU & Mobile-First Graphics Engine**). Follow it when integrating this skill into the React app:
 
 - **R3F v10**: `<Canvas>` from `@react-three/fiber/webgpu`, `state.renderer` (not `state.gl`), Drei from `@react-three/drei/webgpu` only.
 - **Materials**: node materials + TSL; no legacy `MeshStandardMaterial` / `ShaderMaterial` / raw GLSL strings for new work.
-- **Post-processing**: no `@react-three/postprocessing` / `EffectComposer`—use WebGPU-native pipelines described in AGENTS.md.
+- **Post-processing**: no `@react-three/postprocessing` / `EffectComposer`—use WebGPU-native pipelines described in CLAUDE.md.
 
-Use this skill’s **raw `WebGPURenderer` + TSL** guidance for `src/graphics` and direct Three.js code; apply AGENTS.md when wiring into React.
+Use this skill’s **raw `WebGPURenderer` + TSL** guidance for `src/graphics` and direct Three.js code; apply CLAUDE.md when wiring into React.
 
 ## Quick Start
 
