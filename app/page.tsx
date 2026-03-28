@@ -16,6 +16,7 @@ import { useTopicMetadata } from '@/features/content';
 import { deckRepository } from '@/infrastructure/di';
 import { syncDeckIndexedDbDebugFromApp } from '@/infrastructure/deckDb/deckDbDebugLog';
 import { Button } from '@/components/ui/button';
+import { CloudLoadingScreen } from '@/components/ui/CloudLoadingScreen';
 import { Search } from 'lucide-react';
 
 // Components
@@ -33,14 +34,11 @@ import { useMediaQuery } from '@/hooks/use-media-query';
 import { useScreenCaptureLlmSummary } from '@/hooks/useScreenCaptureLlmSummary';
 import { topicCardsQueryKey } from '@/hooks/useDeckData';
 
-// Dynamic import for Scene to avoid SSR issues with Three.js
+// Dynamic import for Scene to avoid SSR issues with Three.js.
+// Loading UI is a single parent overlay until Canvas reports ready (avoids loader ↔ scene swap blink).
 const Scene = dynamic(() => import('@/components/Scene'), {
   ssr: false,
-  loading: () => (
-    <div className="w-screen h-screen flex items-center justify-center bg-background text-foreground text-2xl">
-      Loading 3D Scene...
-    </div>
-  ),
+  loading: () => null,
 });
 
 /**
@@ -61,8 +59,21 @@ const HomeContent: React.FC = () => {
   // Track initialization to prevent infinite loops
   const initializedRef = useRef(false);
 
-  // Initialize client-side flag
-  const [isClient, setIsClient] = useState(false);
+  const [sceneOverlayMounted, setSceneOverlayMounted] = useState(true);
+  const [sceneOverlayVisible, setSceneOverlayVisible] = useState(true);
+
+  const handleSceneCanvasReady = useCallback(() => {
+    setSceneOverlayVisible(false);
+  }, []);
+
+  const handleSceneCanvasReleased = useCallback(() => {
+    setSceneOverlayMounted(true);
+    setSceneOverlayVisible(true);
+  }, []);
+
+  const handleSceneOverlayExitComplete = useCallback(() => {
+    setSceneOverlayMounted(false);
+  }, []);
 
   // Deck counts for Discovery modal and study panel
   const currentSession = useStudyStore((state) => state.currentSession);
@@ -157,8 +168,6 @@ const HomeContent: React.FC = () => {
 
   // Initialize on mount - only once
   useEffect(() => {
-    setIsClient(true);
-
     // Initialize abyssDev for console access
     initAbyssDev();
 
@@ -232,22 +241,25 @@ const HomeContent: React.FC = () => {
     [topicCardsById, focusStudyCard, selectTopic, closeStudyTimeline, openStudyPanel],
   );
 
-  if (!isClient) {
-    return (
-      <div className="w-screen h-screen flex items-center justify-center bg-background text-foreground text-2xl">
-        Loading...
-      </div>
-    );
-  }
-
   return (
     <div className="w-screen h-screen relative overflow-hidden">
+      {sceneOverlayMounted && (
+        <div className="fixed inset-0 z-40">
+          <CloudLoadingScreen
+            visible={sceneOverlayVisible}
+            onExitComplete={handleSceneOverlayExitComplete}
+          />
+        </div>
+      )}
+
       <SubjectNavigation />
 
       <div className="absolute inset-0">
         <Scene
           showStats={isDebugMode && showStats}
           isCameraAngleUnlocked={isCameraAngleUnlocked}
+          onCanvasReady={handleSceneCanvasReady}
+          onCanvasReleased={handleSceneCanvasReleased}
         />
       </div>
 
@@ -376,13 +388,7 @@ const HomeContent: React.FC = () => {
 
 export default function Home() {
   return (
-    <Suspense
-      fallback={
-        <div className="w-screen h-screen flex items-center justify-center bg-background text-foreground text-2xl">
-          Loading deck data...
-        </div>
-      }
-    >
+    <Suspense fallback={<CloudLoadingScreen />}>
       <HomeContent />
     </Suspense>
   );

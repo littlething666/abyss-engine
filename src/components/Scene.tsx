@@ -33,6 +33,10 @@ interface SceneProps {
   showStats?: boolean
   isCameraAngleUnlocked?: boolean
   dynamicReflections?: boolean
+  /** Fires once the WebGPU renderer is initialized (R3F `onCreated`). */
+  onCanvasReady?: () => void
+  /** Fires when the scene unmounts (e.g. Strict Mode remount); clear any “ready” UI state. */
+  onCanvasReleased?: () => void
 }
 
 interface SceneRenderInvalidatorProps {
@@ -184,6 +188,8 @@ export const Scene: React.FC<SceneProps> = ({
   showStats = false,
   isCameraAngleUnlocked = false,
   dynamicReflections = false,
+  onCanvasReady,
+  onCanvasReleased,
 }) => {
   const cameraRef = useRef<THREE.PerspectiveCamera>(null)
   const sunDirectionRef = useRef(new THREE.Vector3(0, 1, 0))
@@ -280,6 +286,12 @@ export const Scene: React.FC<SceneProps> = ({
   const renderQuality = useMemo(() => getRenderQuality(), [])
   const [statsText, setStatsText] = useState(showStats ? 'Initializing...' : '')
 
+  useEffect(() => {
+    return () => {
+      onCanvasReleased?.()
+    }
+  }, [onCanvasReleased])
+
   return (
     <div style={{ width: '100%', height: '100%', backgroundColor: CANVAS_BACKDROP }}>
       <Canvas
@@ -289,6 +301,7 @@ export const Scene: React.FC<SceneProps> = ({
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping
           gl.toneMappingExposure = 0.5
+          onCanvasReady?.()
         }}
       >
         {showStats && <SceneDebugStats onReport={setStatsText} />}
