@@ -19,6 +19,10 @@ import { useProgressionStore } from '@/features/progression';
 import { getTopicUnlockStatus } from '@/features/progression/progressionUtils';
 import type { SubjectGraphsForceGraphData, SubjectGraphForceNode } from '@/lib/subjectGraphsForceGraphData';
 import {
+  DEFAULT_CLUSTER_TERRITORY_PAD_PX,
+  computeClusterTerritoryCircles,
+} from '@/lib/studyForceGraphClusterTerritories';
+import {
   buildSubjectGraphsForceGraphData,
   clusterCentersOnCircle,
   computeTopicGraphBfsDistances,
@@ -285,6 +289,13 @@ function forceVerticalSpreadWhenXNear(
 /** Horizontal proximity (px): centers within this band compete for vertical separation. */
 const X_NEIGHBOR_SPREAD_BAND_PX = 250;
 
+/** Floor for focal-circle inset so tiny viewports stay valid. */
+const MIN_FOCAL_CIRCLE_INSET_PX = 28;
+/** Reduces padding passed to `clusterCentersOnCircle` so focal points sit on a wider circle (more cluster separation). */
+const CLUSTER_FOCAL_SPREAD_PX = 40;
+
+type ClusterTerritoryDatum = { subjectId: string; clusterIndex: number };
+
 export function StudyForceGraph({
   allGraphs,
   unlockedTopicIds,
@@ -408,7 +419,16 @@ export function StudyForceGraph({
     const { w, h } = size;
     const vp = nodeCenterViewportBounds(w, h);
     const clusterPadding = Math.max(56, vp.minX, vp.minY, h - vp.maxY);
-    const centers = clusterCentersOnCircle(displayData.subjectIdsOrdered.length, w, h, clusterPadding);
+    const focalCirclePadding = Math.max(
+      MIN_FOCAL_CIRCLE_INSET_PX,
+      clusterPadding - CLUSTER_FOCAL_SPREAD_PX,
+    );
+    const centers = clusterCentersOnCircle(
+      displayData.subjectIdsOrdered.length,
+      w,
+      h,
+      focalCirclePadding,
+    );
     const cx = w / 2;
     const cy = h / 2;
     const snap = layoutSnapshotRef.current;
@@ -471,12 +491,59 @@ export function StudyForceGraph({
           event.stopPropagation();
           onClearSelectionRef.current?.();
         });
+      viewG.append('g').attr('class', 'cluster-territories');
       viewG.append('g').attr('class', 'links');
       viewG.append('g').attr('class', 'nodes');
       viewG.append('g').attr('class', 'labels');
     } else {
       viewG.select('rect.hit-surface').attr('width', w).attr('height', h);
+      if (viewG.select('g.cluster-territories').empty()) {
+        viewG.insert('g', 'g.links').attr('class', 'cluster-territories');
+      }
     }
+
+    const territoryG = viewG.select<SVGGElement>('g.cluster-territories');
+    const territoryData: ClusterTerritoryDatum[] = displayData.subjectIdsOrdered.map((subjectId, clusterIndex) => ({
+      subjectId,
+      clusterIndex,
+    }));
+
+    const territorySel = territoryG
+      .selectAll<SVGCircleElement, ClusterTerritoryDatum>('circle')
+      .data(territoryData, (d) => d.subjectId);
+
+    territorySel.exit().remove();
+
+    const territoryEnter = territorySel
+      .enter()
+      .append('circle')
+      .attr('fill', 'var(--muted)')
+      .attr('fill-opacity', 0.14)
+      .attr('stroke', 'var(--border)')
+      .attr('stroke-opacity', 0.42)
+      .attr('stroke-width', 1)
+      .style('pointer-events', 'none');
+
+    const territoryMerge = territoryEnter.merge(territorySel);
+
+    const initialTerritoryGeoms = computeClusterTerritoryCircles(
+      displayData.subjectIdsOrdered,
+      simNodes.map((d) => ({
+        clusterIndex: d.clusterIndex,
+        x: d.x ?? 0,
+        y: d.y ?? 0,
+      })),
+      NODE_RADIUS,
+      DEFAULT_CLUSTER_TERRITORY_PAD_PX,
+    );
+    const initialTerritoryBySubject = new Map(initialTerritoryGeoms.map((g) => [g.subjectId, g]));
+    territoryMerge.each(function seedTerritory(d) {
+      const geo = initialTerritoryBySubject.get(d.subjectId);
+      if (!geo) {
+        return;
+      }
+      select(this).attr('cx', geo.cx).attr('cy', geo.cy).attr('r', geo.r);
+    });
 
     const linkG = viewG.select<SVGGElement>('g.links');
     const nodeG = viewG.select<SVGGElement>('g.nodes');
@@ -677,6 +744,26 @@ export function StudyForceGraph({
           fy: d.fy,
         });
       }
+
+      const territoryGeoms = computeClusterTerritoryCircles(
+        displayData.subjectIdsOrdered,
+        simNodes.map((d) => ({
+          clusterIndex: d.clusterIndex,
+          x: d.x ?? 0,
+          y: d.y ?? 0,
+        })),
+        NODE_RADIUS,
+        DEFAULT_CLUSTER_TERRITORY_PAD_PX,
+      );
+      const territoryBySubject = new Map(territoryGeoms.map((g) => [g.subjectId, g]));
+
+      territoryMerge.each(function updateTerritory(d) {
+        const geo = territoryBySubject.get(d.subjectId);
+        if (!geo) {
+          return;
+        }
+        select(this).attr('cx', geo.cx).attr('cy', geo.cy).attr('r', geo.r);
+      });
 
       lineMerge
         .attr('x1', (d) => linkNodeX(d.source))
