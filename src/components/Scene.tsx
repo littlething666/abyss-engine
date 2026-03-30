@@ -371,9 +371,9 @@ export const Scene: React.FC<SceneProps> = ({
         <WisdomAltar />
 
         {/* Recursive mesh box-tree near grid edge */}
-        <MeshTree
+        {/* <MeshTree
           position={[3.75, 0, 0]}
-        />
+        /> */}
 
         {/* Crystals from props (data from parent/store) */}
         <Suspense fallback={null}>

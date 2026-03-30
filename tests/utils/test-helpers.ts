@@ -13,12 +13,12 @@ export async function waitForPageHydrated(page: Page): Promise<void> {
   });
 
   await page
-    .waitForSelector('[class*="text-2xl"]:has-text("Loading"), [class*="Loading"]', {
-      state: 'hidden',
-      timeout: 10000,
-    })
+    .waitForFunction(
+      () => !document.querySelector('[data-testid="cloud-loading-screen"]'),
+      { timeout: 10000 },
+    )
     .catch(() => {
-      // Ignore if loading element doesn't exist.
+      // Ignore if loading overlay was never present or already gone.
     });
 }
 

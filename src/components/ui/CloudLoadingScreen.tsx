@@ -1,7 +1,12 @@
 'use client';
 
-import { useEffect, useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 
+import {
+  LOADING_QUOTES,
+  LOADING_STATUS_PHRASES,
+  pickSeededIndex,
+} from '@/lib/loadingScreenCopy';
 import { cn } from '@/lib/utils';
 
 const CLOUD_DRIFT_DURATION_S = 28;
@@ -67,8 +72,26 @@ const CLOUD_STYLE = `
 
 const CLOUD_COUNT = 100;
 
-/** Fixed seed so SSR + client first paint match (hydration-safe “random” layout). */
-const CLOUD_LAYOUT_SEED = 0x0ab551d;
+/** Fallback when `NEXT_PUBLIC_ABYSS_LOADING_SEED` is missing (e.g. tests). */
+const DEFAULT_ABYSS_LOADING_SEED = 0x0ab551d;
+
+function parseAbyssLoadingSeedFromEnv(): number {
+  const raw = process.env.NEXT_PUBLIC_ABYSS_LOADING_SEED;
+  if (raw === undefined || raw === '') {
+    return DEFAULT_ABYSS_LOADING_SEED;
+  }
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) {
+    return DEFAULT_ABYSS_LOADING_SEED;
+  }
+  return n >>> 0;
+}
+
+/** Set at compile time via `next.config.mjs` (`Date.now()` when config loads). */
+const CLOUD_LAYOUT_SEED = parseAbyssLoadingSeedFromEnv();
+
+/** Separate stream for quote index so status + quote are not always aligned. */
+const LOADING_QUOTE_SEED = CLOUD_LAYOUT_SEED ^ 0x9e3779b9;
 
 /** Theme-adjacent cloud tints (OKLCH vars track light/dark). */
 const CLOUD_PALETTE = [
@@ -125,6 +148,41 @@ export function CloudLoadingScreen({
     [],
   );
 
+  const [statusPhrase, setStatusPhrase] = useState(
+    () =>
+      LOADING_STATUS_PHRASES[
+        pickSeededIndex(LOADING_STATUS_PHRASES.length, CLOUD_LAYOUT_SEED)
+      ]!,
+  );
+  const [quote] = useState(
+    () =>
+      LOADING_QUOTES[
+        pickSeededIndex(LOADING_QUOTES.length, LOADING_QUOTE_SEED)
+      ]!,
+  );
+
+  useEffect(() => {
+    if (!visible) {
+      return undefined;
+    }
+    const id = window.setInterval(() => {
+      setStatusPhrase((prev) => {
+        const list = LOADING_STATUS_PHRASES;
+        if (list.length <= 1) {
+          return list[0]!;
+        }
+        let candidate = list[Math.floor(Math.random() * list.length)]!;
+        let guard = 0;
+        while (candidate === prev && guard < 12) {
+          candidate = list[Math.floor(Math.random() * list.length)]!;
+          guard += 1;
+        }
+        return candidate;
+      });
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [visible]);
+
   useEffect(() => {
     if (visible) {
       return;
@@ -141,15 +199,16 @@ export function CloudLoadingScreen({
 
   return (
     <div
-      role="status"
-      aria-busy={visible}
-      aria-live="polite"
+      data-testid="cloud-loading-screen"
       className={cn(
         'relative flex h-dvh w-screen items-center justify-center overflow-hidden bg-background text-foreground',
         !visible && 'abyss-cloud-root-exit',
         className,
       )}
     >
+      <span className="sr-only" role="status" aria-busy={visible}>
+        Loading
+      </span>
       <style>{CLOUD_STYLE}</style>
 
       <svg
@@ -182,7 +241,13 @@ export function CloudLoadingScreen({
         />
       </div>
 
-      <span className="relative z-10 text-2xl font-medium text-foreground">Loading...</span>
+      <div
+        className="relative z-10 flex max-w-[min(100%,24rem)] flex-col items-center gap-3 px-6 text-center"
+        aria-hidden
+      >
+        <span className="text-2xl font-medium text-foreground">{statusPhrase}</span>
+        <p className="text-sm leading-relaxed text-muted-foreground">{quote}</p>
+      </div>
     </div>
   );
 }
