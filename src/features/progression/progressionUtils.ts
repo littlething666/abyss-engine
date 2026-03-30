@@ -130,6 +130,48 @@ export function calculateLevelFromXP(xp: number): number {
   );
 }
 
+/** Result of applying an XP delta to one topic's crystal (used by study + addXP for consistent unlock rewards). */
+export interface CrystalXpDeltaResult {
+  nextXp: number;
+  previousLevel: number;
+  nextLevel: number;
+  /** `nextLevel - previousLevel`; positive when unlock points should be granted (mirrors study behavior). */
+  levelsGained: number;
+  nextActiveCrystals: ActiveCrystal[];
+}
+
+/**
+ * Applies `xpDelta` to the crystal for `topicId` in `activeCrystals` (total XP clamped at 0).
+ * Returns null if no matching crystal exists.
+ */
+export function applyCrystalXpDelta(
+  activeCrystals: ActiveCrystal[],
+  topicId: string,
+  xpDelta: number,
+): CrystalXpDeltaResult | null {
+  const crystal = activeCrystals.find((item) => item.topicId === topicId);
+  if (!crystal) {
+    return null;
+  }
+
+  const previousXp = crystal.xp;
+  const nextXp = Math.max(0, previousXp + xpDelta);
+  const previousLevel = calculateLevelFromXP(previousXp);
+  const nextLevel = calculateLevelFromXP(nextXp);
+  const levelsGained = nextLevel - previousLevel;
+  const nextActiveCrystals = activeCrystals.map((item) =>
+    item.topicId === topicId ? { ...item, xp: nextXp } : item,
+  );
+
+  return {
+    nextXp,
+    previousLevel,
+    nextLevel,
+    levelsGained,
+    nextActiveCrystals,
+  };
+}
+
 export interface CrystalLevelProgressToNext {
   level: number;
   /** 0–100 for `Progress` UI; 100 when `isMax`. */

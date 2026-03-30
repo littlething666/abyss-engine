@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 
 import {
   MAX_UNDO_DEPTH,
+  applyCrystalXpDelta,
   calculateLevelFromXP,
   calculateXPReward,
   calculateTopicTier,
@@ -296,22 +297,23 @@ export const useProgressionStore = create<ProgressionStore>()(
         const now = Date.now();
         const timeTakenMs = Math.max(0, now - (session.lastCardStart ?? now));
 
-        const undoSnapshot = captureUndoSnapshot(state);
-        const nextUndoStack = trimUndoSnapshotStack([
-          ...(session.undoStack || []),
-          undoSnapshot,
-        ]);
-
         const previousSM2 = state.sm2Data[cardId] || defaultSM2;
         const updatedSM2 = sm2.calculateNextReview(previousSM2, rating);
         const reward = calculateXPReward(undefined, rating);
         const activeBuffs = state.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
         const buffMultiplier = BuffEngine.get().getModifierTotal('xp_multiplier', activeBuffs);
         const buffedReward = Math.max(0, Math.round(reward * buffMultiplier));
-        const xp = crystal.xp + buffedReward;
-        const previousLevel = calculateLevelFromXP(crystal.xp);
-        const nextLevel = calculateLevelFromXP(xp);
-        const unlockedLevels = nextLevel - previousLevel;
+        const xpForEvents = applyCrystalXpDelta(state.activeCrystals, session.topicId, buffedReward);
+        if (!xpForEvents) {
+          return;
+        }
+
+        const undoSnapshot = captureUndoSnapshot(state);
+        const nextUndoStack = trimUndoSnapshotStack([
+          ...(session.undoStack || []),
+          undoSnapshot,
+        ]);
+
         const difficulty = session.cardDifficultyById?.[cardId] ?? 1;
         const isCorrect = rating >= 3;
         const sessionId = session.sessionId ?? makeStudySessionId(session.topicId);
@@ -334,40 +336,40 @@ export const useProgressionStore = create<ProgressionStore>()(
           ? buildStudySessionMetrics(sessionId, session.topicId, nextAttempts, session.startedAt ?? Date.now())
           : null;
 
-        set((current) => ({
-          unlockPoints: unlockedLevels > 0 ? current.unlockPoints + unlockedLevels : current.unlockPoints,
-          sm2Data: {
-            ...current.sm2Data,
-            [cardId]: updatedSM2,
-          },
-          activeCrystals: current.activeCrystals.map((item) =>
-            item.topicId === session.topicId
-              ? {
-                  ...item,
-                  xp: xp,
-                }
-              : item,
-          ),
-          currentSession: {
-            ...session,
-            attempts: nextAttempts,
-            queueCardIds: nextQueue,
-            currentCardId: nextCard,
-            totalCards: Math.max(session.totalCards - 1, 0),
-            undoStack: nextUndoStack,
-            redoStack: [],
-            ...(isSessionComplete
-              ? {
-                startedAt: session.startedAt ?? Date.now(),
-                lastCardStart: now,
-              }
-              : {
-                lastCardStart: now,
-              }),
-          },
-          activeBuffs: nextBuffs,
-          isCurrentCardFlipped: false,
-        }));
+        set((current) => {
+          const applied = applyCrystalXpDelta(current.activeCrystals, session.topicId, buffedReward);
+          if (!applied) {
+            return {};
+          }
+          const unlockedLevels = applied.levelsGained;
+          return {
+            unlockPoints: unlockedLevels > 0 ? current.unlockPoints + unlockedLevels : current.unlockPoints,
+            sm2Data: {
+              ...current.sm2Data,
+              [cardId]: updatedSM2,
+            },
+            activeCrystals: applied.nextActiveCrystals,
+            currentSession: {
+              ...session,
+              attempts: nextAttempts,
+              queueCardIds: nextQueue,
+              currentCardId: nextCard,
+              totalCards: Math.max(session.totalCards - 1, 0),
+              undoStack: nextUndoStack,
+              redoStack: [],
+              ...(isSessionComplete
+                ? {
+                    startedAt: session.startedAt ?? Date.now(),
+                    lastCardStart: now,
+                  }
+                : {
+                    lastCardStart: now,
+                  }),
+            },
+            activeBuffs: nextBuffs,
+            isCurrentCardFlipped: false,
+          };
+        });
         get().emitEvent('xp-gained', {
           amount: buffedReward,
           rating,
@@ -380,13 +382,13 @@ export const useProgressionStore = create<ProgressionStore>()(
           buffMultiplier,
           reward,
         });
-        if (unlockedLevels > 0) {
+        if (xpForEvents.levelsGained > 0) {
           get().emitEvent('crystal-level-up', {
             topicId: session.topicId,
             sessionId,
-            previousLevel,
-            nextLevel,
-            levelsGained: unlockedLevels,
+            previousLevel: xpForEvents.previousLevel,
+            nextLevel: xpForEvents.nextLevel,
+            levelsGained: xpForEvents.levelsGained,
           });
         }
         if (isSessionComplete && sessionMetrics) {
@@ -525,24 +527,35 @@ export const useProgressionStore = create<ProgressionStore>()(
         return cards.length;
       },
 
-      addXP: (topicId, xpAmount) => {
-        const crystal = get().activeCrystals.find((item) => item.topicId === topicId);
-        if (!crystal) {
+      addXP: (topicId, xpAmount, options) => {
+        const snapshotCrystals = get().activeCrystals;
+        const xpForEvents = applyCrystalXpDelta(snapshotCrystals, topicId, xpAmount);
+        if (!xpForEvents) {
           return 0;
         }
 
-        const nextXp = Math.max(0, crystal.xp + xpAmount);
-        set((state) => ({
-          activeCrystals: state.activeCrystals.map((item) =>
-            item.topicId === topicId
-              ? {
-                  ...item,
-                  xp: nextXp,
-                }
-              : item,
-          ),
-        }));
-        return nextXp;
+        set((current) => {
+          const applied = applyCrystalXpDelta(current.activeCrystals, topicId, xpAmount);
+          if (!applied) {
+            return {};
+          }
+          return {
+            activeCrystals: applied.nextActiveCrystals,
+            unlockPoints:
+              applied.levelsGained > 0 ? current.unlockPoints + applied.levelsGained : current.unlockPoints,
+          };
+        });
+
+        if (xpForEvents.levelsGained > 0) {
+          get().emitEvent('crystal-level-up', {
+            topicId,
+            sessionId: options?.sessionId ?? 'xp-adjustment',
+            previousLevel: xpForEvents.previousLevel,
+            nextLevel: xpForEvents.nextLevel,
+            levelsGained: xpForEvents.levelsGained,
+          });
+        }
+        return xpForEvents.nextXp;
       },
 
       updateSM2: (cardId, sm2State) => {

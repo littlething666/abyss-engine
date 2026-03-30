@@ -238,6 +238,20 @@ describe('progressionStore card-only canonical API', () => {
     expect(useProgressionStore.getState().activeCrystals[0]?.xp).toBe(0);
   });
 
+  it('addXP grants unlock points when crossing a level boundary', () => {
+    useProgressionStore.setState({
+      unlockedTopicIds: ['topic-a'],
+      activeCrystals: [crystal('topic-a', 95)],
+      unlockPoints: 0,
+    });
+
+    useProgressionStore.getState().addXP('topic-a', 15);
+
+    const updated = useProgressionStore.getState();
+    expect(updated.activeCrystals[0]).toMatchObject({ xp: 110 });
+    expect(updated.unlockPoints).toBe(1);
+  });
+
   it('stores attunement submission and starts session with derived buffs', () => {
     const cards = [createCard('a-1'), createCard('a-2')];
     useProgressionStore.setState({

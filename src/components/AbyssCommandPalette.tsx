@@ -12,7 +12,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { calculateLevelFromXP, useProgressionStore } from '@/features/progression';
+import { useProgressionStore } from '@/features/progression';
 import { uiStore } from '@/store/uiStore';
 
 const DEV_XP_BUFF_ID = 'dev_xp_multiplier_5x' as const;
@@ -81,32 +81,16 @@ export function AbyssCommandPalette({
       return;
     }
     const progression = useProgressionStore.getState();
-    const crystal = progression.activeCrystals.find((c) => c.topicId === topicId);
-    if (!crystal) {
-      return;
-    }
-    const previousLevel = calculateLevelFromXP(crystal.xp);
-    const nextXp = progression.addXP(topicId, DEV_XP_AMOUNT);
+    const nextXp = progression.addXP(topicId, DEV_XP_AMOUNT, { sessionId: 'dev-command-palette' });
     if (nextXp <= 0) {
       return;
     }
-    const nextLevel = calculateLevelFromXP(nextXp);
     progression.emitEvent('xp-gained', {
       amount: DEV_XP_AMOUNT,
       rating: 3,
       sessionId: 'dev-command-palette',
       topicId,
     });
-    const levelsGained = nextLevel - previousLevel;
-    if (levelsGained > 0) {
-      progression.emitEvent('crystal-level-up', {
-        topicId,
-        sessionId: 'dev-command-palette',
-        previousLevel,
-        nextLevel,
-        levelsGained,
-      });
-    }
     onOpenChange(false);
   };
 

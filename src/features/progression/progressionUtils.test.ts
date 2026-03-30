@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ActiveCrystal, SubjectGraph } from '../../types';
 import { BuffEngine } from './buffs/buffEngine';
 import {
+  applyCrystalXpDelta,
   captureUndoSnapshot,
   getCrystalLevelProgressToNext,
   getTopicUnlockStatus,
@@ -170,6 +171,24 @@ describe('progressionUtils', () => {
       expect(status.hasPrerequisites).toBe(true);
       expect(status.hasEnoughPoints).toBe(true);
       expect(status.canUnlock).toBe(true);
+    });
+  });
+
+  describe('applyCrystalXpDelta', () => {
+    it('returns null when topic is missing', () => {
+      expect(applyCrystalXpDelta([createActiveCrystal('a', 0)], 'missing', 50)).toBeNull();
+    });
+
+    it('applies delta, clamps at zero, and reports level gains', () => {
+      const crystals = [createActiveCrystal('topic-a', 95)];
+      const result = applyCrystalXpDelta(crystals, 'topic-a', 15);
+      expect(result).not.toBeNull();
+      expect(result!.nextXp).toBe(110);
+      expect(result!.previousLevel).toBe(0);
+      expect(result!.nextLevel).toBe(1);
+      expect(result!.levelsGained).toBe(1);
+      expect(result!.nextActiveCrystals[0]?.xp).toBe(110);
+      expect(crystals[0]?.xp).toBe(95);
     });
   });
 });

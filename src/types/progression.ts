@@ -174,7 +174,7 @@ export interface ProgressionActions {
   grantBuffFromCatalog: (defId: string, source: string, magnitudeOverride?: number) => void;
   /** If a buff with this defId and source exists, removes it; otherwise grants it from the catalog. */
   toggleBuffFromCatalog: (defId: string, source: string, magnitudeOverride?: number) => void;
-  addXP: (topicId: string, xp: number) => number;
+  addXP: (topicId: string, xp: number, options?: { sessionId?: string }) => number;
   updateSM2: (cardId: string, sm2State: {
     interval: number;
     easeFactor: number;
