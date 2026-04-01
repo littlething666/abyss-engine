@@ -13,7 +13,10 @@ import { useComposedRefs } from '@radix-ui/react-compose-refs';
 import { animate, useMotionValue } from 'motion/react';
 
 import { cn } from '@/lib/utils';
-import { shouldDismissSheetDrag } from '@/lib/sheetHeaderDragDismiss';
+import {
+  isSheetHeaderDragPassthroughTarget,
+  shouldDismissSheetDrag,
+} from '@/lib/sheetHeaderDragDismiss';
 import { Button } from '@/components/ui/button';
 import { GripHorizontal, XIcon } from 'lucide-react';
 import {
@@ -223,6 +226,7 @@ export const AbyssSheetContent = React.forwardRef<HTMLDivElement, AbyssSheetCont
         if (!headerDragActive) return;
         if (dragDismissExitRef.current) return;
         if (e.button !== 0) return;
+        if (isSheetHeaderDragPassthroughTarget(e.target)) return;
         draggingRef.current = true;
         setSheetDragSuppressTransition(true);
         startYRef.current = e.clientY;
@@ -407,18 +411,21 @@ export function AbyssSheetHeader({
   return (
     <div
       data-slot="sheet-header"
-      className={cn('flex flex-col gap-0.5 p-4', className)}
+      className={cn(
+        'flex flex-col gap-0.5 p-4',
+        gripHandlers && 'touch-none select-none',
+        gripLocked && 'pointer-events-none',
+        className,
+      )}
+      aria-label={gripHandlers ? 'Drag down to close' : undefined}
       {...props}
+      {...(gripHandlers ?? {})}
     >
       {gripHandlers ? (
         <div
           data-slot="sheet-drag-grip"
-          className={cn(
-            '-mt-1 mb-0 flex h-3 w-full shrink-0 touch-none select-none items-center justify-center',
-            gripLocked && 'pointer-events-none',
-          )}
-          aria-label="Drag down to close"
-          {...gripHandlers}
+          className="-mt-1 mb-0 flex h-3 w-full shrink-0 items-center justify-center pointer-events-none"
+          aria-hidden
         >
           <GripHorizontal
             className="pointer-events-none size-3.5 text-muted-foreground/75"
