@@ -13,8 +13,6 @@ export const DEFAULT_CRYSTAL_BASE_SHAPE: CrystalBaseShape = 'icosahedron';
 
 export interface SubjectGeometry {
   gridTile: GeometryType;
-  crystal: GeometryType;
-  altar: GeometryType;
 }
 
 export interface Subject {

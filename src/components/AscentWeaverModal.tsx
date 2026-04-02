@@ -65,8 +65,6 @@ export function AscentWeaverModal({ isOpen, onClose, onSuccess }: AscentWeaverMo
   const [description, setDescription] = useState('');
   const [color, setColor] = useState('#777AAA');
   const [gridTile, setGridTile] = useState<GeometryType>('box');
-  const [crystal, setCrystal] = useState<GeometryType>('sphere');
-  const [altar, setAltar] = useState<GeometryType>('box');
   const [audience, setAudience] = useState('University students and industry professionals');
   const [domainDescription, setDomainDescription] = useState('');
   const [topicCount, setTopicCount] = useState(15);
@@ -118,7 +116,7 @@ export function AscentWeaverModal({ isOpen, onClose, onSuccess }: AscentWeaverMo
       name: name.trim(),
       description: description.trim(),
       color: color.trim() || '#777AAA',
-      geometry: { gridTile, crystal, altar },
+      geometry: { gridTile },
     };
 
     setInferenceSurfaceOpen(true);
@@ -260,42 +258,15 @@ export function AscentWeaverModal({ isOpen, onClose, onSuccess }: AscentWeaverMo
 
           <FieldSet>
             <FieldLabel>Geometry</FieldLabel>
-            <FieldDescription className="mb-2">Crystal garden shapes for this subject.</FieldDescription>
+            <FieldDescription className="mb-2">
+              Grid tile shape for this subject&apos;s floor. Topic crystals use{' '}
+              <code className="text-xs">crystalBaseShape</code> in curriculum data.
+            </FieldDescription>
             <FieldGroup className="gap-3">
               <Field orientation="horizontal">
                 <FieldLabel htmlFor="ascent-grid">Grid tile</FieldLabel>
                 <Select value={gridTile} onValueChange={(v) => setGridTile(v as GeometryType)}>
                   <SelectTrigger id="ascent-grid" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GEOMETRY_TYPES.map((g) => (
-                      <SelectItem key={g} value={g}>
-                        {g}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field orientation="horizontal">
-                <FieldLabel htmlFor="ascent-crystal">Crystal</FieldLabel>
-                <Select value={crystal} onValueChange={(v) => setCrystal(v as GeometryType)}>
-                  <SelectTrigger id="ascent-crystal" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GEOMETRY_TYPES.map((g) => (
-                      <SelectItem key={g} value={g}>
-                        {g}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field orientation="horizontal">
-                <FieldLabel htmlFor="ascent-altar">Altar</FieldLabel>
-                <Select value={altar} onValueChange={(v) => setAltar(v as GeometryType)}>
-                  <SelectTrigger id="ascent-altar" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

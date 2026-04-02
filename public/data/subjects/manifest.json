@@ -8,9 +8,7 @@
       "color": "#0B6623",
       "crystalBaseShape": "dodecahedron",
       "geometry": {
-        "gridTile": "box",
-        "crystal": "cylinder",
-        "altar": "cylinder"
+        "gridTile": "box"
       }
     },
     {
@@ -21,9 +19,7 @@
       "color": "#777AAA",
       "crystalBaseShape": "octahedron",
       "geometry": {
-        "gridTile": "cylinder",
-        "crystal": "sphere",
-        "altar": "box"
+        "gridTile": "cylinder"
       }
     },
     {
@@ -34,9 +30,7 @@
       "color": "#7C3AED",
       "crystalBaseShape": "tetrahedron",
       "geometry": {
-        "gridTile": "sphere",
-        "crystal": "octahedron",
-        "altar": "sphere"
+        "gridTile": "sphere"
       }
     }
   ]

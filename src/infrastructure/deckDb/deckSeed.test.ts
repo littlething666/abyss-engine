@@ -23,7 +23,7 @@ describe('ensureDeckSeeded', () => {
           name: 'X',
           description: '',
           color: '#fff',
-          geometry: { gridTile: 'box', crystal: 'sphere', altar: 'box' },
+          geometry: { gridTile: 'box' },
         },
       ],
     };

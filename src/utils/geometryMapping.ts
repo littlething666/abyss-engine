@@ -14,23 +14,6 @@ function createPlaneGeometry(): THREE.PlaneGeometry {
   return new THREE.PlaneGeometry(0.9, 0.9);
 }
 
-/** Altar / decorative subject meshes (legacy shared shape keys with manifest `altar`). */
-function createAltarBoxGeometry(): THREE.BoxGeometry {
-  return new THREE.BoxGeometry(0.4, 0.6, 0.4);
-}
-
-function createAltarCylinderGeometry(): THREE.CylinderGeometry {
-  return new THREE.CylinderGeometry(0.2, 0.2, 0.6, 8);
-}
-
-function createAltarSphereGeometry(): THREE.SphereGeometry {
-  return new THREE.SphereGeometry(0.25, 16, 12);
-}
-
-function createAltarOctahedronGeometry(): THREE.OctahedronGeometry {
-  return new THREE.OctahedronGeometry(0.25, 0);
-}
-
 function createGridBoxGeometry(): THREE.BoxGeometry {
   return new THREE.BoxGeometry(0.9, 0.05, 0.9);
 }
@@ -42,14 +25,6 @@ function createGridCylinderGeometry(): THREE.CylinderGeometry {
 function createGridSphereGeometry(): THREE.SphereGeometry {
   return new THREE.SphereGeometry(0.4, 16, 8);
 }
-
-const altarGeometryFactories: Record<GeometryType, () => THREE.BufferGeometry> = {
-  box: createAltarBoxGeometry,
-  cylinder: createAltarCylinderGeometry,
-  sphere: createAltarSphereGeometry,
-  octahedron: createAltarOctahedronGeometry,
-  plane: createPlaneGeometry,
-};
 
 const gridGeometryFactories: Record<CoreSubjectGeometry['gridTile'], () => THREE.BufferGeometry> = {
   box: createGridBoxGeometry,
@@ -66,8 +41,6 @@ const geometryCache = new Map<string, THREE.BufferGeometry>();
 function defaultSubjectGeometry(): CoreSubjectGeometry {
   return {
     gridTile: 'box',
-    crystal: 'box',
-    altar: 'cylinder',
   };
 }
 
@@ -141,41 +114,35 @@ export function getSubjectColorByMap(
   return colorMap[subjectId] || DEFAULT_SUBJECT_COLOR;
 }
 
+/** Grid tile mesh for the current subject (Wisdom Altar geometry is fixed in `src/graphics/altar`). */
 export function getGeometryForSubject(
   subjectId: string | null,
-  elementType: 'altar' | 'gridTile',
   subjectsMap: SubjectGeometryMap = {},
 ): THREE.BufferGeometry {
-  const cacheKey = `${subjectId || 'default'}-${elementType}-${Object.keys(subjectsMap).length}`;
+  const cacheKey = `${subjectId || 'default'}-gridTile-${Object.keys(subjectsMap).length}`;
   const cached = geometryCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
   const defaults = defaultSubjectGeometry();
-  const factories =
-    elementType === 'gridTile' ? gridGeometryFactories : altarGeometryFactories;
-  let geometryType: GeometryType =
-    elementType === 'gridTile' ? defaults.gridTile : defaults.altar;
+  let geometryType: GeometryType = defaults.gridTile;
   if (subjectId) {
     const subjectGeometry = subjectsMap[subjectId];
-    geometryType =
-      (elementType === 'gridTile' ? subjectGeometry?.gridTile : subjectGeometry?.altar) ?? geometryType;
+    geometryType = subjectGeometry?.gridTile ?? geometryType;
   }
 
-  const geometry =
-    factories[geometryType]?.() ?? (elementType === 'gridTile' ? createGridBoxGeometry() : createAltarBoxGeometry());
+  const geometry = gridGeometryFactories[geometryType as CoreSubjectGeometry['gridTile']]() ?? createGridBoxGeometry();
   geometryCache.set(cacheKey, geometry);
   return geometry;
 }
 
 export function getGeometryForSubjectBySubjects(
   subjectId: string | null,
-  elementType: 'altar' | 'gridTile',
   subjects: Subject[] = [],
 ): THREE.BufferGeometry {
   const subjectsMap = toSubjectGeometryMap(subjects);
-  return getGeometryForSubject(subjectId, elementType, subjectsMap);
+  return getGeometryForSubject(subjectId, subjectsMap);
 }
 
 export function getCrystalColors(subjectId: string | null, subjects: Subject[] = []): CrystalColors {
@@ -222,7 +189,6 @@ export function clearGeometryCache(): void {
 
 export function useSubjectGeometry(
   subjectId: string | null,
-  elementType: 'altar' | 'gridTile',
 ): THREE.BufferGeometry {
   const manifestQuery = useManifest();
   const subjects = manifestQuery.data?.subjects ?? [];
@@ -245,7 +211,7 @@ export function useSubjectGeometry(
     return result;
   }, [map]);
 
-  return getGeometryForSubject(subjectId, elementType, subjectMap);
+  return getGeometryForSubject(subjectId, subjectMap);
 }
 
 export function useSubjectColor(subjectId: string | null): string {

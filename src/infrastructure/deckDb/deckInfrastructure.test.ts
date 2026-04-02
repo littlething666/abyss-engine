@@ -14,7 +14,7 @@ const subjectRow = {
   name: 'Subject A',
   description: 'd',
   color: '#000',
-  geometry: { gridTile: 'box' as const, crystal: 'sphere' as const, altar: 'box' as const },
+  geometry: { gridTile: 'box' as const },
 };
 
 const graph = {

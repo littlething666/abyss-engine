@@ -28,7 +28,7 @@ describe('applyCurriculumGraphToIndexedDb', () => {
       name: 'S',
       description: 'D',
       color: '#000',
-      geometry: { gridTile: 'box', crystal: 'sphere', altar: 'box' },
+      geometry: { gridTile: 'box' },
     };
 
     const graph: SubjectGraph = {
@@ -73,7 +73,7 @@ describe('applyCurriculumGraphToIndexedDb', () => {
       name: 'S',
       description: 'D',
       color: '#000',
-      geometry: { gridTile: 'box', crystal: 'sphere', altar: 'box' },
+      geometry: { gridTile: 'box' },
     };
     const graph: SubjectGraph = {
       subjectId: 'b',

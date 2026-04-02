@@ -3,6 +3,7 @@
 import React from 'react';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useSubjects } from '../features/content';
+import { DEFAULT_CRYSTAL_BASE_SHAPE } from '../types/core';
 import {
   Select,
   SelectContent,
@@ -58,9 +59,9 @@ export const SubjectNavigation: React.FC = () => {
                   aria-hidden
                 />
                 <span className="min-w-0 flex-1 truncate">{subject.name}</span>
-                {/* <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
-                  {subject.geometry.gridTile}/{subject.geometry.crystal}
-                </span> */}
+                <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                  {subject.geometry.gridTile}/{subject.crystalBaseShape ?? DEFAULT_CRYSTAL_BASE_SHAPE}
+                </span>
               </span>
             </SelectItem>
           ))}

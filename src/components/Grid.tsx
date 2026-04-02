@@ -37,7 +37,7 @@ interface TilePosition {
 export const Grid: React.FC = () => {
   // Get current subject ID from store
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
-  const tileGeometry = useSubjectGeometry(currentSubjectId, 'gridTile');
+  const tileGeometry = useSubjectGeometry(currentSubjectId);
   const subjectColor = useSubjectColor(currentSubjectId);
 
   // Memoize tile positions - recalculates only if grid size changes
