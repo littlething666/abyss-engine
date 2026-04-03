@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../../types/llm';
 import {
   buildGeminiGenerateBodyFromChatMessages,
+  extractChunksFromGeminiResponsePayload,
   extractTextFromGeminiResponsePayload,
   GeminiGenerativeLanguageRepository,
   parseDataUrlToInlineImage,
@@ -73,10 +74,51 @@ describe('buildGeminiGenerateBodyFromChatMessages', () => {
   });
 });
 
-describe('extractTextFromGeminiResponsePayload', () => {
-  it('concatenates text parts from first candidate', () => {
-    const text = extractTextFromGeminiResponsePayload({
+describe('extractChunksFromGeminiResponsePayload', () => {
+  it('returns content chunks from non-thought parts', () => {
+    const chunks = extractChunksFromGeminiResponsePayload({
       candidates: [{ content: { parts: [{ text: 'a' }, { text: 'b' }] } }],
+    });
+    expect(chunks).toEqual([
+      { type: 'content', text: 'a' },
+      { type: 'content', text: 'b' },
+    ]);
+  });
+
+  it('returns reasoning chunks from thought parts', () => {
+    const chunks = extractChunksFromGeminiResponsePayload({
+      candidates: [{
+        content: {
+          parts: [
+            { text: 'thinking...', thought: true },
+            { text: 'answer' },
+          ],
+        },
+      }],
+    });
+    expect(chunks).toEqual([
+      { type: 'reasoning', text: 'thinking...' },
+      { type: 'content', text: 'answer' },
+    ]);
+  });
+
+  it('returns empty array when no candidates', () => {
+    expect(extractChunksFromGeminiResponsePayload({ candidates: [] })).toEqual([]);
+  });
+});
+
+describe('extractTextFromGeminiResponsePayload (backward-compat)', () => {
+  it('concatenates content text parts only', () => {
+    const text = extractTextFromGeminiResponsePayload({
+      candidates: [{
+        content: {
+          parts: [
+            { text: 'thought', thought: true },
+            { text: 'a' },
+            { text: 'b' },
+          ],
+        },
+      }],
     });
     expect(text).toBe('ab');
   });
@@ -87,20 +129,26 @@ describe('extractTextFromGeminiResponsePayload', () => {
 });
 
 describe('parseGeminiSseDataLine', () => {
-  it('extracts text from data JSON line', () => {
+  it('extracts content chunks from data JSON line', () => {
     const line =
       'data: {"candidates":[{"content":{"parts":[{"text":"Hi"}],"role":"model"}}]}';
-    expect(parseGeminiSseDataLine(line)).toBe('Hi');
+    expect(parseGeminiSseDataLine(line)).toEqual([{ type: 'content', text: 'Hi' }]);
   });
 
-  it('returns null for done and non-data lines', () => {
-    expect(parseGeminiSseDataLine('data: [DONE]')).toBeNull();
-    expect(parseGeminiSseDataLine('')).toBeNull();
-    expect(parseGeminiSseDataLine('event: ping')).toBeNull();
+  it('extracts reasoning chunks from thought parts', () => {
+    const line =
+      'data: {"candidates":[{"content":{"parts":[{"text":"hmm","thought":true}],"role":"model"}}]}';
+    expect(parseGeminiSseDataLine(line)).toEqual([{ type: 'reasoning', text: 'hmm' }]);
   });
 
-  it('returns null when JSON has no text deltas', () => {
-    expect(parseGeminiSseDataLine('data: {"candidates":[{}]}')).toBeNull();
+  it('returns empty array for done and non-data lines', () => {
+    expect(parseGeminiSseDataLine('data: [DONE]')).toEqual([]);
+    expect(parseGeminiSseDataLine('')).toEqual([]);
+    expect(parseGeminiSseDataLine('event: ping')).toEqual([]);
+  });
+
+  it('returns empty array when JSON has no text deltas', () => {
+    expect(parseGeminiSseDataLine('data: {"candidates":[{}]}')).toEqual([]);
   });
 });
 
@@ -124,7 +172,8 @@ describe('GeminiGenerativeLanguageRepository.completeChat', () => {
       messages: [{ role: 'user', content: 'x' }],
     });
 
-    expect(out).toBe('  ok  ');
+    expect(out.content).toBe('  ok  ');
+    expect(out.reasoningContent).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
       'https://example.com/v1beta/models/default-model:generateContent?key=k',
       expect.objectContaining({
@@ -135,5 +184,53 @@ describe('GeminiGenerativeLanguageRepository.completeChat', () => {
         }),
       }),
     );
+  });
+
+  it('returns reasoning_content from thought parts', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        candidates: [{
+          content: {
+            parts: [
+              { text: 'Let me think...', thought: true },
+              { text: 'The answer is yes.' },
+            ],
+          },
+        }],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const repo = new GeminiGenerativeLanguageRepository('https://example.com', 'k', 'model');
+    const out = await repo.completeChat({
+      model: 'model',
+      messages: [{ role: 'user', content: 'x' }],
+    });
+
+    expect(out.content).toBe('The answer is yes.');
+    expect(out.reasoningContent).toBe('Let me think...');
+  });
+
+  it('sends thinkingConfig when enableThinking is true', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const repo = new GeminiGenerativeLanguageRepository('https://example.com', 'k', 'model');
+    await repo.completeChat({
+      model: 'model',
+      messages: [{ role: 'user', content: 'x' }],
+      enableThinking: true,
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(body.generationConfig).toEqual({
+      thinkingConfig: { thinkingBudget: 8192 },
+    });
   });
 });

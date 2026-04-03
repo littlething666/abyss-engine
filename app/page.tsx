@@ -32,6 +32,8 @@ import SubjectNavigation from '@/components/SubjectNavigation';
 import PomodoroTimerOverlay from '@/components/PomodoroTimer3D';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useScreenCaptureLlmSummary } from '@/hooks/useScreenCaptureLlmSummary';
+import { useThinkingToggle } from '@/hooks/useThinkingToggle';
+import { LlmThinkingToggle } from '@/components/LlmThinkingToggle';
 import { topicCardsQueryKey } from '@/hooks/useDeckData';
 
 // Dynamic import for Scene to avoid SSR issues with Three.js.
@@ -54,7 +56,10 @@ const HomeContent: React.FC = () => {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isAscentWeaverOpen, setIsAscentWeaverOpen] = useState(false);
   const isDesktop = useMediaQuery('(min-width: 768px)');
-  const screenCaptureLlm = useScreenCaptureLlmSummary();
+  const screenCaptureThinking = useThinkingToggle('screenCaptureSummary');
+  const screenCaptureLlm = useScreenCaptureLlmSummary({
+    enableThinking: screenCaptureThinking.enableThinking,
+  });
 
   // Track initialization to prevent infinite loops
   const initializedRef = useRef(false);
@@ -335,7 +340,14 @@ const HomeContent: React.FC = () => {
         onDismissOutside={screenCaptureLlm.dismissSurface}
         isPending={screenCaptureLlm.isPending}
         assistantText={screenCaptureLlm.assistantText}
+        reasoningText={screenCaptureLlm.reasoningText}
         errorMessage={screenCaptureLlm.errorMessage}
+        headerAction={
+          <LlmThinkingToggle
+            enabled={screenCaptureThinking.enableThinking}
+            onToggle={screenCaptureThinking.toggleThinking}
+          />
+        }
       />
 
       <AttunementRitualModal

@@ -14,6 +14,8 @@ import { SM2Data } from '../../features/progression/sm2';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ResponsiveLlmInferenceSurface } from '../ResponsiveLlmInferenceSurface';
+import { LlmThinkingBlock } from '../LlmThinkingBlock';
+import { LlmThinkingToggle } from '../LlmThinkingToggle';
 import { Network, Redo2, Sparkles, Undo2 } from 'lucide-react';
 import { StudyKatexInteractive } from './StudyKatexInteractive';
 import { StudyQuestionMermaidLlmBody } from './StudyQuestionMermaidLlmBody';
@@ -26,6 +28,7 @@ type LlmStreamBlockProps = {
   isPending: boolean;
   errorMessage: string | null;
   assistantText: string | null;
+  reasoningText: string | null;
   contentTestId: string;
   errorTestId: string;
   loadingTestId: string;
@@ -35,6 +38,7 @@ function LlmStreamBlock({
   isPending,
   errorMessage,
   assistantText,
+  reasoningText,
   contentTestId,
   errorTestId,
   loadingTestId,
@@ -44,12 +48,13 @@ function LlmStreamBlock({
       className="max-h-80 overflow-y-auto text-sm"
       data-testid={contentTestId}
     >
+      <LlmThinkingBlock reasoningText={reasoningText} isPending={isPending} />
       {errorMessage && !isPending && (
         <p className="text-destructive" data-testid={errorTestId}>
           {errorMessage}
         </p>
       )}
-      {isPending && !(assistantText && assistantText.length > 0) && (
+      {isPending && !(assistantText && assistantText.length > 0) && !reasoningText && (
         <p className="text-muted-foreground" data-testid={loadingTestId}>
           Warming up…
         </p>
@@ -159,6 +164,12 @@ interface StudyPanelStudyViewProps {
   llmExplain: StudyPanelLlmExplainProps;
   llmFormulaExplain: StudyPanelFormulaExplainProps;
   llmMermaidDiagram: StudyPanelMermaidDiagramProps;
+  explainThinkingEnabled: boolean;
+  formulaThinkingEnabled: boolean;
+  mermaidThinkingEnabled: boolean;
+  onToggleExplainThinking: () => void;
+  onToggleFormulaThinking: () => void;
+  onToggleMermaidThinking: () => void;
 }
 
 const QUESTION_EXPLAIN_DESCRIPTION = 'AI explanation for the current card question.';
@@ -203,6 +214,12 @@ export function StudyPanelStudyView({
   llmExplain,
   llmFormulaExplain,
   llmMermaidDiagram,
+  explainThinkingEnabled,
+  formulaThinkingEnabled,
+  mermaidThinkingEnabled,
+  onToggleExplainThinking,
+  onToggleFormulaThinking,
+  onToggleMermaidThinking,
 }: StudyPanelStudyViewProps) {
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const {
@@ -238,6 +255,7 @@ export function StudyPanelStudyView({
       isPending={llmExplain.isPending}
       errorMessage={llmExplain.errorMessage}
       assistantText={llmExplain.assistantText}
+      reasoningText={llmExplain.reasoningText}
       contentTestId="study-card-llm-explain-content"
       errorTestId="study-card-llm-explain-error"
       loadingTestId="study-card-llm-explain-loading"
@@ -249,6 +267,7 @@ export function StudyPanelStudyView({
       isPending={llmFormulaExplain.isPending}
       errorMessage={llmFormulaExplain.errorMessage}
       assistantText={llmFormulaExplain.assistantText}
+      reasoningText={llmFormulaExplain.reasoningText}
       contentTestId="study-card-formula-llm-content"
       errorTestId="study-card-formula-llm-error"
       loadingTestId="study-card-formula-llm-loading"
@@ -439,6 +458,12 @@ export function StudyPanelStudyView({
         desktopContentClassName="sm:max-w-md"
         sheetMaxHeightClassName="data-[side=bottom]:max-h-[70vh]"
         sheetBodyScrollClassName="max-h-[min(40vh,32rem)]"
+        headerAction={
+          <LlmThinkingToggle
+            enabled={explainThinkingEnabled}
+            onToggle={onToggleExplainThinking}
+          />
+        }
       >
         {questionExplainBody}
       </ResponsiveLlmInferenceSurface>
@@ -453,6 +478,12 @@ export function StudyPanelStudyView({
         desktopContentClassName="sm:max-w-xl"
         sheetMaxHeightClassName="data-[side=bottom]:max-h-[80vh]"
         sheetBodyScrollClassName="max-h-[min(55vh,36rem)]"
+        headerAction={
+          <LlmThinkingToggle
+            enabled={mermaidThinkingEnabled}
+            onToggle={onToggleMermaidThinking}
+          />
+        }
       >
         <StudyQuestionMermaidLlmBody {...llmMermaidDiagram} />
       </ResponsiveLlmInferenceSurface>
@@ -467,6 +498,12 @@ export function StudyPanelStudyView({
         desktopContentClassName="sm:max-w-md"
         sheetMaxHeightClassName="data-[side=bottom]:max-h-[70vh]"
         sheetBodyScrollClassName="max-h-[min(40vh,32rem)]"
+        headerAction={
+          <LlmThinkingToggle
+            enabled={formulaThinkingEnabled}
+            onToggle={onToggleFormulaThinking}
+          />
+        }
       >
         {formulaExplainBody}
       </ResponsiveLlmInferenceSurface>

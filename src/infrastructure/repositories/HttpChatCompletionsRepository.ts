@@ -1,21 +1,33 @@
 import { resolveDefaultLlmModel } from '../llmDefaultModel';
 import type {
+  ChatCompletionResult,
   ChatCompletionStreamInput,
   ChatMessage,
+  ChatStreamChunk,
   IChatCompletionsRepository,
 } from '../../types/llm';
 
 type ChatCompletionResponseBody = {
-  choices?: Array<{ message?: { content?: string | null } | null } | null>;
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+    } | null;
+  } | null>;
 };
 
 type StreamChunkBody = {
-  choices?: Array<{ delta?: { content?: string | null } | null } | null>;
+  choices?: Array<{
+    delta?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+    } | null;
+  } | null>;
 };
 
 export class HttpChatCompletionsRepository implements IChatCompletionsRepository {
-  /** Parses one SSE line (`data: ...`); yields text delta or null to skip. */
-  static parseSseDataLine(rawLine: string): string | null {
+  /** Parses one SSE line (`data: ...`); yields a tagged chunk or null to skip. */
+  static parseSseDataLine(rawLine: string): ChatStreamChunk | null {
     const line = rawLine.trim();
     if (!line.startsWith('data:')) {
       return null;
@@ -30,9 +42,15 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     } catch {
       return null;
     }
-    const piece = parsed.choices?.[0]?.delta?.content;
-    if (typeof piece === 'string' && piece.length > 0) {
-      return piece;
+    const delta = parsed.choices?.[0]?.delta;
+    if (!delta) {
+      return null;
+    }
+    if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
+      return { type: 'reasoning', text: delta.reasoning_content };
+    }
+    if (typeof delta.content === 'string' && delta.content.length > 0) {
+      return { type: 'content', text: delta.content };
     }
     return null;
   }
@@ -53,15 +71,24 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     return headers;
   }
 
-  async completeChat(input: { model: string; messages: ChatMessage[] }): Promise<string> {
+  async completeChat(input: {
+    model: string;
+    messages: ChatMessage[];
+    enableThinking?: boolean;
+  }): Promise<ChatCompletionResult> {
+    const body: Record<string, unknown> = {
+      model: input.model || this.defaultModel,
+      messages: input.messages,
+      stream: false,
+    };
+    if (input.enableThinking !== undefined) {
+      body.enable_thinking = input.enableThinking;
+    }
+
     const response = await fetch(this.chatUrl, {
       method: 'POST',
       headers: this.buildHeaders(),
-      body: JSON.stringify({
-        model: input.model || this.defaultModel,
-        messages: input.messages,
-        stream: false,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -71,23 +98,33 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
       );
     }
 
-    const body = (await response.json()) as ChatCompletionResponseBody;
-    const content = body.choices?.[0]?.message?.content;
+    const respBody = (await response.json()) as ChatCompletionResponseBody;
+    const message = respBody.choices?.[0]?.message;
+    const content = message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       throw new Error('Chat completion response missing assistant message content');
     }
-    return content;
+    const reasoningContent =
+      typeof message?.reasoning_content === 'string' && message.reasoning_content.length > 0
+        ? message.reasoning_content
+        : null;
+    return { content, reasoningContent };
   }
 
-  async *streamChat(input: ChatCompletionStreamInput): AsyncGenerator<string, void, undefined> {
+  async *streamChat(input: ChatCompletionStreamInput): AsyncGenerator<ChatStreamChunk, void, undefined> {
+    const body: Record<string, unknown> = {
+      model: input.model || this.defaultModel,
+      messages: input.messages,
+      stream: true,
+    };
+    if (input.enableThinking !== undefined) {
+      body.enable_thinking = input.enableThinking;
+    }
+
     const response = await fetch(this.chatUrl, {
       method: 'POST',
       headers: this.buildHeaders(),
-      body: JSON.stringify({
-        model: input.model || this.defaultModel,
-        messages: input.messages,
-        stream: true,
-      }),
+      body: JSON.stringify(body),
       signal: input.signal,
     });
 
@@ -98,12 +135,12 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
       );
     }
 
-    const body = response.body;
-    if (!body) {
+    const respBody = response.body;
+    if (!respBody) {
       throw new Error('Chat completion stream missing response body');
     }
 
-    const reader = body.getReader();
+    const reader = respBody.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     let sawAnyContent = false;

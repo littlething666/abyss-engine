@@ -10,15 +10,35 @@ export interface ChatMessage {
   content: string | ChatContentPart[];
 }
 
+/** Tagged streaming chunk: reasoning tokens or content tokens, never both in a single chunk. */
+export type ChatStreamChunkType = 'reasoning' | 'content';
+
+export interface ChatStreamChunk {
+  type: ChatStreamChunkType;
+  text: string;
+}
+
+/** Result of a non-streaming chat completion. */
+export interface ChatCompletionResult {
+  content: string;
+  reasoningContent: string | null;
+}
+
 export interface ChatCompletionStreamInput {
   model: string;
   messages: ChatMessage[];
   /** When aborted, the stream stops and the iterator completes. */
   signal?: AbortSignal;
+  /** Send `true` to enable model thinking; `false` to disable; omit for server default. */
+  enableThinking?: boolean;
 }
 
 export interface IChatCompletionsRepository {
-  completeChat(input: { model: string; messages: ChatMessage[] }): Promise<string>;
-  /** OpenAI-style SSE (`data: {json}` lines); yields `choices[0].delta.content` fragments. */
-  streamChat(input: ChatCompletionStreamInput): AsyncIterable<string>;
+  completeChat(input: {
+    model: string;
+    messages: ChatMessage[];
+    enableThinking?: boolean;
+  }): Promise<ChatCompletionResult>;
+  /** SSE stream yielding tagged chunks (reasoning or content). */
+  streamChat(input: ChatCompletionStreamInput): AsyncIterable<ChatStreamChunk>;
 }

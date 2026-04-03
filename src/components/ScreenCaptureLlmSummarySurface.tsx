@@ -1,6 +1,8 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import MathMarkdownRenderer from './MathMarkdownRenderer';
+import { LlmThinkingBlock } from './LlmThinkingBlock';
 import { ResponsiveLlmInferenceSurface } from './ResponsiveLlmInferenceSurface';
 
 const SCREEN_SUMMARY_DESCRIPTION =
@@ -13,7 +15,9 @@ export type ScreenCaptureLlmSummarySurfaceProps = {
   onDismissOutside: () => void;
   isPending: boolean;
   assistantText: string | null;
+  reasoningText: string | null;
   errorMessage: string | null;
+  headerAction?: ReactNode;
 };
 
 export function ScreenCaptureLlmSummarySurface({
@@ -23,7 +27,9 @@ export function ScreenCaptureLlmSummarySurface({
   onDismissOutside,
   isPending,
   assistantText,
+  reasoningText,
   errorMessage,
+  headerAction,
 }: ScreenCaptureLlmSummarySurfaceProps) {
   return (
     <ResponsiveLlmInferenceSurface
@@ -36,14 +42,16 @@ export function ScreenCaptureLlmSummarySurface({
       desktopContentClassName="sm:max-w-lg"
       sheetMaxHeightClassName="data-[side=bottom]:max-h-[75vh]"
       sheetBodyScrollClassName="max-h-[min(50vh,36rem)]"
+      headerAction={headerAction}
     >
       <div className="max-h-[min(50vh,36rem)] overflow-y-auto pb-2 text-sm">
+        <LlmThinkingBlock reasoningText={reasoningText} isPending={isPending} />
         {errorMessage && !isPending && (
           <p className="text-destructive" data-testid="screen-capture-llm-error">
             {errorMessage}
           </p>
         )}
-        {isPending && !(assistantText && assistantText.length > 0) && (
+        {isPending && !(assistantText && assistantText.length > 0) && !reasoningText && (
           <p className="text-muted-foreground" data-testid="screen-capture-llm-loading">
             Capturing or summarizing…
           </p>

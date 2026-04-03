@@ -12,9 +12,12 @@ export interface UseStudyQuestionLlmExplainParams {
   topicLabel: string;
   questionText: string;
   cardId: string | null;
+  enableThinking: boolean;
 }
 
-const sessionQuestionExplainCache = new Map<string, string>();
+type CachedResponse = { content: string; reasoning: string | null };
+
+const sessionQuestionExplainCache = new Map<string, CachedResponse>();
 
 /** Clears in-memory session cache; used from unit tests only. */
 export function clearStudyQuestionLlmExplainSessionCacheForTests(): void {
@@ -36,8 +39,10 @@ export function useStudyQuestionLlmExplain({
   topicLabel,
   questionText,
   cardId,
+  enableThinking,
 }: UseStudyQuestionLlmExplainParams) {
   const [assistantText, setAssistantText] = useState<string | null>(null);
+  const [reasoningText, setReasoningText] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -54,6 +59,7 @@ export function useStudyQuestionLlmExplain({
     abortRef.current = null;
     generationRef.current += 1;
     setAssistantText(null);
+    setReasoningText(null);
     setError(null);
     setPending(false);
   }, [setPending]);
@@ -77,6 +83,7 @@ export function useStudyQuestionLlmExplain({
     }
     generationRef.current += 1;
     setAssistantText(null);
+    setReasoningText(null);
     setError(null);
     setPending(false);
   }, [setPending]);
@@ -94,7 +101,8 @@ export function useStudyQuestionLlmExplain({
     const cached = sessionQuestionExplainCache.get(cacheKey);
     if (cached !== undefined) {
       setError(null);
-      setAssistantText(cached);
+      setAssistantText(cached.content);
+      setReasoningText(cached.reasoning);
       setPending(false);
       return;
     }
@@ -103,6 +111,7 @@ export function useStudyQuestionLlmExplain({
     abortRef.current = ac;
     setError(null);
     setAssistantText('');
+    setReasoningText(null);
     setPending(true);
 
     const messages = buildMinimalStudyQuestionMessages(topicLabel, questionText);
@@ -110,22 +119,32 @@ export function useStudyQuestionLlmExplain({
 
     void (async () => {
       try {
-        let acc = '';
+        let contentAcc = '';
+        let reasoningAcc = '';
         for await (const chunk of chat.streamChat({
           model,
           messages,
           signal: ac.signal,
+          enableThinking,
         })) {
           if (generationRef.current !== myGeneration) {
             return;
           }
-          acc += chunk;
-          setAssistantText(acc);
+          if (chunk.type === 'reasoning') {
+            reasoningAcc += chunk.text;
+            setReasoningText(reasoningAcc);
+          } else {
+            contentAcc += chunk.text;
+            setAssistantText(contentAcc);
+          }
         }
         if (generationRef.current !== myGeneration) {
           return;
         }
-        sessionQuestionExplainCache.set(cacheKey, acc);
+        sessionQuestionExplainCache.set(cacheKey, {
+          content: contentAcc,
+          reasoning: reasoningAcc.length > 0 ? reasoningAcc : null,
+        });
         setPending(false);
       } catch (e) {
         if (generationRef.current !== myGeneration) {
@@ -133,21 +152,24 @@ export function useStudyQuestionLlmExplain({
         }
         if (isAbortError(e)) {
           setAssistantText(null);
+          setReasoningText(null);
           setPending(false);
           return;
         }
         setError(e);
         setPending(false);
         setAssistantText(null);
+        setReasoningText(null);
       }
     })();
-  }, [cardId, topicLabel, questionText, setPending]);
+  }, [cardId, topicLabel, questionText, enableThinking, setPending]);
 
   return {
     requestExplain,
     isPending,
     errorMessage: error instanceof Error ? error.message : error ? String(error) : null,
     assistantText,
+    reasoningText,
     reset,
     cancelInflight,
   };

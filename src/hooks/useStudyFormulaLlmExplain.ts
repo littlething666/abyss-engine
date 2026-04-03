@@ -14,9 +14,12 @@ export interface UseStudyFormulaLlmExplainParams {
   topicLabel: string;
   cardQuestionText: string;
   cardId: string | null;
+  enableThinking: boolean;
 }
 
-const sessionFormulaExplainCache = new Map<string, string>();
+type CachedResponse = { content: string; reasoning: string | null };
+
+const sessionFormulaExplainCache = new Map<string, CachedResponse>();
 
 /** Clears in-memory session cache; used from unit tests only. */
 export function clearStudyFormulaLlmExplainSessionCacheForTests(): void {
@@ -44,8 +47,10 @@ export function useStudyFormulaLlmExplain({
   topicLabel,
   cardQuestionText,
   cardId,
+  enableThinking,
 }: UseStudyFormulaLlmExplainParams) {
   const [assistantText, setAssistantText] = useState<string | null>(null);
+  const [reasoningText, setReasoningText] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -62,6 +67,7 @@ export function useStudyFormulaLlmExplain({
     abortRef.current = null;
     generationRef.current += 1;
     setAssistantText(null);
+    setReasoningText(null);
     setError(null);
     setPending(false);
   }, [setPending]);
@@ -85,6 +91,7 @@ export function useStudyFormulaLlmExplain({
     }
     generationRef.current += 1;
     setAssistantText(null);
+    setReasoningText(null);
     setError(null);
     setPending(false);
   }, [setPending]);
@@ -110,7 +117,8 @@ export function useStudyFormulaLlmExplain({
       const cached = sessionFormulaExplainCache.get(cacheKey);
       if (cached !== undefined) {
         setError(null);
-        setAssistantText(cached);
+        setAssistantText(cached.content);
+        setReasoningText(cached.reasoning);
         setPending(false);
         return;
       }
@@ -119,6 +127,7 @@ export function useStudyFormulaLlmExplain({
       abortRef.current = ac;
       setError(null);
       setAssistantText('');
+      setReasoningText(null);
       setPending(true);
 
       const messages = buildFormulaExplainMessages(topicLabel, cardQuestionText, latex, context);
@@ -126,22 +135,32 @@ export function useStudyFormulaLlmExplain({
 
       void (async () => {
         try {
-          let acc = '';
+          let contentAcc = '';
+          let reasoningAcc = '';
           for await (const chunk of chat.streamChat({
             model,
             messages,
             signal: ac.signal,
+            enableThinking,
           })) {
             if (generationRef.current !== myGeneration) {
               return;
             }
-            acc += chunk;
-            setAssistantText(acc);
+            if (chunk.type === 'reasoning') {
+              reasoningAcc += chunk.text;
+              setReasoningText(reasoningAcc);
+            } else {
+              contentAcc += chunk.text;
+              setAssistantText(contentAcc);
+            }
           }
           if (generationRef.current !== myGeneration) {
             return;
           }
-          sessionFormulaExplainCache.set(cacheKey, acc);
+          sessionFormulaExplainCache.set(cacheKey, {
+            content: contentAcc,
+            reasoning: reasoningAcc.length > 0 ? reasoningAcc : null,
+          });
           setPending(false);
         } catch (e) {
           if (generationRef.current !== myGeneration) {
@@ -149,16 +168,18 @@ export function useStudyFormulaLlmExplain({
           }
           if (isAbortError(e)) {
             setAssistantText(null);
+            setReasoningText(null);
             setPending(false);
             return;
           }
           setError(e);
           setPending(false);
           setAssistantText(null);
+          setReasoningText(null);
         }
       })();
     },
-    [cardId, topicLabel, cardQuestionText, setPending],
+    [cardId, topicLabel, cardQuestionText, enableThinking, setPending],
   );
 
   return {
@@ -166,6 +187,7 @@ export function useStudyFormulaLlmExplain({
     isPending,
     errorMessage: error instanceof Error ? error.message : error ? String(error) : null,
     assistantText,
+    reasoningText,
     reset,
     cancelInflight,
   };

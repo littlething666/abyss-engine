@@ -56,7 +56,7 @@ type MermaidApi = ReturnType<typeof useStudyQuestionMermaidDiagram>;
 
 const MermaidHarness = forwardRef<MermaidApi | null, MermaidHarnessProps>(
   function MermaidHarness({ topicLabel, questionText, cardId }, ref) {
-    const api = useStudyQuestionMermaidDiagram({ topicLabel, questionText, cardId });
+    const api = useStudyQuestionMermaidDiagram({ topicLabel, questionText, cardId, enableThinking: false });
     useImperativeHandle(ref, () => api, [api]);
     return null;
   },
@@ -64,7 +64,7 @@ const MermaidHarness = forwardRef<MermaidApi | null, MermaidHarnessProps>(
 
 const QuestionHarness = forwardRef<QuestionApi | null, QuestionHarnessProps>(
   function QuestionHarness({ topicLabel, questionText, cardId }, ref) {
-    const api = useStudyQuestionLlmExplain({ topicLabel, questionText, cardId });
+    const api = useStudyQuestionLlmExplain({ topicLabel, questionText, cardId, enableThinking: false });
     useImperativeHandle(ref, () => api, [api]);
     return null;
   },
@@ -80,7 +80,7 @@ type FormulaApi = ReturnType<typeof useStudyFormulaLlmExplain>;
 
 const FormulaHarness = forwardRef<FormulaApi | null, FormulaHarnessProps>(
   function FormulaHarness({ topicLabel, cardQuestionText, cardId }, ref) {
-    const api = useStudyFormulaLlmExplain({ topicLabel, cardQuestionText, cardId });
+    const api = useStudyFormulaLlmExplain({ topicLabel, cardQuestionText, cardId, enableThinking: false });
     useImperativeHandle(ref, () => api, [api]);
     return null;
   },
@@ -173,7 +173,7 @@ describe('useStudyQuestionLlmExplain', () => {
 
   it('skips streamChat when session cache has a completed answer', async () => {
     streamChatMock.mockImplementation(async function* () {
-      yield 'hello';
+      yield { type: 'content', text: 'hello' };
     });
 
     const first = renderQuestionHarness({
@@ -213,9 +213,9 @@ describe('useStudyQuestionLlmExplain', () => {
     });
 
     streamChatMock.mockImplementation(async function* () {
-      yield 'a';
+      yield { type: 'content', text: 'a' };
       await gate;
-      yield 'b';
+      yield { type: 'content', text: 'b' };
     });
 
     const { getApi, unmount } = renderQuestionHarness({
@@ -248,9 +248,9 @@ describe('useStudyQuestionLlmExplain', () => {
     });
 
     streamChatMock.mockImplementation(async function* () {
-      yield 'x';
+      yield { type: 'content', text: 'x' };
       await gate;
-      yield 'y';
+      yield { type: 'content', text: 'y' };
     });
 
     const { getApi, unmount } = renderQuestionHarness({
@@ -276,7 +276,7 @@ describe('useStudyQuestionMermaidDiagram', () => {
 
   it('skips streamChat when session cache has a completed diagram', async () => {
     streamChatMock.mockImplementation(async function* () {
-      yield '```mermaid\nflowchart LR\n  A --> B\n```';
+      yield { type: 'content', text: '```mermaid\nflowchart LR\n  A --> B\n```' };
     });
 
     const first = renderMermaidHarness({
@@ -316,9 +316,9 @@ describe('useStudyQuestionMermaidDiagram', () => {
     });
 
     streamChatMock.mockImplementation(async function* () {
-      yield 'a';
+      yield { type: 'content', text: 'a' };
       await gate;
-      yield 'b';
+      yield { type: 'content', text: 'b' };
     });
 
     const { getApi, unmount } = renderMermaidHarness({
@@ -353,7 +353,7 @@ describe('useStudyFormulaLlmExplain', () => {
 
   it('skips streamChat when session cache has a completed formula explanation', async () => {
     streamChatMock.mockImplementation(async function* () {
-      yield 'fn';
+      yield { type: 'content', text: 'fn' };
     });
 
     const first = renderFormulaHarness({
@@ -391,7 +391,7 @@ describe('useStudyFormulaLlmExplain', () => {
 
     streamChatMock.mockImplementation(async function* () {
       await gate;
-      yield 'z';
+      yield { type: 'content', text: 'z' };
     });
 
     const { getApi, unmount } = renderFormulaHarness({

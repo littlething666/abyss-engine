@@ -25,7 +25,7 @@ const captureMock = vi.mocked(captureDisplayMediaAsPngDataUrl);
 type Api = ReturnType<typeof useScreenCaptureLlmSummary>;
 
 const Harness = forwardRef<Api | null>(function Harness(_props, ref) {
-  const api = useScreenCaptureLlmSummary();
+  const api = useScreenCaptureLlmSummary({ enableThinking: false });
   useImperativeHandle(ref, () => api, [api]);
   return null;
 });
@@ -69,8 +69,8 @@ describe('useScreenCaptureLlmSummary', () => {
   it('streams assistant text after capture resolves', async () => {
     captureMock.mockResolvedValue('data:image/png;base64,xx');
     streamChatMock.mockImplementation(async function* () {
-      yield 'Hello';
-      yield ' world';
+      yield { type: 'content', text: 'Hello' };
+      yield { type: 'content', text: ' world' };
     });
 
     const { getApi, unmount } = renderHarness();

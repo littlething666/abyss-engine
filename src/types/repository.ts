@@ -1,9 +1,12 @@
 import type { Card, Subject, SubjectGraph, TopicDetails } from './core';
 
 export type {
+  ChatCompletionResult,
   ChatCompletionStreamInput,
   ChatMessage,
   ChatMessageRole,
+  ChatStreamChunk,
+  ChatStreamChunkType,
   IChatCompletionsRepository,
 } from './llm';
 

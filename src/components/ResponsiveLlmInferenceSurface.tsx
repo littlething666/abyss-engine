@@ -43,6 +43,8 @@ export type ResponsiveLlmInferenceSurfaceProps = {
   desktopContentClassName: string;
   sheetMaxHeightClassName: string;
   sheetBodyScrollClassName: string;
+  /** Optional action element rendered inline after the title (e.g. thinking toggle). */
+  headerAction?: ReactNode;
   children: ReactNode;
 };
 
@@ -60,6 +62,7 @@ export function ResponsiveLlmInferenceSurface({
   desktopContentClassName,
   sheetMaxHeightClassName,
   sheetBodyScrollClassName,
+  headerAction,
   children,
 }: ResponsiveLlmInferenceSurfaceProps) {
   const desktopSurfaceRef = useRef<HTMLDivElement>(null);
@@ -79,7 +82,10 @@ export function ResponsiveLlmInferenceSurface({
           onInteractOutside={onDismissOutside}
         >
           <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
+            <div className="flex items-center gap-2">
+              <DialogTitle>{title}</DialogTitle>
+              {headerAction}
+            </div>
             {description.kind === 'srOnly' ? (
               <DialogDescription className="sr-only">{description.text}</DialogDescription>
             ) : (
@@ -115,7 +121,10 @@ export function ResponsiveLlmInferenceSurface({
         onInteractOutside={onDismissOutside}
       >
         <AbyssSheetHeader className="text-left">
-          <SheetTitle>{title}</SheetTitle>
+          <div className="flex items-center gap-2">
+            <SheetTitle>{title}</SheetTitle>
+            {headerAction}
+          </div>
           {description.kind === 'srOnly' ? (
             <SheetDescription className="sr-only">{description.text}</SheetDescription>
           ) : (

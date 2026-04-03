@@ -22,13 +22,19 @@ export interface AscentWeaverGenerateInput {
 export interface UseAscentWeaverCurriculumGraphParams {
   chat: IChatCompletionsRepository;
   writer: IDeckContentWriter;
+  enableThinking: boolean;
 }
 
-export function useAscentWeaverCurriculumGraph({ chat, writer }: UseAscentWeaverCurriculumGraphParams) {
+export function useAscentWeaverCurriculumGraph({
+  chat,
+  writer,
+  enableThinking,
+}: UseAscentWeaverCurriculumGraphParams) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRawResponse, setLastRawResponse] = useState<string | null>(null);
   const [streamingAssistantText, setStreamingAssistantText] = useState('');
+  const [streamingReasoningText, setStreamingReasoningText] = useState<string | null>(null);
   const generationRef = useRef(0);
 
   const reset = useCallback(() => {
@@ -36,6 +42,7 @@ export function useAscentWeaverCurriculumGraph({ chat, writer }: UseAscentWeaver
     setError(null);
     setLastRawResponse(null);
     setStreamingAssistantText('');
+    setStreamingReasoningText(null);
   }, []);
 
   const generateAndApply = useCallback(
@@ -47,25 +54,36 @@ export function useAscentWeaverCurriculumGraph({ chat, writer }: UseAscentWeaver
       setError(null);
       setLastRawResponse(null);
       setStreamingAssistantText('');
+      setStreamingReasoningText(null);
 
       try {
         const messages = buildCurriculumGraphMessages(input.promptParams);
-        let acc = '';
-        for await (const chunk of chat.streamChat({ model, messages })) {
+        let contentAcc = '';
+        let reasoningAcc = '';
+        for await (const chunk of chat.streamChat({
+          model,
+          messages,
+          enableThinking,
+        })) {
           if (generationRef.current !== myGeneration) {
             return false;
           }
-          acc += chunk;
-          setStreamingAssistantText(acc);
+          if (chunk.type === 'reasoning') {
+            reasoningAcc += chunk.text;
+            setStreamingReasoningText(reasoningAcc);
+          } else {
+            contentAcc += chunk.text;
+            setStreamingAssistantText(contentAcc);
+          }
         }
 
         if (generationRef.current !== myGeneration) {
           return false;
         }
 
-        setLastRawResponse(acc);
+        setLastRawResponse(contentAcc);
 
-        const parsed = parseSubjectGraphResponse(acc);
+        const parsed = parseSubjectGraphResponse(contentAcc);
         if (!parsed.ok) {
           setError(parsed.error);
           return false;
@@ -94,7 +112,7 @@ export function useAscentWeaverCurriculumGraph({ chat, writer }: UseAscentWeaver
         setPending(false);
       }
     },
-    [chat, writer],
+    [chat, enableThinking, writer],
   );
 
   return {
@@ -103,6 +121,7 @@ export function useAscentWeaverCurriculumGraph({ chat, writer }: UseAscentWeaver
     error,
     lastRawResponse,
     streamingAssistantText,
+    streamingReasoningText,
     reset,
   };
 }

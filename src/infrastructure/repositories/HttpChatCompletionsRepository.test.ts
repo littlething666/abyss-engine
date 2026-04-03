@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ChatMessage } from '../../types/llm';
+import type { ChatMessage, ChatStreamChunk } from '../../types/llm';
 import { HttpChatCompletionsRepository } from './HttpChatCompletionsRepository';
 
 const originalFetch = globalThis.fetch;
@@ -20,11 +20,12 @@ describe('HttpChatCompletionsRepository', () => {
     })) as unknown as typeof fetch;
 
     const repo = new HttpChatCompletionsRepository('https://example.com/v1/chat/completions', 'm1');
-    const text = await repo.completeChat({
+    const result = await repo.completeChat({
       model: 'm1',
       messages: [{ role: 'user', content: 'Hi' }],
     });
-    expect(text).toBe('Hello learner');
+    expect(result.content).toBe('Hello learner');
+    expect(result.reasoningContent).toBeNull();
     expect(fetch).toHaveBeenCalledWith(
       'https://example.com/v1/chat/completions',
       expect.objectContaining({
@@ -35,6 +36,59 @@ describe('HttpChatCompletionsRepository', () => {
     const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
     expect(body.stream).toBe(false);
     expect(body.messages).toEqual([{ role: 'user', content: 'Hi' }]);
+  });
+
+  it('returns reasoning_content when present', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'The answer is 42.',
+            reasoning_content: 'Let me think step by step...',
+          },
+        }],
+      }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    const result = await repo.completeChat({
+      model: 'm',
+      messages: [{ role: 'user', content: 'x' }],
+    });
+    expect(result.content).toBe('The answer is 42.');
+    expect(result.reasoningContent).toBe('Let me think step by step...');
+  });
+
+  it('sends enable_thinking when specified', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    await repo.completeChat({
+      model: 'm',
+      messages: [{ role: 'user', content: 'x' }],
+      enableThinking: true,
+    });
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
+    expect(body.enable_thinking).toBe(true);
+  });
+
+  it('omits enable_thinking when undefined', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    await repo.completeChat({
+      model: 'm',
+      messages: [{ role: 'user', content: 'x' }],
+    });
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
+    expect(body).not.toHaveProperty('enable_thinking');
   });
 
   it('sends Authorization when api key is set', async () => {
@@ -116,11 +170,12 @@ describe('HttpChatCompletionsRepository', () => {
     })) as unknown as typeof fetch;
 
     const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
-    const parts: string[] = [];
+    const parts: ChatStreamChunk[] = [];
     for await (const p of repo.streamChat({ model: 'm', messages: [multimodalMessage] })) {
       parts.push(p);
     }
-    expect(parts.join('')).toBe('ok');
+    expect(parts.map((c) => c.text).join('')).toBe('ok');
+    expect(parts[0].type).toBe('content');
     const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
     expect(body.messages[0].content).toEqual(multimodalMessage.content);
     expect(body.stream).toBe(true);
@@ -142,13 +197,68 @@ describe('HttpChatCompletionsRepository', () => {
     })) as unknown as typeof fetch;
 
     const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
-    const parts: string[] = [];
+    const parts: ChatStreamChunk[] = [];
     for await (const p of repo.streamChat({ model: 'm', messages: [{ role: 'user', content: 'a' }] })) {
       parts.push(p);
     }
-    expect(parts.join('')).toBe('Hello');
+    expect(parts.map((c) => c.text).join('')).toBe('Hello');
+    expect(parts.every((c) => c.type === 'content')).toBe(true);
     const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
     expect(body.stream).toBe(true);
+  });
+
+  it('yields reasoning_content chunks separately from content chunks', async () => {
+    const sse =
+      'data: {"choices":[{"delta":{"reasoning_content":"Let me"}}]}\n'
+      + 'data: {"choices":[{"delta":{"reasoning_content":" think..."}}]}\n'
+      + 'data: {"choices":[{"delta":{"content":"The answer"}}]}\n'
+      + 'data: {"choices":[{"delta":{"content":" is 42."}}]}\n'
+      + 'data: [DONE]\n';
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(sse));
+          controller.close();
+        },
+      }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    const chunks: ChatStreamChunk[] = [];
+    for await (const c of repo.streamChat({ model: 'm', messages: [{ role: 'user', content: 'a' }] })) {
+      chunks.push(c);
+    }
+    const reasoning = chunks.filter((c) => c.type === 'reasoning').map((c) => c.text).join('');
+    const content = chunks.filter((c) => c.type === 'content').map((c) => c.text).join('');
+    expect(reasoning).toBe('Let me think...');
+    expect(content).toBe('The answer is 42.');
+  });
+
+  it('sends enable_thinking in stream request body', async () => {
+    const sse =
+      'data: {"choices":[{"delta":{"content":"ok"}}]}\n'
+      + 'data: [DONE]\n';
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(sse));
+          controller.close();
+        },
+      }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    for await (const _ of repo.streamChat({
+      model: 'm',
+      messages: [{ role: 'user', content: 'a' }],
+      enableThinking: true,
+    })) {
+      /* drain */
+    }
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
+    expect(body.enable_thinking).toBe(true);
   });
 
   it('throws when stream ends with no content', async () => {
@@ -164,7 +274,7 @@ describe('HttpChatCompletionsRepository', () => {
 
     const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
     const collect = async () => {
-      const parts: string[] = [];
+      const parts: ChatStreamChunk[] = [];
       for await (const p of repo.streamChat({ model: 'm', messages: [{ role: 'user', content: 'a' }] })) {
         parts.push(p);
       }

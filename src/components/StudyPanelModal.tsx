@@ -22,6 +22,7 @@ import { useStudyKeyboardShortcuts } from '../hooks/useStudyKeyboardShortcuts';
 import { useStudyFormulaLlmExplain } from '../hooks/useStudyFormulaLlmExplain';
 import { useStudyQuestionMermaidDiagram } from '../hooks/useStudyQuestionMermaidDiagram';
 import { useStudyQuestionLlmExplain } from '../hooks/useStudyQuestionLlmExplain';
+import { useThinkingToggle } from '../hooks/useThinkingToggle';
 import { StudyPanelTab } from './studyPanel/types';
 
 interface StudyPanelModalProps {
@@ -59,20 +60,26 @@ export function StudyPanelModal({
     currentTopicId,
     totalCards,
   });
+  const explainThinking = useThinkingToggle('studyQuestionExplain');
+  const formulaThinking = useThinkingToggle('studyFormulaExplain');
+  const mermaidThinking = useThinkingToggle('studyQuestionMermaid');
   const llmExplain = useStudyQuestionLlmExplain({
     topicLabel: model.resolvedTopic,
     questionText: model.currentQuestion,
     cardId: model.activeCard?.id ?? null,
+    enableThinking: explainThinking.enableThinking,
   });
   const llmFormulaExplain = useStudyFormulaLlmExplain({
     topicLabel: model.resolvedTopic,
     cardQuestionText: model.currentQuestion,
     cardId: model.activeCard?.id ?? null,
+    enableThinking: formulaThinking.enableThinking,
   });
   const llmMermaidDiagram = useStudyQuestionMermaidDiagram({
     topicLabel: model.resolvedTopic,
     questionText: model.currentQuestion,
     cardId: model.activeCard?.id ?? null,
+    enableThinking: mermaidThinking.enableThinking,
   });
 
   useEffect(() => {
@@ -286,6 +293,12 @@ export function StudyPanelModal({
               llmExplain={llmExplain}
               llmFormulaExplain={llmFormulaExplain}
               llmMermaidDiagram={llmMermaidDiagram}
+              explainThinkingEnabled={explainThinking.enableThinking}
+              formulaThinkingEnabled={formulaThinking.enableThinking}
+              mermaidThinkingEnabled={mermaidThinking.enableThinking}
+              onToggleExplainThinking={explainThinking.toggleThinking}
+              onToggleFormulaThinking={formulaThinking.toggleThinking}
+              onToggleMermaidThinking={mermaidThinking.toggleThinking}
             />
           )}
       </div>

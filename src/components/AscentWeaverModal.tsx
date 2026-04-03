@@ -38,8 +38,10 @@ import { deckWriter } from '@/infrastructure/di';
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
 import { useAscentWeaverCurriculumGraph } from '@/hooks/useAscentWeaverCurriculumGraph';
 import { useMediaQuery } from '@/hooks/use-media-query';
+import { useThinkingToggle } from '@/hooks/useThinkingToggle';
 import { stringToKebabCaseId } from '@/lib/stringToKebabCaseId';
 import { AscentWeaverCurriculumInferenceSurface } from './AscentWeaverCurriculumInferenceSurface';
+import { LlmThinkingToggle } from './LlmThinkingToggle';
 import { LLM_INFERENCE_SURFACE_OUTSIDE_GUARD_SELECTOR } from './ResponsiveLlmInferenceSurface';
 
 const GEOMETRY_TYPES: GeometryType[] = ['box', 'cylinder', 'sphere', 'octahedron', 'plane'];
@@ -55,11 +57,20 @@ export interface AscentWeaverModalProps {
 
 export function AscentWeaverModal({ isOpen, onClose, onSuccess }: AscentWeaverModalProps) {
   const isDesktop = useMediaQuery('(min-width: 768px)');
-  const { generateAndApply, pending, error, lastRawResponse, streamingAssistantText, reset } =
-    useAscentWeaverCurriculumGraph({
-      chat: getChatCompletionsRepositoryForSurface('ascentWeaver'),
-      writer: deckWriter,
-    });
+  const weaverThinking = useThinkingToggle('ascentWeaver');
+  const {
+    generateAndApply,
+    pending,
+    error,
+    lastRawResponse,
+    streamingAssistantText,
+    streamingReasoningText,
+    reset,
+  } = useAscentWeaverCurriculumGraph({
+    chat: getChatCompletionsRepositoryForSurface('ascentWeaver'),
+    writer: deckWriter,
+    enableThinking: weaverThinking.enableThinking,
+  });
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -161,7 +172,14 @@ export function AscentWeaverModal({ isOpen, onClose, onSuccess }: AscentWeaverMo
         onDismissOutside={() => setInferenceSurfaceOpen(false)}
         isPending={pending}
         assistantText={streamingAssistantText}
+        reasoningText={streamingReasoningText}
         errorMessage={displayError}
+        headerAction={
+          <LlmThinkingToggle
+            enabled={weaverThinking.enableThinking}
+            onToggle={weaverThinking.toggleThinking}
+          />
+        }
       />
       <AbyssDialog
         open={isOpen}

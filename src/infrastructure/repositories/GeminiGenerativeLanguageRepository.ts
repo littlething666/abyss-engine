@@ -1,7 +1,9 @@
 import type {
+  ChatCompletionResult,
   ChatCompletionStreamInput,
   ChatContentPart,
   ChatMessage,
+  ChatStreamChunk,
   IChatCompletionsRepository,
 } from '../../types/llm';
 
@@ -92,51 +94,62 @@ export function buildGeminiGenerateBodyFromChatMessages(messages: ChatMessage[])
   return body;
 }
 
-export function extractTextFromGeminiResponsePayload(parsed: unknown): string {
+/** Extracts tagged chunks from a Gemini response payload (parts with `thought: true` → reasoning). */
+export function extractChunksFromGeminiResponsePayload(parsed: unknown): ChatStreamChunk[] {
   if (!parsed || typeof parsed !== 'object') {
-    return '';
+    return [];
   }
   const rec = parsed as Record<string, unknown>;
   const candidates = rec.candidates;
   if (!Array.isArray(candidates) || candidates.length === 0) {
-    return '';
+    return [];
   }
   const first = candidates[0] as Record<string, unknown>;
   const content = first.content as Record<string, unknown> | undefined;
   if (!content) {
-    return '';
+    return [];
   }
   const parts = content.parts;
   if (!Array.isArray(parts)) {
-    return '';
+    return [];
   }
-  let acc = '';
+  const chunks: ChatStreamChunk[] = [];
   for (const p of parts) {
     if (p && typeof p === 'object' && typeof (p as { text?: unknown }).text === 'string') {
-      acc += (p as { text: string }).text;
+      const text = (p as { text: string }).text;
+      if (text.length === 0) continue;
+      const isThought = (p as { thought?: unknown }).thought === true;
+      chunks.push({ type: isThought ? 'reasoning' : 'content', text });
     }
   }
-  return acc;
+  return chunks;
 }
 
-/** Parses one SSE line (`data: ...`); yields incremental text or null to skip. */
-export function parseGeminiSseDataLine(rawLine: string): string | null {
+/** @deprecated Use extractChunksFromGeminiResponsePayload; kept for backward-compatible callers. */
+export function extractTextFromGeminiResponsePayload(parsed: unknown): string {
+  return extractChunksFromGeminiResponsePayload(parsed)
+    .filter((c) => c.type === 'content')
+    .map((c) => c.text)
+    .join('');
+}
+
+/** Parses one SSE line (`data: ...`); yields tagged chunks or empty array to skip. */
+export function parseGeminiSseDataLine(rawLine: string): ChatStreamChunk[] {
   const line = rawLine.trim();
   if (!line.startsWith('data:')) {
-    return null;
+    return [];
   }
   const payload = line.slice(5).trim();
   if (payload === '' || payload === '[DONE]') {
-    return null;
+    return [];
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload) as unknown;
   } catch {
-    return null;
+    return [];
   }
-  const text = extractTextFromGeminiResponsePayload(parsed);
-  return text.length > 0 ? text : null;
+  return extractChunksFromGeminiResponsePayload(parsed);
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -169,9 +182,26 @@ export class GeminiGenerativeLanguageRepository implements IChatCompletionsRepos
     return `${base}/v1beta/models/${m}:generateContent?key=${key}`;
   }
 
-  async completeChat(input: { model: string; messages: ChatMessage[] }): Promise<string> {
+  private buildRequestBody(
+    messages: ChatMessage[],
+    enableThinking?: boolean,
+  ): Record<string, unknown> {
+    const body: Record<string, unknown> = buildGeminiGenerateBodyFromChatMessages(messages);
+    if (enableThinking !== undefined) {
+      body.generationConfig = {
+        thinkingConfig: { thinkingBudget: enableThinking ? 8192 : 0 },
+      };
+    }
+    return body;
+  }
+
+  async completeChat(input: {
+    model: string;
+    messages: ChatMessage[];
+    enableThinking?: boolean;
+  }): Promise<ChatCompletionResult> {
     const model = this.resolveModel(input.model);
-    const body = buildGeminiGenerateBodyFromChatMessages(input.messages);
+    const body = this.buildRequestBody(input.messages, input.enableThinking);
     const response = await fetch(this.generateUrl(model), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -186,16 +216,27 @@ export class GeminiGenerativeLanguageRepository implements IChatCompletionsRepos
       );
     }
     const json = (await response.json()) as unknown;
-    const text = extractTextFromGeminiResponsePayload(json);
-    if (!text.trim()) {
+    const chunks = extractChunksFromGeminiResponsePayload(json);
+    const contentText = chunks
+      .filter((c) => c.type === 'content')
+      .map((c) => c.text)
+      .join('');
+    if (!contentText.trim()) {
       throw new Error('Gemini response missing assistant text content');
     }
-    return text;
+    const reasoningText = chunks
+      .filter((c) => c.type === 'reasoning')
+      .map((c) => c.text)
+      .join('');
+    return {
+      content: contentText,
+      reasoningContent: reasoningText.length > 0 ? reasoningText : null,
+    };
   }
 
-  async *streamChat(input: ChatCompletionStreamInput): AsyncGenerator<string, void, undefined> {
+  async *streamChat(input: ChatCompletionStreamInput): AsyncGenerator<ChatStreamChunk, void, undefined> {
     const model = this.resolveModel(input.model);
-    const body = buildGeminiGenerateBodyFromChatMessages(input.messages);
+    const body = this.buildRequestBody(input.messages, input.enableThinking);
     const response = await fetch(this.streamUrl(model), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -232,17 +273,17 @@ export class GeminiGenerativeLanguageRepository implements IChatCompletionsRepos
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
         for (const rawLine of lines) {
-          const piece = parseGeminiSseDataLine(rawLine);
-          if (piece !== null) {
+          const pieces = parseGeminiSseDataLine(rawLine);
+          for (const piece of pieces) {
             sawAnyContent = true;
             yield piece;
           }
         }
       }
-      const tailPiece = parseGeminiSseDataLine(buffer);
-      if (tailPiece !== null) {
+      const tailPieces = parseGeminiSseDataLine(buffer);
+      for (const piece of tailPieces) {
         sawAnyContent = true;
-        yield tailPiece;
+        yield piece;
       }
     } finally {
       reader.releaseLock();

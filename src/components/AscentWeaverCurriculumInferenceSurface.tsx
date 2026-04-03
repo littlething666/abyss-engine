@@ -1,10 +1,12 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useCallback, useMemo, useRef } from 'react';
 
 import { stripMarkdownJsonFenceForDisplay } from '@/lib/llmResponseText';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { LlmThinkingBlock } from './LlmThinkingBlock';
 import { ResponsiveLlmInferenceSurface } from './ResponsiveLlmInferenceSurface';
 
 const CURRICULUM_STREAM_DESCRIPTION =
@@ -17,7 +19,9 @@ export type AscentWeaverCurriculumInferenceSurfaceProps = {
   onDismissOutside: () => void;
   isPending: boolean;
   assistantText: string;
+  reasoningText: string | null;
   errorMessage: string | null;
+  headerAction?: ReactNode;
 };
 
 /**
@@ -30,7 +34,9 @@ export function AscentWeaverCurriculumInferenceSurface({
   onDismissOutside,
   isPending,
   assistantText,
+  reasoningText,
   errorMessage,
+  headerAction,
 }: AscentWeaverCurriculumInferenceSurfaceProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const displayText = useMemo(() => stripMarkdownJsonFenceForDisplay(assistantText), [assistantText]);
@@ -55,8 +61,10 @@ export function AscentWeaverCurriculumInferenceSurface({
       desktopContentClassName="sm:max-w-2xl"
       sheetMaxHeightClassName="data-[side=bottom]:max-h-[80vh]"
       sheetBodyScrollClassName="max-h-[min(55vh,40rem)]"
+      headerAction={headerAction}
     >
       <div className="max-h-[min(55vh,40rem)] overflow-y-auto pb-2 text-sm">
+        <LlmThinkingBlock reasoningText={reasoningText} isPending={isPending} />
         {errorMessage && !isPending ? (
           <p className="text-destructive" data-testid="ascent-weaver-llm-error">
             {errorMessage}

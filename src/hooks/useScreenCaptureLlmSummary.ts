@@ -16,9 +16,14 @@ function isAbortError(e: unknown): boolean {
   );
 }
 
-export function useScreenCaptureLlmSummary() {
+export interface UseScreenCaptureLlmSummaryParams {
+  enableThinking: boolean;
+}
+
+export function useScreenCaptureLlmSummary({ enableThinking }: UseScreenCaptureLlmSummaryParams) {
   const [surfaceOpen, setSurfaceOpen] = useState(false);
   const [assistantText, setAssistantText] = useState<string | null>(null);
+  const [reasoningText, setReasoningText] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -38,6 +43,7 @@ export function useScreenCaptureLlmSummary() {
     }
     generationRef.current += 1;
     setAssistantText(null);
+    setReasoningText(null);
     setError(null);
     setPending(false);
   }, [setPending]);
@@ -45,6 +51,7 @@ export function useScreenCaptureLlmSummary() {
   const reset = useCallback(() => {
     cancelInflight();
     setAssistantText(null);
+    setReasoningText(null);
     setError(null);
   }, [cancelInflight]);
 
@@ -61,6 +68,7 @@ export function useScreenCaptureLlmSummary() {
       if (!open) {
         cancelInflight();
         setAssistantText(null);
+        setReasoningText(null);
         setError(null);
         setPending(false);
       }
@@ -82,9 +90,9 @@ export function useScreenCaptureLlmSummary() {
     setSurfaceOpen(true);
     setError(null);
     setAssistantText(null);
+    setReasoningText(null);
     setPending(true);
 
-    /** Call `captureDisplayMediaAsPngDataUrl()` directly (not inside another async IIFE) so `getDisplayMedia` runs in the same synchronous user-activation stack as the command palette `onSelect` handler. */
     void captureDisplayMediaAsPngDataUrl()
       .then((dataUrl) => {
         if (generationRef.current !== myGeneration) {
@@ -97,17 +105,24 @@ export function useScreenCaptureLlmSummary() {
 
         void (async () => {
           try {
-            let acc = '';
+            let contentAcc = '';
+            let reasoningAcc = '';
             for await (const chunk of chat.streamChat({
               model,
               messages,
               signal: ac.signal,
+              enableThinking,
             })) {
               if (generationRef.current !== myGeneration) {
                 return;
               }
-              acc += chunk;
-              setAssistantText(acc);
+              if (chunk.type === 'reasoning') {
+                reasoningAcc += chunk.text;
+                setReasoningText(reasoningAcc);
+              } else {
+                contentAcc += chunk.text;
+                setAssistantText(contentAcc);
+              }
             }
             if (generationRef.current !== myGeneration) {
               return;
@@ -119,12 +134,14 @@ export function useScreenCaptureLlmSummary() {
             }
             if (isAbortError(e)) {
               setAssistantText(null);
+              setReasoningText(null);
               setPending(false);
               return;
             }
             setError(e);
             setPending(false);
             setAssistantText(null);
+            setReasoningText(null);
           }
         })();
       })
@@ -135,7 +152,7 @@ export function useScreenCaptureLlmSummary() {
         setError(e);
         setPending(false);
       });
-  }, [setPending]);
+  }, [enableThinking, setPending]);
 
   return {
     surfaceOpen,
@@ -144,6 +161,7 @@ export function useScreenCaptureLlmSummary() {
     startSummarize,
     isPending,
     assistantText,
+    reasoningText,
     errorMessage: error instanceof Error ? error.message : error ? String(error) : null,
     reset,
     cancelInflight,

@@ -25,6 +25,7 @@ function makeLlmProps() {
     isPending: false,
     errorMessage: null as string | null,
     assistantText: null as string | null,
+    reasoningText: null as string | null,
     requestExplain,
     cancelInflight: cancelExplain,
   };
@@ -32,6 +33,7 @@ function makeLlmProps() {
     isPending: false,
     errorMessage: null as string | null,
     assistantText: null as string | null,
+    reasoningText: null as string | null,
     requestExplain: requestFormula,
     cancelInflight: cancelFormula,
   };
@@ -39,6 +41,7 @@ function makeLlmProps() {
     isPending: false,
     errorMessage: null as string | null,
     assistantText: null as string | null,
+    reasoningText: null as string | null,
     requestDiagram,
     cancelInflight: cancelMermaid,
   };
