@@ -382,6 +382,53 @@
         ],
         "explanation": "K-Means assumes isotropic (spherical) clusters of roughly equal variance/density. It fails on anisotropic structures (like moons or circles) and varying densities. High dimensions cause distance metrics to degrade."
       }
+    },
+    {
+      "id": "mlalgo-mg-1-category-sort",
+      "type": "MINI_GAME",
+      "difficulty": 1,
+      "content": {
+        "gameType": "CATEGORY_SORT",
+        "prompt": "Sort these ML algorithms by learning paradigm",
+        "categories": [
+          { "id": "cat-supervised", "label": "Supervised" },
+          { "id": "cat-unsupervised", "label": "Unsupervised" },
+          { "id": "cat-reinforcement", "label": "Reinforcement" }
+        ],
+        "items": [
+          { "id": "item-linreg", "label": "Linear Regression", "categoryId": "cat-supervised" },
+          { "id": "item-kmeans", "label": "K-Means", "categoryId": "cat-unsupervised" },
+          { "id": "item-qlearn", "label": "Q-Learning", "categoryId": "cat-reinforcement" },
+          { "id": "item-svm", "label": "SVM", "categoryId": "cat-supervised" },
+          { "id": "item-pca", "label": "PCA", "categoryId": "cat-unsupervised" },
+          { "id": "item-dqn", "label": "Deep Q-Network", "categoryId": "cat-reinforcement" },
+          { "id": "item-rf", "label": "Random Forest", "categoryId": "cat-supervised" },
+          { "id": "item-dbscan", "label": "DBSCAN", "categoryId": "cat-unsupervised" }
+        ],
+        "explanation": "Supervised learning uses labeled data (Linear Regression, SVM, Random Forest). Unsupervised learning finds structure in unlabeled data (K-Means, PCA, DBSCAN). Reinforcement learning learns through trial-and-error with rewards (Q-Learning, Deep Q-Network)."
+      }
+    },
+    {
+      "id": "mlalgo-mg-2-category-sort",
+      "type": "MINI_GAME",
+      "difficulty": 1,
+      "content": {
+        "gameType": "CATEGORY_SORT",
+        "prompt": "Classify these into regression vs classification tasks",
+        "categories": [
+          { "id": "cat-regression", "label": "Regression" },
+          { "id": "cat-classification", "label": "Classification" }
+        ],
+        "items": [
+          { "id": "item-house-price", "label": "Predict house prices", "categoryId": "cat-regression" },
+          { "id": "item-spam", "label": "Detect spam emails", "categoryId": "cat-classification" },
+          { "id": "item-temp", "label": "Forecast temperature", "categoryId": "cat-regression" },
+          { "id": "item-tumor", "label": "Identify tumor type", "categoryId": "cat-classification" },
+          { "id": "item-stock", "label": "Estimate stock return", "categoryId": "cat-regression" },
+          { "id": "item-sentiment", "label": "Classify review sentiment", "categoryId": "cat-classification" }
+        ],
+        "explanation": "Regression predicts continuous values (prices, temperatures, returns). Classification assigns discrete labels (spam/not-spam, tumor type, sentiment). The output type determines which paradigm applies."
+      }
     }
   ]
 }

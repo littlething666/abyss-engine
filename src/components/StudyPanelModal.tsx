@@ -24,6 +24,8 @@ import { useStudyQuestionMermaidDiagram } from '../hooks/useStudyQuestionMermaid
 import { useStudyQuestionLlmExplain } from '../hooks/useStudyQuestionLlmExplain';
 import { useThinkingToggle } from '../hooks/useThinkingToggle';
 import { StudyPanelTab } from './studyPanel/types';
+import { MiniGameView } from './miniGames/MiniGameView';
+import type { MiniGameContent } from '../types/core';
 
 interface StudyPanelModalProps {
   isOpen: boolean;
@@ -198,6 +200,17 @@ export function StudyPanelModal({
     onSubmitResult(cardId, undefined, rating);
   };
 
+  const handleMiniGameComplete = (miniGameIsCorrect: boolean) => {
+    setIsCorrect(miniGameIsCorrect);
+  };
+
+  const handleMiniGameContinue = () => {
+    const cardId = model.activeCard?.id || currentCardId || currentSession?.currentCardId || null;
+    if (!cardId) return;
+
+    onSubmitResult(cardId, isCorrect);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -264,7 +277,15 @@ export function StudyPanelModal({
             systemPromptRef={systemPromptRef}
           />
 
-          {model.renderedCard && activeTab === 'study' && (
+          {model.renderedCard && activeTab === 'study' && model.isMiniGame && model.renderedCard.miniGame && (
+            <MiniGameView
+              content={model.renderedCard.miniGame as MiniGameContent}
+              onComplete={handleMiniGameComplete}
+              onContinue={handleMiniGameContinue}
+            />
+          )}
+
+          {model.renderedCard && activeTab === 'study' && !model.isMiniGame && (
             <StudyPanelStudyView
               renderedCard={model.renderedCard}
               isFlashcard={model.isFlashcard}

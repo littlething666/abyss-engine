@@ -45,6 +45,7 @@ export interface StudyPanelModel {
   isSingleChoice: boolean;
   isMultiChoice: boolean;
   isChoiceQuestion: boolean;
+  isMiniGame: boolean;
   hasTheory: boolean;
   activeCrystals: ActiveCrystal[];
   unlockedTopicIds: string[];
@@ -155,6 +156,7 @@ export function useStudyPanelModel({
   const isFlashcard = renderedCard?.type === 'flashcard';
   const isSingleChoice = renderedCard?.type === 'single_choice';
   const isMultiChoice = renderedCard?.type === 'multi_choice';
+  const isMiniGame = renderedCard?.type === 'mini_game';
   const isChoiceQuestion = isSingleChoice || isMultiChoice;
   const hasTheory = Boolean(resolvedTopicTheory);
   const undoCount = currentSession?.undoStack?.length ?? 0;
@@ -185,6 +187,7 @@ export function useStudyPanelModel({
     isSingleChoice,
     isMultiChoice,
     isChoiceQuestion,
+    isMiniGame,
     hasTheory,
     activeCrystals,
     unlockedTopicIds,

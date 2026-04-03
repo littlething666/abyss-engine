@@ -213,6 +213,10 @@ export const useProgressionStore = create<ProgressionStore>()(
           acc[card.id] = card.difficulty;
           return acc;
         }, {});
+        const cardTypeById = cards.reduce<Record<string, string>>((acc, card) => {
+          acc[card.id] = card.type;
+          return acc;
+        }, {});
         const sessionId = state.pendingRitual?.topicId === topicId
           ? state.pendingRitual.sessionId
           : makeStudySessionId(topicId);
@@ -230,6 +234,7 @@ export const useProgressionStore = create<ProgressionStore>()(
             activeBuffIds,
             attempts: [],
             cardDifficultyById,
+            cardTypeById,
             undoStack: [],
             redoStack: [],
           },
@@ -299,7 +304,8 @@ export const useProgressionStore = create<ProgressionStore>()(
 
         const previousSM2 = state.sm2Data[cardId] || defaultSM2;
         const updatedSM2 = sm2.calculateNextReview(previousSM2, rating);
-        const reward = calculateXPReward(undefined, rating);
+        const cardFormatType = session.cardTypeById?.[cardId];
+        const reward = calculateXPReward(cardFormatType, rating);
         const activeBuffs = state.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
         const buffMultiplier = BuffEngine.get().getModifierTotal('xp_multiplier', activeBuffs);
         const buffedReward = Math.max(0, Math.round(reward * buffMultiplier));

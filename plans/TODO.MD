@@ -61,6 +61,9 @@
   - [ ] Import anki cards
 
 - [ ] **UX Improvements**
+  - [ ] Improve scene lighting (currently it's too dark when camera directed away from SceneSky)
+  - [ ] Hide labels behind crystals (raycast collision)
+  - [ ] Add search in Discovery Modal
   - [ ] levelup screen
   - [ ] features in command pallete are "invisible"; need to create items on overlay screen or other screen
   - [ ] add always visible scrollbar for llm inference modals and sheets

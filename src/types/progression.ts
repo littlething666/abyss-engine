@@ -84,6 +84,7 @@ export interface StudySession {
   activeBuffIds?: string[];
   attempts?: StudySessionAttempt[];
   cardDifficultyById?: Record<string, number>;
+  cardTypeById?: Record<string, string>;
   undoStack: StudyUndoSnapshot[];
   redoStack: StudyUndoSnapshot[];
 }

@@ -377,6 +377,52 @@
         ],
         "explanation": "To find a marginal PDF from a joint PDF, one integrates out the other variables. Continuous variables $X$ and $Y$ are independent if and only if their joint PDF can be perfectly factored into the product of their individual marginal PDFs."
       }
+    },
+    {
+      "id": "prob-mg-1-category-sort",
+      "type": "MINI_GAME",
+      "difficulty": 1,
+      "content": {
+        "gameType": "CATEGORY_SORT",
+        "prompt": "Sort these probability distributions by variable type",
+        "categories": [
+          { "id": "cat-discrete", "label": "Discrete" },
+          { "id": "cat-continuous", "label": "Continuous" }
+        ],
+        "items": [
+          { "id": "item-binomial", "label": "Binomial", "categoryId": "cat-discrete" },
+          { "id": "item-normal", "label": "Normal (Gaussian)", "categoryId": "cat-continuous" },
+          { "id": "item-poisson", "label": "Poisson", "categoryId": "cat-discrete" },
+          { "id": "item-exponential", "label": "Exponential", "categoryId": "cat-continuous" },
+          { "id": "item-geometric", "label": "Geometric", "categoryId": "cat-discrete" },
+          { "id": "item-uniform-cont", "label": "Continuous Uniform", "categoryId": "cat-continuous" },
+          { "id": "item-bernoulli", "label": "Bernoulli", "categoryId": "cat-discrete" },
+          { "id": "item-beta", "label": "Beta", "categoryId": "cat-continuous" }
+        ],
+        "explanation": "Discrete distributions (Binomial, Poisson, Geometric, Bernoulli) assign probabilities to countable outcomes via a PMF. Continuous distributions (Normal, Exponential, Continuous Uniform, Beta) describe variables over intervals via a PDF that must be integrated to yield probabilities."
+      }
+    },
+    {
+      "id": "prob-mg-2-category-sort",
+      "type": "MINI_GAME",
+      "difficulty": 1,
+      "content": {
+        "gameType": "CATEGORY_SORT",
+        "prompt": "Sort these properties by PMF or PDF",
+        "categories": [
+          { "id": "cat-pmf", "label": "PMF (Discrete)" },
+          { "id": "cat-pdf", "label": "PDF (Continuous)" }
+        ],
+        "items": [
+          { "id": "item-exact-prob", "label": "Yields exact P(X = x)", "categoryId": "cat-pmf" },
+          { "id": "item-integrate", "label": "Must integrate for probability", "categoryId": "cat-pdf" },
+          { "id": "item-exceed-one", "label": "Values can exceed 1", "categoryId": "cat-pdf" },
+          { "id": "item-sum-one", "label": "All values sum to 1", "categoryId": "cat-pmf" },
+          { "id": "item-point-zero", "label": "P(X = x) always equals 0", "categoryId": "cat-pdf" },
+          { "id": "item-summation-ev", "label": "E[X] uses summation", "categoryId": "cat-pmf" }
+        ],
+        "explanation": "A PMF maps each discrete outcome to an exact probability (summing to 1), and E[X] is computed via summation. A PDF describes probability density — individual point probabilities are 0, values can exceed 1, and both probabilities and E[X] require integration."
+      }
     }
   ]
 }

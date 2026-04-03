@@ -53,7 +53,9 @@ export interface TopicDetails {
   keyTakeaways: string[];
 }
 
-export type CardType = 'FLASHCARD' | 'SINGLE_CHOICE' | 'MULTI_CHOICE';
+export type CardType = 'FLASHCARD' | 'SINGLE_CHOICE' | 'MULTI_CHOICE' | 'MINI_GAME';
+
+export type MiniGameType = 'CATEGORY_SORT' | 'SEQUENCE_BUILD' | 'CONNECTION_WEB';
 
 export interface FlashcardContent {
   front: string;
@@ -74,11 +76,36 @@ export interface MultiChoiceContent {
   explanation: string;
 }
 
+export interface CategorySortContent {
+  gameType: 'CATEGORY_SORT';
+  prompt: string;
+  categories: { id: string; label: string }[];
+  items: { id: string; label: string; categoryId: string }[];
+  explanation: string;
+}
+
+export interface SequenceBuildContent {
+  gameType: 'SEQUENCE_BUILD';
+  prompt: string;
+  items: { id: string; label: string; correctPosition: number }[];
+  explanation: string;
+}
+
+export interface ConnectionWebContent {
+  gameType: 'CONNECTION_WEB';
+  prompt: string;
+  pairs: { id: string; left: string; right: string }[];
+  distractors?: { side: 'left' | 'right'; label: string }[];
+  explanation: string;
+}
+
+export type MiniGameContent = CategorySortContent | SequenceBuildContent | ConnectionWebContent;
+
 export interface Card {
   id: string;
   type: CardType;
   difficulty: number;
-  content: FlashcardContent | SingleChoiceContent | MultiChoiceContent;
+  content: FlashcardContent | SingleChoiceContent | MultiChoiceContent | MiniGameContent;
 }
 
 export interface TopicCardGroup {

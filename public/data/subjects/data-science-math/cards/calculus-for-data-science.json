@@ -380,6 +380,55 @@
         ],
         "explanation": "Positive eigenvalues imply upward curvature; negative imply downward. A mix implies upward in some directions and downward in others (saddle point). An eigenvalue of $0$ indicates a degenerate/flat direction, meaning the second derivative test is inconclusive, not guaranteed to be a global minimum."
       }
+    },
+    {
+      "id": "calc-mg-1-category-sort",
+      "type": "MINI_GAME",
+      "difficulty": 1,
+      "content": {
+        "gameType": "CATEGORY_SORT",
+        "prompt": "Sort these expressions by differentiation rule",
+        "categories": [
+          { "id": "cat-power", "label": "Power Rule" },
+          { "id": "cat-product", "label": "Product Rule" },
+          { "id": "cat-chain", "label": "Chain Rule" }
+        ],
+        "items": [
+          { "id": "item-x3", "label": "d/dx(x³)", "categoryId": "cat-power" },
+          { "id": "item-xsinx", "label": "d/dx(x · sin x)", "categoryId": "cat-product" },
+          { "id": "item-sinx2", "label": "d/dx(sin(x²))", "categoryId": "cat-chain" },
+          { "id": "item-5x4", "label": "d/dx(5x⁴)", "categoryId": "cat-power" },
+          { "id": "item-exlnx", "label": "d/dx(eˣ · ln x)", "categoryId": "cat-product" },
+          { "id": "item-ln3x1", "label": "d/dx(ln(3x+1))", "categoryId": "cat-chain" },
+          { "id": "item-xneg2", "label": "d/dx(x⁻²)", "categoryId": "cat-power" },
+          { "id": "item-2x1-5", "label": "d/dx((2x+1)⁵)", "categoryId": "cat-chain" }
+        ],
+        "explanation": "Power Rule applies to simple monomials (x³, 5x⁴, x⁻²). Product Rule is needed when two functions are multiplied (x·sin x, eˣ·ln x). Chain Rule handles compositions where one function is nested inside another (sin(x²), ln(3x+1), (2x+1)⁵)."
+      }
+    },
+    {
+      "id": "calc-mg-2-category-sort",
+      "type": "MINI_GAME",
+      "difficulty": 1,
+      "content": {
+        "gameType": "CATEGORY_SORT",
+        "prompt": "Sort these tasks by calculus operation",
+        "categories": [
+          { "id": "cat-diff", "label": "Differentiation" },
+          { "id": "cat-int", "label": "Integration" }
+        ],
+        "items": [
+          { "id": "item-rate", "label": "Find instantaneous rate of change", "categoryId": "cat-diff" },
+          { "id": "item-area-pdf", "label": "Compute area under a PDF", "categoryId": "cat-int" },
+          { "id": "item-gradient", "label": "Gradient of a loss function", "categoryId": "cat-diff" },
+          { "id": "item-ev-cont", "label": "E[X] for continuous variable", "categoryId": "cat-int" },
+          { "id": "item-slope", "label": "Slope of a tangent line", "categoryId": "cat-diff" },
+          { "id": "item-cdf", "label": "Build CDF from PDF", "categoryId": "cat-int" },
+          { "id": "item-sensitivity", "label": "Sensitivity of output to input", "categoryId": "cat-diff" },
+          { "id": "item-total-prob", "label": "Total probability over interval", "categoryId": "cat-int" }
+        ],
+        "explanation": "Differentiation measures how quantities change — rates of change, gradients, slopes, and sensitivities are all derivative operations. Integration accumulates quantities over intervals — computing areas under PDFs, expected values, CDFs, and probabilities over ranges all require integration."
+      }
     }
   ]
 }

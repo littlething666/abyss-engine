@@ -1,6 +1,6 @@
-import { Card } from '../../types/core';
+import { Card, type MiniGameContent } from '../../types/core';
 
-export type RenderableType = 'flashcard' | 'single_choice' | 'multi_choice';
+export type RenderableType = 'flashcard' | 'single_choice' | 'multi_choice' | 'mini_game';
 
 export interface RenderableCard {
   id: string;
@@ -10,6 +10,7 @@ export interface RenderableCard {
   options?: string[];
   correctAnswers?: string[];
   context?: string;
+  miniGame?: MiniGameContent;
 }
 
 export function toRenderableCard(card: Card): RenderableCard | null {
@@ -40,6 +41,17 @@ export function toRenderableCard(card: Card): RenderableCard | null {
       options: content.options,
       correctAnswers: [content.correctAnswer],
       context: content.explanation,
+    };
+  }
+
+  if (card.type === 'MINI_GAME') {
+    const content = card.content as MiniGameContent;
+    return {
+      id: card.id,
+      type: 'mini_game',
+      question: content.prompt,
+      context: content.explanation,
+      miniGame: content,
     };
   }
 

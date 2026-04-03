@@ -409,9 +409,14 @@ src/components/miniGames/
 
 Mini-game cards are mixed into the regular session queue. They follow the same SM-2 scheduling and difficulty gating as other card types. The `difficulty` field on the `Card` object controls when mini-games appear relative to crystal level.
 
-### Recommendation
+### Difficulty Strategy
 
-Set mini-game difficulty to 2-3 (mid-to-high) so they appear after the player has reviewed foundational flashcards and MCQs for the topic. This ensures the player has baseline knowledge before engaging with interactive challenges.
+LLM-generated mini-games should span **all difficulty levels (1-4)**, matching the topic's progression curve:
+- **Difficulty 1**: Foundational sorting/classification (appears immediately alongside introductory flashcards)
+- **Difficulty 2**: Intermediate concepts requiring multi-step reasoning
+- **Difficulty 3-4**: Advanced edge cases, subtle distinctions, and cross-topic synthesis
+
+This ensures mini-games reinforce learning at every stage of crystal growth rather than clustering at a single tier.
 
 ---
 

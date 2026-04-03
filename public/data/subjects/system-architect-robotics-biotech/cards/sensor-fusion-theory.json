@@ -1,4 +1,29 @@
 {
   "topicId": "sensor-fusion-theory",
-  "cards": []
+  "cards": [
+    {
+      "id": "sf-mg-1-category-sort",
+      "type": "MINI_GAME",
+      "difficulty": 1,
+      "content": {
+        "gameType": "CATEGORY_SORT",
+        "prompt": "Sort these sensors by type",
+        "categories": [
+          { "id": "cat-proprio", "label": "Proprioceptive" },
+          { "id": "cat-extero", "label": "Exteroceptive" }
+        ],
+        "items": [
+          { "id": "item-imu", "label": "IMU", "categoryId": "cat-proprio" },
+          { "id": "item-lidar", "label": "LiDAR", "categoryId": "cat-extero" },
+          { "id": "item-encoder", "label": "Wheel Encoder", "categoryId": "cat-proprio" },
+          { "id": "item-camera", "label": "RGB Camera", "categoryId": "cat-extero" },
+          { "id": "item-gyro", "label": "Gyroscope", "categoryId": "cat-proprio" },
+          { "id": "item-sonar", "label": "Ultrasonic Sonar", "categoryId": "cat-extero" },
+          { "id": "item-current", "label": "Motor Current Sensor", "categoryId": "cat-proprio" },
+          { "id": "item-radar", "label": "Radar", "categoryId": "cat-extero" }
+        ],
+        "explanation": "Proprioceptive sensors measure the robot's internal state (IMU, encoders, gyroscope, motor current). Exteroceptive sensors perceive the external environment (LiDAR, cameras, sonar, radar)."
+      }
+    }
+  ]
 }

@@ -360,6 +360,10 @@ export function calculateXPReward(formatType: string | undefined, rating: Rating
     case 'MULTI_CHOICE':
       baseXP = 15;
       break;
+    case 'mini_game':
+    case 'MINI_GAME':
+      baseXP = 20;
+      break;
     case 'flashcard':
     case 'FLASHCARD':
     default:

@@ -46,5 +46,29 @@ describe('toRenderableCard', () => {
       context: 'Because 2 + 2 = 4',
     });
   });
+
+  it('maps mini-game cards into renderable mini-game cards', () => {
+    const card = {
+      id: 'card-mg-1',
+      type: 'MINI_GAME' as const,
+      difficulty: 1,
+      content: {
+        gameType: 'CATEGORY_SORT' as const,
+        prompt: 'Sort these into categories',
+        categories: [{ id: 'cat-a', label: 'A' }],
+        items: [{ id: 'item-1', label: 'Item 1', categoryId: 'cat-a' }],
+        explanation: 'Because reasons.',
+      },
+    };
+
+    const rendered = toRenderableCard(card);
+    expect(rendered).toEqual({
+      id: 'card-mg-1',
+      type: 'mini_game',
+      question: 'Sort these into categories',
+      context: 'Because reasons.',
+      miniGame: card.content,
+    });
+  });
 });
 
