@@ -26,6 +26,7 @@ import {
   getClusterGeometry,
 } from '../graphics/crystals';
 import type { CrystalInstanceArrays, CrystalInstancedAttributes } from '../graphics/crystals';
+import { FLOOR_SURFACE_Y } from '../constants/sceneFloor';
 import {
   getLabelOpacity,
   getLabelOcclusionFactor,
@@ -313,7 +314,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
     const candidates = getVisibleLabelCandidates(
       crystals,
       cam.position,
-      CRYSTAL_LABEL_OFFSET_Y,
+      FLOOR_SURFACE_Y + CRYSTAL_LABEL_OFFSET_Y,
       MAX_LABEL_DISTANCE,
       MAX_VISIBLE_LABELS,
     );

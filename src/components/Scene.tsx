@@ -24,6 +24,7 @@ import { useSceneInvalidator } from '../hooks/useSceneInvalidator'
 import { useSelectedCrystalSpotlight } from '../hooks/useSelectedCrystalSpotlight'
 import '../graphics/nodeMaterialRegistration'
 import { SceneSky, SunSyncedDirectionalLight } from './SceneSky'
+import { FLOOR_SURFACE_Y } from '../constants/sceneFloor'
 
 /**
  * Scene component - Main 3D visualization for Abyss Engine
@@ -56,7 +57,6 @@ type RenderQuality = {
 
 const TARGET_SCENE_FPS = 45
 const TARGET_FRAME_INTERVAL_MS = 1000 / TARGET_SCENE_FPS
-const BLOOM_EXCLUDE_LAYER = 1
 
 const getRenderQuality = (): RenderQuality => {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -80,19 +80,19 @@ const getRenderQuality = (): RenderQuality => {
   }
 }
 
-const CAMERA_START_POSITION: [number, number, number] = [5, 5, 5]
-const ORBIT_TARGET: [number, number, number] = [0, 0, 0]
+const CAMERA_START_POSITION: [number, number, number] = [-2, 7 + FLOOR_SURFACE_Y, 5]
+const ORBIT_TARGET: [number, number, number] = [0, FLOOR_SURFACE_Y, 0]
 const CAMERA_START_DISTANCE = Math.hypot(
   CAMERA_START_POSITION[0] - ORBIT_TARGET[0],
   CAMERA_START_POSITION[1] - ORBIT_TARGET[1],
   CAMERA_START_POSITION[2] - ORBIT_TARGET[2],
 )
 const CAMERA_START_POLAR_ANGLE = Math.acos(
-  (CAMERA_START_POSITION[1] - ORBIT_TARGET[1]) / CAMERA_START_DISTANCE,
+  (CAMERA_START_POSITION[1] - 2 - ORBIT_TARGET[1]) / CAMERA_START_DISTANCE,
 )
-const CAMERA_START_FOV = 70
-const CAMERA_MIN_DISTANCE = CAMERA_START_DISTANCE * 0.6
-const CAMERA_MAX_DISTANCE = CAMERA_START_DISTANCE * 1.05
+const CAMERA_START_FOV = 90
+const CAMERA_MIN_DISTANCE = CAMERA_START_DISTANCE * 0.5
+const CAMERA_MAX_DISTANCE = CAMERA_START_DISTANCE * 0.6
 const CAMERA_UNLOCKED_MIN_POLAR_ANGLE = 0.08
 const CAMERA_UNLOCKED_MAX_POLAR_ANGLE = Math.PI - CAMERA_UNLOCKED_MIN_POLAR_ANGLE
 const CAMERA_FAR = 2_000_000
@@ -354,52 +354,54 @@ export const Scene: React.FC<SceneProps> = ({
         {/* Fog for depth — tuned to sit under analytic sky */}
         <fog attach="fog" args={[SCENE_FOG_COLOR, 18, 85]} />
 
-        {/* Reflective floor */}
-        <Suspense fallback={null}>
-          <ReflectiveFloor
-            size={GRID_SIZE}
-            floorHeight={-0.01}
-            dynamicReflections={dynamicReflections}
-            receiveShadow
-          />
-        </Suspense>
+        <group position={[0, FLOOR_SURFACE_Y, 0]}>
+          {/* Reflective floor */}
+          <Suspense fallback={null}>
+            <ReflectiveFloor
+              size={GRID_SIZE}
+              floorHeight={-0.01}
+              dynamicReflections={dynamicReflections}
+              receiveShadow
+            />
+          </Suspense>
 
-        {/* Grid floor */}
-        <Grid />
+          {/* Grid floor */}
+          <Grid />
 
-        {/* Wisdom Altar at center [0,0] */}
-        <WisdomAltar />
+          {/* Wisdom Altar at center [0,0] */}
+          <WisdomAltar />
 
-        {/* Recursive mesh box-tree near grid edge */}
-        {/* <MeshTree
+          {/* Recursive mesh box-tree near grid edge */}
+          {/* <MeshTree
           position={[3.75, 0, 0]}
         /> */}
 
-        {/* Crystals from props (data from parent/store) */}
-        <Suspense fallback={null}>
-          <Crystals
-            crystals={filteredCrystals}
-            onStartTopicStudySession={startTopicStudySessionFromSelection}
-            isStudyPanelOpen={isStudyPanelOpen}
-          />
-        </Suspense>
+          {/* Crystals from props (data from parent/store) */}
+          <Suspense fallback={null}>
+            <Crystals
+              crystals={filteredCrystals}
+              onStartTopicStudySession={startTopicStudySessionFromSelection}
+              isStudyPanelOpen={isStudyPanelOpen}
+            />
+          </Suspense>
 
-        {/* <GlowPostProcessing bloomExcludeLayer={BLOOM_EXCLUDE_LAYER} /> */}
+          {/* <GlowPostProcessing bloomExcludeLayer={BLOOM_EXCLUDE_LAYER} /> */}
 
-        {/* Invisible floor plane to detect clicks outside crystals */}
-        <mesh
-          position={[0, -0.01, 0]}
-          rotation={[-Math.PI / 2, 0, 0]}
-          receiveShadow={false}
-          onClick={() => {
-            // Clear selection when clicking on empty space
-            const { selectTopic } = useUIStore.getState()
-            selectTopic(null)
-          }}
-        >
-          <planeGeometry args={[GRID_SIZE, GRID_SIZE]} />
-          <meshBasicNodeMaterial visible={false} />
-        </mesh>
+          {/* Invisible floor plane to detect clicks outside crystals */}
+          <mesh
+            position={[0, -0.01, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            receiveShadow={false}
+            onClick={() => {
+              // Clear selection when clicking on empty space
+              const { selectTopic } = useUIStore.getState()
+              selectTopic(null)
+            }}
+          >
+            <planeGeometry args={[GRID_SIZE, GRID_SIZE]} />
+            <meshBasicNodeMaterial visible={false} />
+          </mesh>
+        </group>
       </Canvas>
       <TopicSelectionBar
         onStartTopicStudySession={startTopicStudySessionFromCards}

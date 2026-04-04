@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 
+import { FLOOR_SURFACE_Y } from '../constants/sceneFloor'
 import { ActiveCrystal } from '../types'
 
 export const SPOTLIGHT_HEIGHT = 5
@@ -33,23 +34,31 @@ export const useSelectedCrystalSpotlight = ({
     if (!crystal) return null
 
     const [x, z] = crystal.gridPosition
-    return [x, SPOTLIGHT_SELECTED_CRYSTAL_Y, z]
+    return [x, FLOOR_SURFACE_Y + SPOTLIGHT_SELECTED_CRYSTAL_Y, z]
   }, [selectedTopicId, crystals])
 
   const spotlightPosition = useMemo<[number, number, number]>(() => {
     if (!selectedCrystalPosition) {
-      return [0, SPOTLIGHT_HEIGHT, 0]
+      return [0, FLOOR_SURFACE_Y + SPOTLIGHT_HEIGHT, 0]
     }
 
-    return [selectedCrystalPosition[0], SPOTLIGHT_HEIGHT, selectedCrystalPosition[2]]
+    return [
+      selectedCrystalPosition[0],
+      FLOOR_SURFACE_Y + SPOTLIGHT_HEIGHT,
+      selectedCrystalPosition[2],
+    ]
   }, [selectedCrystalPosition])
 
   const spotlightTarget = useMemo<[number, number, number]>(() => {
     if (!selectedCrystalPosition) {
-      return [0, 0, 0]
+      return [0, FLOOR_SURFACE_Y, 0]
     }
 
-    return [selectedCrystalPosition[0], SPOTLIGHT_TARGET_Y, selectedCrystalPosition[2]]
+    return [
+      selectedCrystalPosition[0],
+      FLOOR_SURFACE_Y + SPOTLIGHT_TARGET_Y,
+      selectedCrystalPosition[2],
+    ]
   }, [selectedCrystalPosition])
 
   return {

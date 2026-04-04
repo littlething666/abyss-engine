@@ -12,7 +12,7 @@ export const SCENE_SKY_DEFAULTS = {
   mieCoefficient: 0.005,
   mieDirectionalG: 0.7,
   /** Degrees above horizon */
-  elevation: 2,
+  elevation: 2.5,
   /** Degrees, 0 = +Z */
   azimuth: 180,
   cloudCoverage: 0.4,
