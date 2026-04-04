@@ -423,6 +423,24 @@
         ],
         "explanation": "A PMF maps each discrete outcome to an exact probability (summing to 1), and E[X] is computed via summation. A PDF describes probability density — individual point probabilities are 0, values can exceed 1, and both probabilities and E[X] require integration."
       }
+    },
+    {
+      "id": "prob-mg-3-sequence-build",
+      "type": "MINI_GAME",
+      "difficulty": 1,
+      "content": {
+        "gameType": "SEQUENCE_BUILD",
+        "prompt": "Arrange these steps in a sound order for setting up a simple finite probability model",
+        "items": [
+          { "id": "seq-prob-specify", "label": "Specify the random phenomenon to study", "correctPosition": 0 },
+          { "id": "seq-prob-outcomes", "label": "List all distinct possible outcomes", "correctPosition": 1 },
+          { "id": "seq-prob-events", "label": "Define events as subsets of outcomes", "correctPosition": 2 },
+          { "id": "seq-prob-mass", "label": "Assign a probability to each outcome", "correctPosition": 3 },
+          { "id": "seq-prob-check", "label": "Check probabilities are non-negative and sum to 1", "correctPosition": 4 },
+          { "id": "seq-prob-compute", "label": "Compute event probabilities using the rules", "correctPosition": 5 }
+        ],
+        "explanation": "You first fix what is being observed, enumerate the sample space, then express events, assign a valid probability mass function, verify it is proper, and only then calculate probabilities of interest using additivity and complements."
+      }
     }
   ]
 }

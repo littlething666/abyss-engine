@@ -32,10 +32,17 @@ export function useMiniGameInteraction({ itemIds, evaluateFn }: UseMiniGameInter
   );
 
   const placeItem = useCallback(
-    (targetId: string) => {
+    (targetId: string, options?: { exclusiveTarget?: boolean }) => {
       if (phase !== 'playing' || !selectedItemId) return;
       setPlacements((prev) => {
         const next = new Map(prev);
+        if (options?.exclusiveTarget) {
+          for (const [id, tid] of next) {
+            if (tid === targetId && id !== selectedItemId) {
+              next.delete(id);
+            }
+          }
+        }
         next.set(selectedItemId, targetId);
         return next;
       });

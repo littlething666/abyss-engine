@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useCallback, useMemo } from 'react';
-import type { MiniGameContent, CategorySortContent } from '../../types/core';
+import type { MiniGameContent, CategorySortContent, SequenceBuildContent } from '../../types/core';
 import type { MiniGameResult } from '../../types/miniGame';
 import { evaluateMiniGame } from '../../features/content/evaluateMiniGame';
 import { useMiniGameInteraction } from '../../hooks/useMiniGameInteraction';
 import { CategorySortGame } from './CategorySortGame';
+import { SequenceBuildGame } from './SequenceBuildGame';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import MathMarkdownRenderer from '../MathMarkdownRenderer';
@@ -87,6 +88,13 @@ export function MiniGameView({ content, onComplete, onContinue }: MiniGameViewPr
         {content.gameType === 'CATEGORY_SORT' && (
           <CategorySortGame
             content={content as CategorySortContent}
+            interaction={interaction}
+          />
+        )}
+
+        {content.gameType === 'SEQUENCE_BUILD' && (
+          <SequenceBuildGame
+            content={content as SequenceBuildContent}
             interaction={interaction}
           />
         )}

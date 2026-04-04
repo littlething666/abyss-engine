@@ -381,6 +381,23 @@
         ],
         "explanation": "Covariance matrices are symmetric ($\\text{Cov}(X,Y) = \\text{Cov}(Y,X)$). The diagonal represents $\\text{Cov}(X,X)$, which is variance. They are mathematically proven to be positive semi-definite, ensuring variance cannot be negative in any linear projection."
       }
+    },
+    {
+      "id": "descstat-mg-1-sequence-build",
+      "type": "MINI_GAME",
+      "difficulty": 1,
+      "content": {
+        "gameType": "SEQUENCE_BUILD",
+        "prompt": "Order these steps in a typical descriptive analysis workflow for a new dataset",
+        "items": [
+          { "id": "seq-desc-ingest", "label": "Ingest or load the observations", "correctPosition": 0 },
+          { "id": "seq-desc-quality", "label": "Check quality, types, and missing values", "correctPosition": 1 },
+          { "id": "seq-desc-summaries", "label": "Compute summary statistics by variable", "correctPosition": 2 },
+          { "id": "seq-desc-viz", "label": "Visualize distributions and relationships", "correctPosition": 3 },
+          { "id": "seq-desc-interpret", "label": "Interpret patterns in context of the question", "correctPosition": 4 }
+        ],
+        "explanation": "Descriptive work flows from raw data to validation, then numerical summaries, then plots that support comparison, and finally narrative interpretation tied to the analytical goal."
+      }
     }
   ]
 }

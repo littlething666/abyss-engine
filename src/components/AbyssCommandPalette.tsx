@@ -14,7 +14,8 @@ import {
   Zap,
 } from 'lucide-react';
 
-import type { CardType } from '@/types/core';
+import type { MiniGameType } from '@/types/core';
+import type { BaseStudyCardType, StudyCardFilterSelection } from '@/features/content';
 
 import {
   Command,
@@ -35,31 +36,72 @@ const DEV_XP_AMOUNT = 80;
 
 const CARD_TYPE_FILTER_STORAGE_KEY = 'abyss.commandPalette.cardTypeFilter';
 
-const CARD_TYPES_ORDER: readonly CardType[] = [
+const BASE_CARD_TYPES_ORDER: readonly BaseStudyCardType[] = [
   'FLASHCARD',
   'SINGLE_CHOICE',
   'MULTI_CHOICE',
-  'MINI_GAME',
 ] as const;
 
-const CARD_TYPE_LABELS: Record<CardType, string> = {
+const MINI_GAME_TYPES_ORDER: readonly MiniGameType[] = [
+  'CATEGORY_SORT',
+  'SEQUENCE_BUILD',
+  'CONNECTION_WEB',
+] as const;
+
+const BASE_CARD_TYPE_LABELS: Record<BaseStudyCardType, string> = {
   FLASHCARD: 'Flashcards',
   SINGLE_CHOICE: 'Single choice',
   MULTI_CHOICE: 'Multiple choice',
-  MINI_GAME: 'Mini games',
 };
 
-function createDefaultCardTypeFilter(): Record<CardType, boolean> {
+const MINI_GAME_TYPE_LABELS: Record<MiniGameType, string> = {
+  CATEGORY_SORT: 'Category sort',
+  SEQUENCE_BUILD: 'Sequence build',
+  CONNECTION_WEB: 'Connection web',
+};
+
+interface StudyCardFilterState {
+  base: Record<BaseStudyCardType, boolean>;
+  mini: Record<MiniGameType, boolean>;
+}
+
+function createDefaultStudyCardFilter(): StudyCardFilterState {
   return {
-    FLASHCARD: true,
-    SINGLE_CHOICE: true,
-    MULTI_CHOICE: true,
-    MINI_GAME: true,
+    base: {
+      FLASHCARD: true,
+      SINGLE_CHOICE: true,
+      MULTI_CHOICE: true,
+    },
+    mini: {
+      CATEGORY_SORT: true,
+      SEQUENCE_BUILD: true,
+      CONNECTION_WEB: true,
+    },
   };
 }
 
-function loadCardTypeFilterFromStorage(): Record<CardType, boolean> {
-  const fallback = createDefaultCardTypeFilter();
+function mergeStudyCardFilter(partial: {
+  base?: Partial<Record<BaseStudyCardType, boolean>>;
+  mini?: Partial<Record<MiniGameType, boolean>>;
+}): StudyCardFilterState {
+  const d = createDefaultStudyCardFilter();
+  return {
+    base: {
+      FLASHCARD: partial.base?.FLASHCARD ?? d.base.FLASHCARD,
+      SINGLE_CHOICE: partial.base?.SINGLE_CHOICE ?? d.base.SINGLE_CHOICE,
+      MULTI_CHOICE: partial.base?.MULTI_CHOICE ?? d.base.MULTI_CHOICE,
+    },
+    mini: {
+      CATEGORY_SORT: partial.mini?.CATEGORY_SORT ?? d.mini.CATEGORY_SORT,
+      SEQUENCE_BUILD: partial.mini?.SEQUENCE_BUILD ?? d.mini.SEQUENCE_BUILD,
+      CONNECTION_WEB: partial.mini?.CONNECTION_WEB ?? d.mini.CONNECTION_WEB,
+    },
+  };
+}
+
+/** v1: flat Record<CardType, boolean>. v2: { v: 2, base, mini }. */
+function loadStudyCardFilterFromStorage(): StudyCardFilterState {
+  const fallback = createDefaultStudyCardFilter();
   if (typeof window === 'undefined') {
     return fallback;
   }
@@ -68,25 +110,49 @@ function loadCardTypeFilterFromStorage(): Record<CardType, boolean> {
     if (!raw) {
       return fallback;
     }
-    const parsed = JSON.parse(raw) as Partial<Record<CardType, boolean>>;
-    const next = { ...fallback };
-    for (const t of CARD_TYPES_ORDER) {
-      if (typeof parsed[t] === 'boolean') {
-        next[t] = parsed[t];
-      }
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      'v' in parsed &&
+      (parsed as { v?: number }).v === 2 &&
+      'base' in parsed &&
+      'mini' in parsed
+    ) {
+      const p = parsed as { base?: Partial<Record<BaseStudyCardType, boolean>>; mini?: Partial<Record<MiniGameType, boolean>> };
+      return mergeStudyCardFilter({ base: p.base, mini: p.mini });
     }
-    return next;
+    const flat = parsed as Partial<Record<BaseStudyCardType | 'MINI_GAME', boolean>> | null;
+    if (flat && typeof flat.FLASHCARD === 'boolean' && typeof flat.MINI_GAME === 'boolean') {
+      const allMini = flat.MINI_GAME;
+      return mergeStudyCardFilter({
+        base: {
+          FLASHCARD: flat.FLASHCARD,
+          SINGLE_CHOICE: flat.SINGLE_CHOICE ?? true,
+          MULTI_CHOICE: flat.MULTI_CHOICE ?? true,
+        },
+        mini: {
+          CATEGORY_SORT: allMini,
+          SEQUENCE_BUILD: allMini,
+          CONNECTION_WEB: allMini,
+        },
+      });
+    }
+    return fallback;
   } catch {
     return fallback;
   }
 }
 
-function saveCardTypeFilterToStorage(filter: Record<CardType, boolean>): void {
+function saveStudyCardFilterToStorage(filter: StudyCardFilterState): void {
   if (typeof window === 'undefined') {
     return;
   }
   try {
-    window.localStorage.setItem(CARD_TYPE_FILTER_STORAGE_KEY, JSON.stringify(filter));
+    window.localStorage.setItem(
+      CARD_TYPE_FILTER_STORAGE_KEY,
+      JSON.stringify({ v: 2, base: filter.base, mini: filter.mini }),
+    );
   } catch {
     // ignore quota / private mode
   }
@@ -100,8 +166,8 @@ export interface AbyssCommandPaletteProps {
   onSummarizeScreen?: () => void;
   /** Opens AscentWeaver to generate a curriculum graph into IndexedDB. */
   onOpenAscentWeaver?: () => void;
-  /** Starts a study session for the selected topic using only enabled card types. */
-  onStartStudyWithCardTypes?: (enabledTypes: CardType[]) => void;
+  /** Starts a study session for the selected topic using only enabled base types and mini-game kinds. */
+  onStartStudyWithCardTypes?: (selection: StudyCardFilterSelection) => void;
 }
 
 function matchesDevXpBuff(b: { buffId: string; source?: string }) {
@@ -118,11 +184,11 @@ export function AbyssCommandPalette({
 }: AbyssCommandPaletteProps) {
   const selectedTopicId = useUIStore((s) => s.selectedTopicId);
   const devXpBuffActive = useProgressionStore((s) => s.activeBuffs.some(matchesDevXpBuff));
-  const [cardTypeFilter, setCardTypeFilter] = useState(createDefaultCardTypeFilter);
+  const [studyCardFilter, setStudyCardFilter] = useState(createDefaultStudyCardFilter);
   const skipNextCardFilterSaveRef = useRef(true);
 
   useEffect(() => {
-    setCardTypeFilter(loadCardTypeFilterFromStorage());
+    setStudyCardFilter(loadStudyCardFilterFromStorage());
   }, []);
 
   useEffect(() => {
@@ -130,16 +196,31 @@ export function AbyssCommandPalette({
       skipNextCardFilterSaveRef.current = false;
       return;
     }
-    saveCardTypeFilterToStorage(cardTypeFilter);
-  }, [cardTypeFilter]);
+    saveStudyCardFilterToStorage(studyCardFilter);
+  }, [studyCardFilter]);
 
-  const enabledTypesList = useMemo(
-    () => CARD_TYPES_ORDER.filter((t) => cardTypeFilter[t]),
-    [cardTypeFilter],
+  const enabledBaseTypes = useMemo(
+    () => BASE_CARD_TYPES_ORDER.filter((t) => studyCardFilter.base[t]),
+    [studyCardFilter.base],
+  );
+
+  const enabledMiniGameTypes = useMemo(
+    () => MINI_GAME_TYPES_ORDER.filter((t) => studyCardFilter.mini[t]),
+    [studyCardFilter.mini],
+  );
+
+  const studySelection = useMemo(
+    (): StudyCardFilterSelection => ({
+      enabledBaseTypes,
+      enabledMiniGameTypes,
+    }),
+    [enabledBaseTypes, enabledMiniGameTypes],
   );
 
   const canStartFilteredStudy =
-    Boolean(selectedTopicId) && enabledTypesList.length > 0 && Boolean(onStartStudyWithCardTypes);
+    Boolean(selectedTopicId) &&
+    (enabledBaseTypes.length > 0 || enabledMiniGameTypes.length > 0) &&
+    Boolean(onStartStudyWithCardTypes);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -246,30 +327,65 @@ export function AbyssCommandPalette({
                     if (!canStartFilteredStudy) {
                       return;
                     }
-                    onStartStudyWithCardTypes(enabledTypesList);
+                    onStartStudyWithCardTypes(studySelection);
                     onOpenChange(false);
                   }}
                 >
                   <BookOpen className="size-4" />
                   <span>Study filtered cards (selected topic)</span>
                 </CommandItem>
-                {CARD_TYPES_ORDER.map((type) => {
-                  const on = cardTypeFilter[type];
-                  const label = CARD_TYPE_LABELS[type];
+                {BASE_CARD_TYPES_ORDER.map((type) => {
+                  const on = studyCardFilter.base[type];
+                  const label = BASE_CARD_TYPE_LABELS[type];
                   const searchExtras =
                     type === 'FLASHCARD'
                       ? 'flashcard deck'
                       : type === 'SINGLE_CHOICE'
                         ? 'single choice mcq'
-                        : type === 'MULTI_CHOICE'
-                          ? 'multiple choice mcq'
-                          : 'mini game category sort';
+                        : 'multiple choice mcq';
                   return (
                     <CommandItem
                       key={type}
                       value={`filter include ${label} ${type} ${searchExtras} study filter toggle`}
                       onSelect={() => {
-                        setCardTypeFilter((prev) => ({ ...prev, [type]: !prev[type] }));
+                        setStudyCardFilter((prev) => ({
+                          ...prev,
+                          base: { ...prev.base, [type]: !prev.base[type] },
+                        }));
+                      }}
+                    >
+                      {on ? (
+                        <Check className="size-4 text-primary" aria-hidden />
+                      ) : (
+                        <Circle className="size-4 text-muted-foreground" aria-hidden />
+                      )}
+                      <span>
+                        Include {label}
+                        <span className="sr-only">{on ? ', on' : ', off'}</span>
+                      </span>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+              <CommandGroup heading="Mini games">
+                {MINI_GAME_TYPES_ORDER.map((type) => {
+                  const on = studyCardFilter.mini[type];
+                  const label = MINI_GAME_TYPE_LABELS[type];
+                  const searchExtras =
+                    type === 'CATEGORY_SORT'
+                      ? 'category sort buckets'
+                      : type === 'SEQUENCE_BUILD'
+                        ? 'sequence build order steps'
+                        : 'connection web match pairs';
+                  return (
+                    <CommandItem
+                      key={type}
+                      value={`filter include mini game ${label} ${type} ${searchExtras} study filter toggle`}
+                      onSelect={() => {
+                        setStudyCardFilter((prev) => ({
+                          ...prev,
+                          mini: { ...prev.mini, [type]: !prev.mini[type] },
+                        }));
                       }}
                     >
                       {on ? (

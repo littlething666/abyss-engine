@@ -7,12 +7,12 @@ import { useSearchParams } from 'next/navigation';
 import { useProgressionStore as useStudyStore } from '@/features/progression';
 import { useUIStore } from '@/store/uiStore';
 import { Rating } from '@/types';
-import type { Card, CardType } from '@/types/core';
+import type { Card } from '@/types/core';
 import DebugControls from '@/components/debug/DebugControls';
 
 import { initAbyssDev } from '@/utils/abyssDev';
 import { AttunementRitualPayload } from '@/types/progression';
-import { filterCardsByCardTypes, useTopicMetadata } from '@/features/content';
+import { filterCardsForStudy, useTopicMetadata, type StudyCardFilterSelection } from '@/features/content';
 import { deckRepository } from '@/infrastructure/di';
 import { syncDeckIndexedDbDebugFromApp } from '@/infrastructure/deckDb/deckDbDebugLog';
 import { Button } from '@/components/ui/button';
@@ -258,15 +258,18 @@ const HomeContent: React.FC = () => {
   );
 
   const handleStartStudyWithCardTypes = useCallback(
-    (enabledTypes: CardType[]) => {
+    (selection: StudyCardFilterSelection) => {
       const topicId = useUIStore.getState().selectedTopicId;
       if (!topicId) {
         toast.error('Select a topic crystal first.');
         return;
       }
       const cards = topicCardsById.get(topicId) ?? [];
-      const enabled = new Set(enabledTypes);
-      const filtered = filterCardsByCardTypes(cards, enabled);
+      const filtered = filterCardsForStudy(
+        cards,
+        new Set(selection.enabledBaseTypes),
+        new Set(selection.enabledMiniGameTypes),
+      );
       if (filtered.length === 0) {
         toast.error('No cards match the selected types.');
         return;
