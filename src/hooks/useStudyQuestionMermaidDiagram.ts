@@ -4,7 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildStudyQuestionMermaidMessages } from '../features/studyPanel';
 import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInferenceRegistry';
-import { resolveModelForSurface } from '../infrastructure/llmInferenceSurfaceProviders';
+import {
+  getOpenAiCompatibleApiKeyOverride,
+  getOpenAiCompatibleChatUrlOverride,
+  resolveOpenAiCompatibleModelForSurface,
+} from '../store/studySettingsStore';
 
 const chat = getChatCompletionsRepositoryForSurface('studyQuestionMermaid');
 
@@ -115,7 +119,9 @@ export function useStudyQuestionMermaidDiagram({
     setPending(true);
 
     const messages = buildStudyQuestionMermaidMessages(topicLabel, questionText);
-    const model = resolveModelForSurface('studyQuestionMermaid');
+    const model = resolveOpenAiCompatibleModelForSurface('studyQuestionMermaid');
+    const apiKey = getOpenAiCompatibleApiKeyOverride();
+    const endpointUrl = getOpenAiCompatibleChatUrlOverride();
 
     void (async () => {
       try {
@@ -126,6 +132,8 @@ export function useStudyQuestionMermaidDiagram({
           messages,
           signal: ac.signal,
           enableThinking,
+          ...(endpointUrl !== undefined ? { endpointUrl } : {}),
+          ...(apiKey !== undefined ? { apiKey } : {}),
         })) {
           if (generationRef.current !== myGeneration) {
             return;

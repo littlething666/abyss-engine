@@ -1,4 +1,5 @@
 import type {
+  ChatCompletionConnectionOverrides,
   ChatCompletionResult,
   ChatCompletionStreamInput,
   ChatContentPart,
@@ -195,11 +196,13 @@ export class GeminiGenerativeLanguageRepository implements IChatCompletionsRepos
     return body;
   }
 
-  async completeChat(input: {
-    model: string;
-    messages: ChatMessage[];
-    enableThinking?: boolean;
-  }): Promise<ChatCompletionResult> {
+  async completeChat(
+    input: {
+      model: string;
+      messages: ChatMessage[];
+      enableThinking?: boolean;
+    } & ChatCompletionConnectionOverrides,
+  ): Promise<ChatCompletionResult> {
     const model = this.resolveModel(input.model);
     const body = this.buildRequestBody(input.messages, input.enableThinking);
     const response = await fetch(this.generateUrl(model), {

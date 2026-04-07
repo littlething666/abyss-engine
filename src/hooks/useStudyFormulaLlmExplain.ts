@@ -4,7 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildFormulaExplainMessages, type StudyFormulaExplainContext } from '../features/studyPanel';
 import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInferenceRegistry';
-import { resolveModelForSurface } from '../infrastructure/llmInferenceSurfaceProviders';
+import {
+  getOpenAiCompatibleApiKeyOverride,
+  getOpenAiCompatibleChatUrlOverride,
+  resolveOpenAiCompatibleModelForSurface,
+} from '../store/studySettingsStore';
 
 const chat = getChatCompletionsRepositoryForSurface('studyFormulaExplain');
 
@@ -131,7 +135,9 @@ export function useStudyFormulaLlmExplain({
       setPending(true);
 
       const messages = buildFormulaExplainMessages(topicLabel, cardQuestionText, latex, context);
-      const model = resolveModelForSurface('studyFormulaExplain');
+      const model = resolveOpenAiCompatibleModelForSurface('studyFormulaExplain');
+      const apiKey = getOpenAiCompatibleApiKeyOverride();
+      const endpointUrl = getOpenAiCompatibleChatUrlOverride();
 
       void (async () => {
         try {
@@ -142,6 +148,8 @@ export function useStudyFormulaLlmExplain({
             messages,
             signal: ac.signal,
             enableThinking,
+            ...(endpointUrl !== undefined ? { endpointUrl } : {}),
+            ...(apiKey !== undefined ? { apiKey } : {}),
           })) {
             if (generationRef.current !== myGeneration) {
               return;

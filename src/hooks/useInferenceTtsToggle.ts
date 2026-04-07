@@ -35,7 +35,7 @@ export function useInferenceTtsToggle(surfaceId: InferenceSurfaceId) {
   const enableTts = useSyncExternalStore(
     subscribe,
     () => readSnapshot(surfaceId),
-    () => true,
+    () => false,
   );
 
   const toggleTts = useCallback(() => {

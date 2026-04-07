@@ -1,13 +1,37 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatMessage, ChatStreamChunk } from '../../types/llm';
-import { HttpChatCompletionsRepository } from './HttpChatCompletionsRepository';
+import {
+  HttpChatCompletionsRepository,
+  withUserMessageIfMissing,
+} from './HttpChatCompletionsRepository';
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
   vi.restoreAllMocks();
+});
+
+describe('withUserMessageIfMissing', () => {
+  it('appends a user message when none present', () => {
+    const onlySystem: ChatMessage[] = [{ role: 'system', content: 'You are helpful.' }];
+    const out = withUserMessageIfMissing(onlySystem);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual(onlySystem[0]);
+    expect(out[1]).toEqual({
+      role: 'user',
+      content: 'Follow the instructions above and respond.',
+    });
+  });
+
+  it('does not copy when a user message already exists', () => {
+    const messages: ChatMessage[] = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'hi' },
+    ];
+    expect(withUserMessageIfMissing(messages)).toBe(messages);
+  });
 });
 
 describe('HttpChatCompletionsRepository', () => {
@@ -36,6 +60,24 @@ describe('HttpChatCompletionsRepository', () => {
     const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
     expect(body.stream).toBe(false);
     expect(body.messages).toEqual([{ role: 'user', content: 'Hi' }]);
+  });
+
+  it('completeChat appends a user message when only system (or assistant) roles are present', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    await repo.completeChat({
+      model: 'm',
+      messages: [{ role: 'system', content: 'Instructions only.' }],
+    });
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
+    expect(body.messages).toEqual([
+      { role: 'system', content: 'Instructions only.' },
+      { role: 'user', content: 'Follow the instructions above and respond.' },
+    ]);
   });
 
   it('returns reasoning_content when present', async () => {
@@ -105,6 +147,30 @@ describe('HttpChatCompletionsRepository', () => {
         headers: {
           'Content-Type': 'application/json',
           Authorization: 'Bearer secret',
+        },
+      }),
+    );
+  });
+
+  it('completeChat uses per-request apiKey and endpointUrl overrides', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://default.example/chat', 'm', 'constructor');
+    await repo.completeChat({
+      model: 'm',
+      messages: [{ role: 'user', content: 'a' }],
+      endpointUrl: 'https://override.example/v1/chat/completions',
+      apiKey: 'override-token',
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      'https://override.example/v1/chat/completions',
+      expect.objectContaining({
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer override-token',
         },
       }),
     );
@@ -181,6 +247,34 @@ describe('HttpChatCompletionsRepository', () => {
     expect(body.stream).toBe(true);
   });
 
+  it('streamChat appends a user message when no user role is present', async () => {
+    const sse =
+      'data: {"choices":[{"delta":{"content":"done"}}]}\n'
+      + 'data: [DONE]\n';
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(sse));
+          controller.close();
+        },
+      }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    for await (const _ of repo.streamChat({
+      model: 'm',
+      messages: [{ role: 'system', content: 'Sys only.' }],
+    })) {
+      /* drain */
+    }
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
+    expect(body.messages).toEqual([
+      { role: 'system', content: 'Sys only.' },
+      { role: 'user', content: 'Follow the instructions above and respond.' },
+    ]);
+  });
+
   it('yields streamed delta content (OpenAI-style SSE)', async () => {
     const sse =
       'data: {"choices":[{"delta":{"content":"Hel"}}]}\n'
@@ -205,6 +299,40 @@ describe('HttpChatCompletionsRepository', () => {
     expect(parts.every((c) => c.type === 'content')).toBe(true);
     const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.body as string);
     expect(body.stream).toBe(true);
+  });
+
+  it('streamChat uses per-request apiKey and endpointUrl overrides', async () => {
+    const sse = 'data: {"choices":[{"delta":{"content":"x"}}]}\n' + 'data: [DONE]\n';
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(sse));
+          controller.close();
+        },
+      }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://default.example/chat', 'm', 'constructor-key');
+    const parts: ChatStreamChunk[] = [];
+    for await (const p of repo.streamChat({
+      model: 'm',
+      messages: [{ role: 'user', content: 'a' }],
+      endpointUrl: 'https://override.example/v1/chat/completions',
+      apiKey: 'override-key',
+    })) {
+      parts.push(p);
+    }
+    expect(parts.map((c) => c.text).join('')).toBe('x');
+    expect(fetch).toHaveBeenCalledWith(
+      'https://override.example/v1/chat/completions',
+      expect.objectContaining({
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer override-key',
+        },
+      }),
+    );
   });
 
   it('yields reasoning_content chunks separately from content chunks', async () => {

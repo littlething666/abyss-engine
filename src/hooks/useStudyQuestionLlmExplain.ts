@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildMinimalStudyQuestionMessages } from '../features/studyPanel';
 import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInferenceRegistry';
-import { resolveModelForSurface } from '../infrastructure/llmInferenceSurfaceProviders';
+import {
+  getOpenAiCompatibleApiKeyOverride,
+  getOpenAiCompatibleChatUrlOverride,
+  resolveOpenAiCompatibleModelForSurface,
+  useStudySettingsStore,
+} from '../store/studySettingsStore';
 
 const chat = getChatCompletionsRepositoryForSurface('studyQuestionExplain');
 
@@ -41,6 +46,7 @@ export function useStudyQuestionLlmExplain({
   cardId,
   enableThinking,
 }: UseStudyQuestionLlmExplainParams) {
+  const agentPersonality = useStudySettingsStore((state) => state.agentPersonality);
   const [assistantText, setAssistantText] = useState<string | null>(null);
   const [reasoningText, setReasoningText] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
@@ -114,8 +120,10 @@ export function useStudyQuestionLlmExplain({
     setReasoningText(null);
     setPending(true);
 
-    const messages = buildMinimalStudyQuestionMessages(topicLabel, questionText);
-    const model = resolveModelForSurface('studyQuestionExplain');
+    const messages = buildMinimalStudyQuestionMessages(topicLabel, questionText, agentPersonality);
+    const model = resolveOpenAiCompatibleModelForSurface('studyQuestionExplain');
+    const apiKey = getOpenAiCompatibleApiKeyOverride();
+    const endpointUrl = getOpenAiCompatibleChatUrlOverride();
 
     void (async () => {
       try {
@@ -126,6 +134,8 @@ export function useStudyQuestionLlmExplain({
           messages,
           signal: ac.signal,
           enableThinking,
+          ...(endpointUrl !== undefined ? { endpointUrl } : {}),
+          ...(apiKey !== undefined ? { apiKey } : {}),
         })) {
           if (generationRef.current !== myGeneration) {
             return;
@@ -162,7 +172,7 @@ export function useStudyQuestionLlmExplain({
         setReasoningText(null);
       }
     })();
-  }, [cardId, topicLabel, questionText, enableThinking, setPending]);
+  }, [cardId, topicLabel, questionText, agentPersonality, enableThinking, setPending]);
 
   return {
     requestExplain,

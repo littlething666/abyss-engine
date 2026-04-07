@@ -8,6 +8,7 @@ import { useStudySettingsStore } from '../store/studySettingsStore';
 import { TARGET_AUDIENCE_OPTIONS } from '../store/studySettingsStore';
 import {
   buildPriorKnowledgeLines,
+  getAgentPersonalityInstructions,
   interpolatePromptTemplate,
   resolveActiveCard,
 } from '../features/studyPanel';
@@ -67,6 +68,7 @@ export function useStudyPanelModel({
   const activeCrystals = useProgressionStore((state) => state.activeCrystals);
   const unlockedTopicIds = useProgressionStore((state) => state.unlockedTopicIds);
   const targetAudience = useStudySettingsStore((state) => state.targetAudience);
+  const agentPersonality = useStudySettingsStore((state) => state.agentPersonality);
 
   const resolvedTopicId = useMemo(
     () => currentTopicId || currentSession?.topicId || null,
@@ -130,9 +132,10 @@ export function useStudyPanelModel({
           priorKnowledge: priorKnowledgeLines,
           question: currentQuestion,
           targetAudience: targetAudience || TARGET_AUDIENCE_OPTIONS[0],
+          personality: getAgentPersonalityInstructions(agentPersonality),
         },
       ),
-    [resolvedSubject, resolvedTopic, priorKnowledgeLines, currentQuestion, targetAudience],
+    [resolvedSubject, resolvedTopic, priorKnowledgeLines, currentQuestion, targetAudience, agentPersonality],
   );
 
   const sm2State = useMemo(() => {

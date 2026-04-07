@@ -24,7 +24,15 @@ export interface ChatCompletionResult {
   reasoningContent: string | null;
 }
 
-export interface ChatCompletionStreamInput {
+/** Optional per-request overrides for OpenAI-compatible HTTP clients (ignored by other providers). */
+export interface ChatCompletionConnectionOverrides {
+  /** Full chat-completions URL; when omitted, uses the repository default. */
+  endpointUrl?: string;
+  /** Bearer token; when omitted, uses the repository default (e.g. env). */
+  apiKey?: string;
+}
+
+export interface ChatCompletionStreamInput extends ChatCompletionConnectionOverrides {
   model: string;
   messages: ChatMessage[];
   /** When aborted, the stream stops and the iterator completes. */
@@ -34,11 +42,13 @@ export interface ChatCompletionStreamInput {
 }
 
 export interface IChatCompletionsRepository {
-  completeChat(input: {
-    model: string;
-    messages: ChatMessage[];
-    enableThinking?: boolean;
-  }): Promise<ChatCompletionResult>;
+  completeChat(
+    input: {
+      model: string;
+      messages: ChatMessage[];
+      enableThinking?: boolean;
+    } & ChatCompletionConnectionOverrides,
+  ): Promise<ChatCompletionResult>;
   /** SSE stream yielding tagged chunks (reasoning or content). */
   streamChat(input: ChatCompletionStreamInput): AsyncIterable<ChatStreamChunk>;
 }

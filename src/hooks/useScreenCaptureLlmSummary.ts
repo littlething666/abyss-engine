@@ -4,7 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildScreenCaptureSummaryMessages } from '../features/screenCaptureSummary';
 import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInferenceRegistry';
-import { resolveModelForSurface } from '../infrastructure/llmInferenceSurfaceProviders';
+import {
+  getOpenAiCompatibleApiKeyOverride,
+  getOpenAiCompatibleChatUrlOverride,
+  resolveOpenAiCompatibleModelForSurface,
+} from '../store/studySettingsStore';
 import { captureDisplayMediaAsPngDataUrl } from '../lib/captureDisplayMediaFrame';
 
 const chat = getChatCompletionsRepositoryForSurface('screenCaptureSummary');
@@ -100,7 +104,9 @@ export function useScreenCaptureLlmSummary({ enableThinking }: UseScreenCaptureL
         }
 
         const messages = buildScreenCaptureSummaryMessages(dataUrl);
-        const model = resolveModelForSurface('screenCaptureSummary');
+        const model = resolveOpenAiCompatibleModelForSurface('screenCaptureSummary');
+        const apiKey = getOpenAiCompatibleApiKeyOverride();
+        const endpointUrl = getOpenAiCompatibleChatUrlOverride();
         setAssistantText('');
 
         void (async () => {
@@ -112,6 +118,8 @@ export function useScreenCaptureLlmSummary({ enableThinking }: UseScreenCaptureL
               messages,
               signal: ac.signal,
               enableThinking,
+              ...(endpointUrl !== undefined ? { endpointUrl } : {}),
+              ...(apiKey !== undefined ? { apiKey } : {}),
             })) {
               if (generationRef.current !== myGeneration) {
                 return;

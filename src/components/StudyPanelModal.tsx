@@ -14,7 +14,12 @@ import {
   DialogTitle,
 } from '@/components/ui/abyss-dialog';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
-import { TARGET_AUDIENCE_OPTIONS, useStudySettingsStore } from '../store/studySettingsStore';
+import {
+  AGENT_PERSONALITY_OPTIONS,
+  OPENAI_COMPATIBLE_MODEL_OPTIONS,
+  TARGET_AUDIENCE_OPTIONS,
+  useStudySettingsStore,
+} from '../store/studySettingsStore';
 import { StudyPanelStateViews } from './studyPanel/StudyPanelStateViews';
 import { StudyPanelStudyView } from './studyPanel/StudyPanelStudyView';
 import { useStudyPanelModel } from '../hooks/useStudyPanelModel';
@@ -56,6 +61,14 @@ export function StudyPanelModal({
   const [activeTab, setActiveTab] = useState<StudyPanelTab>('study');
   const targetAudience = useStudySettingsStore((state) => state.targetAudience);
   const setTargetAudience = useStudySettingsStore((state) => state.setTargetAudience);
+  const agentPersonality = useStudySettingsStore((state) => state.agentPersonality);
+  const setAgentPersonality = useStudySettingsStore((state) => state.setAgentPersonality);
+  const openAiCompatibleModelId = useStudySettingsStore((state) => state.openAiCompatibleModelId);
+  const setOpenAiCompatibleModelId = useStudySettingsStore((state) => state.setOpenAiCompatibleModelId);
+  const openAiCompatibleChatUrl = useStudySettingsStore((state) => state.openAiCompatibleChatUrl);
+  const setOpenAiCompatibleChatUrl = useStudySettingsStore((state) => state.setOpenAiCompatibleChatUrl);
+  const openAiCompatibleApiKey = useStudySettingsStore((state) => state.openAiCompatibleApiKey);
+  const setOpenAiCompatibleApiKey = useStudySettingsStore((state) => state.setOpenAiCompatibleApiKey);
   const currentSession = useStudyStore((state) => state.currentSession);
 
   const model = useStudyPanelModel({
@@ -275,8 +288,18 @@ export function StudyPanelModal({
             topicSystemPrompt={model.topicSystemPrompt}
             targetAudience={targetAudience}
             targetAudienceOptions={TARGET_AUDIENCE_OPTIONS}
+            agentPersonality={agentPersonality}
+            agentPersonalityOptions={AGENT_PERSONALITY_OPTIONS}
             onClose={onClose}
             onSetTargetAudience={setTargetAudience}
+            onSetAgentPersonality={setAgentPersonality}
+            openAiCompatibleModelId={openAiCompatibleModelId}
+            openAiCompatibleModelOptions={OPENAI_COMPATIBLE_MODEL_OPTIONS}
+            onSetOpenAiCompatibleModelId={setOpenAiCompatibleModelId}
+            openAiCompatibleChatUrl={openAiCompatibleChatUrl}
+            onSetOpenAiCompatibleChatUrl={setOpenAiCompatibleChatUrl}
+            openAiCompatibleApiKey={openAiCompatibleApiKey}
+            onSetOpenAiCompatibleApiKey={setOpenAiCompatibleApiKey}
             onSystemPromptSelect={handleSelectSystemPrompt}
             systemPromptRef={systemPromptRef}
           />

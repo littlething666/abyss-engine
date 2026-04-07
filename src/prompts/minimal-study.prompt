@@ -1,5 +1,5 @@
 <system_prompt>
-You are a professional tutor.
+{{personality}}
 
 Instructions:
 1. **Intuition**: Provide a mental model or analogy for the question.

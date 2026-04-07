@@ -1,3 +1,4 @@
+import { resolveDefaultOpenAiChatCompletionsUrl } from '../openAiCompatibleDefaults';
 import { resolveDefaultLlmModel } from '../llmDefaultModel';
 import type {
   ChatCompletionResult,
@@ -24,6 +25,19 @@ type StreamChunkBody = {
     } | null;
   } | null>;
 };
+
+/** Some OpenAI-compatible gateways reject requests with no `user` turn. */
+const USER_MESSAGE_FALLBACK: ChatMessage = {
+  role: 'user',
+  content: 'Follow the instructions above and respond.',
+};
+
+export function withUserMessageIfMissing(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.some((m) => m.role === 'user')) {
+    return messages;
+  }
+  return [...messages, USER_MESSAGE_FALLBACK];
+}
 
 export class HttpChatCompletionsRepository implements IChatCompletionsRepository {
   /** Parses one SSE line (`data: ...`); yields a tagged chunk or null to skip. */
@@ -61,12 +75,13 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     private readonly apiKey: string | null = null,
   ) {}
 
-  private buildHeaders(): Record<string, string> {
+  private buildHeaders(apiKeyOverride?: string): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-    if (this.apiKey) {
-      headers.Authorization = `Bearer ${this.apiKey}`;
+    const key = apiKeyOverride !== undefined ? apiKeyOverride : this.apiKey;
+    if (key) {
+      headers.Authorization = `Bearer ${key}`;
     }
     return headers;
   }
@@ -75,19 +90,23 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     model: string;
     messages: ChatMessage[];
     enableThinking?: boolean;
+    endpointUrl?: string;
+    apiKey?: string;
   }): Promise<ChatCompletionResult> {
+    const messages = withUserMessageIfMissing(input.messages);
     const body: Record<string, unknown> = {
       model: input.model || this.defaultModel,
-      messages: input.messages,
+      messages,
       stream: false,
     };
     if (input.enableThinking !== undefined) {
       body.enable_thinking = input.enableThinking;
     }
 
-    const response = await fetch(this.chatUrl, {
+    const url = input.endpointUrl ?? this.chatUrl;
+    const response = await fetch(url, {
       method: 'POST',
-      headers: this.buildHeaders(),
+      headers: this.buildHeaders(input.apiKey),
       body: JSON.stringify(body),
     });
 
@@ -112,18 +131,20 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
   }
 
   async *streamChat(input: ChatCompletionStreamInput): AsyncGenerator<ChatStreamChunk, void, undefined> {
+    const messages = withUserMessageIfMissing(input.messages);
     const body: Record<string, unknown> = {
       model: input.model || this.defaultModel,
-      messages: input.messages,
+      messages,
       stream: true,
     };
     if (input.enableThinking !== undefined) {
       body.enable_thinking = input.enableThinking;
     }
 
-    const response = await fetch(this.chatUrl, {
+    const url = input.endpointUrl ?? this.chatUrl;
+    const response = await fetch(url, {
       method: 'POST',
-      headers: this.buildHeaders(),
+      headers: this.buildHeaders(input.apiKey),
       body: JSON.stringify(body),
       signal: input.signal,
     });
@@ -178,8 +199,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
 }
 
 export function createHttpChatCompletionsRepositoryFromEnv(): HttpChatCompletionsRepository {
-  const chatUrl =
-    process.env.NEXT_PUBLIC_LLM_CHAT_URL ?? 'http://localhost:8080/v1/chat/completions';
+  const chatUrl = resolveDefaultOpenAiChatCompletionsUrl();
   const defaultModel = resolveDefaultLlmModel();
   const apiKey = process.env.NEXT_PUBLIC_LLM_API_KEY?.trim() || null;
   return new HttpChatCompletionsRepository(chatUrl, defaultModel, apiKey);

@@ -20,6 +20,8 @@ import {
   DialogTitle,
 } from '@/components/ui/abyss-dialog';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { resolveDefaultOpenAiChatCompletionsUrl } from '@/infrastructure/openAiCompatibleDefaults';
 import { cn } from '@/lib/utils';
 
 interface StudyPanelStateViewsProps {
@@ -34,9 +36,19 @@ interface StudyPanelStateViewsProps {
   topicSystemPrompt: string;
   targetAudience: string;
   targetAudienceOptions: readonly string[];
+  agentPersonality: string;
+  agentPersonalityOptions: readonly string[];
   resolvedTopic: string;
   onClose: () => void;
   onSetTargetAudience: (targetAudience: string) => void;
+  onSetAgentPersonality: (agentPersonality: string) => void;
+  openAiCompatibleModelId: string;
+  openAiCompatibleModelOptions: readonly string[];
+  onSetOpenAiCompatibleModelId: (openAiCompatibleModelId: string) => void;
+  openAiCompatibleChatUrl: string;
+  onSetOpenAiCompatibleChatUrl: (openAiCompatibleChatUrl: string) => void;
+  openAiCompatibleApiKey: string;
+  onSetOpenAiCompatibleApiKey: (openAiCompatibleApiKey: string) => void;
   onSystemPromptSelect: () => void;
   systemPromptRef: React.RefObject<HTMLPreElement | null>;
 }
@@ -53,8 +65,18 @@ export function StudyPanelStateViews({
   topicSystemPrompt,
   targetAudience,
   targetAudienceOptions,
+  agentPersonality,
+  agentPersonalityOptions,
   onClose,
   onSetTargetAudience,
+  onSetAgentPersonality,
+  openAiCompatibleModelId,
+  openAiCompatibleModelOptions,
+  onSetOpenAiCompatibleModelId,
+  openAiCompatibleChatUrl,
+  onSetOpenAiCompatibleChatUrl,
+  openAiCompatibleApiKey,
+  onSetOpenAiCompatibleApiKey,
   onSystemPromptSelect,
   systemPromptRef,
   resolvedTopic,
@@ -384,6 +406,78 @@ export function StudyPanelStateViews({
                   </NativeSelectOption>
                 ))}
               </NativeSelect>
+            </div>
+            <div className="space-y-1 pt-3">
+              <label className="text-sm text-muted-foreground">Agent personality</label>
+              <NativeSelect
+                value={agentPersonality}
+                onChange={(event) => onSetAgentPersonality(event.currentTarget.value)}
+                aria-label="study-settings-agent-personality"
+                className="w-full"
+              >
+                <NativeSelectOption value="" disabled>
+                  Select agent personality
+                </NativeSelectOption>
+                {agentPersonalityOptions.map((option) => (
+                  <NativeSelectOption key={option} value={option}>
+                    {option}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="space-y-1 pt-3">
+              <label className="text-sm text-muted-foreground">Inference model (OpenAI-compatible)</label>
+              <NativeSelect
+                value={openAiCompatibleModelId}
+                onChange={(event) => onSetOpenAiCompatibleModelId(event.currentTarget.value)}
+                aria-label="study-settings-openai-compatible-model"
+                className="w-full"
+              >
+                {openAiCompatibleModelOptions.map((option) => (
+                  <NativeSelectOption
+                    key={option === '' ? 'openai-model-default' : option}
+                    value={option}
+                  >
+                    {option === '' ? 'Default (NEXT_PUBLIC_LLM_MODEL)' : option}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="space-y-1 pt-3">
+              <label className="text-sm text-muted-foreground" htmlFor="study-settings-openai-chat-url">
+                LLM API URL (OpenAI-compatible)
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Leave empty to use <span className="font-mono">NEXT_PUBLIC_LLM_CHAT_URL</span> or{' '}
+                <span className="font-mono break-all">{resolveDefaultOpenAiChatCompletionsUrl()}</span>.
+              </p>
+              <Input
+                id="study-settings-openai-chat-url"
+                type="text"
+                value={openAiCompatibleChatUrl}
+                onChange={(event) => onSetOpenAiCompatibleChatUrl(event.currentTarget.value)}
+                autoComplete="off"
+                aria-label="study-settings-openai-compatible-chat-url"
+                placeholder={resolveDefaultOpenAiChatCompletionsUrl()}
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-1 pt-3">
+              <label className="text-sm text-muted-foreground" htmlFor="study-settings-openai-api-key">
+                LLM API key (OpenAI-compatible)
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Leave empty to use <span className="font-mono">NEXT_PUBLIC_LLM_API_KEY</span>.
+              </p>
+              <Input
+                id="study-settings-openai-api-key"
+                type="password"
+                value={openAiCompatibleApiKey}
+                onChange={(event) => onSetOpenAiCompatibleApiKey(event.currentTarget.value)}
+                autoComplete="off"
+                aria-label="study-settings-openai-compatible-api-key"
+                className="w-full"
+              />
             </div>
           </div>
         </div>
