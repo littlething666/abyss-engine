@@ -44,6 +44,13 @@ export interface SubjectGraph {
   nodes: GraphNode[];
 }
 
+/** Syllabus buckets for difficulties 1–3; used for lookahead card generation. */
+export type CoreQuestionsByDifficulty = {
+  1: string[];
+  2: string[];
+  3: string[];
+};
+
 export interface TopicDetails {
   topicId: string;
   title: string;
@@ -51,6 +58,8 @@ export interface TopicDetails {
   coreConcept: string;
   theory: string;
   keyTakeaways: string[];
+  /** Populated after on-demand generation; drives background difficulty expansion. */
+  coreQuestionsByDifficulty?: Partial<CoreQuestionsByDifficulty>;
 }
 
 export type CardType = 'FLASHCARD' | 'SINGLE_CHOICE' | 'MULTI_CHOICE' | 'MINI_GAME';

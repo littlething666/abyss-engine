@@ -4,6 +4,7 @@
 
 import { uiStore } from '../store/uiStore';
 import { SM2Data } from '../features/progression';
+import { triggerTopicUnlockGeneration } from '../features/topicContentGeneration';
 import { deckRepository } from '../infrastructure/di';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { SubjectGraph, Card } from '../types/core';
@@ -147,6 +148,11 @@ const abyssDev: AbyssDev = {
     if (!position) {
       console.warn(`[AbyssDev] Could not spawn crystal for "${topicId}" (locked, missing graph data, or no slots available).`);
       return;
+    }
+
+    const subjectId = collectTopicIndex(allGraphs).get(topicId);
+    if (subjectId) {
+      void triggerTopicUnlockGeneration(subjectId, topicId);
     }
 
     console.log(`[AbyssDev] Spawned crystal for "${topicId}" at position [${position[0]}, ${position[1]}]`);

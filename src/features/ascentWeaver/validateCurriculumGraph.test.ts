@@ -102,4 +102,41 @@ describe('validateCurriculumGraph', () => {
     const r = validateCurriculumGraph(graph, expectations);
     expect(r.ok).toBe(false);
   });
+
+  it('accepts a 10-node two-tier incremental graph', () => {
+    const nodes: SubjectGraph['nodes'] = [];
+    for (let i = 1; i <= 5; i += 1) {
+      nodes.push({
+        topicId: `x1-${i}`,
+        title: `Tier 1 ${i}`,
+        tier: 1,
+        prerequisites: [],
+        learningObjective: 'Objective.',
+      });
+    }
+    for (let i = 1; i <= 5; i += 1) {
+      nodes.push({
+        topicId: `x2-${i}`,
+        title: `Tier 2 ${i}`,
+        tier: 2,
+        prerequisites: [`x1-${i}`],
+        learningObjective: 'Objective.',
+      });
+    }
+    const graph: SubjectGraph = {
+      subjectId: 'demo-subject',
+      title: 'Two tiers',
+      themeId: 'demo-subject',
+      maxTier: 2,
+      nodes,
+    };
+    const r = validateCurriculumGraph(graph, {
+      subjectId: 'demo-subject',
+      themeId: 'demo-subject',
+      topicCount: 10,
+      maxTier: 2,
+      topicsPerTier: 5,
+    });
+    expect(r).toEqual({ ok: true });
+  });
 });

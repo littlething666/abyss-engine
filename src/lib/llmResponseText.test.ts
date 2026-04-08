@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { extractJsonObjectString, stripMarkdownJsonFenceForDisplay } from './llmResponseText';
+import {
+  extractJsonObjectString,
+  logJsonParseError,
+  stripMarkdownJsonFenceForDisplay,
+} from './llmResponseText';
 
 describe('stripMarkdownJsonFenceForDisplay', () => {
   it('strips ```json opener, body, and closer', () => {
@@ -37,5 +41,22 @@ describe('extractJsonObjectString', () => {
 
   it('returns null when no object', () => {
     expect(extractJsonObjectString('no braces')).toBeNull();
+  });
+});
+
+describe('logJsonParseError', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('logs context, message, length, and head to console.error', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const err = new SyntaxError('Unexpected token');
+    const long = 'x'.repeat(5000);
+    logJsonParseError('test-context', err, long);
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [first, meta] = spy.mock.calls[0]!;
+    expect(first).toBe('[test-context] JSON.parse failed: Unexpected token');
+    expect(meta).toEqual({ length: 5000, head: 'x'.repeat(4000) });
   });
 });

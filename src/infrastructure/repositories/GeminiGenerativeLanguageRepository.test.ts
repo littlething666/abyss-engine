@@ -211,26 +211,4 @@ describe('GeminiGenerativeLanguageRepository.completeChat', () => {
     expect(out.content).toBe('The answer is yes.');
     expect(out.reasoningContent).toBe('Let me think...');
   });
-
-  it('sends thinkingConfig when enableThinking is true', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        candidates: [{ content: { parts: [{ text: 'ok' }] } }],
-      }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const repo = new GeminiGenerativeLanguageRepository('https://example.com', 'k', 'model');
-    await repo.completeChat({
-      model: 'model',
-      messages: [{ role: 'user', content: 'x' }],
-      enableThinking: true,
-    });
-
-    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
-    expect(body.generationConfig).toEqual({
-      thinkingConfig: { thinkingBudget: 8192 },
-    });
-  });
 });

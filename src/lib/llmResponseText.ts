@@ -34,3 +34,17 @@ export function extractJsonObjectString(raw: string): string | null {
   }
   return candidate.slice(start, end + 1);
 }
+
+const JSON_PARSE_ERROR_LOG_HEAD = 4000;
+
+/**
+ * Logs `JSON.parse` failures for assistant-extracted payloads (browser console).
+ * Includes a truncated copy of the string that failed to parse.
+ */
+export function logJsonParseError(context: string, error: unknown, jsonStr: string): void {
+  const reason = error instanceof Error ? error.message : String(error);
+  console.error(`[${context}] JSON.parse failed: ${reason}`, {
+    length: jsonStr.length,
+    head: jsonStr.slice(0, JSON_PARSE_ERROR_LOG_HEAD),
+  });
+}

@@ -1,0 +1,28 @@
+You extend an existing topic deck with new cards at a **specific difficulty** (2 or 3). Use the theory and the syllabus questions for that difficulty only.
+
+Output **one JSON object**: `{ "cards": [ ... ] }`.
+
+Card shapes (same as production decks):
+- FLASHCARD, SINGLE_CHOICE, MULTI_CHOICE with `difficulty` set to **{{difficulty}}**
+- MINI_GAME with `difficulty` **{{difficulty}}** and `content.gameType` one of CATEGORY_SORT, SEQUENCE_BUILD, CONNECTION_WEB
+
+Requirements:
+- Generate **6–10** cards total, mixing study types and **1–2** mini-games.
+- Every `id` must be unique, kebab-case, prefixed `{{topicId}}-d{{difficulty}}-`.
+- Ground every card in the theory and the questions below.
+
+### JSON strings and LaTeX
+
+In JSON, LaTeX commands must use doubled backslashes in source strings (e.g. `$\\theta$`, `$\\alpha$`), never a single `\` before `t`, `n`, `a`, etc.
+
+Topic id: {{topicId}}
+Topic title: {{topicTitle}}
+Difficulty: {{difficulty}}
+
+Theory (markdown excerpt):
+---
+{{theoryExcerpt}}
+---
+
+Syllabus questions for this difficulty:
+{{syllabusQuestions}}

@@ -1,4 +1,4 @@
-import { extractJsonObjectString } from '@/lib/llmResponseText';
+import { extractJsonObjectString, logJsonParseError } from '@/lib/llmResponseText';
 import type { SubjectGraph } from '../../types/core';
 import { subjectGraphSchema } from './subjectGraphSchema';
 
@@ -15,7 +15,8 @@ export function parseSubjectGraphResponse(raw: string): ParseSubjectGraphResult 
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonStr) as unknown;
-  } catch {
+  } catch (e) {
+    logJsonParseError('parseSubjectGraphResponse', e, jsonStr);
     return { ok: false, error: 'Assistant response is not valid JSON' };
   }
 

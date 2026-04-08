@@ -5,6 +5,8 @@ import { Layers } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useAllGraphs, useSubjects } from '@/features/content';
+import { triggerTopicUnlockGeneration } from '@/features/topicContentGeneration';
+import { useTopicContentAvailabilityMap } from '@/hooks/useTopicContentAvailabilityMap';
 import { useProgressionStore as useStudyStore } from '@/features/progression';
 import type { TopicMetadata } from '@/features/content';
 import type { Card } from '@/types/core';
@@ -50,9 +52,11 @@ export default function TopicSelectionBar({
     [subjects],
   );
 
+  const contentAvailabilityByTopicId = useTopicContentAvailabilityMap();
+
   const topicsByTier = useMemo(
-    () => getTopicsByTier(allGraphs, unlockedTopicIds, subjectList),
-    [getTopicsByTier, unlockPoints, unlockedTopicIds, allGraphs, subjectList],
+    () => getTopicsByTier(allGraphs, unlockedTopicIds, subjectList, undefined, contentAvailabilityByTopicId),
+    [getTopicsByTier, unlockedTopicIds, allGraphs, subjectList, contentAvailabilityByTopicId],
   );
 
   const selectedTieredTopic = useMemo(() => {
@@ -104,7 +108,10 @@ export default function TopicSelectionBar({
     if (!selectedTopicId || !selectedTieredTopic || !barUnlockStatus?.canUnlock) {
       return;
     }
-    unlockTopic(selectedTopicId, allGraphs);
+    const position = unlockTopic(selectedTopicId, allGraphs);
+    if (position) {
+      void triggerTopicUnlockGeneration(selectedTieredTopic.subjectId, selectedTopicId);
+    }
     scheduleTopicDetailsDismiss(() => setDetailsOpen(false));
   }, [allGraphs, barUnlockStatus?.canUnlock, selectedTieredTopic, selectedTopicId, unlockTopic]);
 

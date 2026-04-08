@@ -49,6 +49,11 @@ Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural
 - **Lighting & Scene Graph**: Cameras are automatically attached to the scene graph; do not manually attach objects to cameras. WebGPU shadow precision requires decreasing or removing legacy WebGL shadow biases. Recalibrate exposures if using `RoomEnvironment` (PMREM positioning changed) or `Sky`/`SkyMesh` (legacy gamma removed).
 
 ## Mandatory Project Rules
+- **Prioritize Strategic Programming over Tactical fixes.** You are strictly forbidden from implementing 'Workarounds,' 'Kludges,' 'Band-aids,' or 'Stopgaps' that introduce Architectural Erosion (e.g., leaking abstractions, breaking encapsulation, or creating brittle error handling) without my explicit consent.
+  - **Standard Operating Procedure:**
+    - Root Cause over Symptom: If a component (e.g., an external API, a module, or a model) produces invalid or unexpected output, do not write 'defensive' fallback logic or multiple parsers to 'clean' the data.
+    - Explicit Failure: Instead of masking errors with soft-handling, write code that throws a hard, descriptive error at the boundary.
+    - Upstream Mitigation: Your primary solution must address the source of the failure (e.g., fixing configuration, adjusting parameters, or correcting the upstream logic) rather than accommodating the failure downstream.
 - **Data-Driven Execution**: No magic strings. No manual state mapping.
 - **No Legacy Burden**: Deprecated behavior must be refactored or removed. Do not preserve dead code.
 - **WebGPU Strictness**: Any pull request or code generation that introduces a legacy WebGL material, `WebGLRenderer`, `state.gl`, `THREE.Clock`, or non-TSL shader string into the codebase will be rejected.
@@ -70,9 +75,25 @@ Before generating code, the agent must evaluate the request against the architec
 3. Provide necessary unit or e2e tests for new feature paths.
 
 ### III. Mandatory Collaboration Output
-Every agent response proposing code modifications must preface the technical implementation with an **Architectural Optimization Proposal** containing:
-1. **Optimized Design Rationale**: A technical justification for the selected architectural approach, detailing how the proposed structure enhances system scalability, maintainability, or performance relative to current constraints.
-2. **Structural Integration Strategy**: Specification of the architectural patterns and boundary enforcement mechanisms utilized to ensure seamless integration with the existing codebase.
+Every agent response proposing code modifications **must begin** with a **Compliance, Risk & Drift Assessment** (before any code, rationale, or optimization proposal). This assessment enforces zero-tolerance architectural hygiene and must explicitly:
+
+1. **Misalignment Check**
+   Systematically verify the entire proposal against **every section** of this CLAUDE.md (Scope, Project Vision, all Architectural Patterns, Mandatory Project Rules, WebGPU Strictness, Mobile-first UI, and Agent Workflow).
+   - List and highlight **every** misalignment or potential contradiction.
+   - If zero misalignments exist, state verbatim: **"Full alignment with CLAUDE.md confirmed — zero deviations detected."**
+
+2. **Architectural Risk Highlight**
+   Identify and rate (Low/Medium/High) every architectural risk introduced by the change, including (but not limited to):
+   - Boundary violations or cross-feature coupling
+   - Erosion of strict layering, repository pattern, or data-driven execution
+   - WebGPU pipeline fragility, TSL/RenderPipeline regressions, or mobile-first violations
+   - Scalability, maintainability, or performance impacts on the crystal-garden rendering engine
+   For each risk, provide a concrete mitigation that preserves the authoritative architecture.
+
+3. **Prompt Drift Prevention**
+   Analyze how the proposed implementation could enable future prompt drift (e.g., introducing patterns that future agents might interpret as permission for workarounds, legacy code, magic strings, or tactical fixes).
+   Confirm explicit adherence to “Prioritize Strategic Programming over Tactical fixes” and “No Legacy Burden.”
+   If any drift vector exists, state the risk and the exact guardrail added to eliminate it.
 
 This file is authoritative.
 If something in the codebase contradicts CLAUDE.md, the codebase is wrong.

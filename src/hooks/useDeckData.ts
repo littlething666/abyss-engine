@@ -36,9 +36,13 @@ export function useSubjectGraphs(subjectIds: string[]): UseQueryResult<SubjectGr
   });
 }
 
+export function topicDetailsQueryKey(subjectId: string, topicId: string) {
+  return ['content', 'topic', subjectId, topicId, 'details'] as const;
+}
+
 export function useTopicDetails(subjectId: string, topicId: string): UseQueryResult<TopicDetails, Error> {
   return useQuery({
-    queryKey: ['content', 'topic', subjectId, topicId, 'details'],
+    queryKey: topicDetailsQueryKey(subjectId, topicId),
     queryFn: async (): Promise<TopicDetails> => deckRepository.getTopicDetails(subjectId, topicId),
     staleTime: DEFAULT_STALE_TIME,
     enabled: Boolean(subjectId) && Boolean(topicId),

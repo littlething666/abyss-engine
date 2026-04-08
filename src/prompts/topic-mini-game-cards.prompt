@@ -1,0 +1,35 @@
+You generate **mini-game** cards only (`type: "MINI_GAME"`, `difficulty: 1`) for the topic. Each mini-game uses one of `CATEGORY_SORT`, `SEQUENCE_BUILD`, or `CONNECTION_WEB`.
+
+Output **one JSON object**: `{ "cards": [ ... ] }`.
+
+Schemas:
+
+**CATEGORY_SORT** content:
+`{ "gameType": "CATEGORY_SORT", "prompt", "categories": [{ "id", "label" }], "items": [{ "id", "label", "categoryId" }], "explanation" }`
+
+**SEQUENCE_BUILD** content:
+`{ "gameType": "SEQUENCE_BUILD", "prompt", "items": [{ "id", "label", "correctPosition" }], "explanation" }` — `correctPosition` is 0-based order.
+
+**CONNECTION_WEB** content:
+`{ "gameType": "CONNECTION_WEB", "prompt", "pairs": [{ "id", "left", "right" }], "distractors"?: [...], "explanation" }`
+
+Requirements:
+- Generate **2–3** mini-game cards, varying gameType when possible.
+- Unique `id` per card, kebab-case, prefix with `{{topicId}}-mg-`.
+- Difficulty **1** for all.
+- Ground content in the theory and difficulty-1 questions.
+
+### JSON strings and LaTeX
+
+Inside JSON string values, use **doubled** backslashes for LaTeX: `$\\theta$`, `$\\alpha$`, not `$\theta$` / `$\alpha$` (those break JSON: `\t` → tab, `\a` invalid).
+
+Topic id: {{topicId}}
+Topic title: {{topicTitle}}
+
+Theory (markdown):
+---
+{{theory}}
+---
+
+Difficulty 1 questions:
+{{difficulty1Questions}}

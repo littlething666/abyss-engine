@@ -21,7 +21,9 @@ import { Search } from 'lucide-react';
 
 // Components
 import StatsOverlay from '@/components/StatsOverlay';
-import { AscentWeaverModal } from '@/components/AscentWeaverModal';
+import { CrystalLevelExpansionBridge } from '@/components/CrystalLevelExpansionBridge';
+import { GenerationProgressHud } from '@/components/GenerationProgressHud';
+import { IncrementalSubjectModal } from '@/components/IncrementalSubjectModal';
 import { AttunementRitualModal } from '@/components/AttunementRitualModal';
 import DiscoveryModal from '@/components/DiscoveryModal';
 import StudyPanelModal from '@/components/StudyPanelModal';
@@ -61,7 +63,7 @@ const HomeContent: React.FC = () => {
   const [showStats, setShowStats] = useState(true);
   const [isCameraAngleUnlocked, setIsCameraAngleUnlocked] = useState(isDebugMode);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [isAscentWeaverOpen, setIsAscentWeaverOpen] = useState(false);
+  const [isIncrementalSubjectOpen, setIsIncrementalSubjectOpen] = useState(false);
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const screenCaptureThinking = useThinkingToggle('screenCaptureSummary');
   const screenCaptureTts = useInferenceTtsToggle('screenCaptureSummary');
@@ -304,6 +306,8 @@ const HomeContent: React.FC = () => {
 
       <SubjectNavigation />
 
+      <CrystalLevelExpansionBridge />
+
       <div className="absolute inset-0">
         <Scene
           showStats={isDebugMode && showStats}
@@ -344,6 +348,7 @@ const HomeContent: React.FC = () => {
           right: 'calc(0.75rem + env(safe-area-inset-right))',
         }}
       >
+        <GenerationProgressHud />
         <StatsOverlay activeBuffs={activeBuffs} />
       </div>
 
@@ -373,11 +378,11 @@ const HomeContent: React.FC = () => {
         onOpenChange={setIsCommandPaletteOpen}
         isDebugMode={isDebugMode}
         onSummarizeScreen={screenCaptureLlm.startSummarize}
-        onOpenAscentWeaver={() => setIsAscentWeaverOpen(true)}
+        onOpenSubjectCurriculum={() => setIsIncrementalSubjectOpen(true)}
         onStartStudyWithCardTypes={handleStartStudyWithCardTypes}
       />
 
-      <AscentWeaverModal isOpen={isAscentWeaverOpen} onClose={() => setIsAscentWeaverOpen(false)} />
+      <IncrementalSubjectModal isOpen={isIncrementalSubjectOpen} onClose={() => setIsIncrementalSubjectOpen(false)} />
 
       <ScreenCaptureLlmSummarySurface
         isDesktop={isDesktop}

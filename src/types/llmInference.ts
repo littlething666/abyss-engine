@@ -4,6 +4,7 @@ export type InferenceSurfaceId =
   | 'studyFormulaExplain'
   | 'studyQuestionMermaid'
   | 'screenCaptureSummary'
-  | 'ascentWeaver';
+  | 'ascentWeaver'
+  | 'topicContent';
 
 export type LlmInferenceProviderId = 'openai-compatible' | 'gemini';

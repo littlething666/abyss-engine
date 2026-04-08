@@ -397,6 +397,8 @@ export function getTopicsByTier(
   unlockedTopicIds: string[] = [],
   subjects: SubjectLike[] = [],
   currentSubjectId?: string | null,
+  /** When set, `isContentAvailable` uses this map (missing topicId → false). When omitted, defaults to true. */
+  contentAvailabilityByTopicId?: Record<string, boolean>,
 ) {
   const subjectMap = toSubjectMap(subjects);
   const tierMap = new Map<number, TieredTopic[]>();
@@ -415,7 +417,9 @@ export function getTopicsByTier(
         description: node.learningObjective,
         subjectId: graph.subjectId,
         subjectName,
-        isContentAvailable: true,
+        isContentAvailable: contentAvailabilityByTopicId
+          ? Boolean(contentAvailabilityByTopicId[node.topicId])
+          : true,
         isLocked: !unlockedTopicIds.includes(node.topicId),
         isUnlocked: unlockedTopicIds.includes(node.topicId),
       };

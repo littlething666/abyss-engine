@@ -15,6 +15,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 
+import { CopyableLlmTextBlock } from '../CopyableLlmTextBlock';
+
 import { StudyMermaidPreview } from './StudyMermaidPreview';
 
 function MermaidAssistantRawCollapsible({ assistantText }: { assistantText: string }) {
@@ -37,12 +39,12 @@ function MermaidAssistantRawCollapsible({ assistantText }: { assistantText: stri
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent className="flex flex-col items-stretch gap-2 p-2.5 pt-0 text-sm">
-            <pre
-              className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border/80 bg-background/80 p-2 font-mono text-xs"
+            <CopyableLlmTextBlock
+              copyText={assistantText}
+              aria-label="Raw Mermaid assistant output"
               data-testid="study-card-llm-mermaid-streaming-output"
-            >
-              {assistantText}
-            </pre>
+              preClassName="max-h-48 rounded-md border border-border/80 bg-background/80 font-mono"
+            />
           </CollapsibleContent>
         </Collapsible>
       </CardContent>
@@ -103,9 +105,11 @@ export function StudyQuestionMermaidLlmBody(llmMermaidDiagram: StudyPanelMermaid
           <p className="text-muted-foreground mb-2 text-sm">
             No fenced Mermaid block was found in the response.
           </p>
-          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md border bg-muted/50 p-2 text-xs">
-            {llmMermaidDiagram.assistantText}
-          </pre>
+          <CopyableLlmTextBlock
+            copyText={llmMermaidDiagram.assistantText}
+            aria-label="Raw assistant output without Mermaid fence"
+            preClassName="max-h-40 rounded-md border bg-muted/50"
+          />
         </>
       )}
     </div>

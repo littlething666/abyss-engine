@@ -68,6 +68,7 @@ export class PubSubClient {
         const topicId = message.topicId ?? '';
         if (subjectId && topicId) {
           this.queryClient.invalidateQueries({ queryKey: ['content', 'topic', subjectId, topicId] });
+          this.queryClient.invalidateQueries({ queryKey: ['content', 'topic-ready', subjectId, topicId] });
         } else if (subjectId) {
           this.queryClient.invalidateQueries({ queryKey: ['content', 'subject', subjectId, 'graph'] });
         }
@@ -78,6 +79,7 @@ export class PubSubClient {
         const topicId = message.topicId ?? '';
         if (subjectId && topicId) {
           this.queryClient.invalidateQueries({ queryKey: ['content', 'topic-cards', subjectId, topicId] });
+          this.queryClient.invalidateQueries({ queryKey: ['content', 'topic-ready', subjectId, topicId] });
         } else if (subjectId) {
           this.queryClient.invalidateQueries({ queryKey: ['content', 'subject', subjectId, 'graph'] });
         }

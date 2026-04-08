@@ -21,6 +21,7 @@ describe('applyCurriculumGraphToIndexedDb', () => {
       upsertTopicCards: vi.fn(async () => {
         calls.push('cards');
       }),
+      appendTopicCards: vi.fn(),
     };
 
     const subject: Subject = {
@@ -67,6 +68,7 @@ describe('applyCurriculumGraphToIndexedDb', () => {
       upsertGraph: vi.fn(),
       upsertTopicDetails: vi.fn(),
       upsertTopicCards: vi.fn(),
+      appendTopicCards: vi.fn(),
     };
     const subject: Subject = {
       id: 'a',

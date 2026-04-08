@@ -157,6 +157,7 @@ export interface ProgressionActions {
     unlockedTopicIds: string[],
     subjects: { id: string; name: string }[],
     currentSubjectId?: string | null,
+    contentAvailabilityByTopicId?: Record<string, boolean>,
   ) => {
     tier: number;
     topics: {

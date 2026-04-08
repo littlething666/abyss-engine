@@ -1,11 +1,10 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useCallback, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 
 import { stripMarkdownJsonFenceForDisplay } from '@/lib/llmResponseText';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { CopyableLlmTextBlock } from './CopyableLlmTextBlock';
 import { LlmThinkingBlock } from './LlmThinkingBlock';
 import { ResponsiveLlmInferenceSurface } from './ResponsiveLlmInferenceSurface';
 
@@ -38,17 +37,7 @@ export function AscentWeaverCurriculumInferenceSurface({
   errorMessage,
   headerAction,
 }: AscentWeaverCurriculumInferenceSurfaceProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const displayText = useMemo(() => stripMarkdownJsonFenceForDisplay(assistantText), [assistantText]);
-
-  const handleSelectAll = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el || displayText.length === 0) {
-      return;
-    }
-    el.focus();
-    el.select();
-  }, [displayText]);
 
   return (
     <ResponsiveLlmInferenceSurface
@@ -77,29 +66,18 @@ export function AscentWeaverCurriculumInferenceSurface({
         ) : null}
         {displayText.length > 0 ? (
           <div className="flex min-h-0 flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="min-h-10 touch-manipulation sm:min-h-9"
-                disabled={displayText.length === 0}
-                onClick={handleSelectAll}
-              >
-                Select all
-              </Button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               {isPending ? (
                 <span className="text-xs text-muted-foreground">Receiving…</span>
               ) : null}
             </div>
-            <Textarea
-              ref={textareaRef}
-              readOnly
-              value={displayText}
-              aria-busy={isPending}
+            <CopyableLlmTextBlock
+              copyText={assistantText}
+              displayText={displayText}
               aria-label="Generated curriculum output"
+              aria-busy={isPending}
               data-testid="ascent-weaver-curriculum-output"
-              className="min-h-[12rem] max-h-[min(45vh,28rem)] resize-y overflow-y-auto font-mono text-xs leading-normal"
+              preClassName="min-h-[12rem] max-h-[min(45vh,28rem)] font-mono text-xs leading-normal"
             />
           </div>
         ) : null}

@@ -13,6 +13,8 @@ import {
 import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from './ui/particles-animation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { triggerTopicUnlockGeneration } from '@/features/topicContentGeneration';
+import { useTopicContentAvailabilityMap } from '@/hooks/useTopicContentAvailabilityMap';
 import { scheduleTopicDetailsDismiss, TopicDetailsPopup } from './TopicDetailsPopup';
 
 interface DiscoveryModalProps {
@@ -37,12 +39,13 @@ export function DiscoveryModal({
   ritualCooldownRemainingMs = 0,
   onClose,
 }: DiscoveryModalProps) {
-  const [selectedTopic, setSelectedTopic] = useState<TieredTopic | null>(null);
+  /** Stable selection key; tier list + availability are derived fresh via `topicsByTier`. */
+  const [selectedTopicKey, setSelectedTopicKey] = useState<{ subjectId: string; topicId: string } | null>(null);
   const isRitualSubmissionAvailable = ritualCooldownRemainingMs <= 0;
 
   useEffect(() => {
     if (!isOpen) {
-      setSelectedTopic(null);
+      setSelectedTopicKey(null);
     }
   }, [isOpen]);
 
@@ -61,9 +64,32 @@ export function DiscoveryModal({
 
   const subjectList = useMemo(() => subjects.map((subject) => ({ id: subject.id, name: subject.name })), [subjects]);
 
+  const contentAvailabilityByTopicId = useTopicContentAvailabilityMap();
+
   const topicsByTier = useMemo(() => {
-    return getTopicsByTier(allGraphs, unlockedTopicIds, subjectList);
-  }, [getTopicsByTier, unlockPoints, unlockedTopicIds, allGraphs, subjectList]);
+    return getTopicsByTier(allGraphs, unlockedTopicIds, subjectList, undefined, contentAvailabilityByTopicId);
+  }, [getTopicsByTier, unlockedTopicIds, allGraphs, subjectList, contentAvailabilityByTopicId]);
+
+  const selectedTopic = useMemo((): TieredTopic | null => {
+    if (!selectedTopicKey) {
+      return null;
+    }
+    for (const tier of topicsByTier) {
+      const found = tier.topics.find(
+        (t) => t.id === selectedTopicKey.topicId && t.subjectId === selectedTopicKey.subjectId,
+      );
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }, [topicsByTier, selectedTopicKey]);
+
+  useEffect(() => {
+    if (selectedTopicKey && !selectedTopic) {
+      setSelectedTopicKey(null);
+    }
+  }, [selectedTopicKey, selectedTopic]);
 
   const lockedTopicsCount = useMemo(() => {
     return topicsByTier.reduce((count, tierData) => {
@@ -85,11 +111,11 @@ export function DiscoveryModal({
 
     const position = unlockTopic(selectedTopic.id, allGraphs);
     if (position) {
-      console.log(`Unlocked ${selectedTopic.name} at position [${position[0]}, ${position[1]}]`);
+      void triggerTopicUnlockGeneration(selectedTopic.subjectId, selectedTopic.id);
     }
 
     scheduleTopicDetailsDismiss(() => {
-      setSelectedTopic(null);
+      setSelectedTopicKey(null);
       onClose();
     });
   };
@@ -104,7 +130,7 @@ export function DiscoveryModal({
         open={isOpen}
         onOpenChange={(open) => {
           if (!open) {
-            setSelectedTopic(null);
+            setSelectedTopicKey(null);
             onClose();
           }
         }}
@@ -170,7 +196,7 @@ export function DiscoveryModal({
                     {tierData.topics.map((topic) => (
                       <Button
                         key={topic.id}
-                        onClick={() => setSelectedTopic(topic)}
+                        onClick={() => setSelectedTopicKey({ subjectId: topic.subjectId, topicId: topic.id })}
                         multiline
                         variant="ghost"
                         className={`rounded-lg border p-4 text-left transition-all ${
@@ -232,7 +258,7 @@ export function DiscoveryModal({
           isOpen
           topic={selectedTopic}
           unlockStatus={selectedTopicStatus}
-          onClose={() => setSelectedTopic(null)}
+          onClose={() => setSelectedTopicKey(null)}
           onUnlock={handleUnlock}
         />
       )}

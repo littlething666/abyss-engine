@@ -18,6 +18,7 @@ export const LLM_INFERENCE_PROVIDER_BY_SURFACE: Record<
   studyQuestionMermaid: 'openai-compatible',
   screenCaptureSummary: 'openai-compatible',
   ascentWeaver: 'gemini',
+  topicContent: 'gemini',
 };
 
 export function inferenceProviderForSurface(surfaceId: InferenceSurfaceId): LlmInferenceProviderId {

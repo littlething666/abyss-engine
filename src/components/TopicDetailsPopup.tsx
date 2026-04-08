@@ -12,6 +12,12 @@ import {
   DialogTitle,
 } from '@/components/ui/abyss-dialog';
 import type { TieredTopic, TopicUnlockStatus } from '@/features/progression/progressionUtils';
+import {
+  labelForTopicGenerationPhase,
+  triggerTopicUnlockGeneration,
+  useContentGenerationStore,
+} from '@/features/topicContentGeneration';
+import { useTopicDetails } from '@/hooks/useDeckData';
 
 /**
  * Radix controlled Dialog: if we unmount the details layer synchronously inside
@@ -39,6 +45,19 @@ export function TopicDetailsPopup({
   onUnlock,
 }: TopicDetailsPopupProps) {
   const isContentAvailable = topic.isContentAvailable;
+  const generationPhase = useContentGenerationStore((s) => (isOpen ? s.byTopicId[topic.id] : undefined));
+  const detailsQuery = useTopicDetails(topic.subjectId, topic.id);
+  const syllabus = detailsQuery.data?.coreQuestionsByDifficulty;
+  const synthesizing = labelForTopicGenerationPhase(generationPhase);
+  const isGenerating = Boolean(generationPhase);
+  const showGenerateContent = topic.isLocked && !isContentAvailable;
+
+  const handleGenerateContent = () => {
+    if (isGenerating) {
+      return;
+    }
+    void triggerTopicUnlockGeneration(topic.subjectId, topic.id);
+  };
 
   return (
     <AbyssDialog
@@ -57,11 +76,45 @@ export function TopicDetailsPopup({
         <div className="min-h-0 overflow-y-auto">
           <p className="text-muted-foreground mb-4 text-sm">{topic.description}</p>
 
-          {!isContentAvailable && (
-            <p className="text-accent-foreground mb-3 text-sm font-semibold">
-              📦 Content not available yet
+          {showGenerateContent ? (
+            <p className="text-muted-foreground mb-3 text-sm">
+              Generate study content for this topic first. When it finishes, you can unlock and spawn the crystal.
             </p>
-          )}
+          ) : null}
+
+          {!isContentAvailable && !showGenerateContent ? (
+            <p className="text-accent-foreground mb-3 text-sm font-semibold">
+              Content not available yet for this topic.
+            </p>
+          ) : null}
+
+          {synthesizing ? (
+            <p className="text-primary mb-3 text-sm font-medium" role="status">
+              Synthesizing knowledge: {synthesizing}
+            </p>
+          ) : null}
+
+          {syllabus ? (
+            <div className="mb-4 space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-foreground text-sm font-semibold">Syllabus (core questions)</p>
+              {([1, 2, 3] as const).map((tier) => {
+                const qs = syllabus[tier];
+                if (!qs?.length) {
+                  return null;
+                }
+                return (
+                  <div key={tier}>
+                    <p className="text-muted-foreground mb-1 text-xs font-medium">Difficulty {tier}</p>
+                    <ul className="text-foreground list-inside list-disc space-y-1 text-sm">
+                      {qs.map((q, i) => (
+                        <li key={`${tier}-${i}`}>{q}</li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
 
           {topic.isLocked && !unlockStatus.hasPrerequisites && (
             <div className="mb-4 space-y-2">
@@ -79,12 +132,23 @@ export function TopicDetailsPopup({
             </div>
           )}
 
+          {topic.isLocked && showGenerateContent ? (
+            <Button
+              type="button"
+              onClick={handleGenerateContent}
+              disabled={isGenerating}
+              className="mb-3 w-full min-h-11 rounded-lg border border-primary/30 bg-primary px-6 py-3 font-semibold text-primary-foreground"
+            >
+              {isGenerating ? synthesizing || 'Generating…' : 'Generate content'}
+            </Button>
+          ) : null}
+
           {topic.isLocked && (
             <Button
               type="button"
               onClick={onUnlock}
               disabled={!unlockStatus.canUnlock || !isContentAvailable}
-              className={`w-full cursor-pointer rounded-lg border-none px-6 py-3 font-semibold transition-all ${
+              className={`w-full min-h-11 cursor-pointer rounded-lg border-none px-6 py-3 font-semibold transition-all ${
                 unlockStatus.canUnlock && isContentAvailable
                   ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                   : 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'
@@ -92,9 +156,9 @@ export function TopicDetailsPopup({
             >
               {isContentAvailable
                 ? unlockStatus.canUnlock
-                  ? '🔓 Unlock & Spawn'
-                  : '🔒 Locked'
-                : '📦 Content Not Available'}
+                  ? 'Unlock & Spawn'
+                  : 'Locked'
+                : 'Unlock after content is ready'}
             </Button>
           )}
 

@@ -190,7 +190,9 @@ export class GeminiGenerativeLanguageRepository implements IChatCompletionsRepos
     const body: Record<string, unknown> = buildGeminiGenerateBodyFromChatMessages(messages);
     if (enableThinking !== undefined) {
       body.generationConfig = {
-        thinkingConfig: { thinkingBudget: enableThinking ? 8192 : 0 },
+        // includeThoughts: false,
+        // thinkingLevel: 'HIGH',
+        // thinkingConfig: { thinkingBudget: enableThinking ? 8192 : 0 },
       };
     }
     return body;

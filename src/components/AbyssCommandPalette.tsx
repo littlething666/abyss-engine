@@ -164,8 +164,8 @@ export interface AbyssCommandPaletteProps {
   isDebugMode: boolean;
   /** When set, shows “Summarize screen” which runs screen capture then vision LLM. */
   onSummarizeScreen?: () => void;
-  /** Opens AscentWeaver to generate a curriculum graph into IndexedDB. */
-  onOpenAscentWeaver?: () => void;
+  /** Opens the incremental subject flow (two-tier graph into IndexedDB). */
+  onOpenSubjectCurriculum?: () => void;
   /** Starts a study session for the selected topic using only enabled base types and mini-game kinds. */
   onStartStudyWithCardTypes?: (selection: StudyCardFilterSelection) => void;
 }
@@ -179,7 +179,7 @@ export function AbyssCommandPalette({
   onOpenChange,
   isDebugMode,
   onSummarizeScreen,
-  onOpenAscentWeaver,
+  onOpenSubjectCurriculum,
   onStartStudyWithCardTypes,
 }: AbyssCommandPaletteProps) {
   const selectedTopicId = useUIStore((s) => s.selectedTopicId);
@@ -417,17 +417,17 @@ export function AbyssCommandPalette({
               </CommandItem>
             </CommandGroup>
           ) : null}
-          {onOpenAscentWeaver ? (
+          {onOpenSubjectCurriculum ? (
             <CommandGroup heading="Curriculum">
               <CommandItem
-                value="ascent weaver curriculum graph generate subject indexeddb"
+                value="new subject curriculum graph generate indexeddb"
                 onSelect={() => {
-                  onOpenAscentWeaver();
+                  onOpenSubjectCurriculum();
                   onOpenChange(false);
                 }}
               >
                 <Network className="size-4" />
-                <span>Open AscentWeaver (curriculum graph)</span>
+                <span>New subject from prompt (curriculum graph)</span>
               </CommandItem>
             </CommandGroup>
           ) : null}

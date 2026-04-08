@@ -43,6 +43,20 @@ async function upsertTopicDetails(details: TopicDetails): Promise<void> {
   });
 }
 
+function mergeTopicCards(prior: Card[], incoming: Card[]): Card[] {
+  const merged = prior.map((c) => {
+    const next = incoming.find((i) => i.id === c.id);
+    return next ?? c;
+  });
+  const priorIds = new Set(prior.map((c) => c.id));
+  for (const c of incoming) {
+    if (!priorIds.has(c.id)) {
+      merged.push(c);
+    }
+  }
+  return merged;
+}
+
 async function upsertTopicCards(subjectId: string, topicId: string, cards: Card[]): Promise<void> {
   await ensureDeckSeeded();
   const key = topicCompositeKey(subjectId, topicId);
@@ -51,9 +65,23 @@ async function upsertTopicCards(subjectId: string, topicId: string, cards: Card[
   pubSubClient.emit({ type: 'cards-updated', subjectId, topicId });
 }
 
+async function appendTopicCards(subjectId: string, topicId: string, cards: Card[]): Promise<void> {
+  await ensureDeckSeeded();
+  const key = topicCompositeKey(subjectId, topicId);
+  const row = await deckDb.topicCards.get(key);
+  const prior = row?.cards ?? [];
+  const merged = mergeTopicCards(prior, cards);
+  logDeckIndexedDb('write', { op: 'topicCards.append', key, priorCount: prior.length, addedCount: cards.length, mergedCount: merged.length });
+  await deckDb.topicCards.put({ key, subjectId, topicId, cards: merged });
+  pubSubClient.emit({ type: 'cards-updated', subjectId, topicId });
+}
+
 export const deckContentWriter: IDeckContentWriter = {
   upsertSubject,
   upsertGraph,
   upsertTopicDetails,
   upsertTopicCards,
+  appendTopicCards,
 };
+
+export { mergeTopicCards };

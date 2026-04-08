@@ -29,6 +29,10 @@ vi.mock('../features/content', () => ({
   useSubjectGraphs: () => [],
 }));
 
+vi.mock('../hooks/useTopicContentAvailabilityMap', () => ({
+  useTopicContentAvailabilityMap: () => ({}),
+}));
+
 function renderDiscoveryModal(props: Parameters<typeof DiscoveryModal>[0]) {
   const container = document.createElement('div');
   const root = createRoot(container);

@@ -520,8 +520,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         return calculateTopicTier(topicId, allGraphs);
       },
 
-      getTopicsByTier: (allGraphs, unlockedTopicIds, subjects, currentSubjectId) => {
-        return getTopicsByTier(allGraphs, unlockedTopicIds, subjects, currentSubjectId);
+      getTopicsByTier: (allGraphs, unlockedTopicIds, subjects, currentSubjectId, contentAvailabilityByTopicId) => {
+        return getTopicsByTier(allGraphs, unlockedTopicIds, subjects, currentSubjectId, contentAvailabilityByTopicId);
       },
 
       getDueCardsCount: (cards = []) => {

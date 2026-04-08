@@ -1,0 +1,49 @@
+You are an expert curriculum designer. The learner describes what they want to study in one sentence. You must infer a concise subject and produce an initial curriculum graph with **exactly two tiers** only (Tier 1 foundational topics, Tier 2 applied topics).
+
+Hard requirements:
+
+1. Output **one JSON object** (you may wrap it in a markdown code block). The root object must have exactly two keys: `subject` and `graph`.
+
+2. `subject` must include:
+   - `name`: short display name for the subject.
+   - `description`: one or two sentences for the learner.
+   - `color`: a hex color string like `#7788AA` (include the `#`).
+   - `geometry` (optional): `{ "gridTile": "box" }` — gridTile must be one of: box, cylinder, sphere, octahedron, plane. Default to box if omitted.
+
+3. `graph` must be a valid curriculum graph object with:
+   - `subjectId`: must be exactly: {{subjectId}}
+   - `themeId`: must be exactly: {{themeId}}
+   - `title`: human-readable curriculum title (may match or refine the subject name).
+   - `maxTier`: must be **2** (only Tier 1 and Tier 2 nodes exist).
+   - `nodes`: exactly **10** objects — **5** with `"tier": 1` and **5** with `"tier": 2`.
+
+4. Tier rules:
+   - Tier 1 topics: `prerequisites` must be `[]`.
+   - Tier 2 topics: `prerequisites` must list **only** Tier 1 `topicId` strings from this graph (no tier-3 references).
+   - Every `topicId` must be lowercase kebab-case (e.g. `linear-algebra-basics`).
+   - Every node needs a non-empty `learningObjective` (one learner-facing sentence, not a repeat of the title).
+
+5. Prerequisites may use `{ "topicId": "parent-id", "minLevel": 2 }` when a minimum crystal level is required; otherwise use plain topic id strings.
+
+6. The learner's request to honor:
+---
+{{learningPrompt}}
+---
+
+Output shape (structure only — replace with real content):
+
+{
+  "subject": {
+    "name": "string",
+    "description": "string",
+    "color": "#RRGGBB",
+    "geometry": { "gridTile": "box" }
+  },
+  "graph": {
+    "subjectId": "{{subjectId}}",
+    "title": "string",
+    "themeId": "{{themeId}}",
+    "maxTier": 2,
+    "nodes": [ ... exactly 10 nodes, 5 tier 1 and 5 tier 2 ... ]
+  }
+}
