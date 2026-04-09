@@ -1,6 +1,6 @@
 import type { ChatMessage } from '@/types/llm';
 import topicTheorySyllabusTemplate from '@/prompts/topic-theory-syllabus.prompt';
-import { interpolateAscentWeaverTemplate } from '../ascentWeaver/interpolateAscentWeaverTemplate';
+import { interpolateAscentWeaverTemplate } from '@/features/ascentWeaver/interpolateAscentWeaverTemplate';
 
 export interface TopicTheoryPromptParams {
   subjectTitle: string;

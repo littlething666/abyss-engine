@@ -21,7 +21,6 @@ import { Search } from 'lucide-react';
 
 // Components
 import StatsOverlay from '@/components/StatsOverlay';
-import { CrystalLevelExpansionBridge } from '@/components/CrystalLevelExpansionBridge';
 import { GenerationProgressHud } from '@/components/GenerationProgressHud';
 import { IncrementalSubjectModal } from '@/components/IncrementalSubjectModal';
 import { AttunementRitualModal } from '@/components/AttunementRitualModal';
@@ -36,6 +35,9 @@ import { useMediaQuery } from '@/hooks/use-media-query';
 import { useScreenCaptureLlmSummary } from '@/hooks/useScreenCaptureLlmSummary';
 import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
 import { useLlmAssistantSpeech } from '@/hooks/useLlmAssistantSpeech';
+import { useContentGenerationHydration } from '@/hooks/useContentGenerationHydration';
+import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifecycle';
+import { useCrystalLevelExpansionListener } from '@/hooks/useCrystalLevelExpansionListener';
 import { useThinkingToggle } from '@/hooks/useThinkingToggle';
 import { LlmThinkingToggle } from '@/components/LlmThinkingToggle';
 import { LlmTtsToggle } from '@/components/LlmTtsToggle';
@@ -76,6 +78,10 @@ const HomeContent: React.FC = () => {
     assistantText: screenCaptureLlm.assistantText,
     isPending: screenCaptureLlm.isPending,
   });
+
+  useContentGenerationHydration();
+  useContentGenerationLifecycle();
+  useCrystalLevelExpansionListener();
 
   // Track initialization to prevent infinite loops
   const initializedRef = useRef(false);
@@ -305,8 +311,6 @@ const HomeContent: React.FC = () => {
       )}
 
       <SubjectNavigation />
-
-      <CrystalLevelExpansionBridge />
 
       <div className="absolute inset-0">
         <Scene

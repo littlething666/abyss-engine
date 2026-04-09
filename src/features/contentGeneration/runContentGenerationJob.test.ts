@@ -1,0 +1,115 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { IChatCompletionsRepository } from '@/types/llm';
+
+import { useContentGenerationStore } from './contentGenerationStore';
+import { runContentGenerationJob } from './runContentGenerationJob';
+
+vi.mock('@/infrastructure/repositories/contentGenerationLogRepository', () => ({
+  persistTerminalJob: vi.fn().mockResolvedValue(undefined),
+  persistPipeline: vi.fn().mockResolvedValue(undefined),
+  clearPersistedLogs: vi.fn().mockResolvedValue(undefined),
+  loadPersistedLogs: vi.fn().mockResolvedValue({ jobs: [], pipelines: [] }),
+}));
+
+function resetStore(): void {
+  useContentGenerationStore.setState({
+    jobs: {},
+    pipelines: {},
+    abortControllers: {},
+    pipelineAbortControllers: {},
+  });
+}
+
+describe('runContentGenerationJob', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  it('runs pending → streaming → parsing → saving → completed', async () => {
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: 'ok' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    const persistOutput = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'Theory — T',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableThinking: false,
+      parseOutput: async () => ({ ok: true, data: 42 }),
+      persistOutput,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(persistOutput).toHaveBeenCalledTimes(1);
+
+    const jobs = Object.values(useContentGenerationStore.getState().jobs);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.status).toBe('completed');
+    expect(jobs[0]!.rawOutput).toBe('ok');
+    expect(jobs[0]!.startedAt).not.toBeNull();
+  });
+
+  it('marks job failed when parseOutput returns ok: false', async () => {
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: 'bad' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    const result = await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'L',
+      pipelineId: null,
+      subjectId: null,
+      topicId: null,
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableThinking: false,
+      parseOutput: async () => ({ ok: false, error: 'parse failed', parseError: 'parse failed' }),
+      persistOutput: vi.fn(),
+    });
+
+    expect(result.ok).toBe(false);
+    const j = Object.values(useContentGenerationStore.getState().jobs)[0];
+    expect(j?.status).toBe('failed');
+    expect(j?.parseError).toBe('parse failed');
+  });
+
+  it('finishes aborted when external signal aborts', async () => {
+    const ac = new AbortController();
+    ac.abort();
+
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: 'x' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    const result = await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'L',
+      pipelineId: null,
+      subjectId: null,
+      topicId: null,
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableThinking: false,
+      externalSignal: ac.signal,
+      parseOutput: async () => ({ ok: true, data: null }),
+      persistOutput: vi.fn(),
+    });
+
+    expect(result.ok).toBe(false);
+    const j = Object.values(useContentGenerationStore.getState().jobs)[0];
+    expect(j?.status).toBe('aborted');
+  });
+});

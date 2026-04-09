@@ -22,14 +22,32 @@ export function stripMarkdownJsonFenceForDisplay(raw: string): string {
   return s;
 }
 
-/** Extract first top-level `{ ... }` span from assistant text (handles optional ``` fences). */
-export function extractJsonObjectString(raw: string): string | null {
+/**
+ * Extract a top-level JSON array `[...]` or object `{...}` span from assistant text
+ * (handles optional ``` fences). Prefers an array when `[` appears before the first `{`.
+ */
+export function extractJsonString(raw: string): string | null {
   const trimmed = raw.trim();
   const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fenceMatch ? fenceMatch[1].trim() : trimmed;
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) {
+
+  const firstBracket = candidate.indexOf('[');
+  const firstBrace = candidate.indexOf('{');
+
+  let start: number;
+  let end: number;
+
+  if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+    start = firstBracket;
+    end = candidate.lastIndexOf(']');
+  } else if (firstBrace !== -1) {
+    start = firstBrace;
+    end = candidate.lastIndexOf('}');
+  } else {
+    return null;
+  }
+
+  if (end === -1 || end <= start) {
     return null;
   }
   return candidate.slice(start, end + 1);

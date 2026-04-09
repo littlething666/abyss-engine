@@ -1,16 +1,16 @@
 import type { ChatMessage } from '@/types/llm';
-import topicStudyCardsTemplate from '@/prompts/topic-study-cards.prompt';
-import { interpolateAscentWeaverTemplate } from '../ascentWeaver/interpolateAscentWeaverTemplate';
+import topicMiniGameCardsTemplate from '@/prompts/topic-mini-game-cards.prompt';
+import { interpolateAscentWeaverTemplate } from '@/features/ascentWeaver/interpolateAscentWeaverTemplate';
 
-export interface TopicStudyCardsPromptParams {
+export interface TopicMiniGameCardsPromptParams {
   topicId: string;
   topicTitle: string;
   theory: string;
   difficulty1Questions: string;
 }
 
-export function buildTopicStudyCardsMessages(params: TopicStudyCardsPromptParams): ChatMessage[] {
-  const systemContent = interpolateAscentWeaverTemplate(topicStudyCardsTemplate, {
+export function buildTopicMiniGameCardsMessages(params: TopicMiniGameCardsPromptParams): ChatMessage[] {
+  const systemContent = interpolateAscentWeaverTemplate(topicMiniGameCardsTemplate, {
     topicId: params.topicId,
     topicTitle: params.topicTitle,
     theory: params.theory,

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  extractJsonObjectString,
+  extractJsonString,
   logJsonParseError,
   stripMarkdownJsonFenceForDisplay,
 } from './llmResponseText';
@@ -28,19 +28,24 @@ describe('stripMarkdownJsonFenceForDisplay', () => {
   });
 });
 
-describe('extractJsonObjectString', () => {
+describe('extractJsonString', () => {
   it('returns inner JSON from fenced block', () => {
     const raw = 'Here:\n```json\n{"a":1}\n```';
-    expect(extractJsonObjectString(raw)).toBe('{"a":1}');
+    expect(extractJsonString(raw)).toBe('{"a":1}');
   });
 
   it('returns object slice from plain text', () => {
     const raw = 'prefix {"x":"y"} suffix';
-    expect(extractJsonObjectString(raw)).toBe('{"x":"y"}');
+    expect(extractJsonString(raw)).toBe('{"x":"y"}');
   });
 
-  it('returns null when no object', () => {
-    expect(extractJsonObjectString('no braces')).toBeNull();
+  it('returns full array when array precedes first object brace', () => {
+    const raw = '[{"id":"a"},{"id":"b"}]';
+    expect(extractJsonString(raw)).toBe('[{"id":"a"},{"id":"b"}]');
+  });
+
+  it('returns null when no array or object', () => {
+    expect(extractJsonString('no braces')).toBeNull();
   });
 });
 

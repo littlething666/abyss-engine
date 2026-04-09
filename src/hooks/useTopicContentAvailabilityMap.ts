@@ -2,7 +2,7 @@ import { useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { useAllGraphs } from '@/features/content';
-import { topicStudyContentReady } from '@/features/topicContentGeneration/topicStudyContentReady';
+import { topicStudyContentReady } from '@/features/contentGeneration';
 import { deckRepository } from '@/infrastructure/di';
 
 /** TanStack key for whether a topic has theory + difficulty-1 cards (study-ready). */

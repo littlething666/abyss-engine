@@ -1,4 +1,4 @@
-import { extractJsonObjectString, logJsonParseError } from '@/lib/llmResponseText';
+import { extractJsonString, logJsonParseError } from '@/lib/llmResponseText';
 import type { Card } from '@/types/core';
 
 import { normalizeGeneratedCardItem } from './normalizeGeneratedCardItem';
@@ -7,9 +7,9 @@ import { validateGeneratedCard } from './validateGeneratedCard';
 export type ParseTopicCardsResult = { ok: true; cards: Card[] } | { ok: false; error: string };
 
 export function parseTopicCardsPayload(raw: string): ParseTopicCardsResult {
-  const jsonStr = extractJsonObjectString(raw);
+  const jsonStr = extractJsonString(raw);
   if (!jsonStr) {
-    return { ok: false, error: 'No JSON object found in assistant response' };
+    return { ok: false, error: 'No JSON found in assistant response' };
   }
 
   let parsed: unknown;
@@ -46,9 +46,9 @@ export function parseTopicCardsPayload(raw: string): ParseTopicCardsResult {
 
 /** Debug-only: why parsing/validation failed without changing `parseTopicCardsPayload` behavior. */
 export function diagnoseTopicCardsPayload(raw: string): Record<string, unknown> {
-  const jsonStr = extractJsonObjectString(raw);
+  const jsonStr = extractJsonString(raw);
   if (!jsonStr) {
-    return { step: 'extractJsonObjectString', ok: false, reason: 'no_object_span' };
+    return { step: 'extractJsonString', ok: false, reason: 'no_json_span' };
   }
   let parsed: unknown;
   try {

@@ -1,38 +1,25 @@
-import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProviders';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
+import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProviders';
 
-import { buildTopicExpansionCardsMessages } from './buildTopicExpansionCardsMessages';
-import { findSubjectIdForTopic } from './findSubjectIdForTopic';
-import { parseTopicCardsPayload } from './parseTopicCardsPayload';
-import { streamChatAccumulate } from './streamChatAccumulate';
+import { findSubjectIdForTopic } from '../findSubjectIdForTopic';
+import { buildTopicExpansionCardsMessages } from '../messages/buildTopicExpansionCardsMessages';
+import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
+import { runContentGenerationJob } from '../runContentGenerationJob';
 
-export interface RunCrystalLevelContentExpansionParams {
+export interface RunExpansionJobParams {
   chat: IChatCompletionsRepository;
   deckRepository: IDeckRepository;
   writer: IDeckContentWriter;
   topicId: string;
-  /** New crystal level; generates matching difficulty when 2 or 3. */
   nextLevel: number;
   enableThinking: boolean;
   signal?: AbortSignal;
 }
 
-function theoryExcerpt(theory: string, maxLen = 12000): string {
-  const t = theory.trim();
-  if (t.length <= maxLen) {
-    return t;
-  }
-  return `${t.slice(0, maxLen)}\n\n…`;
-}
-
-/**
- * Appends cards for difficulty `nextLevel` (2 or 3) using the permanent syllabus bucket.
- * No-op for other levels.
- */
-export async function runCrystalLevelContentExpansion(
-  params: RunCrystalLevelContentExpansionParams,
-): Promise<{ ok: boolean; error?: string; skipped?: boolean }> {
+export async function runExpansionJob(
+  params: RunExpansionJobParams,
+): Promise<{ ok: boolean; jobId?: string; error?: string; skipped?: boolean }> {
   const { chat, deckRepository, writer, topicId, nextLevel, enableThinking, signal } = params;
 
   if (nextLevel < 2 || nextLevel > 3) {
@@ -54,34 +41,43 @@ export async function runCrystalLevelContentExpansion(
   const graph = await deckRepository.getSubjectGraph(subjectId);
   const node = graph.nodes.find((n) => n.topicId === topicId);
   const topicTitle = node?.title ?? details.title;
-
   const model = resolveModelForSurface('topicContent');
+
+  const theoryExcerpt =
+    details.theory.trim().length > 12000
+      ? `${details.theory.trim().slice(0, 12000)}\n\n…`
+      : details.theory.trim();
+
   const syllabusQuestions = bucket.map((q, i) => `${i + 1}. ${q}`).join('\n');
 
-  const raw = await streamChatAccumulate({
+  const result = await runContentGenerationJob({
+    kind: 'topic-expansion-cards',
+    label: `Expansion L${nextLevel} — ${topicTitle}`,
+    pipelineId: null,
+    subjectId,
+    topicId,
     chat,
     model,
     messages: buildTopicExpansionCardsMessages({
       topicId,
       topicTitle,
-      theoryExcerpt: theoryExcerpt(details.theory),
+      theoryExcerpt,
       syllabusQuestions,
       difficulty,
     }),
     enableThinking,
-    signal,
+    externalSignal: signal,
+    parseOutput: async (raw) => {
+      const parsed = parseTopicCardsPayload(raw);
+      if (!parsed.ok) {
+        return { ok: false, error: parsed.error, parseError: parsed.error };
+      }
+      return { ok: true, data: parsed.cards.map((c) => ({ ...c, difficulty })) };
+    },
+    persistOutput: async (normalized) => {
+      await writer.appendTopicCards(subjectId, topicId, normalized);
+    },
   });
 
-  const parsed = parseTopicCardsPayload(raw);
-  if (!parsed.ok) {
-    return { ok: false, error: parsed.error };
-  }
-
-  const normalized = parsed.cards.map((c) => ({
-    ...c,
-    difficulty,
-  }));
-
-  await writer.appendTopicCards(subjectId, topicId, normalized);
-  return { ok: true };
+  return { ok: result.ok, jobId: result.jobId, error: result.error };
 }

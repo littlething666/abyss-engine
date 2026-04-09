@@ -5,7 +5,7 @@ import { Layers } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useAllGraphs, useSubjects } from '@/features/content';
-import { triggerTopicUnlockGeneration } from '@/features/topicContentGeneration';
+import { triggerTopicUnlockPipeline } from '@/features/contentGeneration';
 import { useTopicContentAvailabilityMap } from '@/hooks/useTopicContentAvailabilityMap';
 import { useProgressionStore as useStudyStore } from '@/features/progression';
 import type { TopicMetadata } from '@/features/content';
@@ -110,7 +110,7 @@ export default function TopicSelectionBar({
     }
     const position = unlockTopic(selectedTopicId, allGraphs);
     if (position) {
-      void triggerTopicUnlockGeneration(selectedTieredTopic.subjectId, selectedTopicId);
+      void triggerTopicUnlockPipeline(selectedTieredTopic.subjectId, selectedTopicId);
     }
     scheduleTopicDetailsDismiss(() => setDetailsOpen(false));
   }, [allGraphs, barUnlockStatus?.canUnlock, selectedTieredTopic, selectedTopicId, unlockTopic]);

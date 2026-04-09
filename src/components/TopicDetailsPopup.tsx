@@ -12,11 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/abyss-dialog';
 import type { TieredTopic, TopicUnlockStatus } from '@/features/progression/progressionUtils';
-import {
-  labelForTopicGenerationPhase,
-  triggerTopicUnlockGeneration,
-  useContentGenerationStore,
-} from '@/features/topicContentGeneration';
+import { triggerTopicUnlockPipeline, useContentGenerationStore } from '@/features/contentGeneration';
 import { useTopicDetails } from '@/hooks/useDeckData';
 
 /**
@@ -45,18 +41,31 @@ export function TopicDetailsPopup({
   onUnlock,
 }: TopicDetailsPopupProps) {
   const isContentAvailable = topic.isContentAvailable;
-  const generationPhase = useContentGenerationStore((s) => (isOpen ? s.byTopicId[topic.id] : undefined));
+  const activeJobLabel = useContentGenerationStore((s) => {
+    if (!isOpen) return null;
+    for (const j of Object.values(s.jobs)) {
+      if (
+        j.topicId === topic.id &&
+        (j.status === 'pending' ||
+          j.status === 'streaming' ||
+          j.status === 'parsing' ||
+          j.status === 'saving')
+      ) {
+        return j.label;
+      }
+    }
+    return null;
+  });
   const detailsQuery = useTopicDetails(topic.subjectId, topic.id);
   const syllabus = detailsQuery.data?.coreQuestionsByDifficulty;
-  const synthesizing = labelForTopicGenerationPhase(generationPhase);
-  const isGenerating = Boolean(generationPhase);
+  const isGenerating = activeJobLabel !== null;
   const showGenerateContent = topic.isLocked && !isContentAvailable;
 
   const handleGenerateContent = () => {
     if (isGenerating) {
       return;
     }
-    void triggerTopicUnlockGeneration(topic.subjectId, topic.id);
+    void triggerTopicUnlockPipeline(topic.subjectId, topic.id);
   };
 
   return (
@@ -88,9 +97,9 @@ export function TopicDetailsPopup({
             </p>
           ) : null}
 
-          {synthesizing ? (
+          {activeJobLabel ? (
             <p className="text-primary mb-3 text-sm font-medium" role="status">
-              Synthesizing knowledge: {synthesizing}
+              Synthesizing knowledge: {activeJobLabel}
             </p>
           ) : null}
 
@@ -139,7 +148,7 @@ export function TopicDetailsPopup({
               disabled={isGenerating}
               className="mb-3 w-full min-h-11 rounded-lg border border-primary/30 bg-primary px-6 py-3 font-semibold text-primary-foreground"
             >
-              {isGenerating ? synthesizing || 'Generating…' : 'Generate content'}
+              {isGenerating ? activeJobLabel || 'Generating…' : 'Generate content'}
             </Button>
           ) : null}
 

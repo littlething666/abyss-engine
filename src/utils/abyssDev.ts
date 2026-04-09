@@ -4,7 +4,7 @@
 
 import { uiStore } from '../store/uiStore';
 import { SM2Data } from '../features/progression';
-import { triggerTopicUnlockGeneration } from '../features/topicContentGeneration';
+import { triggerTopicUnlockPipeline } from '../features/contentGeneration';
 import { deckRepository } from '../infrastructure/di';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { SubjectGraph, Card } from '../types/core';
@@ -152,7 +152,7 @@ const abyssDev: AbyssDev = {
 
     const subjectId = collectTopicIndex(allGraphs).get(topicId);
     if (subjectId) {
-      void triggerTopicUnlockGeneration(subjectId, topicId);
+      void triggerTopicUnlockPipeline(subjectId, topicId);
     }
 
     console.log(`[AbyssDev] Spawned crystal for "${topicId}" at position [${position[0]}, ${position[1]}]`);

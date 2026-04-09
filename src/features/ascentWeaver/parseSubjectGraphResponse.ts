@@ -1,4 +1,4 @@
-import { extractJsonObjectString, logJsonParseError } from '@/lib/llmResponseText';
+import { extractJsonString, logJsonParseError } from '@/lib/llmResponseText';
 import type { SubjectGraph } from '../../types/core';
 import { subjectGraphSchema } from './subjectGraphSchema';
 
@@ -7,9 +7,9 @@ export type ParseSubjectGraphResult =
   | { ok: false; error: string };
 
 export function parseSubjectGraphResponse(raw: string): ParseSubjectGraphResult {
-  const jsonStr = extractJsonObjectString(raw);
+  const jsonStr = extractJsonString(raw);
   if (!jsonStr) {
-    return { ok: false, error: 'No JSON object found in assistant response' };
+    return { ok: false, error: 'No JSON found in assistant response' };
   }
 
   let parsed: unknown;

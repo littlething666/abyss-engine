@@ -1,4 +1,4 @@
-import { extractJsonObjectString, logJsonParseError } from '@/lib/llmResponseText';
+import { extractJsonString, logJsonParseError } from '@/lib/llmResponseText';
 import type { SubjectGraph } from '@/types/core';
 import { z } from 'zod';
 
@@ -26,9 +26,9 @@ export type ParseIncrementalSubjectResult =
   | { ok: false; error: string };
 
 export function parseIncrementalSubjectResponse(raw: string): ParseIncrementalSubjectResult {
-  const jsonStr = extractJsonObjectString(raw);
+  const jsonStr = extractJsonString(raw);
   if (!jsonStr) {
-    return { ok: false, error: 'No JSON object found in assistant response' };
+    return { ok: false, error: 'No JSON found in assistant response' };
   }
 
   let parsed: unknown;

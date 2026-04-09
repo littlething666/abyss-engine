@@ -1,6 +1,6 @@
 import type { ChatMessage } from '@/types/llm';
 import topicExpansionCardsTemplate from '@/prompts/topic-expansion-cards.prompt';
-import { interpolateAscentWeaverTemplate } from '../ascentWeaver/interpolateAscentWeaverTemplate';
+import { interpolateAscentWeaverTemplate } from '@/features/ascentWeaver/interpolateAscentWeaverTemplate';
 
 export interface TopicExpansionCardsPromptParams {
   topicId: string;

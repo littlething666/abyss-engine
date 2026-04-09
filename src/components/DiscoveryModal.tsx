@@ -13,7 +13,7 @@ import {
 import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from './ui/particles-animation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { triggerTopicUnlockGeneration } from '@/features/topicContentGeneration';
+import { triggerTopicUnlockPipeline } from '@/features/contentGeneration';
 import { useTopicContentAvailabilityMap } from '@/hooks/useTopicContentAvailabilityMap';
 import { scheduleTopicDetailsDismiss, TopicDetailsPopup } from './TopicDetailsPopup';
 
@@ -111,7 +111,7 @@ export function DiscoveryModal({
 
     const position = unlockTopic(selectedTopic.id, allGraphs);
     if (position) {
-      void triggerTopicUnlockGeneration(selectedTopic.subjectId, selectedTopic.id);
+      void triggerTopicUnlockPipeline(selectedTopic.subjectId, selectedTopic.id);
     }
 
     scheduleTopicDetailsDismiss(() => {

@@ -1,14 +1,14 @@
 import { deckRepository, deckWriter } from '@/infrastructure/di';
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
 
-import { runTopicUnlockGeneration } from './runTopicUnlockGeneration';
+import { runTopicUnlockPipeline } from './runTopicUnlockPipeline';
 
-export function triggerTopicUnlockGeneration(
+export function triggerTopicUnlockPipeline(
   subjectId: string,
   topicId: string,
   options?: { enableThinking?: boolean; signal?: AbortSignal },
-): Promise<{ ok: boolean; error?: string }> {
-  return runTopicUnlockGeneration({
+): Promise<{ ok: boolean; pipelineId: string; error?: string }> {
+  return runTopicUnlockPipeline({
     chat: getChatCompletionsRepositoryForSurface('topicContent'),
     deckRepository,
     writer: deckWriter,
