@@ -32,11 +32,12 @@ import { useThinkingToggle } from '../hooks/useThinkingToggle';
 import { StudyPanelTab } from './studyPanel/types';
 import { MiniGameView } from './miniGames/MiniGameView';
 import type { MiniGameContent } from '../types/core';
+import type { SubjectTopicRef } from '../lib/topicRef';
 
 interface StudyPanelModalProps {
   isOpen: boolean;
   currentCardId: string | null;
-  currentTopicId: string | null;
+  currentTopicRef: SubjectTopicRef | null;
   isCardFlipped: boolean;
   totalCards: number;
   onClose: () => void;
@@ -49,7 +50,7 @@ interface StudyPanelModalProps {
 export function StudyPanelModal({
   isOpen,
   currentCardId,
-  currentTopicId,
+  currentTopicRef,
   isCardFlipped,
   totalCards,
   onClose,
@@ -73,7 +74,7 @@ export function StudyPanelModal({
 
   const model = useStudyPanelModel({
     currentCardId,
-    currentTopicId,
+    currentTopicRef,
     totalCards,
   });
   const explainThinking = useThinkingToggle('studyQuestionExplain');
@@ -127,18 +128,18 @@ export function StudyPanelModal({
   useEffect(() => {
     if (previousActiveTabRef.current !== activeTab) {
       telemetry.log('study_panel_tab_switched', {
-        topicId: currentSession?.topicId ?? currentTopicId,
+        topicId: currentSession?.topicId ?? currentTopicRef?.topicId ?? null,
         sessionId: currentSession?.sessionId ?? null,
         tab: activeTab,
         fromTab: previousActiveTabRef.current,
         toTab: activeTab,
       }, {
-        topicId: currentSession?.topicId ?? currentTopicId,
+        topicId: currentSession?.topicId ?? currentTopicRef?.topicId ?? null,
         sessionId: currentSession?.sessionId ?? null,
       });
       previousActiveTabRef.current = activeTab;
     }
-  }, [activeTab, currentSession?.sessionId, currentSession?.topicId, currentTopicId]);
+  }, [activeTab, currentSession?.sessionId, currentSession?.topicId, currentTopicRef]);
 
   useEffect(() => {
     if (!model.resolvedTopicId || (activeTab === 'theory' && !model.hasTheory)) {
@@ -163,10 +164,8 @@ export function StudyPanelModal({
   const handleSelectSystemPrompt = () => {
     const promptElement = systemPromptRef.current;
     if (!promptElement) return;
-
     const selection = window.getSelection();
     if (!selection) return;
-
     const range = document.createRange();
     range.selectNodeContents(promptElement);
     selection.removeAllRanges();
@@ -175,12 +174,10 @@ export function StudyPanelModal({
 
   const handleAnswerSelect = (answer: string) => {
     if (isAnswerSubmitted || !model.renderedCard) return;
-
     if (model.isSingleChoice) {
       setSelectedAnswers([answer]);
       return;
     }
-
     if (model.isMultiChoice) {
       setSelectedAnswers((previous) => {
         if (previous.includes(answer)) {
@@ -194,7 +191,6 @@ export function StudyPanelModal({
   const handleChoiceSubmit = () => {
     const activeCard = model.activeCard;
     if (!activeCard) return;
-
     const nextIsCorrect = evaluateChoiceAnswer(activeCard, selectedAnswers);
     setIsCorrect(nextIsCorrect);
     setIsAnswerSubmitted(true);
@@ -203,7 +199,6 @@ export function StudyPanelModal({
   const handleChoiceContinue = () => {
     const cardId = model.activeCard?.id || currentCardId || currentSession?.currentCardId || null;
     if (!cardId) return;
-
     onSubmitResult(cardId, isCorrect);
     setSelectedAnswers([]);
     setIsAnswerSubmitted(false);
@@ -213,7 +208,6 @@ export function StudyPanelModal({
   const handleRating = (rating: Rating) => {
     const cardId = model.activeCard?.id || currentCardId || currentSession?.currentCardId || null;
     if (!cardId) return;
-
     onSubmitResult(cardId, undefined, rating);
   };
 
@@ -224,7 +218,6 @@ export function StudyPanelModal({
   const handleMiniGameContinue = () => {
     const cardId = model.activeCard?.id || currentCardId || currentSession?.currentCardId || null;
     if (!cardId) return;
-
     onSubmitResult(cardId, isCorrect);
   };
 
@@ -246,7 +239,7 @@ export function StudyPanelModal({
       >
       <DialogHeader>
         <DialogTitle className="sr-only" data-testid="study-session-title">
-          📚 Study Session
+          \uD83D\uDCDA Study Session
         </DialogTitle>
         <DialogDescription className="sr-only">
           Review cards, answer prompts, and track your study session progress.
@@ -254,11 +247,11 @@ export function StudyPanelModal({
           <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StudyPanelTab)}>
             <TabsList className="mx-auto">
               <TabsTrigger value="study" data-testid="study-tab-study">
-                📖 Study
+                \uD83D\uDCD6 Study
               </TabsTrigger>
               {model.hasTheory && (
                 <TabsTrigger value="theory" data-testid="study-tab-theory">
-                  💡 Theory
+                  \uD83D\uDCA1 Theory
                 </TabsTrigger>
               )}
               <TabsTrigger
@@ -266,10 +259,10 @@ export function StudyPanelModal({
                 disabled={!model.resolvedTopicId}
                 data-testid="study-tab-system-prompt"
               >
-                🧠
+                \uD83E\uDDE0
               </TabsTrigger>
               <TabsTrigger value="settings" data-testid="study-tab-settings">
-                ⚙️
+                \u2699\uFE0F
               </TabsTrigger>
             </TabsList>
           </Tabs>
