@@ -22,21 +22,16 @@ interface TopicSelectionBarProps {
   selectedXp?: number;
 }
 
-/**
- * TopicSelectionBar Component
- *
- * A small persistent bar at the bottom of the 3D view that shows the selected topic
- * when a crystal is selected. Displays subject name, topic name, and level.
- */
 export default function TopicSelectionBar({
   onStartTopicStudySession,
   selectedMetadata,
   selectedCards = [],
   selectedXp = 0,
 }: TopicSelectionBarProps) {
-  const selectedTopicId = useUIStore((state) => state.selectedTopicId);
+  const selectedTopicRef = useUIStore((state) => state.selectedTopicRef);
+  const selectedTopicId = selectedTopicRef?.topicId ?? null;
   const selectTopic = useUIStore((state) => state.selectTopic);
-  const isSelectionMode = selectedTopicId !== null;
+  const isSelectionMode = selectedTopicRef !== null;
   const getDueCardsCount = useStudyStore((state) => state.getDueCardsCount);
   const sm2Data = useStudyStore((state) => state.sm2Data);
   const getTopicsByTier = useStudyStore((state) => state.getTopicsByTier);
@@ -51,40 +46,42 @@ export default function TopicSelectionBar({
     [subjects],
   );
 
-  const contentAvailabilityByTopicId = useTopicContentAvailabilityMap();
+  const contentAvailabilityByTopicRef = useTopicContentAvailabilityMap();
 
   const topicsByTier = useMemo(
-    () => getTopicsByTier(allGraphs, subjectList, undefined, contentAvailabilityByTopicId),
-    [getTopicsByTier, allGraphs, subjectList, contentAvailabilityByTopicId],
+    () => getTopicsByTier(allGraphs, subjectList, undefined, contentAvailabilityByTopicRef),
+    [getTopicsByTier, allGraphs, subjectList, contentAvailabilityByTopicRef],
   );
 
   const selectedTieredTopic = useMemo(() => {
-    if (!selectedTopicId) {
+    if (!selectedTopicRef) {
       return null;
     }
     for (const tier of topicsByTier) {
-      const found = tier.topics.find((t) => t.id === selectedTopicId);
+      const found = tier.topics.find(
+        (t) => t.id === selectedTopicRef.topicId && t.subjectId === selectedTopicRef.subjectId,
+      );
       if (found) {
         return found;
       }
     }
     return null;
-  }, [selectedTopicId, topicsByTier]);
+  }, [selectedTopicRef, topicsByTier]);
 
   const barUnlockStatus = useMemo(() => {
-    if (!selectedTopicId) {
+    if (!selectedTopicRef) {
       return null;
     }
-    return getTopicUnlockStatus(selectedTopicId, allGraphs);
-  }, [allGraphs, getTopicUnlockStatus, selectedTopicId]);
+    return getTopicUnlockStatus(selectedTopicRef, allGraphs);
+  }, [allGraphs, getTopicUnlockStatus, selectedTopicRef]);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
-    if (!selectedTopicId) {
+    if (!selectedTopicRef) {
       setDetailsOpen(false);
     }
-  }, [selectedTopicId]);
+  }, [selectedTopicRef]);
 
   const topicName = selectedMetadata?.topicName || 'Selected topic';
   const selectedDueCards = React.useMemo(() => {
@@ -104,15 +101,16 @@ export default function TopicSelectionBar({
   );
 
   const handleUnlockFromBar = useCallback(() => {
-    if (!selectedTopicId || !selectedTieredTopic || !barUnlockStatus?.canUnlock) {
+    if (!selectedTopicRef || !selectedTieredTopic || !barUnlockStatus?.canUnlock) {
       return;
     }
-    const position = unlockTopic(selectedTopicId, allGraphs);
+    const ref = { subjectId: selectedTopicRef.subjectId, topicId: selectedTopicRef.topicId };
+    const position = unlockTopic(ref, allGraphs);
     if (position) {
-      void triggerTopicUnlockPipeline(selectedTieredTopic.subjectId, selectedTopicId);
+      void triggerTopicUnlockPipeline(ref);
     }
     scheduleTopicDetailsDismiss(() => setDetailsOpen(false));
-  }, [allGraphs, barUnlockStatus?.canUnlock, selectedTieredTopic, selectedTopicId, unlockTopic]);
+  }, [allGraphs, barUnlockStatus?.canUnlock, selectedTieredTopic, selectedTopicRef, unlockTopic]);
 
   if (!isSelectionMode || !selectedTopicId) {
     return null;
