@@ -135,6 +135,15 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
   const count = Math.min(crystals.length, CRYSTAL_MAX_INSTANCES);
 
+  /** Build a topicId → crystal lookup for O(1) access to subjectId from click handlers. */
+  const crystalByTopicId = useMemo(() => {
+    const map = new Map<string, ActiveCrystal>();
+    for (const c of crystals) {
+      map.set(c.topicId, c);
+    }
+    return map;
+  }, [crystals]);
+
   const crystalBoundsKey = useMemo(
     () =>
       crystals
@@ -235,12 +244,12 @@ export const Crystals: React.FC<CrystalsProps> = ({
       const linear = ceremonyApi.getCeremonyLinearProgress(crystal.topicId, now);
       const ceremonyPhase = linear * (1 - linear) * 4;
 
-      const colorHex = getSubjectColor(topicMeta?.subjectId ?? null, subjects);
+      const colorHex = getSubjectColor(topicMeta?.subjectId ?? crystal.subjectId, subjects);
       const color = new THREE.Color(colorHex);
 
       group.arrays.instanceLevel[localIdx] = level;
       group.arrays.instanceMorphProgress[localIdx] = morphProgress;
-      group.arrays.instanceSubjectSeed[localIdx] = subjectSeedFromId(topicMeta?.subjectId);
+      group.arrays.instanceSubjectSeed[localIdx] = subjectSeedFromId(topicMeta?.subjectId ?? crystal.subjectId);
       group.arrays.instanceColor[localIdx * 3] = color.r;
       group.arrays.instanceColor[localIdx * 3 + 1] = color.g;
       group.arrays.instanceColor[localIdx * 3 + 2] = color.b;
@@ -354,9 +363,12 @@ export const Crystals: React.FC<CrystalsProps> = ({
     if (selectedTopicId === topicId) {
       onStartTopicStudySession?.(topicId);
     } else {
-      const meta = metadataLookup[topicId] as TopicMetadata | undefined;
-      if (meta?.subjectId) {
-        selectTopic({ subjectId: meta.subjectId, topicId });
+      // Use crystal.subjectId directly — always available from persisted state,
+      // unlike metadata which loads asynchronously from graphs.
+      const crystal = crystalByTopicId.get(topicId);
+      const subjectId = crystal?.subjectId;
+      if (subjectId) {
+        selectTopic({ subjectId, topicId });
       }
     }
   };
@@ -409,7 +421,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
                   ref={(el: HTMLDivElement | null) => {
                     labelOpacityRefs.current[index] = el;
                   }}
-                  style= opacity: 0, display: 'none' 
+                  style= opacity: 0 
                   className="pointer-events-none max-w-[100px] truncate rounded-sm border border-border/50 bg-card/75 px-0.5 py-0.5 text-center font-sans text-[5px] font-normal leading-none tracking-wide text-foreground shadow-sm backdrop-blur-sm"
                 >
                   {topicMeta.topicName}

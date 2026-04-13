@@ -224,36 +224,37 @@ export const Scene: React.FC<SceneProps> = ({
   }, [activeCrystals, selectedTopicRef])
 
   const startTopicStudySessionFromCards = (topicId: string, cards: Card[]) => {
-    const meta = allTopicMetadata[topicId]
-    if (!cards.length || !meta?.subjectId) {
-      console.warn(`[Scene] No cards or metadata for topic ${topicId}; unable to start study session.`)
+    // Use crystal.subjectId directly — always available from persisted state
+    const crystal = activeCrystals.find(c => c.topicId === topicId)
+    const subjectId = crystal?.subjectId ?? allTopicMetadata[topicId]?.subjectId ?? ''
+    if (!cards.length || !subjectId) {
+      console.warn(`[Scene] No cards or subjectId for topic ${topicId}; unable to start study session.`)
       return
     }
-    startTopicStudySession({ subjectId: meta.subjectId, topicId }, cards)
+    startTopicStudySession({ subjectId, topicId }, cards)
     openStudyPanel()
   }
 
   const startTopicStudySessionFromSelection = (topicId: string) => {
-    const meta = allTopicMetadata[topicId]
-    if (!meta?.subjectId) return
-    const cards = topicCardsByRef.get(topicRefKey(meta.subjectId, topicId)) ?? []
+    const crystal = activeCrystals.find(c => c.topicId === topicId)
+    const subjectId = crystal?.subjectId ?? allTopicMetadata[topicId]?.subjectId ?? ''
+    if (!subjectId) return
+    const cards = topicCardsByRef.get(topicRefKey(subjectId, topicId)) ?? []
     if (!cards.length) {
       console.warn(`[Scene] No cards available for topic ${topicId}; unable to start study session.`)
       return
     }
-    startTopicStudySession({ subjectId: meta.subjectId, topicId }, cards)
+    startTopicStudySession({ subjectId, topicId }, cards)
     openStudyPanel()
   }
 
+  // Filter crystals using crystal.subjectId directly (no async metadata dependency)
   const filteredCrystals = useMemo(() => {
     if (!currentSubjectId) {
       return activeCrystals
     }
-    return activeCrystals.filter((crystal) => {
-      const topicMeta = allTopicMetadata[crystal.topicId]
-      return topicMeta?.subjectId === currentSubjectId
-    })
-  }, [activeCrystals, currentSubjectId, allTopicMetadata])
+    return activeCrystals.filter((crystal) => crystal.subjectId === currentSubjectId)
+  }, [activeCrystals, currentSubjectId])
 
   const {
     spotlightPosition,
@@ -274,7 +275,7 @@ export const Scene: React.FC<SceneProps> = ({
   }, [onCanvasReleased])
 
   return (
-    <div style= width: '100%', height: '100%' >
+    <div style= position: 'absolute', inset: 0 >
       <Canvas
         frameloop="demand"
         dpr={renderQuality.dpr}
