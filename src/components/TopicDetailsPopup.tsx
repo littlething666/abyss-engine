@@ -15,12 +15,6 @@ import type { TieredTopic, TopicUnlockStatus } from '@/features/progression/prog
 import { triggerTopicUnlockPipeline, useContentGenerationStore } from '@/features/contentGeneration';
 import { useTopicDetails } from '@/hooks/useDeckData';
 
-/**
- * Radix controlled Dialog: if we unmount the details layer synchronously inside
- * onOpenChange(false) (or right after Close), dismiss handling can still reach the
- * sibling Wisdom Altar dialog. Deferring one macrotask lets the inner dialog finish
- * closing first (same effect as setTimeout(..., 0) in app code).
- */
 export function scheduleTopicDetailsDismiss(onDismiss: () => void) {
   window.setTimeout(onDismiss, 0);
 }
@@ -65,7 +59,7 @@ export function TopicDetailsPopup({
     if (isGenerating) {
       return;
     }
-    void triggerTopicUnlockPipeline(topic.subjectId, topic.id);
+    void triggerTopicUnlockPipeline({ subjectId: topic.subjectId, topicId: topic.id });
   };
 
   return (
