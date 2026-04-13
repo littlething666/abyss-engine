@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useQueries } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { useProgressionStore as useStudyStore } from '@/features/progression';
+import { undoManager } from '@/features/progression/undoManager';
 import { useUIStore } from '@/store/uiStore';
 import { Rating } from '@/types';
 import type { Card } from '@/types/core';
@@ -37,7 +38,6 @@ import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
 import { useLlmAssistantSpeech } from '@/hooks/useLlmAssistantSpeech';
 import { useContentGenerationHydration } from '@/hooks/useContentGenerationHydration';
 import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifecycle';
-import { useCrystalLevelExpansionListener } from '@/hooks/useCrystalLevelExpansionListener';
 import { useThinkingToggle } from '@/hooks/useThinkingToggle';
 import { LlmThinkingToggle } from '@/components/LlmThinkingToggle';
 import { LlmTtsToggle } from '@/components/LlmTtsToggle';
@@ -81,8 +81,6 @@ const HomeContent: React.FC = () => {
 
   useContentGenerationHydration();
   useContentGenerationLifecycle();
-  useCrystalLevelExpansionListener();
-
   // Track initialization to prevent infinite loops
   const initializedRef = useRef(false);
 
@@ -169,13 +167,13 @@ const HomeContent: React.FC = () => {
 
   // Get store actions - stable references
   const initialize = useStudyStore(s => s.initialize);
-  const flipCurrentCard = useStudyStore(s => s.flipCurrentCard);
+  const flipCurrentCard = useUIStore(s => s.flipCurrentCard);
   const submitStudyResult = useStudyStore(s => s.submitStudyResult);
   const undoLastStudyResult = useStudyStore(s => s.undoLastStudyResult);
   const redoLastStudyResult = useStudyStore(s => s.redoLastStudyResult);
   const submitAttunementRitual = useStudyStore(s => s.submitAttunementRitual);
   const clearPendingRitual = useStudyStore(s => s.clearPendingRitual);
-  const isCurrentCardFlipped = useStudyStore(s => s.isCurrentCardFlipped);
+  const isCurrentCardFlipped = useUIStore(s => s.isCurrentCardFlipped);
 
   // UI store - modal state - stable selectors
   const isDiscoveryModalOpen = useUIStore(s => s.isDiscoveryModalOpen);
@@ -229,17 +227,13 @@ const HomeContent: React.FC = () => {
   };
 
   const handleUndo = useCallback(() => {
-    const session = useStudyStore.getState().currentSession;
-    const canUndo = (session?.undoStack?.length ?? 0) > 0;
-    if (!canUndo) { return; }
+    if (!undoManager.canUndo) { return; }
 
     undoLastStudyResult();
   }, [undoLastStudyResult]);
 
   const handleRedo = useCallback(() => {
-    const session = useStudyStore.getState().currentSession;
-    const canRedo = (session?.redoStack?.length ?? 0) > 0;
-    if (!canRedo) { return; }
+    if (!undoManager.canRedo) { return; }
 
     redoLastStudyResult();
   }, [redoLastStudyResult]);

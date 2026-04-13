@@ -40,7 +40,6 @@ export default function TopicSelectionBar({
   const getDueCardsCount = useStudyStore((state) => state.getDueCardsCount);
   const sm2Data = useStudyStore((state) => state.sm2Data);
   const getTopicsByTier = useStudyStore((state) => state.getTopicsByTier);
-  const unlockedTopicIds = useStudyStore((state) => state.unlockedTopicIds);
   const unlockPoints = useStudyStore((state) => state.unlockPoints);
   const getTopicUnlockStatus = useStudyStore((state) => state.getTopicUnlockStatus);
   const unlockTopic = useStudyStore((state) => state.unlockTopic);
@@ -55,8 +54,8 @@ export default function TopicSelectionBar({
   const contentAvailabilityByTopicId = useTopicContentAvailabilityMap();
 
   const topicsByTier = useMemo(
-    () => getTopicsByTier(allGraphs, unlockedTopicIds, subjectList, undefined, contentAvailabilityByTopicId),
-    [getTopicsByTier, unlockedTopicIds, allGraphs, subjectList, contentAvailabilityByTopicId],
+    () => getTopicsByTier(allGraphs, subjectList, undefined, contentAvailabilityByTopicId),
+    [getTopicsByTier, allGraphs, subjectList, contentAvailabilityByTopicId],
   );
 
   const selectedTieredTopic = useMemo(() => {

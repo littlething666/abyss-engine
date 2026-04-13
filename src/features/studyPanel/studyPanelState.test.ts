@@ -18,7 +18,7 @@ describe('studyPanelState helpers', () => {
       'topic-c': { subjectId: 'sub', subjectName: 'Subject A', topicName: 'Topic C' },
     };
 
-    expect(buildPriorKnowledgeLines(crystals, ['topic-c', 'topic-a', 'topic-b'], metadata)).toBe(
+    expect(buildPriorKnowledgeLines(crystals, metadata)).toBe(
       '- Topic A - Level 1\n- Topic B - Level 1\n- Topic C - Level 1',
     );
   });

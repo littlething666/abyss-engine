@@ -78,8 +78,7 @@ export function captureUndoSnapshot(state: ProgressionState): StudyUndoSnapshot 
     throw new Error('Cannot capture undo snapshot without an active session.');
   }
 
-  const fullSession = cloneDeep(state.currentSession);
-  const { undoStack: _undoStack, redoStack: _redoStack, ...coreSession } = fullSession;
+  const coreSession = cloneDeep(state.currentSession);
 
   return {
     timestamp: Date.now(),
@@ -107,7 +106,6 @@ export function restoreUndoSnapshot(state: ProgressionState, snapshot: StudyUndo
     activeBuffs: restoredActiveBuffs,
     unlockPoints: snapshot.unlockPoints,
     currentSession: snapshot.currentSession,
-    isCurrentCardFlipped: false,
   };
 }
 

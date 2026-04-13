@@ -15,6 +15,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { useSubjects, useSubjectGraphs, useTopicCards, useTopicMetadata } from '@/features/content';
 import { useProgressionStore } from '@/features/progression';
+import { undoManager } from '@/features/progression/undoManager';
 import {
   buildSubjectGraphsForceGraphData,
   computeTopicGraphBfsDistances,
@@ -30,14 +31,18 @@ export function StudyGraphPageClient() {
   const initialize = useProgressionStore((s) => s.initialize);
   const startTopicStudySession = useProgressionStore((s) => s.startTopicStudySession);
   const currentSession = useProgressionStore((s) => s.currentSession);
-  const flipCurrentCard = useProgressionStore((s) => s.flipCurrentCard);
+  const flipCurrentCard = useUIStore((s) => s.flipCurrentCard);
   const submitStudyResult = useProgressionStore((s) => s.submitStudyResult);
   const undoLastStudyResult = useProgressionStore((s) => s.undoLastStudyResult);
   const redoLastStudyResult = useProgressionStore((s) => s.redoLastStudyResult);
-  const isCurrentCardFlipped = useProgressionStore((s) => s.isCurrentCardFlipped);
-  const unlockedTopicIds = useProgressionStore((s) => s.unlockedTopicIds);
+  const isCurrentCardFlipped = useUIStore((s) => s.isCurrentCardFlipped);
   const activeCrystals = useProgressionStore((s) => s.activeCrystals);
   const unlockPoints = useProgressionStore((s) => s.unlockPoints);
+
+  const unlockedTopicIds = useMemo(
+    () => activeCrystals.map((c) => c.topicId),
+    [activeCrystals],
+  );
 
   const selectedTopicId = useUIStore((s) => s.selectedTopicId);
   const selectTopic = useUIStore((s) => s.selectTopic);
@@ -127,16 +132,14 @@ export function StudyGraphPageClient() {
   );
 
   const handleUndo = useCallback(() => {
-    const session = useProgressionStore.getState().currentSession;
-    if ((session?.undoStack?.length ?? 0) === 0) {
+    if (!undoManager.canUndo) {
       return;
     }
     undoLastStudyResult();
   }, [undoLastStudyResult]);
 
   const handleRedo = useCallback(() => {
-    const session = useProgressionStore.getState().currentSession;
-    if ((session?.redoStack?.length ?? 0) === 0) {
+    if (!undoManager.canRedo) {
       return;
     }
     redoLastStudyResult();

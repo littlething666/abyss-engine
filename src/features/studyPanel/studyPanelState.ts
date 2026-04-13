@@ -4,9 +4,9 @@ import { TopicMetadata } from '../content/selectors';
 
 export function buildPriorKnowledgeLines(
   activeCrystals: ActiveCrystal[],
-  unlockedTopicIds: string[],
   topicMetadata: Record<string, TopicMetadata>,
 ): string {
+  const unlockedTopicIds = activeCrystals.map((c) => c.topicId);
   const entries = unlockedTopicIds
     .map((topicId) => {
       const topicName = topicMetadata[topicId]?.topicName || topicId;

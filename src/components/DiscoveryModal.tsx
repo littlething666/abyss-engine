@@ -51,7 +51,6 @@ export function DiscoveryModal({
 
   const getTopicsByTier = useStudyStore((state) => state.getTopicsByTier);
   const unlockTopic = useStudyStore((state) => state.unlockTopic);
-  const unlockedTopicIds = useStudyStore((state) => state.unlockedTopicIds);
   const storeGetTopicUnlockStatus = useStudyStore((state) => state.getTopicUnlockStatus);
   const allGraphs = useAllGraphs();
   const { data: subjects = [] } = useSubjects();
@@ -67,8 +66,8 @@ export function DiscoveryModal({
   const contentAvailabilityByTopicId = useTopicContentAvailabilityMap();
 
   const topicsByTier = useMemo(() => {
-    return getTopicsByTier(allGraphs, unlockedTopicIds, subjectList, undefined, contentAvailabilityByTopicId);
-  }, [getTopicsByTier, unlockedTopicIds, allGraphs, subjectList, contentAvailabilityByTopicId]);
+    return getTopicsByTier(allGraphs, subjectList, undefined, contentAvailabilityByTopicId);
+  }, [getTopicsByTier, allGraphs, subjectList, contentAvailabilityByTopicId]);
 
   const selectedTopic = useMemo((): TieredTopic | null => {
     if (!selectedTopicKey) {

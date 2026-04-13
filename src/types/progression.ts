@@ -1,6 +1,5 @@
 import type { ActiveCrystal, Card } from './core';
 import type { SubjectGraph } from './core';
-import type { ProgressionEventPayload, ProgressionEventType } from '../features/progression/events';
 
 export type BuffModifierType = 'growth_speed' | 'xp_multiplier' | 'clarity_boost' | 'mana_boost';
 export type BuffCondition = 'session_end' | 'next_10_cards' | 'next_5_cards' | 'manual';
@@ -85,11 +84,9 @@ export interface StudySession {
   attempts?: StudySessionAttempt[];
   cardDifficultyById?: Record<string, number>;
   cardTypeById?: Record<string, string>;
-  undoStack: StudyUndoSnapshot[];
-  redoStack: StudyUndoSnapshot[];
 }
 
-export interface StudySessionCore extends Omit<StudySession, 'undoStack' | 'redoStack'> {}
+export interface StudySessionCore extends StudySession {}
 
 export interface StudyUndoSnapshot {
   timestamp: number;
@@ -113,13 +110,12 @@ export interface ProgressionState {
     repetitions: number;
     nextReview: number;
   }>;
-  unlockedTopicIds: string[];
   unlockPoints: number;
   currentSubjectId: string | null;
   currentSession: StudySession | null;
-  isCurrentCardFlipped: boolean;
   activeBuffs: Buff[];
   pendingRitual: PendingRitualState | null;
+  lastRitualSubmittedAt: number | null;
 }
 
 export interface ProgressionActions {
@@ -136,8 +132,6 @@ export interface ProgressionActions {
   submitStudyResult: (cardId: string, rating: Rating) => void;
   undoLastStudyResult: () => void;
   redoLastStudyResult: () => void;
-  flipCurrentCard: () => void;
-  emitEvent: <T extends ProgressionEventType>(type: T, payload: ProgressionEventPayload<T>) => void;
   unlockTopic: (topicId: string, allGraphs: SubjectGraph[]) => [number, number] | null;
   getTopicUnlockStatus: (topicId: string, allGraphs: SubjectGraph[]) => {
     canUnlock: boolean;
@@ -154,7 +148,6 @@ export interface ProgressionActions {
   getTopicTier: (topicId: string, allGraphs: SubjectGraph[]) => number;
   getTopicsByTier: (
     allGraphs: SubjectGraph[],
-    unlockedTopicIds: string[],
     subjects: { id: string; name: string }[],
     currentSubjectId?: string | null,
     contentAvailabilityByTopicId?: Record<string, boolean>,

@@ -8,7 +8,6 @@ import DiscoveryModal from './DiscoveryModal';
 const progressionState = {
   getTopicsByTier: vi.fn(() => [] as { tier: number; topics: unknown[] }[]),
   unlockTopic: () => null,
-  unlockedTopicIds: [],
   activeCrystals: [],
   getTopicUnlockStatus: () => ({
     canUnlock: false,

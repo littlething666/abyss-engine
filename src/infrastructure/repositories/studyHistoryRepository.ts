@@ -3,62 +3,44 @@ import {
   StudyHistoryQuery,
   StudyHistoryRepositoryRecord,
 } from '../../types/repository';
+import { readRawTelemetryEventsFromStorage, TELEMETRY_RAW_STORAGE_KEY } from '../telemetryRawLog';
 
-const STORAGE_KEY = 'abyss-telemetry-v1-raw';
-
-function safeParsePersisted(raw: string | null) {
-  if (!raw) {
-    return [];
+function isStudyHistoryRepositoryRecord(entry: unknown): entry is StudyHistoryRepositoryRecord {
+  if (entry === null || typeof entry !== 'object') {
+    return false;
   }
 
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
+  const record = entry as {
+    id?: unknown;
+    version?: unknown;
+    timestamp?: unknown;
+    sessionId?: unknown;
+    topicId?: unknown;
+    type?: unknown;
+    payload?: unknown;
+  };
 
-    return parsed.filter((entry): entry is StudyHistoryRepositoryRecord => {
-      if (entry === null || typeof entry !== 'object') {
-        return false;
-      }
+  const validSessionId =
+    record.sessionId === null || typeof record.sessionId === 'string';
 
-      const record = entry as {
-        id?: unknown;
-        version?: unknown;
-        timestamp?: unknown;
-        sessionId?: unknown;
-        topicId?: unknown;
-        type?: unknown;
-        payload?: unknown;
-      };
+  const validTopicId =
+    record.topicId === null || typeof record.topicId === 'string';
 
-      const validSessionId =
-        record.sessionId === null || typeof record.sessionId === 'string';
-
-      const validTopicId =
-        record.topicId === null || typeof record.topicId === 'string';
-
-      return (
-        typeof record.id === 'string'
-        && typeof record.version === 'string'
-        && typeof record.timestamp === 'number'
-        && validSessionId
-        && validTopicId
-        && typeof record.type === 'string'
-        && typeof record.payload === 'object'
-      );
-    });
-  } catch {
-    return [];
-  }
+  return (
+    typeof record.id === 'string'
+    && record.version === 'v1'
+    && typeof record.timestamp === 'number'
+    && validSessionId
+    && validTopicId
+    && typeof record.type === 'string'
+    && typeof record.payload === 'object'
+    && record.payload !== null
+  );
 }
 
 function readPersistedEvents(): StudyHistoryRepositoryRecord[] {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-
-  return safeParsePersisted(window.localStorage.getItem(STORAGE_KEY));
+  const raw = readRawTelemetryEventsFromStorage() as unknown[];
+  return raw.filter(isStudyHistoryRepositoryRecord);
 }
 
 function writePersistedEvents(events: StudyHistoryRepositoryRecord[]) {
@@ -66,7 +48,7 @@ function writePersistedEvents(events: StudyHistoryRepositoryRecord[]) {
     return;
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+  window.localStorage.setItem(TELEMETRY_RAW_STORAGE_KEY, JSON.stringify(events));
 }
 
 function getDayBoundary(daysWindow: number): number {
@@ -140,7 +122,7 @@ export const studyHistoryRepository: IStudyHistoryRepository = {
 
   clear: () => {
     if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(TELEMETRY_RAW_STORAGE_KEY);
     }
   },
 

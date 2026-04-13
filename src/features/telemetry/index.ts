@@ -1,4 +1,3 @@
-import { dispatchTelemetryEvent } from './eventBus';
 import { useTelemetryStore } from './telemetryStore';
 export { useStudyMetrics } from './hooks/useStudyMetrics';
 export { useStudyTimeline } from './hooks/useStudyTimeline';
@@ -42,7 +41,6 @@ export const telemetry = {
     };
 
     useTelemetryStore.getState().log(event);
-    dispatchTelemetryEvent(type, parsedPayload.data as Record<string, unknown>, context);
   },
   exportJson: () => useTelemetryStore.getState().exportLog(),
   clearOldLogs: (days: number) => useTelemetryStore.getState().prune(days),

@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import React from 'react';
 import './globals.css';
+import '@/infrastructure/eventBusHandlers';
 import QueryProvider from './providers/QueryProvider';
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { TelemetryProvider } from '@/features/telemetry/TelemetryProvider';
 import { ProgressionFeedbackProvider } from '@/components/ProgressionFeedbackProvider';
 
 const geist = Geist({
@@ -38,7 +38,6 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <Toaster />
-            <TelemetryProvider />
             <ProgressionFeedbackProvider />
             <QueryProvider>{children}</QueryProvider>
           </ThemeProvider>

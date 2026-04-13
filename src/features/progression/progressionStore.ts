@@ -1,20 +1,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import { appEventBus } from '@/infrastructure/eventBus';
+import { readRawTelemetryEventsFromStorage } from '@/infrastructure/telemetryRawLog';
+import { useUIStore } from '@/store/uiStore';
 import {
-  MAX_UNDO_DEPTH,
   applyCrystalXpDelta,
   calculateLevelFromXP,
   calculateXPReward,
   calculateTopicTier,
   filterCardsByDifficulty,
-  captureUndoSnapshot,
-  restoreUndoSnapshot,
-  trimUndoSnapshotStack,
   getTopicUnlockStatus,
-  getTopicsByTier,
+  getTopicsByTier as computeTopicsByTier,
 } from './progressionUtils';
-import type { ProgressionEventPayload, ProgressionEventType } from './events';
 import { defaultSM2, sm2, SM2Data } from './sm2';
 import { Card, SubjectGraph } from '../../types/core';
 import {
@@ -30,36 +28,15 @@ import { BuffEngine } from './buffs/buffEngine';
 import { findNextGridPosition } from './gridUtils';
 import {
   buildStudySessionMetrics,
-  calculateRitualHarmony,
-  deriveRitualBuffs,
   makeRitualSessionId,
   makeStudySessionId,
 } from '../analytics/attunementMetrics';
-import { telemetry } from '../telemetry';
+import { calculateRitualHarmony, deriveRitualBuffs } from './progressionRitual';
+import { undoManager } from './undoManager';
 
 type ProgressionStore = ProgressionState & ProgressionActions;
 const PROGRESSION_STORAGE_KEY = 'abyss-progression';
 export const ATTUNEMENT_SUBMISSION_COOLDOWN_MS = 8 * 60 * 60 * 1000;
-
-function getRemainingRitualCooldownMs(atMs: number): number {
-  const latestSubmission = telemetry.getStore.getState().events.reduce<number | null>((acc, event) => {
-    if (event.type !== 'attunement_ritual_submitted') {
-      return acc;
-    }
-    if (acc === null || event.timestamp > acc) {
-      return event.timestamp;
-    }
-    return acc;
-  }, null);
-
-  if (latestSubmission === null) {
-    return 0;
-  }
-
-  const elapsed = atMs - latestSubmission;
-  const remaining = ATTUNEMENT_SUBMISSION_COOLDOWN_MS - elapsed;
-  return Math.max(0, remaining);
-}
 
 interface CardWithSm2 extends Card {
   sm2: SM2Data;
@@ -101,13 +78,12 @@ export const useProgressionStore = create<ProgressionStore>()(
     (set, get) => ({
       activeCrystals: [],
       sm2Data: {},
-      unlockedTopicIds: [],
       unlockPoints: INITIAL_UNLOCK_POINTS,
       currentSubjectId: null,
       currentSession: null,
-      isCurrentCardFlipped: false,
       activeBuffs: [],
       pendingRitual: null,
+      lastRitualSubmittedAt: null,
 
       initialize: () => {
         const currentState = get();
@@ -134,7 +110,7 @@ export const useProgressionStore = create<ProgressionStore>()(
       submitAttunementRitual: (payload) => {
         const state = get();
         const now = Date.now();
-        if (getRemainingRitualCooldownMs(now) > 0) {
+        if (state.lastRitualSubmittedAt && (now - state.lastRitualSubmittedAt) < ATTUNEMENT_SUBMISSION_COOLDOWN_MS) {
           return null;
         }
 
@@ -152,6 +128,19 @@ export const useProgressionStore = create<ProgressionStore>()(
         set({
           activeBuffs: normalizeActiveBuffs(state, buffs),
           pendingRitual: nextPendingAttunement,
+          lastRitualSubmittedAt: now,
+        });
+
+        const checklistKeys = Object.keys(payload.checklist).filter(
+          (k) => Boolean(payload.checklist[k as keyof typeof payload.checklist]),
+        );
+
+        appEventBus.emit('ritual:submitted', {
+          topicId: payload.topicId,
+          harmonyScore,
+          readinessBucket,
+          checklistKeys,
+          buffsGranted: buffs,
         });
 
         return {
@@ -162,14 +151,11 @@ export const useProgressionStore = create<ProgressionStore>()(
       },
 
       getRemainingRitualCooldownMs: (atMs) => {
-        return getRemainingRitualCooldownMs(atMs);
-      },
-
-      emitEvent: <T extends ProgressionEventType>(type: T, payload: ProgressionEventPayload<T>) => {
-        if (typeof window === 'undefined') {
-          return;
+        const last = get().lastRitualSubmittedAt;
+        if (!last) {
+          return 0;
         }
-        window.dispatchEvent(new CustomEvent(`abyss-progression-${type}`, { detail: payload }));
+        return Math.max(0, ATTUNEMENT_SUBMISSION_COOLDOWN_MS - (atMs - last));
       },
 
       clearActiveBuffs: () => set({ activeBuffs: [] }),
@@ -222,6 +208,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           : makeStudySessionId(topicId);
         const startedAt = Date.now();
         const activeBuffIds = state.activeBuffs.map((buff) => buff.buffId);
+        undoManager.reset();
         set({
           currentSession: {
             topicId,
@@ -235,18 +222,16 @@ export const useProgressionStore = create<ProgressionStore>()(
             attempts: [],
             cardDifficultyById,
             cardTypeById,
-            undoStack: [],
-            redoStack: [],
           },
-          isCurrentCardFlipped: false,
           pendingRitual: null,
         });
-        get().emitEvent('study-panel-history', {
+        useUIStore.getState().resetCardFlip();
+        appEventBus.emit('study-panel:history', {
           action: 'submit',
           topicId,
           sessionId,
-          undoCount: 0,
-          redoCount: 0,
+          undoCount: undoManager.undoStackSize,
+          redoCount: undoManager.redoStackSize,
         });
       },
 
@@ -271,8 +256,8 @@ export const useProgressionStore = create<ProgressionStore>()(
               ...session,
               currentCardId: focusCardId,
             },
-            isCurrentCardFlipped: false,
           });
+          useUIStore.getState().resetCardFlip();
           return;
         }
 
@@ -284,8 +269,8 @@ export const useProgressionStore = create<ProgressionStore>()(
             currentCardId: focusCardId,
             totalCards: queue.length,
           },
-          isCurrentCardFlipped: false,
         });
+        useUIStore.getState().resetCardFlip();
       },
 
       submitStudyResult: (cardId, rating) => {
@@ -309,16 +294,12 @@ export const useProgressionStore = create<ProgressionStore>()(
         const activeBuffs = state.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
         const buffMultiplier = BuffEngine.get().getModifierTotal('xp_multiplier', activeBuffs);
         const buffedReward = Math.max(0, Math.round(reward * buffMultiplier));
-        const xpForEvents = applyCrystalXpDelta(state.activeCrystals, session.topicId, buffedReward);
-        if (!xpForEvents) {
+        const applied = applyCrystalXpDelta(state.activeCrystals, session.topicId, buffedReward);
+        if (!applied) {
           return;
         }
 
-        const undoSnapshot = captureUndoSnapshot(state);
-        const nextUndoStack = trimUndoSnapshotStack([
-          ...(session.undoStack || []),
-          undoSnapshot,
-        ]);
+        undoManager.capture(state);
 
         const difficulty = session.cardDifficultyById?.[cardId] ?? 1;
         const isCorrect = rating >= 3;
@@ -342,63 +323,58 @@ export const useProgressionStore = create<ProgressionStore>()(
           ? buildStudySessionMetrics(sessionId, session.topicId, nextAttempts, session.startedAt ?? Date.now())
           : null;
 
-        set((current) => {
-          const applied = applyCrystalXpDelta(current.activeCrystals, session.topicId, buffedReward);
-          if (!applied) {
-            return {};
-          }
-          const unlockedLevels = applied.levelsGained;
-          return {
-            unlockPoints: unlockedLevels > 0 ? current.unlockPoints + unlockedLevels : current.unlockPoints,
-            sm2Data: {
-              ...current.sm2Data,
-              [cardId]: updatedSM2,
-            },
-            activeCrystals: applied.nextActiveCrystals,
-            currentSession: {
-              ...session,
-              attempts: nextAttempts,
-              queueCardIds: nextQueue,
-              currentCardId: nextCard,
-              totalCards: Math.max(session.totalCards - 1, 0),
-              undoStack: nextUndoStack,
-              redoStack: [],
-              ...(isSessionComplete
-                ? {
-                    startedAt: session.startedAt ?? Date.now(),
-                    lastCardStart: now,
-                  }
-                : {
-                    lastCardStart: now,
-                  }),
-            },
-            activeBuffs: nextBuffs,
-            isCurrentCardFlipped: false,
-          };
+        set({
+          unlockPoints: applied.levelsGained > 0 ? state.unlockPoints + applied.levelsGained : state.unlockPoints,
+          sm2Data: {
+            ...state.sm2Data,
+            [cardId]: updatedSM2,
+          },
+          activeCrystals: applied.nextActiveCrystals,
+          currentSession: {
+            ...session,
+            attempts: nextAttempts,
+            queueCardIds: nextQueue,
+            currentCardId: nextCard,
+            totalCards: Math.max(session.totalCards - 1, 0),
+            ...(isSessionComplete
+              ? {
+                  startedAt: session.startedAt ?? Date.now(),
+                  lastCardStart: now,
+                }
+              : {
+                  lastCardStart: now,
+                }),
+          },
+          activeBuffs: nextBuffs,
         });
-        get().emitEvent('xp-gained', {
-          amount: buffedReward,
-          rating,
+
+        useUIStore.getState().resetCardFlip();
+
+        appEventBus.emit('card:reviewed', {
           cardId,
+          rating,
           topicId: session.topicId,
           sessionId,
+          timeTakenMs,
+          buffedReward,
+          buffMultiplier,
           difficulty,
           isCorrect,
-          timeTakenMs,
-          buffMultiplier,
-          reward,
         });
-        if (xpForEvents.levelsGained > 0) {
-          get().emitEvent('crystal-level-up', {
+
+        if (applied.levelsGained > 0) {
+          appEventBus.emit('crystal:leveled', {
             topicId: session.topicId,
+            from: applied.previousLevel,
+            to: applied.nextLevel,
+            levelsGained: applied.levelsGained,
             sessionId,
-            previousLevel: xpForEvents.previousLevel,
-            nextLevel: xpForEvents.nextLevel,
-            levelsGained: xpForEvents.levelsGained,
+            isStudyPanelOpen: useUIStore.getState().isStudyPanelOpen,
           });
         }
+
         if (isSessionComplete && sessionMetrics) {
-          get().emitEvent('session-complete', {
+          appEventBus.emit('session:completed', {
             topicId: session.topicId,
             sessionId,
             correctRate: sessionMetrics.correctRate,
@@ -410,72 +386,46 @@ export const useProgressionStore = create<ProgressionStore>()(
 
       undoLastStudyResult: () => {
         const state = get();
-        const session = state.currentSession;
-        if (!session || (session.undoStack ?? []).length === 0) {
+        const restored = undoManager.undo(state);
+        if (!restored) {
           return;
         }
-
-        const snapshot = (session.undoStack || [])[session.undoStack.length - 1];
-        const nextUndoStack = (session.undoStack || []).slice(0, -1);
-        const redoSnapshot = captureUndoSnapshot(state);
-        const nextRedoStack = trimUndoSnapshotStack([
-          ...(session.redoStack || []),
-          redoSnapshot,
-        ]);
-        const restored = restoreUndoSnapshot(state, snapshot);
-
-        set({
-          ...restored,
-          currentSession: {
-            ...restored.currentSession,
-            undoStack: nextUndoStack,
-            redoStack: nextRedoStack,
-          },
-        });
-        get().emitEvent('study-panel-history', {
+        const topicId = restored.currentSession?.topicId;
+        const sessionId = restored.currentSession?.sessionId;
+        if (!topicId?.trim() || !sessionId?.trim()) {
+          throw new Error('undoLastStudyResult: restored session missing topicId or sessionId');
+        }
+        set(restored);
+        useUIStore.getState().resetCardFlip();
+        appEventBus.emit('study-panel:history', {
           action: 'undo',
-          topicId: restored.currentSession?.topicId,
-          sessionId: restored.currentSession?.sessionId,
-          undoCount: nextUndoStack.length,
-          redoCount: nextRedoStack.length,
+          topicId,
+          sessionId,
+          undoCount: undoManager.undoStackSize,
+          redoCount: undoManager.redoStackSize,
         });
       },
 
       redoLastStudyResult: () => {
         const state = get();
-        const session = state.currentSession;
-        if (!session || (session.redoStack || []).length === 0) {
+        const restored = undoManager.redo(state);
+        if (!restored) {
           return;
         }
-
-        const snapshot = (session.redoStack || [])[session.redoStack.length - 1];
-        const nextRedoStack = (session.redoStack || []).slice(0, -1);
-        const undoSnapshot = captureUndoSnapshot(state);
-        const nextUndoStack = trimUndoSnapshotStack([
-          ...(session.undoStack || []),
-          undoSnapshot,
-        ]);
-        const restored = restoreUndoSnapshot(state, snapshot);
-
-        set({
-          ...restored,
-          currentSession: {
-            ...restored.currentSession,
-            undoStack: nextUndoStack,
-            redoStack: nextRedoStack,
-          },
-        });
-        get().emitEvent('study-panel-history', {
+        const topicId = restored.currentSession?.topicId;
+        const sessionId = restored.currentSession?.sessionId;
+        if (!topicId?.trim() || !sessionId?.trim()) {
+          throw new Error('redoLastStudyResult: restored session missing topicId or sessionId');
+        }
+        set(restored);
+        useUIStore.getState().resetCardFlip();
+        appEventBus.emit('study-panel:history', {
           action: 'redo',
-          topicId: restored.currentSession?.topicId,
-          sessionId: restored.currentSession?.sessionId,
-          undoCount: nextUndoStack.length,
-          redoCount: nextRedoStack.length,
+          topicId,
+          sessionId,
+          undoCount: undoManager.undoStackSize,
+          redoCount: undoManager.redoStackSize,
         });
-      },
-
-      flipCurrentCard: () => {
-        set((state) => ({ isCurrentCardFlipped: !state.isCurrentCardFlipped }));
       },
 
       unlockTopic: (topicId, allGraphs) => {
@@ -496,7 +446,6 @@ export const useProgressionStore = create<ProgressionStore>()(
         }
 
         set((current) => ({
-          unlockedTopicIds: [...current.unlockedTopicIds, topicId],
           activeCrystals: [
             ...current.activeCrystals,
             {
@@ -520,8 +469,9 @@ export const useProgressionStore = create<ProgressionStore>()(
         return calculateTopicTier(topicId, allGraphs);
       },
 
-      getTopicsByTier: (allGraphs, unlockedTopicIds, subjects, currentSubjectId, contentAvailabilityByTopicId) => {
-        return getTopicsByTier(allGraphs, unlockedTopicIds, subjects, currentSubjectId, contentAvailabilityByTopicId);
+      getTopicsByTier: (allGraphs, subjects, currentSubjectId, contentAvailabilityByTopicId) => {
+        const unlockedTopicIds = get().activeCrystals.map((c) => c.topicId);
+        return computeTopicsByTier(allGraphs, unlockedTopicIds, subjects, currentSubjectId, contentAvailabilityByTopicId);
       },
 
       getDueCardsCount: (cards = []) => {
@@ -553,21 +503,22 @@ export const useProgressionStore = create<ProgressionStore>()(
         });
 
         if (xpForEvents.levelsGained > 0) {
-          get().emitEvent('crystal-level-up', {
+          appEventBus.emit('crystal:leveled', {
             topicId,
-            sessionId: options?.sessionId ?? 'xp-adjustment',
-            previousLevel: xpForEvents.previousLevel,
-            nextLevel: xpForEvents.nextLevel,
+            from: xpForEvents.previousLevel,
+            to: xpForEvents.nextLevel,
             levelsGained: xpForEvents.levelsGained,
+            sessionId: options?.sessionId ?? 'xp-adjustment',
+            isStudyPanelOpen: useUIStore.getState().isStudyPanelOpen,
           });
         }
         return xpForEvents.nextXp;
       },
 
       updateSM2: (cardId, sm2State) => {
-        set((state) => ({
+        set((s) => ({
           sm2Data: {
-            ...state.sm2Data,
+            ...s.sm2Data,
             [cardId]: sm2State,
           },
         }));
@@ -579,15 +530,35 @@ export const useProgressionStore = create<ProgressionStore>()(
     }),
     {
       name: PROGRESSION_STORAGE_KEY,
+      version: 1,
+      migrate: (persisted, fromVersion) => {
+        const persistedRecord = persisted as Record<string, unknown>;
+        if (fromVersion < 1) {
+          delete persistedRecord.unlockedTopicIds;
+          delete persistedRecord.isCurrentCardFlipped;
+          persistedRecord.currentSession = null;
+
+          let lastRitual: number | null = null;
+          if (typeof window !== 'undefined') {
+            const events = readRawTelemetryEventsFromStorage();
+            const latest = events
+              .filter((e) => e.type === 'attunement_ritual_submitted')
+              .reduce((max, e) => Math.max(max, e.timestamp), 0);
+            lastRitual = latest > 0 ? latest : null;
+          }
+          persistedRecord.lastRitualSubmittedAt = lastRitual;
+        }
+        return persisted;
+      },
       partialize: (state) => ({
         activeCrystals: state.activeCrystals,
         sm2Data: state.sm2Data,
-        unlockedTopicIds: state.unlockedTopicIds,
         unlockPoints: state.unlockPoints,
         currentSubjectId: state.currentSubjectId,
         currentSession: state.currentSession,
         activeBuffs: state.activeBuffs,
         pendingRitual: state.pendingRitual,
+        lastRitualSubmittedAt: state.lastRitualSubmittedAt,
       }),
     },
   ),

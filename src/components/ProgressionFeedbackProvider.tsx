@@ -1,87 +1,65 @@
- 'use client';
+'use client';
+
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 
+import { appEventBus } from '@/infrastructure/eventBus';
 import { getRandomXPMessage } from '@/features/progression/feedbackMessages';
 import { playPositiveSound } from '@/utils/sound';
-import {
-  type ProgressionEventMap,
-  type ProgressionEventPayload,
-  type ProgressionEventType,
-} from '@/features/progression/events';
-
-const EVENT_PREFIX = 'abyss-progression-';
-
-const HISTORY_MESSAGE: Record<'undo' | 'redo', string> = {
-  undo: 'Undo complete.',
-  redo: 'Redo complete.',
-};
-
-function formatCrystalLevelUpToast(payload: ProgressionEventPayload<'crystal-level-up'>): string {
-  if (payload.levelsGained === 1) {
-    return `Crystal reached level ${payload.nextLevel}!`;
-  }
-  return `Crystal leveled up ${payload.levelsGained} times! Now level ${payload.nextLevel}.`;
-}
 
 export function ProgressionFeedbackProvider() {
   useEffect(() => {
-    const eventTypes: ProgressionEventType[] = [
-      'study-panel-history',
-      'xp-gained',
-      'session-complete',
-      'crystal-level-up',
-    ];
+    const unsubs: (() => void)[] = [];
 
-    const handleProgressionEvent = (event: Event) => {
-      const payload = (event as CustomEvent).detail as ProgressionEventMap[keyof ProgressionEventMap];
-      const eventType = event.type.replace(EVENT_PREFIX, '') as ProgressionEventType;
+    unsubs.push(
+      appEventBus.on('card:reviewed', (e) => {
+        const baseMessage = getRandomXPMessage(e.rating);
+        const toastMessage = e.buffedReward > 0 ? `${baseMessage} +${e.buffedReward} XP` : baseMessage;
+        toast.success(toastMessage, { duration: 1500 });
+        if (e.buffedReward > 0) {
+          playPositiveSound();
+        }
+      }),
+    );
 
-      switch (eventType) {
-        case 'study-panel-history': {
-          const historyPayload = payload as ProgressionEventPayload<'study-panel-history'>;
-          if (historyPayload.action === 'undo' || historyPayload.action === 'redo') {
-            toast.success(
-              `${HISTORY_MESSAGE[historyPayload.action]} ${historyPayload.undoCount ?? 0} undo • ${historyPayload.redoCount ?? 0} redo available.`,
-            );
-          }
-          break;
+    unsubs.push(
+      appEventBus.on('xp:gained', (e) => {
+        if (e.amount > 0) {
+          toast.success(`XP adjusted: +${e.amount}`, { duration: 1500 });
+          playPositiveSound();
         }
-        case 'xp-gained': {
-          const xpPayload = payload as ProgressionEventPayload<'xp-gained'>;
-          const baseMessage = getRandomXPMessage(xpPayload.rating);
-          const toastMessage = xpPayload.amount > 0 ? `${baseMessage} +${xpPayload.amount} XP` : baseMessage;
-          toast.success(toastMessage, { duration: 1500 });
-          if (xpPayload.amount > 0) {
-            playPositiveSound();
-          }
-          break;
-        }
-        case 'session-complete': {
-          const sessionPayload = payload as ProgressionEventPayload<'session-complete'>;
-          toast.success(
-            `Session complete: ${sessionPayload.totalAttempts} attempt${sessionPayload.totalAttempts === 1 ? '' : 's'}.`,
-            { duration: 2000 },
-          );
-          break;
-        }
-        case 'crystal-level-up': {
-          const levelPayload = payload as ProgressionEventPayload<'crystal-level-up'>;
-          toast.success(formatCrystalLevelUpToast(levelPayload), { duration: 2200 });
-          break;
-        }
-      }
-    };
+      }),
+    );
 
-    eventTypes.forEach((eventType) => {
-      window.addEventListener(`${EVENT_PREFIX}${eventType}`, handleProgressionEvent as EventListener);
-    });
+    unsubs.push(
+      appEventBus.on('crystal:leveled', (e) => {
+        if (e.levelsGained === 1) {
+          toast.success(`Crystal reached level ${e.to}!`, { duration: 2200 });
+        } else {
+          toast.success(`Crystal leveled up ${e.levelsGained} times! Now level ${e.to}.`, { duration: 2200 });
+        }
+      }),
+    );
 
-    return () => {
-      eventTypes.forEach((eventType) => {
-        window.removeEventListener(`${EVENT_PREFIX}${eventType}`, handleProgressionEvent as EventListener);
-      });
-    };
+    unsubs.push(
+      appEventBus.on('session:completed', (e) => {
+        toast.success(
+          `Session complete: ${e.totalAttempts} attempt${e.totalAttempts === 1 ? '' : 's'}.`,
+          { duration: 2000 },
+        );
+      }),
+    );
+
+    unsubs.push(
+      appEventBus.on('study-panel:history', (e) => {
+        if (e.action === 'undo' || e.action === 'redo') {
+          const label = e.action === 'undo' ? 'Undo complete.' : 'Redo complete.';
+          toast.success(`${label} ${e.undoCount} undo • ${e.redoCount} redo available.`);
+        }
+      }),
+    );
+
+    return () => unsubs.forEach((fn) => fn());
   }, []);
 
   return null;

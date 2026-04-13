@@ -52,8 +52,6 @@ import { useTopicMetadata } from '../features/content';
 import { deckRepository } from '../infrastructure/di';
 import { topicCardsQueryKey } from '../hooks/useDeckData';
 import { Card } from '../types/core';
-import { telemetry } from '../features/telemetry';
-
 interface AttunementRitualModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -199,14 +197,6 @@ export function AttunementRitualModal({
     if (!result) {
       return;
     }
-    telemetry.log('attunement_ritual_submitted', {
-      harmonyScore: result.harmonyScore,
-      readinessBucket: result.readinessBucket,
-      checklistKeys: Object.keys(sanitizedChecklist),
-      buffsGranted: result.buffs.map((buff) => buff.buffId),
-    }, {
-      topicId: targetCrystal,
-    });
     onClose();
   };
 

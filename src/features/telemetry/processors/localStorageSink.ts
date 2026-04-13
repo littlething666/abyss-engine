@@ -1,13 +1,12 @@
+import { TELEMETRY_RAW_STORAGE_KEY } from '@/infrastructure/telemetryRawLog';
 import type { TelemetryEvent } from '../types';
-
-const STORAGE_KEY = 'abyss-telemetry-v1-raw';
 
 function readPersistedEvents() {
   if (typeof window === 'undefined') {
     return [];
   }
 
-  const raw = window.localStorage.getItem(STORAGE_KEY);
+  const raw = window.localStorage.getItem(TELEMETRY_RAW_STORAGE_KEY);
   if (!raw) {
     return [];
   }
@@ -21,7 +20,8 @@ function readPersistedEvents() {
         && typeof (entry as TelemetryEvent).id === 'string'
       );
     }) : [];
-  } catch {
+  } catch (err) {
+    console.error('[abyss] Failed to parse telemetry localStorage sink payload', err);
     return [];
   }
 }
@@ -32,12 +32,12 @@ export function syncTelemetryToLocalStorage(event: TelemetryEvent) {
   }
 
   const events = [...readPersistedEvents(), event];
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+  window.localStorage.setItem(TELEMETRY_RAW_STORAGE_KEY, JSON.stringify(events));
 }
 
 export function clearTelemetryStorage() {
   if (typeof window === 'undefined') {
     return;
   }
-  window.localStorage.removeItem(STORAGE_KEY);
+  window.localStorage.removeItem(TELEMETRY_RAW_STORAGE_KEY);
 }

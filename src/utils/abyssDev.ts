@@ -196,7 +196,7 @@ const abyssDev: AbyssDev = {
           });
         }
 
-        useStudyStore.setState({ isCurrentCardFlipped: false });
+        uiStore.getState().resetCardFlip();
 
         console.log(`[AbyssDev] Selected card "${cardId}" in topic "${topicId}"`);
         return;

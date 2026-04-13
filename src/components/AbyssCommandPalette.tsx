@@ -27,6 +27,7 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command';
+import { appEventBus } from '@/infrastructure/eventBus';
 import { useProgressionStore } from '@/features/progression';
 import { uiStore, useUIStore } from '@/store/uiStore';
 
@@ -264,11 +265,11 @@ export function AbyssCommandPalette({
     if (nextXp <= 0) {
       return;
     }
-    progression.emitEvent('xp-gained', {
-      amount: DEV_XP_AMOUNT,
-      rating: 3,
-      sessionId: 'dev-command-palette',
+    appEventBus.emit('xp:gained', {
       topicId,
+      amount: DEV_XP_AMOUNT,
+      sessionId: 'dev-command-palette',
+      cardId: 'dev-command-palette',
     });
     onOpenChange(false);
   };
@@ -284,11 +285,11 @@ export function AbyssCommandPalette({
       return;
     }
     progression.addXP(topicId, -DEV_XP_AMOUNT);
-    progression.emitEvent('xp-gained', {
-      amount: -DEV_XP_AMOUNT,
-      rating: 3,
-      sessionId: 'dev-command-palette',
+    appEventBus.emit('xp:gained', {
       topicId,
+      amount: -DEV_XP_AMOUNT,
+      sessionId: 'dev-command-palette',
+      cardId: 'dev-command-palette',
     });
     onOpenChange(false);
   };

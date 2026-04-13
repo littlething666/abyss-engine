@@ -4,7 +4,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { useFrame, useThree } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
 import { Billboard, Sparkles } from '@react-three/drei/webgpu';
-import { uiStore } from '../store/uiStore';
+import { selectIsAnyModalOpen, uiStore } from '../store/uiStore';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useSceneInvalidator } from '../hooks/useSceneInvalidator';
 import {
@@ -116,7 +116,7 @@ export const WisdomAltar: React.FC = () => {
 
   useEffect(() => {
     const updateSubmissionAvailability = () => {
-      if (uiStore.getState().isAnyModalOpen) {
+      if (selectIsAnyModalOpen(uiStore.getState())) {
         return;
       }
 

@@ -80,9 +80,11 @@ async function installProgressionEventProbe(page: any) {
   await page.evaluate(() => {
     const win = window as any;
     const eventTypes = [
-      'abyss-progression-xp-gained',
-      'abyss-progression-study-panel-history',
-      'abyss-progression-session-complete',
+      'abyss-card:reviewed',
+      'abyss-xp:gained',
+      'abyss-study-panel:history',
+      'abyss-session:completed',
+      'abyss-crystal:leveled',
     ];
 
     win.__progressionEvents = [];
@@ -108,7 +110,7 @@ async function installProgressionEventProbe(page: any) {
         win.dispatchEvent = (event: Event) => {
           if (typeof event === 'object' && event && 'type' in event) {
             const customEvent = event as CustomEvent;
-            if (typeof customEvent.type === 'string' && customEvent.type.startsWith('abyss-progression-')) {
+            if (typeof customEvent.type === 'string' && customEvent.type.startsWith('abyss-')) {
               collectProgressionEvent(customEvent);
             }
           }
@@ -147,7 +149,9 @@ async function assertProgressionEventIncrease(page: any, priorEvents: number) {
     const events = await getProgressionEvents(page);
     return events
       .slice(priorEvents)
-      .some((entry: { type?: string }) => entry.type === 'abyss-progression-xp-gained');
+      .some((entry: { type?: string }) =>
+        entry.type === 'abyss-card:reviewed' || entry.type === 'abyss-xp:gained',
+      );
   };
 
   await expect.poll(async () => hasNewXpEvent(), {
@@ -158,12 +162,22 @@ async function assertProgressionEventIncrease(page: any, priorEvents: number) {
   const newXpEvent = events
     .slice(priorEvents)
     .reverse()
-    .find((entry: { type?: string }) => entry.type === 'abyss-progression-xp-gained');
-  const detail = newXpEvent?.detail as { amount?: number; message?: string; rating?: number };
-  expect(detail?.amount).toBeGreaterThanOrEqual(0);
-  expect(typeof detail?.rating).toBe('number');
-  if (detail?.amount && detail.amount > 0) {
-    expect(detail?.amount).not.toBe(0);
+    .find((entry: { type?: string }) =>
+      entry.type === 'abyss-card:reviewed' || entry.type === 'abyss-xp:gained',
+    );
+  const detail = newXpEvent?.detail as {
+    amount?: number;
+    buffedReward?: number;
+    message?: string;
+    rating?: number;
+  };
+  const value = detail?.buffedReward ?? detail?.amount ?? 0;
+  expect(value).toBeGreaterThanOrEqual(0);
+  if (newXpEvent?.type === 'abyss-card:reviewed') {
+    expect(typeof detail?.rating).toBe('number');
+    if (detail?.buffedReward && detail.buffedReward > 0) {
+      expect(detail.buffedReward).not.toBe(0);
+    }
   }
 }
 

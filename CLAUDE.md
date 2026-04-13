@@ -16,7 +16,8 @@ Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural
 ### 1. Feature-Sliced Modules
 - **Rule**: Domain/application modules that encode game-learning behavior must reside exclusively in `src/features/<feature>/`.
 - **Boundary Enforcement**: Modules communicate strictly through public APIs defined in `index.ts`. Cross-feature deep imports are prohibited.
-- **Dependency Flow**: Features may depend on `infrastructure` and `types`. Unidirectional coupling (feature -> infrastructure/types) is mandatory. Cross-feature coupling must be documented.
+- **Dependency Flow**: Features may depend on `infrastructure` and `types`. Unidirectional coupling (feature → infrastructure/types) is mandatory. Cross-feature coupling must be documented.
+- **Authorized exception — `eventBusHandlers`**: `src/infrastructure/eventBusHandlers.ts` may import from `src/features/*` to register side-effect handlers (telemetry sinks, content-generation jobs, `crystalCeremonyStore` triggers, and similar) on the typed `AppEventBus`. This file is the **single sanctioned composition root** where infrastructure wires application-level reactions to domain events. Do not add new "infrastructure calls features" modules without updating this document.
 
 ### 2. Strict Layered Architecture
 - **Types (`src/types`)**: Data contracts and interface shapes. Zero framework or runtime logic.
@@ -24,7 +25,7 @@ Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural
 - **Features (`src/features`)**: Domain/application modules. This includes **procedural generation models** (mathematical algorithms mapping SM-2 progression to physical growth parameters).
 - **Graphics & Rendering (`src/graphics`)**: WebGPU pipelines, TSL node materials, compute shaders, and post-processing effect chains. This layer translates data-driven growth parameters into visual outputs.
 - **Composition (`src/hooks`)**: State and query wiring. Prohibited from containing rule-bearing business logic.
-- **Infrastructure (`src/infrastructure`)**: External boundaries (I/O, storage, network adapters, realtime wiring).
+- **Infrastructure (`src/infrastructure`)**: External boundaries (I/O, storage, network adapters, realtime wiring). The typed app event bus (`eventBus.ts`) lives here; handler wiring (`eventBusHandlers.ts`) uses the feature-import exception documented under Feature-Sliced Modules.
 
 ### 3. Repository Pattern & Data Access
 - **Rule**: Direct remote I/O (e.g., `fetch`) is strictly prohibited in domain and component files.

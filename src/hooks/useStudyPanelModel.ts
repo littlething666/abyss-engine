@@ -14,6 +14,7 @@ import {
 } from '../features/studyPanel';
 import { toRenderableCard, type RenderableCard, type RenderableType } from '../features/studyPanel/cardPresenter';
 import { normalizeSM2State, type SM2Data } from '../features/progression/sm2';
+import { undoManager } from '../features/progression/undoManager';
 import { ActiveCrystal, Card } from '../types/core';
 import { TopicMetadata } from '../features/content/selectors';
 
@@ -66,7 +67,10 @@ export function useStudyPanelModel({
   const sm2Data = useProgressionStore((state) => state.sm2Data);
   const currentSession = useProgressionStore((state) => state.currentSession);
   const activeCrystals = useProgressionStore((state) => state.activeCrystals);
-  const unlockedTopicIds = useProgressionStore((state) => state.unlockedTopicIds);
+  const unlockedTopicIds = useMemo(
+    () => activeCrystals.map((c) => c.topicId),
+    [activeCrystals],
+  );
   const targetAudience = useStudySettingsStore((state) => state.targetAudience);
   const agentPersonality = useStudySettingsStore((state) => state.agentPersonality);
 
@@ -98,8 +102,8 @@ export function useStudyPanelModel({
     [resolvedTopicId, topicMetadata],
   );
   const priorKnowledgeLines = useMemo(
-    () => buildPriorKnowledgeLines(activeCrystals, unlockedTopicIds, topicMetadata),
-    [activeCrystals, unlockedTopicIds, topicMetadata],
+    () => buildPriorKnowledgeLines(activeCrystals, topicMetadata),
+    [activeCrystals, topicMetadata],
   );
   const resolvedSubjectId = useMemo(
     () => (resolvedTopicId ? topicMetadata[resolvedTopicId]?.subjectId || null : null),
@@ -162,8 +166,8 @@ export function useStudyPanelModel({
   const isMiniGame = renderedCard?.type === 'mini_game';
   const isChoiceQuestion = isSingleChoice || isMultiChoice;
   const hasTheory = Boolean(resolvedTopicTheory);
-  const undoCount = currentSession?.undoStack?.length ?? 0;
-  const redoCount = currentSession?.redoStack?.length ?? 0;
+  const undoCount = undoManager.undoStackSize;
+  const redoCount = undoManager.redoStackSize;
   const canUndo = undoCount > 0;
   const canRedo = redoCount > 0;
 

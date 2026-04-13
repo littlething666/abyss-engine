@@ -40,17 +40,22 @@ afterEach(() => {
 });
 
 describe('ProgressionFeedbackProvider', () => {
-  it('shows a positive toast and plays sound on xp-gained', () => {
+  it('shows a positive toast and plays sound on card:reviewed', () => {
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
     const { unmount } = renderFeedbackProvider();
 
     window.dispatchEvent(
-      new CustomEvent('abyss-progression-xp-gained', {
+      new CustomEvent('abyss-card:reviewed', {
         detail: {
-          amount: 25,
-          rating: 4,
           cardId: 'card-1',
+          rating: 4,
           topicId: 'topic-a',
+          sessionId: 's1',
+          timeTakenMs: 0,
+          buffedReward: 25,
+          buffMultiplier: 1,
+          difficulty: 1,
+          isCorrect: true,
         },
       }),
     );
@@ -69,13 +74,14 @@ describe('ProgressionFeedbackProvider', () => {
     const { unmount } = renderFeedbackProvider();
 
     window.dispatchEvent(
-      new CustomEvent('abyss-progression-crystal-level-up', {
+      new CustomEvent('abyss-crystal:leveled', {
         detail: {
           topicId: 'topic-a',
           sessionId: 'session-1',
-          previousLevel: 0,
-          nextLevel: 1,
+          from: 0,
+          to: 1,
           levelsGained: 1,
+          isStudyPanelOpen: false,
         },
       }),
     );
@@ -91,13 +97,14 @@ describe('ProgressionFeedbackProvider', () => {
     const { unmount } = renderFeedbackProvider();
 
     window.dispatchEvent(
-      new CustomEvent('abyss-progression-crystal-level-up', {
+      new CustomEvent('abyss-crystal:leveled', {
         detail: {
           topicId: 'topic-a',
           sessionId: 'session-1',
-          previousLevel: 0,
-          nextLevel: 3,
+          from: 0,
+          to: 3,
           levelsGained: 3,
+          isStudyPanelOpen: false,
         },
       }),
     );
@@ -112,10 +119,11 @@ describe('ProgressionFeedbackProvider', () => {
     const { unmount } = renderFeedbackProvider();
 
     window.dispatchEvent(
-      new CustomEvent('abyss-progression-study-panel-history', {
+      new CustomEvent('abyss-study-panel:history', {
         detail: {
           action: 'undo',
           topicId: 'topic-a',
+          sessionId: 's1',
           undoCount: 2,
           redoCount: 1,
         },
@@ -131,10 +139,12 @@ describe('ProgressionFeedbackProvider', () => {
     const { unmount } = renderFeedbackProvider();
 
     window.dispatchEvent(
-      new CustomEvent('abyss-progression-session-complete', {
+      new CustomEvent('abyss-session:completed', {
         detail: {
           topicId: 'topic-a',
+          sessionId: 's1',
           correctRate: 0.5,
+          sessionDurationMs: 1000,
           totalAttempts: 3,
         },
       }),

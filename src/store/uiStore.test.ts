@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { uiStore } from './uiStore';
+import { selectIsAnyModalOpen, uiStore } from './uiStore';
 
 function withReset<T>(fn: () => T): T {
   const previousState = uiStore.getState();
@@ -17,7 +17,7 @@ describe('uiStore timeline modal state', () => {
       isRitualModalOpen: false,
       isStudyTimelineOpen: false,
       selectedTopicId: null,
-      isAnyModalOpen: false,
+      isCurrentCardFlipped: false,
     });
   });
 
@@ -25,23 +25,23 @@ describe('uiStore timeline modal state', () => {
     withReset(() => {
       uiStore.getState().openStudyTimeline();
       expect(uiStore.getState().isStudyTimelineOpen).toBe(true);
-      expect(uiStore.getState().isAnyModalOpen).toBe(true);
+      expect(selectIsAnyModalOpen(uiStore.getState())).toBe(true);
 
       uiStore.getState().closeStudyTimeline();
       expect(uiStore.getState().isStudyTimelineOpen).toBe(false);
-      expect(uiStore.getState().isAnyModalOpen).toBe(false);
+      expect(selectIsAnyModalOpen(uiStore.getState())).toBe(false);
     });
   });
 
-  it('keeps isAnyModalOpen true when another modal remains open', () => {
+  it('keeps any-modal-open true when another modal remains open', () => {
     withReset(() => {
-      uiStore.setState({ isStudyPanelOpen: true, isAnyModalOpen: true });
+      uiStore.setState({ isStudyPanelOpen: true });
       uiStore.getState().openStudyTimeline();
-      expect(uiStore.getState().isAnyModalOpen).toBe(true);
+      expect(selectIsAnyModalOpen(uiStore.getState())).toBe(true);
 
       uiStore.getState().closeStudyTimeline();
       expect(uiStore.getState().isStudyTimelineOpen).toBe(false);
-      expect(uiStore.getState().isAnyModalOpen).toBe(true);
+      expect(selectIsAnyModalOpen(uiStore.getState())).toBe(true);
     });
   });
 });

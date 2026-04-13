@@ -2,10 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { AttunementRitualPayload } from '../../types/progression';
 import {
   buildStudySessionMetrics,
-  calculateRitualHarmony,
   extractStudyAdaptationSignals,
-  deriveRitualBuffs,
 } from './attunementMetrics';
+import { calculateRitualHarmony, deriveRitualBuffs } from '../progression/progressionRitual';
 
 const highPayload: AttunementRitualPayload = {
   topicId: 'topic-a',

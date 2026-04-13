@@ -3,7 +3,7 @@
 import { useCallback, useEffect } from 'react';
 import { useThree } from '@react-three/fiber/webgpu';
 
-import { useUIStore } from '../store/uiStore';
+import { selectIsAnyModalOpen, useUIStore } from '../store/uiStore';
 
 export interface SceneInvalidationController {
   invalidate: () => void;
@@ -11,7 +11,7 @@ export interface SceneInvalidationController {
 }
 
 export function useSceneInvalidator(): SceneInvalidationController {
-  const isAnyModalOpen = useUIStore((state) => state.isAnyModalOpen)
+  const isAnyModalOpen = useUIStore(selectIsAnyModalOpen);
   const isPaused = isAnyModalOpen
   const invalidate = useThree((state) => state.invalidate);
 

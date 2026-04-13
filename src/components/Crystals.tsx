@@ -106,7 +106,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
   const environmentMap = useThree((state) => state.scene.environment);
 
   const prevPanelOpen = useRef(isStudyPanelOpen);
-  const prevLevelByTopic = useRef<Map<string, number>>(new Map());
   const lastCeremonyKey = useRef<string | null>(null);
 
   const [particleTopicId, setParticleTopicId] = useState<string | null>(null);
@@ -163,23 +162,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
     }
     prevPanelOpen.current = isStudyPanelOpen;
   }, [isStudyPanelOpen]);
-
-  useEffect(() => {
-    const prev = prevLevelByTopic.current;
-    for (const crystal of crystals) {
-      const level = calculateLevelFromXP(crystal.xp);
-      const previous = prev.get(crystal.topicId);
-      if (previous !== undefined && level > previous) {
-        crystalCeremonyStore.getState().notifyLevelUp(crystal.topicId, isStudyPanelOpen);
-      }
-      prev.set(crystal.topicId, level);
-    }
-    for (const key of [...prev.keys()]) {
-      if (!crystals.some((c) => c.topicId === key)) {
-        prev.delete(key);
-      }
-    }
-  }, [crystals, isStudyPanelOpen]);
 
   useFrame(() => {
     if (isPaused) return;
