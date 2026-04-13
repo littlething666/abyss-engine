@@ -15,6 +15,8 @@ export interface TopicCardQueriesResult {
   topicCardQueries: TopicCardQueryRow[];
   /** Keyed by TopicRefKey via topicRefKey(subjectId, topicId). */
   topicCardsByRef: Map<TopicRefKey, Card[]>;
+  /** Keyed by topicId for callers that resolve subject via metadata (same topicId twice: last wins). */
+  topicCardsById: Map<string, Card[]>;
 }
 
 /**
@@ -47,19 +49,21 @@ function useTopicCardQueriesFromTopicIds(
     }),
   });
 
-  const topicCardsByRef = useMemo(() => {
-    const map = new Map<TopicRefKey, Card[]>();
+  const { topicCardsByRef, topicCardsById } = useMemo(() => {
+    const byRef = new Map<TopicRefKey, Card[]>();
+    const byId = new Map<string, Card[]>();
     topicIds.forEach((topicId, index) => {
       const subjectId = allTopicMetadata[topicId]?.subjectId || '';
       const cards = topicCardQueries[index]?.data;
       if (cards && subjectId) {
-        map.set(topicRefKey(subjectId, topicId), cards);
+        byRef.set(topicRefKey(subjectId, topicId), cards);
+        byId.set(topicId, cards);
       }
     });
-    return map;
+    return { topicCardsByRef: byRef, topicCardsById: byId };
   }, [topicIds, topicCardQueries, allTopicMetadata]);
 
-  return { queriedTopicIds: topicIds, topicCardQueries, topicCardsByRef };
+  return { queriedTopicIds: topicIds, topicCardQueries, topicCardsByRef, topicCardsById };
 }
 
 /** Fetch deck cards for every active crystal topic (Scene: all visible crystals need card payloads). */

@@ -322,8 +322,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         if (!restored) return;
         const { subjectId, topicId } = restored.currentSession ?? {};
         const sessionId = restored.currentSession?.sessionId;
-        if (!topicId?.trim() || !sessionId?.trim()) {
-          throw new Error('undoLastStudyResult: restored session missing topicId or sessionId');
+        if (!subjectId?.trim() || !topicId?.trim() || !sessionId?.trim()) {
+          throw new Error('undoLastStudyResult: restored session missing subjectId, topicId, or sessionId');
         }
         set(restored);
         useUIStore.getState().resetCardFlip();
@@ -339,8 +339,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         if (!restored) return;
         const { subjectId, topicId } = restored.currentSession ?? {};
         const sessionId = restored.currentSession?.sessionId;
-        if (!topicId?.trim() || !sessionId?.trim()) {
-          throw new Error('redoLastStudyResult: restored session missing topicId or sessionId');
+        if (!subjectId?.trim() || !topicId?.trim() || !sessionId?.trim()) {
+          throw new Error('redoLastStudyResult: restored session missing subjectId, topicId, or sessionId');
         }
         set(restored);
         useUIStore.getState().resetCardFlip();
