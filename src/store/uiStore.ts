@@ -1,25 +1,24 @@
 import { create } from 'zustand';
 import { telemetry } from '../features/telemetry';
+import type { SubjectTopicRef } from '../lib/topicRef';
 
-function emitModalOpened(modalId: string, topicId: string | null = null, sessionId: string | null = null) {
+function emitModalOpened(modalId: string, topicRef: SubjectTopicRef | null = null, sessionId: string | null = null) {
   telemetry.log('modal_opened', {
     modalId,
     action: 'opened',
     sessionId,
-    topicId,
+    subjectId: topicRef?.subjectId ?? null,
+    topicId: topicRef?.topicId ?? null,
   });
 }
 
-/**
- * UI Store interface for managing UI state
- */
 export interface UIStore {
   // State
   isDiscoveryModalOpen: boolean;
   isStudyPanelOpen: boolean;
   isRitualModalOpen: boolean;
   isStudyTimelineOpen: boolean;
-  selectedTopicId: string | null;
+  selectedTopicRef: SubjectTopicRef | null;
   isCurrentCardFlipped: boolean;
 
   // Computed
@@ -34,7 +33,7 @@ export interface UIStore {
   closeRitualModal: () => void;
   openStudyTimeline: () => void;
   closeStudyTimeline: () => void;
-  selectTopic: (topicId: string | null) => void;
+  selectTopic: (ref: SubjectTopicRef | null) => void;
   flipCurrentCard: () => void;
   resetCardFlip: () => void;
 }
@@ -45,101 +44,58 @@ export const selectIsAnyModalOpen = (s: UIStore) =>
   || s.isRitualModalOpen
   || s.isStudyTimelineOpen;
 
-// Create store without persistence - safe for SSR
-// Using createStore pattern for Next.js App Router compatibility
 const createUIStore = () =>
   create<UIStore>((set, get) => ({
-    // Initial state
     isDiscoveryModalOpen: false,
     isStudyPanelOpen: false,
     isRitualModalOpen: false,
     isStudyTimelineOpen: false,
-    selectedTopicId: null,
+    selectedTopicRef: null,
     isCurrentCardFlipped: false,
 
-    // Computed state - derived from selectedTopicId
     get isSelectionMode() {
-      return get().selectedTopicId !== null;
+      return get().selectedTopicRef !== null;
     },
 
-    // Actions
     openDiscoveryModal: () => {
       const state = get();
-      if (state.isDiscoveryModalOpen) {
-        return;
-      }
-      set({
-        isDiscoveryModalOpen: true,
-      });
+      if (state.isDiscoveryModalOpen) return;
+      set({ isDiscoveryModalOpen: true });
       emitModalOpened('discovery', null, null);
     },
-    closeDiscoveryModal: () => {
-      set({
-        isDiscoveryModalOpen: false,
-      });
-    },
+    closeDiscoveryModal: () => set({ isDiscoveryModalOpen: false }),
+
     openStudyPanel: () => {
       const state = get();
-      if (state.isStudyPanelOpen) {
-        return;
-      }
-      set({
-        isStudyPanelOpen: true,
-      });
-      emitModalOpened('study_panel', state.selectedTopicId);
+      if (state.isStudyPanelOpen) return;
+      set({ isStudyPanelOpen: true });
+      emitModalOpened('study_panel', state.selectedTopicRef);
     },
-    closeStudyPanel: () => {
-      set({
-        isStudyPanelOpen: false,
-      });
-    },
+    closeStudyPanel: () => set({ isStudyPanelOpen: false }),
+
     openRitualModal: () => {
       const state = get();
-      if (state.isRitualModalOpen) {
-        return;
-      }
-      set({
-        isRitualModalOpen: true,
-      });
-      emitModalOpened('attunement_ritual', state.selectedTopicId);
+      if (state.isRitualModalOpen) return;
+      set({ isRitualModalOpen: true });
+      emitModalOpened('attunement_ritual', state.selectedTopicRef);
     },
-    closeRitualModal: () => {
-      set({
-        isRitualModalOpen: false,
-      });
-    },
+    closeRitualModal: () => set({ isRitualModalOpen: false }),
+
     openStudyTimeline: () => {
       const state = get();
-      if (state.isStudyTimelineOpen) {
-        return;
-      }
-      set({
-        isStudyTimelineOpen: true,
-      });
-      emitModalOpened('study_timeline', state.selectedTopicId);
+      if (state.isStudyTimelineOpen) return;
+      set({ isStudyTimelineOpen: true });
+      emitModalOpened('study_timeline', state.selectedTopicRef);
     },
-    closeStudyTimeline: () => {
-      set({
-        isStudyTimelineOpen: false,
-      });
-    },
+    closeStudyTimeline: () => set({ isStudyTimelineOpen: false }),
 
-    // Select a topic (or clear selection if null)
-    selectTopic: (topicId: string | null) => set({ selectedTopicId: topicId }),
+    selectTopic: (ref: SubjectTopicRef | null) => set({ selectedTopicRef: ref }),
 
     flipCurrentCard: () => set((s) => ({ isCurrentCardFlipped: !s.isCurrentCardFlipped })),
     resetCardFlip: () => set({ isCurrentCardFlipped: false }),
   }));
 
-// Create a singleton store - will be created once per module load
-// This is safe for UI state that doesn't need persistence
 const store = createUIStore();
 
-/**
- * Hook to use the UI store
- * Uses the singleton store instance
- */
 export const useUIStore = store;
-
-// Export the raw store for direct access (e.g., in event handlers)
 export { store as uiStore };

@@ -4,6 +4,8 @@ import { useMemo } from 'react';
 import { useAllGraphs } from '@/features/content';
 import { topicStudyContentReady } from '@/features/contentGeneration';
 import { deckRepository } from '@/infrastructure/di';
+import type { TopicRefKey } from '@/lib/topicRef';
+import { topicRefKey } from '@/lib/topicRef';
 
 /** TanStack key for whether a topic has theory + difficulty-1 cards (study-ready). */
 export function topicContentAvailabilityQueryKey(subjectId: string, topicId: string) {
@@ -11,9 +13,13 @@ export function topicContentAvailabilityQueryKey(subjectId: string, topicId: str
 }
 
 /**
- * For every node in loaded graphs, whether IndexedDB has study-ready content for that topic.
+ * For every node in loaded graphs, whether IndexedDB has study-ready content.
+ *
+ * Returns `Record<TopicRefKey, boolean>` keyed by `topicRefKey(subjectId, topicId)`,
+ * fixing the previous dimension-collapse bug where different subjects sharing a
+ * topicId would overwrite each other.
  */
-export function useTopicContentAvailabilityMap(): Record<string, boolean> {
+export function useTopicContentAvailabilityMap(): Record<TopicRefKey, boolean> {
   const allGraphs = useAllGraphs();
 
   const topicRefs = useMemo(() => {
@@ -41,10 +47,10 @@ export function useTopicContentAvailabilityMap(): Record<string, boolean> {
   });
 
   return useMemo(() => {
-    const map: Record<string, boolean> = {};
+    const map: Record<TopicRefKey, boolean> = {} as Record<TopicRefKey, boolean>;
     topicRefs.forEach((t, i) => {
       const r = results[i];
-      map[t.topicId] = r?.data ?? false;
+      map[topicRefKey(t.subjectId, t.topicId)] = r?.data ?? false;
     });
     return map;
   }, [topicRefs, results]);

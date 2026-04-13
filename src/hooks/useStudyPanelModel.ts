@@ -17,14 +17,16 @@ import { normalizeSM2State, type SM2Data } from '../features/progression/sm2';
 import { undoManager } from '../features/progression/undoManager';
 import { ActiveCrystal, Card } from '../types/core';
 import { TopicMetadata } from '../features/content/selectors';
+import type { SubjectTopicRef } from '../lib/topicRef';
 
 interface UseStudyPanelModelProps {
   currentCardId: string | null;
-  currentTopicId: string | null;
+  currentTopicRef: SubjectTopicRef | null;
   totalCards: number;
 }
 
 export interface StudyPanelModel {
+  resolvedTopicRef: SubjectTopicRef | null;
   resolvedTopicId: string | null;
   resolvedSubjectId: string | null;
   resolvedSubject: string;
@@ -51,7 +53,7 @@ export interface StudyPanelModel {
   hasTheory: boolean;
   activeCrystals: ActiveCrystal[];
   unlockedTopicIds: string[];
-  activeSessionId: string | null;
+  activeSessionRef: SubjectTopicRef | null;
   activeCardType: RenderableType | null;
   canUndo: boolean;
   canRedo: boolean;
@@ -61,7 +63,7 @@ export interface StudyPanelModel {
 
 export function useStudyPanelModel({
   currentCardId,
-  currentTopicId,
+  currentTopicRef,
   totalCards,
 }: UseStudyPanelModelProps): StudyPanelModel {
   const sm2Data = useProgressionStore((state) => state.sm2Data);
@@ -74,16 +76,22 @@ export function useStudyPanelModel({
   const targetAudience = useStudySettingsStore((state) => state.targetAudience);
   const agentPersonality = useStudySettingsStore((state) => state.agentPersonality);
 
-  const resolvedTopicId = useMemo(
-    () => currentTopicId || currentSession?.topicId || null,
-    [currentTopicId, currentSession?.topicId],
+  // Derive the resolved topic ref from props or active session
+  const resolvedTopicRef = useMemo<SubjectTopicRef | null>(
+    () =>
+      currentTopicRef
+      || (currentSession
+        ? { subjectId: currentSession.subjectId, topicId: currentSession.topicId }
+        : null),
+    [currentTopicRef, currentSession],
   );
+
+  const resolvedTopicId = resolvedTopicRef?.topicId ?? null;
+  const resolvedSubjectId = resolvedTopicRef?.subjectId ?? null;
 
   const topicMetadataTopicIds = useMemo(() => {
     const topicIds = new Set<string>();
-    if (resolvedTopicId) {
-      topicIds.add(resolvedTopicId);
-    }
+    if (resolvedTopicId) topicIds.add(resolvedTopicId);
     unlockedTopicIds.forEach((topicId) => topicIds.add(topicId));
     return Array.from(topicIds);
   }, [resolvedTopicId, unlockedTopicIds]);
@@ -104,10 +112,6 @@ export function useStudyPanelModel({
   const priorKnowledgeLines = useMemo(
     () => buildPriorKnowledgeLines(activeCrystals, topicMetadata),
     [activeCrystals, topicMetadata],
-  );
-  const resolvedSubjectId = useMemo(
-    () => (resolvedTopicId ? topicMetadata[resolvedTopicId]?.subjectId || null : null),
-    [resolvedTopicId, topicMetadata],
   );
 
   const topicCardQuery = useTopicCards(resolvedSubjectId || '', resolvedTopicId || '');
@@ -144,19 +148,14 @@ export function useStudyPanelModel({
 
   const sm2State = useMemo(() => {
     const targetCardId = activeCard?.id || currentSession?.currentCardId || currentCardId;
-    if (!targetCardId) {
-      return null;
-    }
+    if (!targetCardId) return null;
     const rawSm2 = sm2Data[targetCardId];
-    if (!rawSm2) {
-      return null;
-    }
+    if (!rawSm2) return null;
     return normalizeSM2State(rawSm2);
   }, [activeCard?.id, currentSession?.currentCardId, currentCardId, sm2Data]);
 
   const isLoadingCards = !!resolvedTopicId && !!resolvedSubjectId && topicCardQuery.isLoading;
   const isCardsLoadError = !!resolvedTopicId && !!resolvedSubjectId && topicCardQuery.isError;
-
   const hasActiveCard = renderedCard !== null;
   const isEmptyDeck = totalCards === 0;
   const isCompleted = !hasActiveCard && !isLoadingCards && !isEmptyDeck && totalCards > 0;
@@ -172,6 +171,7 @@ export function useStudyPanelModel({
   const canRedo = redoCount > 0;
 
   return {
+    resolvedTopicRef,
     resolvedTopicId,
     resolvedSubjectId,
     resolvedSubject,
@@ -198,7 +198,9 @@ export function useStudyPanelModel({
     hasTheory,
     activeCrystals,
     unlockedTopicIds,
-    activeSessionId: currentSession?.topicId ?? null,
+    activeSessionRef: currentSession
+      ? { subjectId: currentSession.subjectId, topicId: currentSession.topicId }
+      : null,
     activeCardType: renderedCard?.type ?? null,
     canUndo,
     canRedo,

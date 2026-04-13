@@ -5,28 +5,27 @@ import type { TopicMetadata } from '../features/content';
 import type { Card } from '../types/core';
 import { deckRepository } from '../infrastructure/di';
 import { topicCardsQueryKey } from './useDeckData';
+import type { TopicRefKey } from '../lib/topicRef';
+import { topicRefKey } from '../lib/topicRef';
 
 export type TopicCardQueryRow = UseQueryResult<Card[], Error>;
 
 export interface TopicCardQueriesResult {
-  /** Topic IDs aligned with `topicCardQueries` indices (subject-filtered or full active set). */
   queriedTopicIds: readonly string[];
   topicCardQueries: TopicCardQueryRow[];
-  topicCardsById: Map<string, Card[]>;
+  /** Keyed by TopicRefKey via topicRefKey(subjectId, topicId). */
+  topicCardsByRef: Map<TopicRefKey, Card[]>;
 }
 
 /**
- * Pure filter: same rule as legacy `page.tsx` / `Scene` subject scoping — one place so call sites cannot drift.
+ * Pure filter: same rule as legacy subject scoping — one place so call sites cannot drift.
  */
 export function getSubjectFilteredTopicIds(
   activeTopicIds: readonly string[],
   currentSubjectId: string | null,
   allTopicMetadata: Readonly<Record<string, TopicMetadata>>,
 ): string[] {
-  if (!currentSubjectId) {
-    return [...activeTopicIds];
-  }
-
+  if (!currentSubjectId) return [...activeTopicIds];
   return activeTopicIds.filter(
     (topicId) => allTopicMetadata[topicId]?.subjectId === currentSubjectId,
   );
@@ -48,18 +47,19 @@ function useTopicCardQueriesFromTopicIds(
     }),
   });
 
-  const topicCardsById = useMemo(() => {
-    const map = new Map<string, Card[]>();
+  const topicCardsByRef = useMemo(() => {
+    const map = new Map<TopicRefKey, Card[]>();
     topicIds.forEach((topicId, index) => {
+      const subjectId = allTopicMetadata[topicId]?.subjectId || '';
       const cards = topicCardQueries[index]?.data;
-      if (cards) {
-        map.set(topicId, cards);
+      if (cards && subjectId) {
+        map.set(topicRefKey(subjectId, topicId), cards);
       }
     });
     return map;
-  }, [topicIds, topicCardQueries]);
+  }, [topicIds, topicCardQueries, allTopicMetadata]);
 
-  return { queriedTopicIds: topicIds, topicCardQueries, topicCardsById };
+  return { queriedTopicIds: topicIds, topicCardQueries, topicCardsByRef };
 }
 
 /** Fetch deck cards for every active crystal topic (Scene: all visible crystals need card payloads). */
@@ -80,6 +80,5 @@ export function useTopicCardQueriesForSubjectFilter(
     () => getSubjectFilteredTopicIds(activeTopicIds, currentSubjectId, allTopicMetadata),
     [activeTopicIds, currentSubjectId, allTopicMetadata],
   );
-
   return useTopicCardQueriesFromTopicIds(subjectFilteredTopicIds, allTopicMetadata);
 }
