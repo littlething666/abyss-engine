@@ -1,8 +1,8 @@
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProviders';
+import { ensureGlobalCardIdPrefix } from '@/lib/cardIdUtils';
 
-import { findSubjectIdForTopic } from '../findSubjectIdForTopic';
 import { buildTopicExpansionCardsMessages } from '../messages/buildTopicExpansionCardsMessages';
 import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
 import { runContentGenerationJob } from '../runContentGenerationJob';
@@ -11,6 +11,8 @@ export interface RunExpansionJobParams {
   chat: IChatCompletionsRepository;
   deckRepository: IDeckRepository;
   writer: IDeckContentWriter;
+  /** Subject that owns the topic. Callers must provide this directly. */
+  subjectId: string;
   topicId: string;
   nextLevel: number;
   enableThinking: boolean;
@@ -20,17 +22,13 @@ export interface RunExpansionJobParams {
 export async function runExpansionJob(
   params: RunExpansionJobParams,
 ): Promise<{ ok: boolean; jobId?: string; error?: string; skipped?: boolean }> {
-  const { chat, deckRepository, writer, topicId, nextLevel, enableThinking, signal } = params;
+  const { chat, deckRepository, writer, subjectId, topicId, nextLevel, enableThinking, signal } = params;
 
   if (nextLevel < 2 || nextLevel > 3) {
     return { ok: true, skipped: true };
   }
 
   const difficulty = nextLevel;
-  const subjectId = await findSubjectIdForTopic(deckRepository, topicId);
-  if (!subjectId) {
-    return { ok: false, error: `No subject found for topic "${topicId}"` };
-  }
 
   const details = await deckRepository.getTopicDetails(subjectId, topicId);
   const bucket = details.coreQuestionsByDifficulty?.[difficulty as 1 | 2 | 3];
@@ -80,7 +78,8 @@ export async function runExpansionJob(
       return { ok: true, data: parsed.cards.map((c) => ({ ...c, difficulty })) };
     },
     persistOutput: async (normalized) => {
-      await writer.appendTopicCards(subjectId, topicId, normalized);
+      const prefixed = ensureGlobalCardIdPrefix(normalized, subjectId, topicId);
+      await writer.appendTopicCards(subjectId, topicId, prefixed);
     },
   });
 

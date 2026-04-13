@@ -12,6 +12,11 @@ export { runExpansionJob } from './jobs/runExpansionJob';
 export type { RunExpansionJobParams } from './jobs/runExpansionJob';
 
 export { topicStudyContentReady } from './topicStudyContentReady';
+
+/**
+ * @deprecated Use `SubjectTopicRef` from `@/lib/topicRef` instead of resolving
+ * subjectId at runtime. See deprecation notice on the function for details.
+ */
 export { findSubjectIdForTopic } from './findSubjectIdForTopic';
 
 export { buildTopicTheoryMessages } from './messages/buildTopicTheoryMessages';

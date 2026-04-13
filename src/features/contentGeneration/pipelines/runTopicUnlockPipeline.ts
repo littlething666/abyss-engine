@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProviders';
+import { ensureGlobalCardIdPrefix } from '@/lib/cardIdUtils';
 
 import { buildTopicMiniGameCardsMessages } from '../messages/buildTopicMiniGameCardsMessages';
 import { buildTopicStudyCardsMessages } from '../messages/buildTopicStudyCardsMessages';
@@ -130,7 +131,8 @@ export async function runTopicUnlockPipeline(
       return { ok: true, data: parsed.cards };
     },
     persistOutput: async (cards) => {
-      await writer.upsertTopicCards(subjectId, topicId, cards);
+      const prefixed = ensureGlobalCardIdPrefix(cards, subjectId, topicId);
+      await writer.upsertTopicCards(subjectId, topicId, prefixed);
     },
   });
 
@@ -163,7 +165,8 @@ export async function runTopicUnlockPipeline(
       return { ok: true, data: parsed.cards };
     },
     persistOutput: async (cards) => {
-      await writer.appendTopicCards(subjectId, topicId, cards);
+      const prefixed = ensureGlobalCardIdPrefix(cards, subjectId, topicId);
+      await writer.appendTopicCards(subjectId, topicId, prefixed);
     },
   });
 
