@@ -5,6 +5,13 @@ import { ATTUNEMENT_SUBMISSION_COOLDOWN_MS, MAX_UNDO_DEPTH, useProgressionStore 
 import { BuffEngine } from './buffs/buffEngine';
 import { AttunementRitualPayload } from '../../types/progression';
 import { undoManager } from './undoManager';
+import type { SubjectTopicRef } from '../../lib/topicRef';
+
+const SUBJECT_ID = 'data-science';
+
+function ref(topicId: string): SubjectTopicRef {
+  return { subjectId: SUBJECT_ID, topicId };
+}
 
 function createCard(id: string): Card {
   return {
@@ -20,6 +27,7 @@ function createCard(id: string): Card {
 
 function crystal(topicId: string, xp = 0): ActiveCrystal {
   return {
+    subjectId: SUBJECT_ID,
     topicId,
     gridPosition: [0, 0],
     xp,
@@ -29,7 +37,7 @@ function crystal(topicId: string, xp = 0): ActiveCrystal {
 
 const topicGraphs: SubjectGraph[] = [
   {
-    subjectId: 'data-science',
+    subjectId: SUBJECT_ID,
     title: 'Data Science',
     themeId: 'default',
     maxTier: 2,
@@ -72,6 +80,7 @@ function seedLastRitualTimestamp(timestamp: number) {
 
 function ritualPayload(topicId: string): AttunementRitualPayload {
   return {
+    subjectId: SUBJECT_ID,
     topicId,
     checklist: {
       sleepHours: 8,
@@ -104,7 +113,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 3,
     });
 
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
 
     const sessionAfterStart = useProgressionStore.getState().currentSession;
     expect(sessionAfterStart?.topicId).toBe('topic-a');
@@ -127,10 +136,10 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 3,
     });
 
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
     expect(useProgressionStore.getState().currentSession?.currentCardId).toBe('a-1');
 
-    useProgressionStore.getState().focusStudyCard('topic-a', cards, 'a-2');
+    useProgressionStore.getState().focusStudyCard(ref('topic-a'), cards, 'a-2');
     const session = useProgressionStore.getState().currentSession;
     expect(session?.currentCardId).toBe('a-2');
     expect(session?.queueCardIds).toEqual(['a-1', 'a-2']);
@@ -146,7 +155,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 0,
     });
 
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
     useProgressionStore.getState().submitStudyResult('a-1', 4);
 
     const updatedState = useProgressionStore.getState();
@@ -160,20 +169,20 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 2,
     });
 
-    const firstUnlock = useProgressionStore.getState().unlockTopic('topic-a', topicGraphs);
+    const firstUnlock = useProgressionStore.getState().unlockTopic(ref('topic-a'), topicGraphs);
     expect(firstUnlock).not.toBeNull();
 
-    useProgressionStore.getState().addXP('topic-a', 250);
+    useProgressionStore.getState().addXP(ref('topic-a'), 250);
 
-    const dependentUnlock = useProgressionStore.getState().unlockTopic('topic-b', topicGraphs);
+    const dependentUnlock = useProgressionStore.getState().unlockTopic(ref('topic-b'), topicGraphs);
     expect(dependentUnlock).not.toBeNull();
 
     expect(useProgressionStore.getState().activeCrystals.map((storeCrystal) => storeCrystal.topicId)).toContain('topic-b');
   });
 
   it('returns deterministic topic tiers from graph data', () => {
-    expect(useProgressionStore.getState().getTopicTier('topic-a', topicGraphs)).toBe(1);
-    expect(useProgressionStore.getState().getTopicTier('topic-b', topicGraphs)).toBe(2);
+    expect(useProgressionStore.getState().getTopicTier(ref('topic-a'), topicGraphs)).toBe(1);
+    expect(useProgressionStore.getState().getTopicTier(ref('topic-b'), topicGraphs)).toBe(2);
   });
 
   it('counts due cards with explicit card data', () => {
@@ -212,7 +221,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 3,
     });
 
-    const nextXp = useProgressionStore.getState().addXP('topic-a', -80);
+    const nextXp = useProgressionStore.getState().addXP(ref('topic-a'), -80);
     expect(nextXp).toBe(0);
     expect(useProgressionStore.getState().activeCrystals[0]?.xp).toBe(0);
   });
@@ -223,7 +232,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 0,
     });
 
-    useProgressionStore.getState().addXP('topic-a', 15);
+    useProgressionStore.getState().addXP(ref('topic-a'), 15);
 
     const updated = useProgressionStore.getState();
     expect(updated.activeCrystals[0]).toMatchObject({ xp: 110 });
@@ -248,7 +257,7 @@ describe('progressionStore card-only canonical API', () => {
     expect(stateAfterSubmission.activeBuffs).toHaveLength(result?.buffs.length || 0);
     expect(stateAfterSubmission.activeBuffs[0]?.condition).toBeDefined();
 
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
     const startedState = useProgressionStore.getState().currentSession;
     expect(useProgressionStore.getState().pendingRitual).toBeNull();
     expect(startedState?.sessionId).toBe(expectedSessionId);
@@ -293,7 +302,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 3,
     });
 
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
     useProgressionStore.getState().submitStudyResult('a-1', 4);
     useProgressionStore.getState().submitStudyResult('a-2', 3);
 
@@ -335,7 +344,7 @@ describe('progressionStore card-only canonical API', () => {
       activeCrystals: [crystal('topic-a')],
       unlockPoints: 3,
     });
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
     useProgressionStore.getState().submitStudyResult('a-1', 4);
 
     const persisted = window.localStorage.getItem('abyss-progression');
@@ -352,7 +361,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 3,
     });
 
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
 
     cards.forEach((card) => {
       useProgressionStore.getState().submitStudyResult(card.id, 4);
@@ -375,7 +384,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 3,
     });
 
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
     useProgressionStore.getState().submitStudyResult('a-1', 4);
 
     const eventCalls = dispatchSpy.mock.calls;
@@ -423,7 +432,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 3,
     });
 
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
     useProgressionStore.getState().submitStudyResult('a-1', 4);
 
     const levelUpEvent = dispatchSpy.mock.calls.find(
@@ -454,7 +463,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 3,
     });
 
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
     useProgressionStore.getState().submitStudyResult('a-1', 4);
     dispatchSpy.mockClear();
 
@@ -491,7 +500,7 @@ describe('progressionStore card-only canonical API', () => {
       unlockPoints: 3,
     });
 
-    useProgressionStore.getState().startTopicStudySession('topic-a', cards);
+    useProgressionStore.getState().startTopicStudySession(ref('topic-a'), cards);
     dispatchSpy.mockClear();
 
     useProgressionStore.getState().undoLastStudyResult();

@@ -9,8 +9,12 @@ import {
   getVisibleTopicIds,
 } from './progressionUtils';
 
-function createActiveCrystal(topicId: string, xp = 0): ActiveCrystal {
+const S1 = 's1';
+const S = 's';
+
+function createActiveCrystal(topicId: string, xp = 0, subjectId = S1): ActiveCrystal {
   return {
+    subjectId,
     topicId,
     gridPosition: [0, 0],
     xp,
@@ -45,7 +49,7 @@ describe('progressionUtils', () => {
   describe('getTopicUnlockStatus', () => {
     const graphWithPrereq: SubjectGraph[] = [
       {
-        subjectId: 's1',
+        subjectId: S1,
         title: 'S1',
         themeId: 't1',
         maxTier: 2,
@@ -57,13 +61,13 @@ describe('progressionUtils', () => {
     ];
 
     it('returns unlockPoints on the status object', () => {
-      const status = getTopicUnlockStatus('missing', [], 2, [], []);
+      const status = getTopicUnlockStatus({ subjectId: 'missing', topicId: 'missing' }, [], 2, []);
       expect(status.unlockPoints).toBe(2);
     });
 
     it('topic prereqs met but no points: canUnlock false, hasPrerequisites true, hasEnoughPoints false', () => {
       const crystals = [createActiveCrystal('a', 100)];
-      const status = getTopicUnlockStatus('b', crystals, 0, graphWithPrereq, []);
+      const status = getTopicUnlockStatus({ subjectId: S1, topicId: 'b' }, crystals, 0, graphWithPrereq);
       expect(status.hasPrerequisites).toBe(true);
       expect(status.hasEnoughPoints).toBe(false);
       expect(status.canUnlock).toBe(false);
@@ -72,7 +76,7 @@ describe('progressionUtils', () => {
 
     it('topic prereqs met and has points: canUnlock true', () => {
       const crystals = [createActiveCrystal('a', 100)];
-      const status = getTopicUnlockStatus('b', crystals, 1, graphWithPrereq, []);
+      const status = getTopicUnlockStatus({ subjectId: S1, topicId: 'b' }, crystals, 1, graphWithPrereq);
       expect(status.hasPrerequisites).toBe(true);
       expect(status.hasEnoughPoints).toBe(true);
       expect(status.canUnlock).toBe(true);
@@ -81,7 +85,7 @@ describe('progressionUtils', () => {
     it('object prerequisite with minLevel 2: false when parent crystal is only level 1', () => {
       const graphMin2: SubjectGraph[] = [
         {
-          subjectId: 's1',
+          subjectId: S1,
           title: 'S1',
           themeId: 't1',
           maxTier: 2,
@@ -98,7 +102,7 @@ describe('progressionUtils', () => {
         },
       ];
       const crystalsL1 = [createActiveCrystal('a', 100)];
-      const blocked = getTopicUnlockStatus('b', crystalsL1, 1, graphMin2, []);
+      const blocked = getTopicUnlockStatus({ subjectId: S1, topicId: 'b' }, crystalsL1, 1, graphMin2);
       expect(blocked.hasPrerequisites).toBe(false);
       expect(blocked.missingPrerequisites[0]).toMatchObject({
         topicId: 'a',
@@ -107,7 +111,7 @@ describe('progressionUtils', () => {
       });
 
       const crystalsL2 = [createActiveCrystal('a', 200)];
-      const open = getTopicUnlockStatus('b', crystalsL2, 1, graphMin2, []);
+      const open = getTopicUnlockStatus({ subjectId: S1, topicId: 'b' }, crystalsL2, 1, graphMin2);
       expect(open.hasPrerequisites).toBe(true);
       expect(open.canUnlock).toBe(true);
     });
@@ -116,7 +120,7 @@ describe('progressionUtils', () => {
   describe('getVisibleTopicIds', () => {
     function graphTwoTier(): SubjectGraph {
       return {
-        subjectId: 's',
+        subjectId: S,
         title: 'T',
         themeId: 's',
         maxTier: 2,
@@ -137,13 +141,13 @@ describe('progressionUtils', () => {
     it('tier 2 visible when any prerequisite has a crystal; graph minLevel ignored', () => {
       const g = graphTwoTier();
       g.nodes[1].prerequisites = [{ topicId: 'a', minLevel: 2 }];
-      expect(getVisibleTopicIds(g, [createActiveCrystal('a', 0)]).has('b')).toBe(true);
+      expect(getVisibleTopicIds(g, [createActiveCrystal('a', 0, S)]).has('b')).toBe(true);
       expect(getVisibleTopicIds(g, []).has('b')).toBe(false);
     });
 
     it('tier 2 visible when at least one of several prerequisites is unlocked', () => {
       const g: SubjectGraph = {
-        subjectId: 's',
+        subjectId: S,
         title: 'T',
         themeId: 's',
         maxTier: 2,
@@ -153,7 +157,7 @@ describe('progressionUtils', () => {
           { topicId: 'b', title: 'B', tier: 2, prerequisites: ['a', 'x'], learningObjective: 'o' },
         ],
       };
-      expect(getVisibleTopicIds(g, [createActiveCrystal('x', 0)]).has('b')).toBe(true);
+      expect(getVisibleTopicIds(g, [createActiveCrystal('x', 0, S)]).has('b')).toBe(true);
       expect(getVisibleTopicIds(g, []).has('b')).toBe(false);
     });
   });
@@ -162,7 +166,7 @@ describe('progressionUtils', () => {
     it('marks isCurriculumVisible from activeCrystals when provided', () => {
       const graphs: SubjectGraph[] = [
         {
-          subjectId: 's',
+          subjectId: S,
           title: 'T',
           themeId: 's',
           maxTier: 2,
@@ -172,13 +176,13 @@ describe('progressionUtils', () => {
           ],
         },
       ];
-      const withoutCrystal = getTopicsByTier(graphs, [], [], undefined, undefined, []);
+      const withoutCrystal = getTopicsByTier(graphs, [], []);
       const bHidden = withoutCrystal.flatMap((t) => t.topics).find((x) => x.id === 'b');
       expect(bHidden?.isCurriculumVisible).toBe(false);
 
-      const withCrystal = getTopicsByTier(graphs, [], [], undefined, undefined, [
-        createActiveCrystal('a', 0),
-      ]);
+      const withCrystal = getTopicsByTier(graphs, [
+        createActiveCrystal('a', 0, S),
+      ], []);
       const bVisible = withCrystal.flatMap((t) => t.topics).find((x) => x.id === 'b');
       expect(bVisible?.isCurriculumVisible).toBe(true);
     });
@@ -186,12 +190,12 @@ describe('progressionUtils', () => {
 
   describe('applyCrystalXpDelta', () => {
     it('returns null when topic is missing', () => {
-      expect(applyCrystalXpDelta([createActiveCrystal('a', 0)], 'missing', 50)).toBeNull();
+      expect(applyCrystalXpDelta([createActiveCrystal('a', 0)], { subjectId: S1, topicId: 'missing' }, 50)).toBeNull();
     });
 
     it('applies delta, clamps at zero, and reports level gains', () => {
       const crystals = [createActiveCrystal('topic-a', 95)];
-      const result = applyCrystalXpDelta(crystals, 'topic-a', 15);
+      const result = applyCrystalXpDelta(crystals, { subjectId: S1, topicId: 'topic-a' }, 15);
       expect(result).not.toBeNull();
       expect(result!.nextXp).toBe(110);
       expect(result!.previousLevel).toBe(0);
