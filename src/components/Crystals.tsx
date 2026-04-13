@@ -84,7 +84,8 @@ export const Crystals: React.FC<CrystalsProps> = ({
   const manifestQuery = useManifest();
   const subjects = manifestQuery.data?.subjects ?? [];
 
-  const selectedTopicId = useUIStore((state) => state.selectedTopicId);
+  const selectedTopicRef = useUIStore((state) => state.selectedTopicRef);
+  const selectedTopicId = selectedTopicRef?.topicId ?? null;
   const selectTopic = useUIStore((state) => state.selectTopic);
 
   const meshRefs = useRef<Record<CrystalBaseShape, THREE.InstancedMesh | null>>({
@@ -134,7 +135,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
   const count = Math.min(crystals.length, CRYSTAL_MAX_INSTANCES);
 
-  /** When layout or per-instance scale (xp → level) changes, drop cached bounds so raycast recomputes. */
   const crystalBoundsKey = useMemo(
     () =>
       crystals
@@ -155,7 +155,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
   useEffect(() => {
     if (!prevPanelOpen.current && isStudyPanelOpen) {
-      // opened — no flush
+      // opened
     }
     if (prevPanelOpen.current && !isStudyPanelOpen) {
       crystalCeremonyStore.getState().onStudyPanelClosed();
@@ -354,7 +354,10 @@ export const Crystals: React.FC<CrystalsProps> = ({
     if (selectedTopicId === topicId) {
       onStartTopicStudySession?.(topicId);
     } else {
-      selectTopic(topicId);
+      const meta = metadataLookup[topicId] as TopicMetadata | undefined;
+      if (meta?.subjectId) {
+        selectTopic({ subjectId: meta.subjectId, topicId });
+      }
     }
   };
 
@@ -400,19 +403,13 @@ export const Crystals: React.FC<CrystalsProps> = ({
                 sprite
                 position={[0, -0.7, 0]}
                 zIndexRange={labelLayerRange}
-                style={{
-                  pointerEvents: 'none',
-                  width: '100px',
-                  textAlign: 'center',
-                  display: 'flex',
-                  justifyContent: 'center',
-                }}
+                style= pointerEvents: 'none' 
               >
                 <div
                   ref={(el: HTMLDivElement | null) => {
                     labelOpacityRefs.current[index] = el;
                   }}
-                  style={{ opacity: 0 }}
+                  style= opacity: 0, display: 'none' 
                   className="pointer-events-none max-w-[100px] truncate rounded-sm border border-border/50 bg-card/75 px-0.5 py-0.5 text-center font-sans text-[5px] font-normal leading-none tracking-wide text-foreground shadow-sm backdrop-blur-sm"
                 >
                   {topicMeta.topicName}

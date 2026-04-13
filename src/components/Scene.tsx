@@ -24,18 +24,13 @@ import '../graphics/nodeMaterialRegistration'
 import { SceneSky, SunSyncedAmbientFill, SunSyncedDirectionalLight } from './SceneSky'
 import { FLOOR_SURFACE_Y } from '../constants/sceneFloor'
 import { CUBE_REFLECTION_EXCLUDED_LAYER } from '../constants/sceneLayers'
+import { topicRefKey } from '../lib/topicRef'
 
-/**
- * Scene component - Main 3D visualization for Abyss Engine
- * Uses a perspective camera with locked polar angle for isometric-like framing
- */
 interface SceneProps {
   showStats?: boolean
   isCameraAngleUnlocked?: boolean
   dynamicReflections?: boolean
-  /** Fires once the WebGPU renderer is initialized (R3F `onCreated`). */
   onCanvasReady?: () => void
-  /** Fires when the scene unmounts (e.g. Strict Mode remount); clear any “ready” UI state. */
   onCanvasReleased?: () => void
 }
 
@@ -97,7 +92,6 @@ const CAMERA_UNLOCKED_MAX_POLAR_ANGLE = Math.PI - CAMERA_UNLOCKED_MIN_POLAR_ANGL
 const CAMERA_FAR = 2_000_000
 const CANVAS_BACKDROP = '#1a1f33'
 
-/** Sun is near horizon — floor needs fill; keep renderer exposure low so SkyMesh stays balanced. */
 const LIGHT_AMBIENT_INTENSITY = 2.12
 const LIGHT_HEMISPHERE_INTENSITY = 1.48
 const LIGHT_SUN_INTENSITY = 2.5
@@ -156,7 +150,6 @@ const SceneRenderInvalidator: React.FC<SceneRenderInvalidatorProps> = ({
   return null
 }
 
-/** Enables {@link CUBE_REFLECTION_EXCLUDED_LAYER} on the active camera so altar sparkles stay visible while CubeCamera (floor) skips them. */
 const DefaultCameraReflectionExcludedLayer: React.FC = () => {
   const camera = useThree((state) => state.camera)
   useLayoutEffect(() => {
@@ -201,7 +194,8 @@ export const Scene: React.FC<SceneProps> = ({
   const sunDirectionRef = useRef(new THREE.Vector3(0, 1, 0))
   const activeCrystals = useStudyStore((state) => state.activeCrystals)
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId)
-  const selectedTopicId = useUIStore((state) => state.selectedTopicId)
+  const selectedTopicRef = useUIStore((state) => state.selectedTopicRef)
+  const selectedTopicId = selectedTopicRef?.topicId ?? null
   const isStudyPanelOpen = useUIStore((state) => state.isStudyPanelOpen)
   const startTopicStudySession = useStudyStore((state) => state.startTopicStudySession)
   const openStudyPanel = useUIStore((state) => state.openStudyPanel)
@@ -210,54 +204,57 @@ export const Scene: React.FC<SceneProps> = ({
     () => Array.from(new Set(activeCrystals.map((crystal) => crystal.topicId))),
     [activeCrystals],
   )
-  const { topicCardsById } = useTopicCardQueriesForActiveTopics(activeTopicIds, allTopicMetadata)
+  const { topicCardsByRef } = useTopicCardQueriesForActiveTopics(activeTopicIds, allTopicMetadata)
 
   const selectedTopicMetadata: TopicMetadata | undefined = selectedTopicId
     ? allTopicMetadata[selectedTopicId]
     : undefined
   const selectedTopicCards = useMemo(
-    () => (selectedTopicId ? topicCardsById.get(selectedTopicId) ?? [] : []),
-    [selectedTopicId, topicCardsById],
+    () => {
+      if (!selectedTopicRef) return [] as Card[]
+      return topicCardsByRef.get(topicRefKey(selectedTopicRef.subjectId, selectedTopicRef.topicId)) ?? []
+    },
+    [selectedTopicRef, topicCardsByRef],
   )
   const selectedTopicXp = useMemo(() => {
-    if (!selectedTopicId) return 0
-    return activeCrystals.find((crystal) => crystal.topicId === selectedTopicId)?.xp || 0
-  }, [activeCrystals, selectedTopicId])
+    if (!selectedTopicRef) return 0
+    return activeCrystals.find(
+      (crystal) => crystal.subjectId === selectedTopicRef.subjectId && crystal.topicId === selectedTopicRef.topicId,
+    )?.xp || 0
+  }, [activeCrystals, selectedTopicRef])
 
   const startTopicStudySessionFromCards = (topicId: string, cards: Card[]) => {
-    if (!cards.length) {
-      console.warn(`[Scene] No cards available for topic ${topicId}; unable to start study session.`)
+    const meta = allTopicMetadata[topicId]
+    if (!cards.length || !meta?.subjectId) {
+      console.warn(`[Scene] No cards or metadata for topic ${topicId}; unable to start study session.`)
       return
     }
-    startTopicStudySession(topicId, cards)
+    startTopicStudySession({ subjectId: meta.subjectId, topicId }, cards)
     openStudyPanel()
   }
 
   const startTopicStudySessionFromSelection = (topicId: string) => {
-    const cards = topicCardsById.get(topicId) ?? []
+    const meta = allTopicMetadata[topicId]
+    if (!meta?.subjectId) return
+    const cards = topicCardsByRef.get(topicRefKey(meta.subjectId, topicId)) ?? []
     if (!cards.length) {
       console.warn(`[Scene] No cards available for topic ${topicId}; unable to start study session.`)
       return
     }
-    startTopicStudySessionFromCards(topicId, cards)
+    startTopicStudySession({ subjectId: meta.subjectId, topicId }, cards)
+    openStudyPanel()
   }
 
-  // Filter crystals based on current subject selection
-  // If a subject is selected, only show crystals belonging to that subject
   const filteredCrystals = useMemo(() => {
     if (!currentSubjectId) {
       return activeCrystals
     }
-
-    // Get topic-subject mapping from deck
     return activeCrystals.filter((crystal) => {
       const topicMeta = allTopicMetadata[crystal.topicId]
       return topicMeta?.subjectId === currentSubjectId
     })
   }, [activeCrystals, currentSubjectId, allTopicMetadata])
 
-  // Track selected crystal's 3D position for positioning the topic selection bar
-  // Computed in a dedicated hook to keep scene structure focused
   const {
     spotlightPosition,
     spotlightTarget,
@@ -267,8 +264,6 @@ export const Scene: React.FC<SceneProps> = ({
     crystals: filteredCrystals,
   })
 
-  // Note: Removed handleSelectedCrystalPositionChange callback
-  // The position is now computed synchronously in useMemo above
   const renderQuality = useMemo(() => getRenderQuality(), [])
   const [statsText, setStatsText] = useState(showStats ? 'Initializing...' : '')
 
@@ -279,11 +274,11 @@ export const Scene: React.FC<SceneProps> = ({
   }, [onCanvasReleased])
 
   return (
-    <div style={{ width: '100%', height: '100%', backgroundColor: CANVAS_BACKDROP }}>
+    <div style= width: '100%', height: '100%' >
       <Canvas
         frameloop="demand"
         dpr={renderQuality.dpr}
-        style={{ background: CANVAS_BACKDROP }}
+        style= background: CANVAS_BACKDROP 
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping
           gl.toneMappingExposure = 0.55
@@ -301,7 +296,6 @@ export const Scene: React.FC<SceneProps> = ({
           selectedTopicCardsCount={selectedTopicCards.length}
         />
 
-        {/* Orthographic camera with isometric view */}
         <PerspectiveCamera
           ref={cameraRef}
           makeDefault
@@ -318,7 +312,6 @@ export const Scene: React.FC<SceneProps> = ({
 
         <SceneSky sunDirectionRef={sunDirectionRef} />
 
-        {/* Fill lights scale with sun elevation (inverse of key light); sky is unlit (not affected by these) */}
         <SunSyncedAmbientFill
           sunDirectionRef={sunDirectionRef}
           ambientBaseIntensity={LIGHT_AMBIENT_INTENSITY}
@@ -333,7 +326,6 @@ export const Scene: React.FC<SceneProps> = ({
 
 
         <group position={[0, FLOOR_SURFACE_Y, 0]}>
-          {/* Reflective floor */}
           <Suspense fallback={null}>
             <ReflectiveFloor
               size={GRID_SIZE}
@@ -343,18 +335,10 @@ export const Scene: React.FC<SceneProps> = ({
             />
           </Suspense>
 
-          {/* Grid floor */}
           <Grid />
 
-          {/* Wisdom Altar at center [0,0] */}
           <WisdomAltar />
 
-          {/* Recursive mesh box-tree near grid edge */}
-          {/* <MeshTree
-          position={[3.75, 0, 0]}
-        /> */}
-
-          {/* Crystals from props (data from parent/store) */}
           <Suspense fallback={null}>
             <Crystals
               crystals={filteredCrystals}
@@ -363,15 +347,11 @@ export const Scene: React.FC<SceneProps> = ({
             />
           </Suspense>
 
-          {/* <GlowPostProcessing bloomExcludeLayer={BLOOM_EXCLUDE_LAYER} /> */}
-
-          {/* Invisible floor plane to detect clicks outside crystals */}
           <mesh
             position={[0, -0.01, 0]}
             rotation={[-Math.PI / 2, 0, 0]}
             receiveShadow={false}
             onClick={() => {
-              // Clear selection when clicking on empty space
               const { selectTopic } = useUIStore.getState()
               selectTopic(null)
             }}
