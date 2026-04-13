@@ -25,6 +25,7 @@ import {
 import { useUIStore } from '@/store/uiStore';
 import type { Card } from '@/types/core';
 import type { Rating } from '@/types';
+import type { SubjectTopicRef } from '@/lib/topicRef';
 
 export function StudyGraphPageClient() {
   const initializedRef = useRef(false);
@@ -44,7 +45,8 @@ export function StudyGraphPageClient() {
     [activeCrystals],
   );
 
-  const selectedTopicId = useUIStore((s) => s.selectedTopicId);
+  const selectedTopicRef = useUIStore((s) => s.selectedTopicRef);
+  const selectedTopicId = selectedTopicRef?.topicId ?? null;
   const selectTopic = useUIStore((s) => s.selectTopic);
   const openStudyPanel = useUIStore((s) => s.openStudyPanel);
   const isStudyPanelOpen = useUIStore((s) => s.isStudyPanelOpen);
@@ -69,19 +71,13 @@ export function StudyGraphPageClient() {
 
   const visibleGraphsForStudy = useMemo(() => {
     const data = graphsQuery.data;
-    if (!data?.length) {
-      return [];
-    }
-    if (!currentSubjectId) {
-      return data;
-    }
+    if (!data?.length) return [];
+    if (!currentSubjectId) return data;
     return data.filter((g) => g.subjectId === currentSubjectId);
   }, [graphsQuery.data, currentSubjectId]);
 
   const selectableMaxHop = useMemo(() => {
-    if (!visibleGraphsForStudy.length) {
-      return 2;
-    }
+    if (!visibleGraphsForStudy.length) return 2;
     const full = buildSubjectGraphsForceGraphData(visibleGraphsForStudy);
     const { distances } = computeTopicGraphBfsDistances(full, unlockedTopicIds);
     const effective = resolveEffectiveTopicGraphDistances(full, unlockedTopicIds, distances);
@@ -102,26 +98,25 @@ export function StudyGraphPageClient() {
   const selectedTopicCards = topicCardsQuery.data ?? [];
 
   const selectedTopicXp = useMemo(() => {
-    if (!selectedTopicId) {
-      return 0;
-    }
-    return activeCrystals.find((c) => c.topicId === selectedTopicId)?.xp ?? 0;
-  }, [activeCrystals, selectedTopicId]);
+    if (!selectedTopicRef) return 0;
+    return activeCrystals.find(
+      (c) => c.subjectId === selectedTopicRef.subjectId && c.topicId === selectedTopicRef.topicId,
+    )?.xp ?? 0;
+  }, [activeCrystals, selectedTopicRef]);
 
   const handleStartTopicFromBar = useCallback(
     (topicId: string, cards: Card[]) => {
-      if (!cards.length) {
-        return;
-      }
-      startTopicStudySession(topicId, cards);
+      if (!cards.length) return;
+      const crystal = activeCrystals.find((c) => c.topicId === topicId);
+      const subjectId = crystal?.subjectId ?? selectedMetadata?.subjectId ?? '';
+      if (!subjectId) return;
+      startTopicStudySession({ subjectId, topicId }, cards);
       openStudyPanel();
     },
-    [openStudyPanel, startTopicStudySession],
+    [activeCrystals, openStudyPanel, selectedMetadata, startTopicStudySession],
   );
 
-  const handleCloseStudyPanel = useCallback(() => {
-    closeStudyPanel();
-  }, [closeStudyPanel]);
+  const handleCloseStudyPanel = useCallback(() => { closeStudyPanel(); }, [closeStudyPanel]);
 
   const handleRate = useCallback(
     (cardId: string, isCorrect?: boolean, selfRating?: Rating) => {
@@ -131,71 +126,53 @@ export function StudyGraphPageClient() {
     [currentSession?.currentCardId, submitStudyResult],
   );
 
-  const handleUndo = useCallback(() => {
-    if (!undoManager.canUndo) {
-      return;
-    }
-    undoLastStudyResult();
-  }, [undoLastStudyResult]);
+  const handleUndo = useCallback(() => { if (!undoManager.canUndo) return; undoLastStudyResult(); }, [undoLastStudyResult]);
+  const handleRedo = useCallback(() => { if (!undoManager.canRedo) return; redoLastStudyResult(); }, [redoLastStudyResult]);
 
-  const handleRedo = useCallback(() => {
-    if (!undoManager.canRedo) {
-      return;
-    }
-    redoLastStudyResult();
-  }, [redoLastStudyResult]);
+  const currentTopicRef: SubjectTopicRef | null = currentSession
+    ? { subjectId: currentSession.subjectId, topicId: currentSession.topicId }
+    : null;
 
-  const currentTopicId = currentSession?.topicId ?? null;
+  const handleGraphSelectTopic = useCallback(
+    (topicId: string) => {
+      // Find subjectId from graphs or crystals
+      const crystal = activeCrystals.find((c) => c.topicId === topicId);
+      if (crystal) {
+        selectTopic({ subjectId: crystal.subjectId, topicId });
+        return;
+      }
+      // Fallback: find in graphs
+      const graphs = graphsQuery.data ?? [];
+      for (const g of graphs) {
+        if (g.nodes.some((n) => n.topicId === topicId)) {
+          selectTopic({ subjectId: g.subjectId, topicId });
+          return;
+        }
+      }
+    },
+    [activeCrystals, graphsQuery.data, selectTopic],
+  );
 
   return (
     <div className="bg-background text-foreground fixed inset-0 overflow-hidden">
       <div className="absolute inset-0 min-h-0">
         {error ? (
-          <div
-            className="text-destructive absolute inset-0 z-10 flex items-center justify-center px-4 text-center text-sm"
-            role="alert"
-          >
-            {error.message}
-          </div>
+          <div className="text-destructive absolute inset-0 z-10 flex items-center justify-center px-4 text-center text-sm" role="alert">{error.message}</div>
         ) : null}
-
         {isLoading ? (
-          <div className="text-muted-foreground absolute inset-0 z-10 flex items-center justify-center text-sm">
-            Loading curriculum graphs…
-          </div>
+          <div className="text-muted-foreground absolute inset-0 z-10 flex items-center justify-center text-sm">Loading curriculum graphs\u2026</div>
         ) : null}
-
         {!isLoading && !error && subjectIds.length === 0 ? (
-          <div className="text-muted-foreground absolute inset-0 z-10 flex items-center justify-center px-4 text-center text-sm">
-            No subjects in the manifest yet.
-          </div>
+          <div className="text-muted-foreground absolute inset-0 z-10 flex items-center justify-center px-4 text-center text-sm">No subjects in the manifest yet.</div>
         ) : null}
-
         {!isLoading && !error && graphsQuery.data?.length ? (
           <>
             <div className="bg-background/80 absolute top-3 left-3 z-20 flex max-w-[min(100%,20rem)] flex-col gap-1.5 rounded-lg border border-border p-2 shadow-sm backdrop-blur-sm sm:top-4 sm:left-4">
-              <Label htmlFor="study-graph-hop-select" className="text-muted-foreground text-xs font-medium">
-                Topic hops from progress
-              </Label>
-              <Select
-                value={maxHop === null ? 'all' : String(maxHop)}
-                onValueChange={(v) => {
-                  setMaxHop(v === 'all' ? null : Number.parseInt(v, 10));
-                }}
-              >
-                <SelectTrigger id="study-graph-hop-select" size="sm" className="w-full min-w-0">
-                  <SelectValue placeholder="Hop depth" />
-                </SelectTrigger>
+              <Label htmlFor="study-graph-hop-select" className="text-muted-foreground text-xs font-medium">Topic hops from progress</Label>
+              <Select value={maxHop === null ? 'all' : String(maxHop)} onValueChange={(v) => setMaxHop(v === 'all' ? null : Number.parseInt(v, 10))}>
+                <SelectTrigger id="study-graph-hop-select" size="sm" className="w-full min-w-0"><SelectValue placeholder="Hop depth" /></SelectTrigger>
                 <SelectContent position="popper">
-                  {Array.from({ length: selectableMaxHop + 1 }, (_, i) => (
-                    <SelectItem key={i} value={String(i)}>
-                      {i === 0
-                        ? 'Entry topics only'
-                        : i === 1
-                          ? 'Within 1 hop'
-                          : `Within ${i} hops`}
-                    </SelectItem>
-                  ))}
+                  {Array.from({ length: selectableMaxHop + 1 }, (_, i) => (<SelectItem key={i} value={String(i)}>{i === 0 ? 'Entry topics only' : i === 1 ? 'Within 1 hop' : `Within ${i} hops`}</SelectItem>))}
                   <SelectItem value="all">Show all</SelectItem>
                 </SelectContent>
               </Select>
@@ -206,7 +183,7 @@ export function StudyGraphPageClient() {
               activeCrystals={activeCrystals}
               unlockPoints={unlockPoints}
               selectedTopicId={selectedTopicId}
-              onSelectTopic={(topicId) => selectTopic(topicId)}
+              onSelectTopic={handleGraphSelectTopic}
               onClearSelection={() => selectTopic(null)}
               maxHop={maxHop}
               className="h-full w-full min-h-0"
@@ -214,18 +191,16 @@ export function StudyGraphPageClient() {
           </>
         ) : null}
       </div>
-
       <TopicSelectionBar
         onStartTopicStudySession={handleStartTopicFromBar}
         selectedMetadata={selectedMetadata}
         selectedCards={selectedTopicCards}
         selectedXp={selectedTopicXp}
       />
-
       <StudyPanelModal
         isOpen={isStudyPanelOpen}
         currentCardId={currentSession?.currentCardId ?? null}
-        currentTopicId={currentTopicId}
+        currentTopicRef={currentTopicRef}
         isCardFlipped={isCurrentCardFlipped}
         totalCards={currentSession?.totalCards ?? 0}
         onClose={handleCloseStudyPanel}
