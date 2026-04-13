@@ -4,6 +4,7 @@ import { useQueries } from '@tanstack/react-query';
 import { Subject, SubjectGraph, TopicDetails, Card } from '../../types/core';
 import { useSubjects, useSubjectGraphs } from './contentQueries';
 import { deckRepository } from '../../infrastructure/di';
+import { topicRefKey } from '../../lib/topicRef';
 
 export interface TopicMetadata {
   subjectId: string;
@@ -106,8 +107,12 @@ interface TopicCardsFixture {
   cards: Card[];
 }
 
+/**
+ * @deprecated Use `topicRefKey` from `@/lib/topicRef` instead.
+ * Kept temporarily for in-file backward compat; will be removed.
+ */
 function topicKey(subjectId: string, topicId: string) {
-  return `${subjectId}::${topicId}`;
+  return topicRefKey(subjectId, topicId);
 }
 
 export function setContentDataForTests(

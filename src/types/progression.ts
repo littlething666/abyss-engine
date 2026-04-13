@@ -1,5 +1,6 @@
 import type { ActiveCrystal, Card } from './core';
 import type { SubjectGraph } from './core';
+import type { SubjectTopicRef, TopicRefKey } from '../lib/topicRef';
 
 export type BuffModifierType = 'growth_speed' | 'xp_multiplier' | 'clarity_boost' | 'mana_boost';
 export type BuffCondition = 'session_end' | 'next_10_cards' | 'next_5_cards' | 'manual';
@@ -43,8 +44,7 @@ export interface AttunementRitualChecklist {
   confidenceRating?: number;
 }
 
-export interface AttunementRitualPayload {
-  topicId: string;
+export interface AttunementRitualPayload extends SubjectTopicRef {
   checklist: AttunementRitualChecklist;
 }
 
@@ -62,8 +62,7 @@ export interface StudySessionAttempt {
   isCorrect: boolean;
 }
 
-export interface PendingRitualState {
-  topicId: string;
+export interface PendingRitualState extends SubjectTopicRef {
   cards: Card[];
   sessionId: string;
 }
@@ -72,8 +71,7 @@ export interface PendingAttunementState extends PendingRitualState {}
 
 export type Rating = 1 | 2 | 3 | 4;
 
-export interface StudySession {
-  topicId: string;
+export interface StudySession extends SubjectTopicRef {
   queueCardIds: string[];
   currentCardId: string | null;
   totalCards: number;
@@ -121,10 +119,10 @@ export interface ProgressionState {
 export interface ProgressionActions {
   initialize: () => void;
   setCurrentSubject: (subjectId: string | null) => void;
-  startTopicStudySession: (topicId: string, cards: Card[]) => void;
+  startTopicStudySession: (ref: SubjectTopicRef, cards: Card[]) => void;
   /** Starts (or restarts) a topic session, then focuses `focusCardId` when present and valid. */
-  focusStudyCard: (topicId: string, cards: Card[], focusCardId?: string | null) => void;
-  openRitualForTopic: (topicId: string, cards: Card[]) => void;
+  focusStudyCard: (ref: SubjectTopicRef, cards: Card[], focusCardId?: string | null) => void;
+  openRitualForTopic: (ref: SubjectTopicRef, cards: Card[]) => void;
   submitAttunementRitual: (payload: AttunementRitualPayload) => AttunementRitualResult | null;
   getRemainingRitualCooldownMs: (atMs: number) => number;
   clearActiveBuffs: () => void;
@@ -132,8 +130,8 @@ export interface ProgressionActions {
   submitStudyResult: (cardId: string, rating: Rating) => void;
   undoLastStudyResult: () => void;
   redoLastStudyResult: () => void;
-  unlockTopic: (topicId: string, allGraphs: SubjectGraph[]) => [number, number] | null;
-  getTopicUnlockStatus: (topicId: string, allGraphs: SubjectGraph[]) => {
+  unlockTopic: (ref: SubjectTopicRef, allGraphs: SubjectGraph[]) => [number, number] | null;
+  getTopicUnlockStatus: (ref: SubjectTopicRef, allGraphs: SubjectGraph[]) => {
     canUnlock: boolean;
     hasPrerequisites: boolean;
     hasEnoughPoints: boolean;
@@ -145,12 +143,12 @@ export interface ProgressionActions {
       currentLevel: number;
     }[];
   };
-  getTopicTier: (topicId: string, allGraphs: SubjectGraph[]) => number;
+  getTopicTier: (ref: SubjectTopicRef, allGraphs: SubjectGraph[]) => number;
   getTopicsByTier: (
     allGraphs: SubjectGraph[],
     subjects: { id: string; name: string }[],
     currentSubjectId?: string | null,
-    contentAvailabilityByTopicId?: Record<string, boolean>,
+    contentAvailabilityByTopicRef?: Record<TopicRefKey, boolean>,
   ) => {
     tier: number;
     topics: {
@@ -170,7 +168,7 @@ export interface ProgressionActions {
   grantBuffFromCatalog: (defId: string, source: string, magnitudeOverride?: number) => void;
   /** If a buff with this defId and source exists, removes it; otherwise grants it from the catalog. */
   toggleBuffFromCatalog: (defId: string, source: string, magnitudeOverride?: number) => void;
-  addXP: (topicId: string, xp: number, options?: { sessionId?: string }) => number;
+  addXP: (ref: SubjectTopicRef, xp: number, options?: { sessionId?: string }) => number;
   updateSM2: (cardId: string, sm2State: {
     interval: number;
     easeFactor: number;

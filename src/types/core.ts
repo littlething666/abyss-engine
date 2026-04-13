@@ -1,5 +1,6 @@
 import type { GenerationStrategy } from './generationStrategy';
 import type { StudyChecklist } from './studyChecklist';
+import type { SubjectTopicRef } from '../lib/topicRef';
 
 export type GeometryType = 'box' | 'cylinder' | 'sphere' | 'octahedron' | 'plane';
 
@@ -34,7 +35,15 @@ export interface Subject {
   metadata?: SubjectMetadata;
 }
 
-/** Curriculum edge: parent `topicId` must reach at least `minLevel` (crystal) before the dependent unlocks. */
+/**
+ * Curriculum edge: parent `topicId` must reach at least `minLevel` (crystal)
+ * before the dependent unlocks.
+ *
+ * **Intra-subject only.** Prerequisites reference `topicId`s within the same
+ * `SubjectGraph.subjectId`. Cross-subject prerequisites are not supported;
+ * when they are needed, extend this type with an explicit `subjectId` field
+ * and a corresponding resolver.
+ */
 export type GraphPrerequisiteEntry = string | { topicId: string; minLevel: number };
 
 export interface GraphNode {
@@ -128,11 +137,17 @@ export interface Card {
 
 export interface TopicCardGroup {
   topicId: string;
+  subjectId: string;
   cards: Card[];
 }
 
-export interface ActiveCrystal {
-  topicId: string;
+/**
+ * A crystal on the player's grid, representing an unlocked topic.
+ *
+ * The `(subjectId, topicId)` pair is the **canonical primary key** for
+ * progression, content lookups, and session scoping.
+ */
+export interface ActiveCrystal extends SubjectTopicRef {
   gridPosition: [number, number];
   xp: number;
   spawnedAt: number;
