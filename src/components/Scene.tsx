@@ -52,6 +52,10 @@ type RenderQuality = {
 const TARGET_SCENE_FPS = 45
 const TARGET_FRAME_INTERVAL_MS = 1000 / TARGET_SCENE_FPS
 
+const SCENE_CONTAINER_STYLE: React.CSSProperties = { width: '100%', height: '100%' }
+const CANVAS_BACKDROP = '#1a1f33'
+const CANVAS_STYLE: React.CSSProperties = { background: CANVAS_BACKDROP }
+
 const getRenderQuality = (): RenderQuality => {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
     return {
@@ -90,7 +94,6 @@ const CAMERA_MAX_DISTANCE = CAMERA_START_DISTANCE * 0.6
 const CAMERA_UNLOCKED_MIN_POLAR_ANGLE = 0.08
 const CAMERA_UNLOCKED_MAX_POLAR_ANGLE = Math.PI - CAMERA_UNLOCKED_MIN_POLAR_ANGLE
 const CAMERA_FAR = 2_000_000
-const CANVAS_BACKDROP = '#1a1f33'
 
 const LIGHT_AMBIENT_INTENSITY = 2.12
 const LIGHT_HEMISPHERE_INTENSITY = 1.48
@@ -224,7 +227,6 @@ export const Scene: React.FC<SceneProps> = ({
   }, [activeCrystals, selectedTopicRef])
 
   const startTopicStudySessionFromCards = (topicId: string, cards: Card[]) => {
-    // Use crystal.subjectId directly — always available from persisted state
     const crystal = activeCrystals.find(c => c.topicId === topicId)
     const subjectId = crystal?.subjectId ?? allTopicMetadata[topicId]?.subjectId ?? ''
     if (!cards.length || !subjectId) {
@@ -248,7 +250,6 @@ export const Scene: React.FC<SceneProps> = ({
     openStudyPanel()
   }
 
-  // Filter crystals using crystal.subjectId directly (no async metadata dependency)
   const filteredCrystals = useMemo(() => {
     if (!currentSubjectId) {
       return activeCrystals
@@ -275,11 +276,11 @@ export const Scene: React.FC<SceneProps> = ({
   }, [onCanvasReleased])
 
   return (
-    <div style= position: 'absolute', inset: 0 >
+    <div style={SCENE_CONTAINER_STYLE}>
       <Canvas
         frameloop="demand"
         dpr={renderQuality.dpr}
-        style= background: CANVAS_BACKDROP 
+        style={CANVAS_STYLE}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping
           gl.toneMappingExposure = 0.55

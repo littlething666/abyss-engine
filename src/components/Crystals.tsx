@@ -64,6 +64,9 @@ const quaternionScratch = new THREE.Quaternion();
 const scaleScratch = new THREE.Vector3();
 const yAxis = new THREE.Vector3(0, 1, 0);
 
+const LABEL_HTML_STYLE: React.CSSProperties = { pointerEvents: 'none' };
+const LABEL_DIV_STYLE: React.CSSProperties = { opacity: 0 };
+
 function resolveCrystalBaseShape(
   topicId: string,
   metadataLookup: Record<string, TopicMetadata | undefined>,
@@ -135,7 +138,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
   const count = Math.min(crystals.length, CRYSTAL_MAX_INSTANCES);
 
-  /** Build a topicId → crystal lookup for O(1) access to subjectId from click handlers. */
   const crystalByTopicId = useMemo(() => {
     const map = new Map<string, ActiveCrystal>();
     for (const c of crystals) {
@@ -363,8 +365,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
     if (selectedTopicId === topicId) {
       onStartTopicStudySession?.(topicId);
     } else {
-      // Use crystal.subjectId directly — always available from persisted state,
-      // unlike metadata which loads asynchronously from graphs.
       const crystal = crystalByTopicId.get(topicId);
       const subjectId = crystal?.subjectId;
       if (subjectId) {
@@ -415,13 +415,13 @@ export const Crystals: React.FC<CrystalsProps> = ({
                 sprite
                 position={[0, -0.7, 0]}
                 zIndexRange={labelLayerRange}
-                style= pointerEvents: 'none' 
+                style={LABEL_HTML_STYLE}
               >
                 <div
                   ref={(el: HTMLDivElement | null) => {
                     labelOpacityRefs.current[index] = el;
                   }}
-                  style= opacity: 0 
+                  style={LABEL_DIV_STYLE}
                   className="pointer-events-none max-w-[100px] truncate rounded-sm border border-border/50 bg-card/75 px-0.5 py-0.5 text-center font-sans text-[5px] font-normal leading-none tracking-wide text-foreground shadow-sm backdrop-blur-sm"
                 >
                   {topicMeta.topicName}
