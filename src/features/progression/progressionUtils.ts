@@ -7,20 +7,17 @@ import {
   StudySessionCore,
   StudyUndoSnapshot,
 } from '../../types/progression';
+import type { SubjectTopicRef, TopicRefKey } from '../../lib/topicRef';
+import { topicRefKey } from '../../lib/topicRef';
 
 type RestorableProgressionState = Omit<ProgressionState, 'currentSession'> & {
   currentSession: StudySessionCore;
 };
 
-/**
- * Game logic utilities used by the progression feature.
- */
 export interface TopicUnlockStatus {
   canUnlock: boolean;
-  /** Topic graph prerequisites (crystal levels) satisfied; excludes unlock points. */
   hasPrerequisites: boolean;
   hasEnoughPoints: boolean;
-  /** Current unlock-point balance (for UI copy). */
   unlockPoints: number;
   missingPrerequisites: {
     topicId: string;
@@ -29,24 +26,6 @@ export interface TopicUnlockStatus {
     currentLevel: number;
   }[];
 }
-
-interface TopicPrerequisite {
-  topicId: string;
-  requiredLevel: number;
-}
-
-interface TopicDescriptor {
-  id: string;
-  name: string;
-  description: string;
-  subjectId: string;
-  cardIds?: string[];
-  prerequisites?: TopicPrerequisite[];
-}
-
-type TopicData = Omit<TopicDescriptor, 'cardIds'> & {
-  cardIds?: string[];
-};
 
 export interface TieredTopic {
   id: string;
@@ -57,7 +36,6 @@ export interface TieredTopic {
   isContentAvailable: boolean;
   isLocked: boolean;
   isUnlocked: boolean;
-  /** False when prerequisite crystal levels hide this topic from the curriculum list (tier > 1). */
   isCurriculumVisible: boolean;
 }
 
@@ -79,9 +57,7 @@ export function captureUndoSnapshot(state: ProgressionState): StudyUndoSnapshot 
   if (!state.currentSession) {
     throw new Error('Cannot capture undo snapshot without an active session.');
   }
-
   const coreSession = cloneDeep(state.currentSession);
-
   return {
     timestamp: Date.now(),
     sm2Data: cloneDeep(state.sm2Data),
@@ -96,11 +72,9 @@ export function restoreUndoSnapshot(state: ProgressionState, snapshot: StudyUndo
   if (!snapshot.currentSession) {
     throw new Error('Invalid snapshot: currentSession is required for restore.');
   }
-
   const restoredActiveBuffs = BuffEngine.get().pruneExpired(
     snapshot.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff)),
   );
-
   return {
     ...state,
     sm2Data: snapshot.sm2Data,
@@ -111,110 +85,83 @@ export function restoreUndoSnapshot(state: ProgressionState, snapshot: StudyUndo
   };
 }
 
-export function trimUndoSnapshotStack<T>(
-  stack: T[],
-  maxDepth: number = MAX_UNDO_DEPTH,
-): T[] {
+export function trimUndoSnapshotStack<T>(stack: T[], maxDepth: number = MAX_UNDO_DEPTH): T[] {
   return stack.slice(Math.max(0, stack.length - maxDepth));
 }
 
-/** XP required per crystal level tier (levels 0–5). */
 export const CRYSTAL_XP_PER_LEVEL = 100;
-
-/** Inclusive max crystal level; XP beyond this tier still counts as this level. */
 export const MAX_CRYSTAL_LEVEL = 5;
 
 export function calculateLevelFromXP(xp: number): number {
-  return Math.min(
-    MAX_CRYSTAL_LEVEL,
-    Math.floor(Math.max(0, xp) / CRYSTAL_XP_PER_LEVEL),
-  );
+  return Math.min(MAX_CRYSTAL_LEVEL, Math.floor(Math.max(0, xp) / CRYSTAL_XP_PER_LEVEL));
 }
 
 /**
- * Topic ids that may appear in curriculum / graph UI: tier 1 always; higher tiers when
- * prerequisites are empty (always) or at least one listed prerequisite has an active crystal.
- * Graph `minLevel` is ignored here — unlock eligibility still uses minLevel via `getTopicUnlockStatus`.
+ * Topic ids visible in curriculum UI. Tier 1 always visible; higher tiers when
+ * at least one prerequisite has an active crystal **within the same subject**.
  */
 export function getVisibleTopicIds(graph: SubjectGraph, activeCrystals: readonly ActiveCrystal[]): Set<string> {
-  const crystalTopicIds = new Set(activeCrystals.map((c) => c.topicId));
-
+  const crystalTopicIds = new Set(
+    activeCrystals.filter((c) => c.subjectId === graph.subjectId).map((c) => c.topicId),
+  );
   const visible = new Set<string>();
   for (const node of graph.nodes) {
     if (node.tier === 1) {
       visible.add(node.topicId);
       continue;
     }
-
     const prereqs = normalizeGraphPrerequisites(node.prerequisites);
     if (prereqs.length === 0) {
       visible.add(node.topicId);
       continue;
     }
-
-    const anyPrereqUnlocked = prereqs.some((p) => crystalTopicIds.has(p.topicId));
-    if (anyPrereqUnlocked) {
+    if (prereqs.some((p) => crystalTopicIds.has(p.topicId))) {
       visible.add(node.topicId);
     }
   }
-
   return visible;
 }
 
-/** Result of applying an XP delta to one topic's crystal (used by study + addXP for consistent unlock rewards). */
 export interface CrystalXpDeltaResult {
   nextXp: number;
   previousLevel: number;
   nextLevel: number;
-  /** `nextLevel - previousLevel`; positive when unlock points should be granted (mirrors study behavior). */
   levelsGained: number;
   nextActiveCrystals: ActiveCrystal[];
 }
 
-/**
- * Applies `xpDelta` to the crystal for `topicId` in `activeCrystals` (total XP clamped at 0).
- * Returns null if no matching crystal exists.
- */
+/** Applies `xpDelta` to the crystal matching `(subjectId, topicId)`. Returns null if not found. */
 export function applyCrystalXpDelta(
   activeCrystals: ActiveCrystal[],
-  topicId: string,
+  ref: SubjectTopicRef,
   xpDelta: number,
 ): CrystalXpDeltaResult | null {
-  const crystal = activeCrystals.find((item) => item.topicId === topicId);
-  if (!crystal) {
-    return null;
-  }
-
+  const crystal = activeCrystals.find(
+    (item) => item.subjectId === ref.subjectId && item.topicId === ref.topicId,
+  );
+  if (!crystal) return null;
   const previousXp = crystal.xp;
   const nextXp = Math.max(0, previousXp + xpDelta);
   const previousLevel = calculateLevelFromXP(previousXp);
   const nextLevel = calculateLevelFromXP(nextXp);
-  const levelsGained = nextLevel - previousLevel;
-  const nextActiveCrystals = activeCrystals.map((item) =>
-    item.topicId === topicId ? { ...item, xp: nextXp } : item,
-  );
-
   return {
     nextXp,
     previousLevel,
     nextLevel,
-    levelsGained,
-    nextActiveCrystals,
+    levelsGained: nextLevel - previousLevel,
+    nextActiveCrystals: activeCrystals.map((item) =>
+      item.subjectId === ref.subjectId && item.topicId === ref.topicId ? { ...item, xp: nextXp } : item,
+    ),
   };
 }
 
 export interface CrystalLevelProgressToNext {
   level: number;
-  /** 0–100 for `Progress` UI; 100 when `isMax`. */
   progressPercent: number;
   isMax: boolean;
-  /** Total XP after clamping negatives to 0 (same basis as level math). */
   totalXp: number;
 }
 
-/**
- * Progress within the current level band toward the next level (or max).
- */
 export function getCrystalLevelProgressToNext(xp: number): CrystalLevelProgressToNext {
   const safeXp = Math.max(0, xp);
   const level = calculateLevelFromXP(safeXp);
@@ -222,55 +169,7 @@ export function getCrystalLevelProgressToNext(xp: number): CrystalLevelProgressT
     return { level, progressPercent: 100, isMax: true, totalXp: safeXp };
   }
   const xpIntoLevel = safeXp - level * CRYSTAL_XP_PER_LEVEL;
-  const progressPercent = (xpIntoLevel / CRYSTAL_XP_PER_LEVEL) * 100;
-  return { level, progressPercent, isMax: false, totalXp: safeXp };
-}
-
-function findGraphNode(topicId: string, allGraphs: SubjectGraph[]): GraphNode | undefined {
-  for (const graph of allGraphs) {
-    const node = graph.nodes.find((item) => item.topicId === topicId);
-    if (node) {
-      return node;
-    }
-  }
-  return undefined;
-}
-
-function findTopicSubject(topicId: string, allGraphs: SubjectGraph[]): string | undefined {
-  for (const graph of allGraphs) {
-    if (graph.nodes.some((node) => node.topicId === topicId)) {
-      return graph.subjectId;
-    }
-  }
-  return undefined;
-}
-
-function resolveTopic(
-  topicId: string,
-  allTopics: TopicData[],
-  allGraphs: SubjectGraph[],
-): TopicData | undefined {
-  const topicFromAll = allTopics.find((topic) => topic.id === topicId);
-  if (topicFromAll) {
-    return topicFromAll;
-  }
-
-  const node = findGraphNode(topicId, allGraphs);
-  if (!node) {
-    return undefined;
-  }
-
-  return {
-    id: node.topicId,
-    name: node.title,
-    description: node.learningObjective,
-    subjectId: findTopicSubject(topicId, allGraphs) ?? '',
-    cardIds: [],
-    prerequisites: normalizeGraphPrerequisites(node.prerequisites).map((p) => ({
-      topicId: p.topicId,
-      requiredLevel: p.minLevel,
-    })),
-  };
+  return { level, progressPercent: (xpIntoLevel / CRYSTAL_XP_PER_LEVEL) * 100, isMax: false, totalXp: safeXp };
 }
 
 function toSubjectMap(subjects: SubjectLike[] = []): Record<string, SubjectLike> {
@@ -280,193 +179,127 @@ function toSubjectMap(subjects: SubjectLike[] = []): Record<string, SubjectLike>
   }, {});
 }
 
-export function calculateTopicTier(topicId: string, allGraphs: SubjectGraph[] = []): number {
+/** Calculates tier within the subject's graph. Prerequisites resolved intra-subject only. */
+export function calculateTopicTier(ref: SubjectTopicRef, allGraphs: SubjectGraph[] = []): number {
+  const graph = allGraphs.find((g) => g.subjectId === ref.subjectId);
+  if (!graph) return 1;
   const visited = new Set<string>();
-
   const resolve = (id: string, stack: Set<string>): number => {
-    if (stack.has(id)) {
-      return 1;
-    }
-
-    if (visited.has(id)) {
-      return 1;
-    }
-
-    const node = findGraphNode(id, allGraphs);
+    if (stack.has(id) || visited.has(id)) return 1;
+    const node = graph.nodes.find((n) => n.topicId === id);
     const prereqNorm = node ? normalizeGraphPrerequisites(node.prerequisites) : [];
-    if (!node || prereqNorm.length === 0) {
-      visited.add(id);
-      return 1;
-    }
-
-    const nextStack = new Set(stack);
-    nextStack.add(id);
-
+    if (!node || prereqNorm.length === 0) { visited.add(id); return 1; }
+    const nextStack = new Set(stack); nextStack.add(id);
     let maxPrereqTier = 0;
     for (const { topicId: prereqId } of prereqNorm) {
-      const prereqTier = resolve(prereqId, nextStack);
-      if (prereqTier > maxPrereqTier) {
-        maxPrereqTier = prereqTier;
-      }
+      const t = resolve(prereqId, nextStack);
+      if (t > maxPrereqTier) maxPrereqTier = t;
     }
-
     visited.add(id);
     return maxPrereqTier + 1;
   };
-
-  return resolve(topicId, new Set());
+  return resolve(ref.topicId, new Set());
 }
 
+/** Prerequisites resolved intra-subject via the subject's graph. */
 export function getTopicUnlockStatus(
-  topicId: string,
+  ref: SubjectTopicRef,
   activeCrystals: ActiveCrystal[],
   unlockPoints: number,
   allGraphs: SubjectGraph[] = [],
-  allTopics: TopicData[] = [],
 ): TopicUnlockStatus {
-  const topic = resolveTopic(topicId, allTopics, allGraphs);
-
-  if (!topic) {
-    return {
-      canUnlock: false,
-      hasPrerequisites: false,
-      hasEnoughPoints: false,
-      unlockPoints,
-      missingPrerequisites: [],
-    };
+  const graph = allGraphs.find((g) => g.subjectId === ref.subjectId);
+  const node = graph?.nodes.find((n) => n.topicId === ref.topicId);
+  if (!node) {
+    return { canUnlock: false, hasPrerequisites: false, hasEnoughPoints: false, unlockPoints, missingPrerequisites: [] };
   }
-
-  const prerequisites = topic.prerequisites || [];
+  const prerequisites = normalizeGraphPrerequisites(node.prerequisites);
   const hasEnoughPoints = unlockPoints >= 1;
-
   if (prerequisites.length === 0) {
-    return {
-      canUnlock: hasEnoughPoints,
-      hasPrerequisites: true,
-      hasEnoughPoints,
-      unlockPoints,
-      missingPrerequisites: [],
-    };
+    return { canUnlock: hasEnoughPoints, hasPrerequisites: true, hasEnoughPoints, unlockPoints, missingPrerequisites: [] };
   }
-
   const missingPrereqs: TopicUnlockStatus['missingPrerequisites'] = [];
   let allPrereqsMet = true;
-
   for (const prereq of prerequisites) {
-    const prereqCrystal = activeCrystals.find((crystal) => crystal.topicId === prereq.topicId);
+    const prereqCrystal = activeCrystals.find(
+      (c) => c.subjectId === ref.subjectId && c.topicId === prereq.topicId,
+    );
     const prereqLevel = calculateLevelFromXP(prereqCrystal?.xp ?? 0);
-
-    if (prereqLevel < prereq.requiredLevel) {
+    if (prereqLevel < prereq.minLevel) {
       allPrereqsMet = false;
+      const prereqNode = graph?.nodes.find((n) => n.topicId === prereq.topicId);
       missingPrereqs.push({
         topicId: prereq.topicId,
-        topicName: allTopics.find((t) => t.id === prereq.topicId)?.name || prereq.topicId,
-        requiredLevel: prereq.requiredLevel,
+        topicName: prereqNode?.title || prereq.topicId,
+        requiredLevel: prereq.minLevel,
         currentLevel: prereqLevel,
       });
     }
   }
-
-  return {
-    canUnlock: allPrereqsMet && hasEnoughPoints,
-    hasPrerequisites: allPrereqsMet,
-    hasEnoughPoints,
-    unlockPoints,
-    missingPrerequisites: missingPrereqs,
-  };
+  return { canUnlock: allPrereqsMet && hasEnoughPoints, hasPrerequisites: allPrereqsMet, hasEnoughPoints, unlockPoints, missingPrerequisites: missingPrereqs };
 }
 
 export function calculateXPReward(formatType: string | undefined, rating: Rating = 3): number {
   let baseXP: number;
-
   switch (formatType) {
-    case 'single_choice':
-    case 'single-choice':
-    case 'SINGLE_CHOICE':
-      baseXP = 12;
-      break;
-    case 'multi_choice':
-    case 'multi-choice':
-    case 'MULTI_CHOICE':
-      baseXP = 15;
-      break;
-    case 'mini_game':
-    case 'MINI_GAME':
-      baseXP = 20;
-      break;
-    case 'flashcard':
-    case 'FLASHCARD':
-    default:
-      baseXP = 10;
-      break;
+    case 'single_choice': case 'single-choice': case 'SINGLE_CHOICE': baseXP = 12; break;
+    case 'multi_choice': case 'multi-choice': case 'MULTI_CHOICE': baseXP = 15; break;
+    case 'mini_game': case 'MINI_GAME': baseXP = 20; break;
+    case 'flashcard': case 'FLASHCARD': default: baseXP = 10; break;
   }
-
   switch (rating) {
-    case 1:
-      return 0;
-    case 2:
-      return Math.floor(baseXP * 0.5);
-    case 3:
-      return baseXP;
-    case 4:
-      return Math.floor(baseXP * 1.5);
-    default:
-      return baseXP;
+    case 1: return 0;
+    case 2: return Math.floor(baseXP * 0.5);
+    case 3: return baseXP;
+    case 4: return Math.floor(baseXP * 1.5);
+    default: return baseXP;
   }
 }
 
-export function filterCardsByDifficulty<T extends { difficulty: number }>(
-  cards: T[],
-  maxDifficulty: number,
-): T[] {
+export function filterCardsByDifficulty<T extends { difficulty: number }>(cards: T[], maxDifficulty: number): T[] {
   return cards.filter((card) => card.difficulty <= maxDifficulty);
 }
 
+/**
+ * Groups graph nodes by tier with unlock/visibility/content-availability annotations.
+ * @param activeCrystals Full crystal list; composite (subjectId, topicId) matching for unlock checks.
+ * @param contentAvailabilityByTopicRef Keyed by TopicRefKey via topicRefKey().
+ */
 export function getTopicsByTier(
   allGraphs: SubjectGraph[] = [],
-  unlockedTopicIds: string[] = [],
+  activeCrystals: readonly ActiveCrystal[] = [],
   subjects: SubjectLike[] = [],
   currentSubjectId?: string | null,
-  /** When set, `isContentAvailable` uses this map (missing topicId → false). When omitted, defaults to true. */
-  contentAvailabilityByTopicId?: Record<string, boolean>,
-  /** When set, `isCurriculumVisible` reflects prerequisite crystal levels per graph. */
-  activeCrystals?: readonly ActiveCrystal[],
+  contentAvailabilityByTopicRef?: Record<TopicRefKey, boolean>,
 ) {
   const subjectMap = toSubjectMap(subjects);
   const tierMap = new Map<number, TieredTopic[]>();
-
   const graphs = currentSubjectId
     ? allGraphs.filter((graph) => graph.subjectId === currentSubjectId)
     : allGraphs;
-
   for (const graph of graphs) {
-    const visibleIds = activeCrystals ? getVisibleTopicIds(graph, activeCrystals) : null;
+    const visibleIds = getVisibleTopicIds(graph, activeCrystals);
     for (const node of graph.nodes) {
-      const tier = node.tier || calculateTopicTier(node.topicId, allGraphs);
+      const tier = node.tier || calculateTopicTier({ subjectId: graph.subjectId, topicId: node.topicId }, allGraphs);
       const subjectName = subjectMap[graph.subjectId]?.name || 'Unknown';
+      const refKey = topicRefKey(graph.subjectId, node.topicId);
+      const isUnlocked = activeCrystals.some(
+        (c) => c.subjectId === graph.subjectId && c.topicId === node.topicId,
+      );
       const topicData: TieredTopic = {
         id: node.topicId,
         name: node.title,
         description: node.learningObjective,
         subjectId: graph.subjectId,
         subjectName,
-        isContentAvailable: contentAvailabilityByTopicId
-          ? Boolean(contentAvailabilityByTopicId[node.topicId])
-          : true,
-        isLocked: !unlockedTopicIds.includes(node.topicId),
-        isUnlocked: unlockedTopicIds.includes(node.topicId),
-        isCurriculumVisible: visibleIds ? visibleIds.has(node.topicId) : true,
+        isContentAvailable: contentAvailabilityByTopicRef ? Boolean(contentAvailabilityByTopicRef[refKey]) : true,
+        isLocked: !isUnlocked,
+        isUnlocked,
+        isCurriculumVisible: visibleIds.has(node.topicId),
       };
-
       const current = tierMap.get(tier);
-      if (current) {
-        current.push(topicData);
-      } else {
-        tierMap.set(tier, [topicData]);
-      }
+      if (current) { current.push(topicData); } else { tierMap.set(tier, [topicData]); }
     }
   }
-
-  const sortedTiers = Array.from(tierMap.keys()).sort((a, b) => a - b);
-  return sortedTiers.map((tier) => ({ tier, topics: tierMap.get(tier) || [] }));
+  return Array.from(tierMap.keys()).sort((a, b) => a - b).map((tier) => ({ tier, topics: tierMap.get(tier) || [] }));
 }
