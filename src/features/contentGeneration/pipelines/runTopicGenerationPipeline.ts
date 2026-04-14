@@ -29,6 +29,10 @@ export interface RunTopicGenerationPipelineParams {
   forceRegenerate?: boolean;
   /** Which segment to run; default `full` runs theory → study cards → mini-games. */
   stage?: TopicGenerationStage;
+  /** When retrying a full pipeline, resume from this stage onward (skip earlier stages). */
+  resumeFromStage?: TopicGenerationStage;
+  /** If this pipeline is a retry, the ID of the original pipeline or job. */
+  retryOf?: string;
 }
 
 function pipelineShellLabel(stage: TopicGenerationStage, topicTitle: string): string {
@@ -44,6 +48,13 @@ function pipelineShellLabel(stage: TopicGenerationStage, topicTitle: string): st
   }
 }
 
+/** Ordered list of stages within a full pipeline. */
+const FULL_PIPELINE_STAGES: Exclude<TopicGenerationStage, 'full'>[] = [
+  'theory',
+  'study-cards',
+  'mini-games',
+];
+
 export async function runTopicGenerationPipeline(
   params: RunTopicGenerationPipelineParams,
 ): Promise<{ ok: boolean; pipelineId: string; error?: string; skipped?: boolean }> {
@@ -57,6 +68,8 @@ export async function runTopicGenerationPipeline(
     signal,
     forceRegenerate = false,
     stage = 'full',
+    resumeFromStage,
+    retryOf,
   } = params;
   const model = resolveModelForSurface('topicContent');
   const store = useContentGenerationStore.getState();
@@ -79,7 +92,7 @@ export async function runTopicGenerationPipeline(
   ]);
 
   const shouldAutoSkip =
-    !forceRegenerate && stage === 'full' && topicStudyContentReady(details, cards);
+    !forceRegenerate && stage === 'full' && !resumeFromStage && topicStudyContentReady(details, cards);
   if (shouldAutoSkip) {
     return { ok: true, pipelineId: '', skipped: true };
   }
@@ -89,11 +102,16 @@ export async function runTopicGenerationPipeline(
   const subjectTitle = subject?.name ?? graph.title;
   const contentBrief = subject?.metadata?.strategy?.content?.contentBrief?.trim() || undefined;
 
+  const pipelineLabel = resumeFromStage
+    ? `Retry · ${pipelineShellLabel(stage, node.title)}`
+    : pipelineShellLabel(stage, node.title);
+
   store.registerPipeline(
     {
       id: pipelineId,
-      label: pipelineShellLabel(stage, node.title),
+      label: pipelineLabel,
       createdAt: Date.now(),
+      retryOf: retryOf ?? null,
     },
     pipelineAc,
   );
@@ -225,6 +243,15 @@ export async function runTopicGenerationPipeline(
     return { ok: true };
   };
 
+  /**
+   * Loads theory data from the DB (for pipeline resume when theory stage was skipped).
+   * Falls back to theoryData if it was already produced by runTheoryJob in this run.
+   */
+  const resolveTheoryData = (): ParsedTopicTheoryPayload => {
+    if (theoryData) return theoryData;
+    return loadTheoryPayloadFromTopicDetails(details);
+  };
+
   try {
     if (stage === 'theory') {
       const t = await runTheoryJob();
@@ -255,21 +282,43 @@ export async function runTopicGenerationPipeline(
       return m.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: m.error };
     }
 
-    // full
-    const theoryStep = await runTheoryJob();
-    if (!theoryStep.ok) {
-      return { ok: false, pipelineId, error: theoryStep.error };
+    // ── full pipeline (with optional resume) ──────────────────────────
+    const resumeIdx = resumeFromStage && resumeFromStage !== 'full'
+      ? FULL_PIPELINE_STAGES.indexOf(resumeFromStage)
+      : 0;
+    const startIdx = Math.max(0, resumeIdx);
+
+    // Stage 0: theory
+    if (startIdx <= 0) {
+      const theoryStep = await runTheoryJob();
+      if (!theoryStep.ok) {
+        return { ok: false, pipelineId, error: theoryStep.error };
+      }
     }
 
-    const theory = theoryData!;
-    const studyStep = await runStudyJob(theory);
-    if (!studyStep.ok) {
-      return { ok: false, pipelineId, error: studyStep.error };
+    // Resolve theory data (either from runTheoryJob or loaded from DB for resume)
+    let theory: ParsedTopicTheoryPayload;
+    try {
+      theory = resolveTheoryData();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { ok: false, pipelineId, error: `Cannot resume — theory not available: ${message}` };
     }
 
-    const miniStep = await runMiniJob(theory);
-    if (!miniStep.ok) {
-      return { ok: false, pipelineId, error: miniStep.error };
+    // Stage 1: study-cards
+    if (startIdx <= 1) {
+      const studyStep = await runStudyJob(theory);
+      if (!studyStep.ok) {
+        return { ok: false, pipelineId, error: studyStep.error };
+      }
+    }
+
+    // Stage 2: mini-games
+    if (startIdx <= 2) {
+      const miniStep = await runMiniJob(theory);
+      if (!miniStep.ok) {
+        return { ok: false, pipelineId, error: miniStep.error };
+      }
     }
 
     return { ok: true, pipelineId };

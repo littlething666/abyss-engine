@@ -49,6 +49,47 @@ const graph: SubjectGraph = {
   ],
 };
 
+const readyDetails: TopicDetails = {
+  topicId: 't-a',
+  title: 'Topic A',
+  subjectId: 'sub-1',
+  coreConcept: 'c',
+  theory: 'non-empty theory',
+  keyTakeaways: ['a', 'b', 'c', 'd'],
+  coreQuestionsByDifficulty: { 1: ['q1'], 2: ['q2'], 3: ['q3'] },
+};
+
+const readyCards: Card[] = [
+  {
+    id: 'c1',
+    type: 'FLASHCARD',
+    difficulty: 1,
+    content: { front: 'f', back: 'b' },
+  },
+];
+
+function makeDeckRepository(
+  overrides?: Partial<Pick<IDeckRepository, 'getManifest' | 'getSubjectGraph' | 'getTopicDetails' | 'getTopicCards'>>,
+) {
+  return {
+    getManifest: vi.fn().mockResolvedValue({
+      subjects: [{ id: 'sub-1', name: 'S', description: '', color: '#000', geometry: { gridTile: 'box' } }],
+    }),
+    getSubjectGraph: vi.fn().mockResolvedValue(graph),
+    getTopicDetails: vi.fn().mockResolvedValue(readyDetails),
+    getTopicCards: vi.fn().mockResolvedValue(readyCards),
+    ...overrides,
+  } as unknown as IDeckRepository;
+}
+
+function makeWriter() {
+  return {
+    upsertTopicDetails: vi.fn(),
+    upsertTopicCards: vi.fn(),
+    appendTopicCards: vi.fn(),
+  } as unknown as IDeckContentWriter;
+}
+
 describe('runTopicGenerationPipeline', () => {
   beforeEach(() => {
     resetStore();
@@ -56,44 +97,10 @@ describe('runTopicGenerationPipeline', () => {
   });
 
   it('returns skipped without registering a pipeline or running jobs when study content is already ready', async () => {
-    const details: TopicDetails = {
-      topicId: 't-a',
-      title: 'Topic A',
-      subjectId: 'sub-1',
-      coreConcept: 'c',
-      theory: 'non-empty theory',
-      keyTakeaways: [],
-      coreQuestionsByDifficulty: { 1: ['q1'], 2: [], 3: [] },
-    };
-    const cards: Card[] = [
-      {
-        id: 'c1',
-        type: 'FLASHCARD',
-        difficulty: 1,
-        content: { front: 'f', back: 'b' },
-      },
-    ];
-
-    const deckRepository: Pick<IDeckRepository, 'getManifest' | 'getSubjectGraph' | 'getTopicDetails' | 'getTopicCards'> =
-      {
-        getManifest: vi.fn().mockResolvedValue({ subjects: [{ id: 'sub-1', name: 'S', description: '', color: '#000', geometry: { gridTile: 'box' } }] }),
-        getSubjectGraph: vi.fn().mockResolvedValue(graph),
-        getTopicDetails: vi.fn().mockResolvedValue(details),
-        getTopicCards: vi.fn().mockResolvedValue(cards),
-      };
-
-    const writer: Pick<IDeckContentWriter, 'upsertTopicDetails' | 'upsertTopicCards' | 'appendTopicCards'> = {
-      upsertTopicDetails: vi.fn(),
-      upsertTopicCards: vi.fn(),
-      appendTopicCards: vi.fn(),
-    };
-
-    const chat = {} as IChatCompletionsRepository;
-
     const result = await runTopicGenerationPipeline({
-      chat,
-      deckRepository: deckRepository as IDeckRepository,
-      writer: writer as IDeckContentWriter,
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
       enableThinking: false,
@@ -105,44 +112,12 @@ describe('runTopicGenerationPipeline', () => {
   });
 
   it('runs theory stage when study-ready (auto-skip applies only to full pipeline)', async () => {
-    const details: TopicDetails = {
-      topicId: 't-a',
-      title: 'Topic A',
-      subjectId: 'sub-1',
-      coreConcept: 'c',
-      theory: 'non-empty theory',
-      keyTakeaways: ['a', 'b', 'c', 'd'],
-      coreQuestionsByDifficulty: { 1: ['q1'], 2: ['q2'], 3: ['q3'] },
-    };
-    const cards: Card[] = [
-      {
-        id: 'c1',
-        type: 'FLASHCARD',
-        difficulty: 1,
-        content: { front: 'f', back: 'b' },
-      },
-    ];
-
     runContentGenerationJob.mockResolvedValue({ ok: true });
-
-    const deckRepository: Pick<IDeckRepository, 'getManifest' | 'getSubjectGraph' | 'getTopicDetails' | 'getTopicCards'> =
-      {
-        getManifest: vi.fn().mockResolvedValue({ subjects: [{ id: 'sub-1', name: 'S', description: '', color: '#000', geometry: { gridTile: 'box' } }] }),
-        getSubjectGraph: vi.fn().mockResolvedValue(graph),
-        getTopicDetails: vi.fn().mockResolvedValue(details),
-        getTopicCards: vi.fn().mockResolvedValue(cards),
-      };
-
-    const writer: Pick<IDeckContentWriter, 'upsertTopicDetails' | 'upsertTopicCards' | 'appendTopicCards'> = {
-      upsertTopicDetails: vi.fn(),
-      upsertTopicCards: vi.fn(),
-      appendTopicCards: vi.fn(),
-    };
 
     await runTopicGenerationPipeline({
       chat: {} as IChatCompletionsRepository,
-      deckRepository: deckRepository as IDeckRepository,
-      writer: writer as IDeckContentWriter,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
       enableThinking: false,
@@ -154,18 +129,10 @@ describe('runTopicGenerationPipeline', () => {
   });
 
   it('returns error when topic id is missing from graph without running jobs', async () => {
-    const deckRepository: Pick<IDeckRepository, 'getManifest' | 'getSubjectGraph' | 'getTopicDetails' | 'getTopicCards'> =
-      {
-        getManifest: vi.fn(),
-        getSubjectGraph: vi.fn().mockResolvedValue(graph),
-        getTopicDetails: vi.fn(),
-        getTopicCards: vi.fn(),
-      };
-
     const result = await runTopicGenerationPipeline({
       chat: {} as IChatCompletionsRepository,
-      deckRepository: deckRepository as IDeckRepository,
-      writer: {} as IDeckContentWriter,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 'missing-topic',
       enableThinking: false,
@@ -173,6 +140,122 @@ describe('runTopicGenerationPipeline', () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain('not found');
+    expect(runContentGenerationJob).not.toHaveBeenCalled();
+  });
+
+  // ── resumeFromStage tests ────────────────────────────────────────────────
+
+  it('does not auto-skip when resumeFromStage is set even if content is ready', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: true });
+
+    const result = await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableThinking: false,
+      stage: 'full',
+      resumeFromStage: 'study-cards',
+      forceRegenerate: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.skipped).toBeUndefined();
+    // Theory (index 0) should be skipped, study-cards (1) and mini-games (2) should run
+    expect(runContentGenerationJob).toHaveBeenCalledTimes(2);
+    const kinds = runContentGenerationJob.mock.calls.map((c: unknown[]) => (c[0] as { kind: string }).kind);
+    expect(kinds).toEqual(['topic-study-cards', 'topic-mini-games']);
+  });
+
+  it('resumes from mini-games, skipping theory and study-cards', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: true });
+
+    const result = await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableThinking: false,
+      stage: 'full',
+      resumeFromStage: 'mini-games',
+      forceRegenerate: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(runContentGenerationJob).toHaveBeenCalledTimes(1);
+    expect(runContentGenerationJob.mock.calls[0]?.[0]?.kind).toBe('topic-mini-games');
+  });
+
+  it('resumes from theory runs all 3 stages (same as no resume)', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: true });
+
+    const result = await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableThinking: false,
+      stage: 'full',
+      resumeFromStage: 'theory',
+      forceRegenerate: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(runContentGenerationJob).toHaveBeenCalledTimes(3);
+    const kinds = runContentGenerationJob.mock.calls.map((c: unknown[]) => (c[0] as { kind: string }).kind);
+    expect(kinds).toEqual(['topic-theory', 'topic-study-cards', 'topic-mini-games']);
+  });
+
+  it('passes retryOf to pipeline registration', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: true });
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableThinking: false,
+      stage: 'full',
+      resumeFromStage: 'study-cards',
+      forceRegenerate: true,
+      retryOf: 'original-pipeline-id',
+    });
+
+    const pipelines = Object.values(useContentGenerationStore.getState().pipelines);
+    expect(pipelines).toHaveLength(1);
+    expect(pipelines[0]!.retryOf).toBe('original-pipeline-id');
+    expect(pipelines[0]!.label).toContain('Retry');
+  });
+
+  it('fails with error when resuming from study-cards but theory not in DB', async () => {
+    const emptyDetails: TopicDetails = {
+      topicId: 't-a',
+      title: 'Topic A',
+      subjectId: 'sub-1',
+      coreConcept: '',
+      theory: '',
+      keyTakeaways: [],
+      coreQuestionsByDifficulty: { 1: [], 2: [], 3: [] },
+    };
+
+    const result = await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository({ getTopicDetails: vi.fn().mockResolvedValue(emptyDetails) }),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableThinking: false,
+      stage: 'full',
+      resumeFromStage: 'study-cards',
+      forceRegenerate: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('theory not available');
     expect(runContentGenerationJob).not.toHaveBeenCalled();
   });
 });

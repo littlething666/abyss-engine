@@ -15,12 +15,14 @@ export interface RunExpansionJobParams {
   nextLevel: number;
   enableThinking: boolean;
   signal?: AbortSignal;
+  /** If this job is a retry, the ID of the original job. */
+  retryOf?: string;
 }
 
 export async function runExpansionJob(
   params: RunExpansionJobParams,
 ): Promise<{ ok: boolean; jobId?: string; error?: string; skipped?: boolean }> {
-  const { chat, deckRepository, writer, subjectId, topicId, nextLevel, enableThinking, signal } = params;
+  const { chat, deckRepository, writer, subjectId, topicId, nextLevel, enableThinking, signal, retryOf } = params;
 
   if (nextLevel < 2 || nextLevel > 3) {
     return { ok: true, skipped: true };
@@ -68,6 +70,8 @@ export async function runExpansionJob(
     }),
     enableThinking,
     externalSignal: signal,
+    retryOf,
+    metadata: { nextLevel },
     parseOutput: async (raw) => {
       const parsed = parseTopicCardsPayload(raw);
       if (!parsed.ok) {

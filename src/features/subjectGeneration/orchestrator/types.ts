@@ -7,4 +7,6 @@ export interface GenerationDependencies {
   model: string;
   enableThinking?: boolean;
   signal?: AbortSignal;
+  /** If this execution is a retry, the ID of the original job or pipeline. */
+  retryOf?: string;
 }
