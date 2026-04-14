@@ -79,7 +79,8 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
     // ── Topic pipeline stage ──────────────────────────────────────────
     const stage = JOB_KIND_TO_STAGE[job.kind];
     if (stage && topicId) {
-      void runTopicGenerationPipeline({
+      toast(`Retrying ${job.label}\u2026`);
+      await runTopicGenerationPipeline({
         chat: getChatCompletionsRepositoryForSurface('topicContent'),
         deckRepository,
         writer: deckWriter,
@@ -90,7 +91,6 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         stage,
         retryOf: job.id,
       });
-      toast(`Retrying ${job.label}\u2026`);
       return;
     }
 
@@ -101,7 +101,8 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         toast.error(`Cannot retry expansion: unable to determine crystal level from job "${job.label}"`);
         return;
       }
-      void runExpansionJob({
+      toast(`Retrying ${job.label}\u2026`);
+      await runExpansionJob({
         chat: getChatCompletionsRepositoryForSurface('topicContent'),
         deckRepository,
         writer: deckWriter,
@@ -111,7 +112,6 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         enableThinking,
         retryOf: job.id,
       });
-      toast(`Retrying ${job.label}\u2026`);
       return;
     }
 
@@ -169,7 +169,8 @@ export async function retryFailedPipeline(pipelineId: string): Promise<void> {
     // ── Topic content pipeline ────────────────────────────────────────
     const resumeStage = JOB_KIND_TO_STAGE[failedJob.kind];
     if (resumeStage && topicId) {
-      void runTopicGenerationPipeline({
+      toast(`Retrying pipeline from ${resumeStage}\u2026`);
+      await runTopicGenerationPipeline({
         chat: getChatCompletionsRepositoryForSurface('topicContent'),
         deckRepository,
         writer: deckWriter,
@@ -180,7 +181,6 @@ export async function retryFailedPipeline(pipelineId: string): Promise<void> {
         resumeFromStage: resumeStage,
         retryOf: pipelineId,
       });
-      toast(`Retrying pipeline from ${resumeStage}\u2026`);
       return;
     }
 
