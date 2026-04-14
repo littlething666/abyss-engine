@@ -79,7 +79,7 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
     // ── Topic pipeline stage ──────────────────────────────────────────
     const stage = JOB_KIND_TO_STAGE[job.kind];
     if (stage && topicId) {
-      toast(`Retrying ${job.label}\u2026`);
+      toast(`Retrying ${job.label}…`);
       await runTopicGenerationPipeline({
         chat: getChatCompletionsRepositoryForSurface('topicContent'),
         deckRepository,
@@ -101,7 +101,7 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         toast.error(`Cannot retry expansion: unable to determine crystal level from job "${job.label}"`);
         return;
       }
-      toast(`Retrying ${job.label}\u2026`);
+      toast(`Retrying ${job.label}…`);
       await runExpansionJob({
         chat: getChatCompletionsRepositoryForSurface('topicContent'),
         deckRepository,
@@ -131,7 +131,7 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         { subjectId, checklist },
         { chat, writer: deckWriter, model, enableThinking, retryOf: job.id },
       );
-      toast(`Retrying ${job.label}\u2026`);
+      toast(`Retrying ${job.label}…`);
       return;
     }
 
@@ -169,7 +169,7 @@ export async function retryFailedPipeline(pipelineId: string): Promise<void> {
     // ── Topic content pipeline ────────────────────────────────────────
     const resumeStage = JOB_KIND_TO_STAGE[failedJob.kind];
     if (resumeStage && topicId) {
-      toast(`Retrying pipeline from ${resumeStage}\u2026`);
+      toast(`Retrying pipeline from ${resumeStage}…`);
       await runTopicGenerationPipeline({
         chat: getChatCompletionsRepositoryForSurface('topicContent'),
         deckRepository,

@@ -47,14 +47,14 @@ export async function runExpansionJob(
 
   const theoryExcerpt =
     details.theory.trim().length > 12000
-      ? `${details.theory.trim().slice(0, 12000)}\n\n\u2026`
+      ? `${details.theory.trim().slice(0, 12000)}\n\n…`
       : details.theory.trim();
 
   const syllabusQuestions = bucket.map((q, i) => `${i + 1}. ${q}`).join('\n');
 
   const result = await runContentGenerationJob({
     kind: 'topic-expansion-cards',
-    label: `Expansion L${nextLevel} \u2014 ${topicTitle}`,
+    label: `Expansion L${nextLevel} — ${topicTitle}`,
     pipelineId: null,
     subjectId,
     topicId,

@@ -91,7 +91,7 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
       ) : null}
       {job.retryOf ? (
         <p className="text-muted-foreground text-[11px]">
-          \u21bb Retry of job {job.retryOf.slice(0, 8)}\u2026
+          ↻ Retry of job {job.retryOf.slice(0, 8)}…
         </p>
       ) : null}
       <p className="text-muted-foreground text-xs">Input (messages)</p>
@@ -365,7 +365,7 @@ export function GenerationProgressHud() {
                                   }}
                                 >
                                   <RotateCcw className="size-3" aria-hidden />
-                                  {retryingIds.has(j.id) ? 'Retrying\u2026' : 'Retry job'}
+                                  {retryingIds.has(j.id) ? 'Retrying…' : 'Retry job'}
                                 </Button>
                               ) : null}
                               {/* Pipeline-member single stage retry */}
@@ -382,7 +382,7 @@ export function GenerationProgressHud() {
                                   }}
                                 >
                                   <RotateCcw className="size-3" aria-hidden />
-                                  {retryingIds.has(j.id) ? 'Retrying\u2026' : 'Retry this stage'}
+                                  {retryingIds.has(j.id) ? 'Retrying…' : 'Retry this stage'}
                                 </Button>
                               ) : null}
                               {/* Pipeline retry from failed stage onward */}
@@ -399,7 +399,7 @@ export function GenerationProgressHud() {
                                   }}
                                 >
                                   <RotateCcw className="size-3" aria-hidden />
-                                  {retryingIds.has(j.pipelineId) ? 'Retrying\u2026' : 'Retry pipeline from failed stage'}
+                                  {retryingIds.has(j.pipelineId) ? 'Retrying…' : 'Retry pipeline from failed stage'}
                                 </Button>
                               ) : null}
                             </div>
