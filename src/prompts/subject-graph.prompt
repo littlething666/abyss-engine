@@ -53,3 +53,5 @@ Output valid JSON matching this schema:
 }
 
 There must be exactly {{topicCount}} objects in `nodes`, with tiers ranging from 1 through {{maxTier}} and counts per tier exactly {{topicsPerTier}} each.
+
+Prerequisites must include only topics from a lower tier than current node's tier.

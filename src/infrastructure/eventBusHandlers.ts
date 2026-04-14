@@ -77,6 +77,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
       subjectId: e.subjectId,
       topicId: e.topicId,
       enableThinking: e.enableThinking ?? false,
+      forceRegenerate: e.forceRegenerate,
+      stage: e.stage,
     });
   });
 

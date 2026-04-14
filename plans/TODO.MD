@@ -3,13 +3,15 @@
     - [P0] Procedural mesh morph on level-up (scale + new facets)
   - [P0] Pub-sub LLM Generate subject nodes; topics and cards
     - [P0] introduce "fog of war" incremental study content generation
-  - [ ] Generate mini games for interactive learning experience
+  - [ ] Mini-games
     - [ ] More practical games and questions that allow knowledge to be applied right away
     - [ ] Gap Fill Flow with blank nodes, player fills from answer pool
     - [ ] Venn Classifier (2-3 overlapping D3 circles, player places items in correct regions)
     - [ ] Ranking Duel with bar chart, player drags bar heights to rank items by a criterion
   - [ ] Sreaks support
   - [ ] Achievements screen
+    - [ ] Leaderboard
+    - [ ] Achievement on challenge completion
     - [ ] yesterday's acknowledgement screen from metrics
   - [ ] Track player's performance (struggle zones) and adapt difficulty
   - [ ] Game Mechanics
@@ -67,7 +69,6 @@
     - [ ] fix crystal growth
     - [ ] fix click anywhere freeze glitch
   - [ ] Background LLM Jobs
-    - [ ] CRITICAL: do not run generation when content is available
     - [ ] notifications when generation is finished
     - [ ] abort and retry functionality
     - [ ] sort by date desc and uncollapse only latest run
@@ -76,6 +77,7 @@
     - [ ] improve generation state display consistency and UX
   - [ ] Study Panel Modal
     - [ ] Card id copy button
+    - [ ] Mini-games button nodes should support LaTeX
   - [ ] Discovery Modal
     - [ ] add search
     - [ ] add filter by subject

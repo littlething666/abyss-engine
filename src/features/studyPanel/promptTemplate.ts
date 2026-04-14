@@ -1,14 +1,7 @@
 import diagramSystemPromptTemplate from '../../prompts/diagram-system.prompt';
+import { interpolatePromptTemplate } from '@/lib/interpolatePromptTemplate';
 
-const promptInterpolationPattern = /\{\{([^{}]+)\}\}|\{([^{}]+)\}/g;
-
-export function interpolatePromptTemplate(template: string, variables: Record<string, string>): string {
-  return template.replace(
-    promptInterpolationPattern,
-    (_match, doubleBracesKey?: string, singleBracesKey?: string) =>
-      variables[(doubleBracesKey || singleBracesKey || '').trim()] ?? '',
-  );
-}
+export { interpolatePromptTemplate };
 
 export function extractExamplesSection(sourceText: string): string {
   const startMatch = sourceText.match(/^\s*6\.\s*Examples\s*$/m);

@@ -60,6 +60,10 @@ export type AppEventMap = {
     subjectId: string;
     topicId: string;
     enableThinking?: boolean;
+    /** When true, never skip generation because `topicStudyContentReady` is satisfied. */
+    forceRegenerate?: boolean;
+    /** Defaults to `full` in the runner when omitted. */
+    stage?: 'theory' | 'study-cards' | 'mini-games' | 'full';
   };
   'subject:generation-pipeline': {
     subjectId: string;

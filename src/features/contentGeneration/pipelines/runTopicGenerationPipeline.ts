@@ -12,6 +12,10 @@ import { parseTopicTheoryPayload, type ParsedTopicTheoryPayload } from '../parse
 import { runContentGenerationJob } from '../runContentGenerationJob';
 import { useContentGenerationStore } from '../contentGenerationStore';
 import { topicStudyContentReady } from '../topicStudyContentReady';
+import { loadTheoryPayloadFromTopicDetails } from './loadTheoryPayloadFromTopicDetails';
+import type { TopicGenerationStage } from './topicGenerationStage';
+
+export type { TopicGenerationStage } from './topicGenerationStage';
 
 export interface RunTopicGenerationPipelineParams {
   chat: IChatCompletionsRepository;
@@ -21,12 +25,39 @@ export interface RunTopicGenerationPipelineParams {
   topicId: string;
   enableThinking: boolean;
   signal?: AbortSignal;
+  /** When false (default), a full pipeline skips if study-ready content already exists. */
+  forceRegenerate?: boolean;
+  /** Which segment to run; default `full` runs theory → study cards → mini-games. */
+  stage?: TopicGenerationStage;
+}
+
+function pipelineShellLabel(stage: TopicGenerationStage, topicTitle: string): string {
+  switch (stage) {
+    case 'theory':
+      return `Generate · Theory · ${topicTitle}`;
+    case 'study-cards':
+      return `Generate · Study cards · ${topicTitle}`;
+    case 'mini-games':
+      return `Generate · Mini-games · ${topicTitle}`;
+    case 'full':
+      return `Generate · Full · ${topicTitle}`;
+  }
 }
 
 export async function runTopicGenerationPipeline(
   params: RunTopicGenerationPipelineParams,
 ): Promise<{ ok: boolean; pipelineId: string; error?: string; skipped?: boolean }> {
-  const { chat, deckRepository, writer, subjectId, topicId, enableThinking, signal } = params;
+  const {
+    chat,
+    deckRepository,
+    writer,
+    subjectId,
+    topicId,
+    enableThinking,
+    signal,
+    forceRegenerate = false,
+    stage = 'full',
+  } = params;
   const model = resolveModelForSurface('topicContent');
   const store = useContentGenerationStore.getState();
 
@@ -46,7 +77,10 @@ export async function runTopicGenerationPipeline(
     deckRepository.getTopicDetails(subjectId, topicId),
     deckRepository.getTopicCards(subjectId, topicId),
   ]);
-  if (topicStudyContentReady(details, cards)) {
+
+  const shouldAutoSkip =
+    !forceRegenerate && stage === 'full' && topicStudyContentReady(details, cards);
+  if (shouldAutoSkip) {
     return { ok: true, pipelineId: '', skipped: true };
   }
 
@@ -58,7 +92,7 @@ export async function runTopicGenerationPipeline(
   store.registerPipeline(
     {
       id: pipelineId,
-      label: `Generate: ${node.title}`,
+      label: pipelineShellLabel(stage, node.title),
       createdAt: Date.now(),
     },
     pipelineAc,
@@ -66,119 +100,181 @@ export async function runTopicGenerationPipeline(
 
   let theoryData: ParsedTopicTheoryPayload | undefined;
 
-  const theoryResult = await runContentGenerationJob({
-    kind: 'topic-theory',
-    label: `Theory — ${node.title}`,
-    pipelineId,
-    subjectId,
-    topicId,
-    chat,
-    model,
-    messages: buildTopicTheoryMessages({
-      subjectTitle,
+  const runTheoryJob = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const theoryResult = await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: `Theory — ${node.title}`,
+      pipelineId,
+      subjectId,
       topicId,
-      topicTitle: node.title,
-      learningObjective: node.learningObjective,
-      contentBrief,
-    }),
-    enableThinking,
-    externalSignal: pipelineAc.signal,
-    parseOutput: async (raw) => {
-      const parsed = parseTopicTheoryPayload(raw);
-      if (!parsed.ok) {
-        return { ok: false, error: parsed.error, parseError: parsed.error };
-      }
-      return { ok: true, data: parsed.data };
-    },
-    persistOutput: async (data) => {
-      theoryData = data;
-      await writer.upsertTopicDetails({
+      chat,
+      model,
+      messages: buildTopicTheoryMessages({
+        subjectTitle,
         topicId,
-        title: node.title,
-        subjectId,
-        coreConcept: data.coreConcept,
-        theory: data.theory,
-        keyTakeaways: data.keyTakeaways,
-        coreQuestionsByDifficulty: data.coreQuestionsByDifficulty,
-      });
-    },
-  });
+        topicTitle: node.title,
+        learningObjective: node.learningObjective,
+        contentBrief,
+      }),
+      enableThinking,
+      externalSignal: pipelineAc.signal,
+      parseOutput: async (raw) => {
+        const parsed = parseTopicTheoryPayload(raw);
+        if (!parsed.ok) {
+          return { ok: false, error: parsed.error, parseError: parsed.error };
+        }
+        return { ok: true, data: parsed.data };
+      },
+      persistOutput: async (data) => {
+        theoryData = data;
+        await writer.upsertTopicDetails({
+          topicId,
+          title: node.title,
+          subjectId,
+          coreConcept: data.coreConcept,
+          theory: data.theory,
+          keyTakeaways: data.keyTakeaways,
+          coreQuestionsByDifficulty: data.coreQuestionsByDifficulty,
+        });
+      },
+    });
 
-  if (!theoryResult.ok) {
-    return { ok: false, pipelineId, error: theoryResult.error };
-  }
+    if (!theoryResult.ok) {
+      return { ok: false, error: theoryResult.error ?? 'Theory job failed' };
+    }
+    return { ok: true };
+  };
 
-  const theory = theoryData!;
+  const runStudyJob = async (theory: ParsedTopicTheoryPayload): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const difficulty1Questions = theory.coreQuestionsByDifficulty[1]
+      .map((q: string, i: number) => `${i + 1}. ${q}`)
+      .join('\n');
 
-  const difficulty1Questions = theory.coreQuestionsByDifficulty[1]
-    .map((q: string, i: number) => `${i + 1}. ${q}`)
-    .join('\n');
-
-  const studyResult = await runContentGenerationJob({
-    kind: 'topic-study-cards',
-    label: `Study cards — ${node.title}`,
-    pipelineId,
-    subjectId,
-    topicId,
-    chat,
-    model,
-    messages: buildTopicStudyCardsMessages({
+    const studyResult = await runContentGenerationJob({
+      kind: 'topic-study-cards',
+      label: `Study cards — ${node.title}`,
+      pipelineId,
+      subjectId,
       topicId,
-      topicTitle: node.title,
-      theory: theory.theory,
-      difficulty1Questions,
-      contentBrief,
-    }),
-    enableThinking,
-    externalSignal: pipelineAc.signal,
-    parseOutput: async (raw) => {
-      const parsed = parseTopicCardsPayload(raw);
-      if (!parsed.ok) {
-        return { ok: false, error: parsed.error, parseError: parsed.error };
-      }
-      return { ok: true, data: parsed.cards };
-    },
-    persistOutput: async (cards) => {
-      await writer.upsertTopicCards(subjectId, topicId, cards);
-    },
-  });
+      chat,
+      model,
+      messages: buildTopicStudyCardsMessages({
+        topicId,
+        topicTitle: node.title,
+        theory: theory.theory,
+        difficulty1Questions,
+        contentBrief,
+      }),
+      enableThinking,
+      externalSignal: pipelineAc.signal,
+      parseOutput: async (raw) => {
+        const parsed = parseTopicCardsPayload(raw);
+        if (!parsed.ok) {
+          return { ok: false, error: parsed.error, parseError: parsed.error };
+        }
+        return { ok: true, data: parsed.cards };
+      },
+      persistOutput: async (c) => {
+        await writer.upsertTopicCards(subjectId, topicId, c);
+      },
+    });
 
-  if (!studyResult.ok) {
-    return { ok: false, pipelineId, error: studyResult.error };
-  }
+    if (!studyResult.ok) {
+      return { ok: false, error: studyResult.error ?? 'Study cards job failed' };
+    }
+    return { ok: true };
+  };
 
-  const miniResult = await runContentGenerationJob({
-    kind: 'topic-mini-games',
-    label: `Mini-games — ${node.title}`,
-    pipelineId,
-    subjectId,
-    topicId,
-    chat,
-    model,
-    messages: buildTopicMiniGameCardsMessages({
+  const runMiniJob = async (theory: ParsedTopicTheoryPayload): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const difficulty1Questions = theory.coreQuestionsByDifficulty[1]
+      .map((q: string, i: number) => `${i + 1}. ${q}`)
+      .join('\n');
+
+    const miniResult = await runContentGenerationJob({
+      kind: 'topic-mini-games',
+      label: `Mini-games — ${node.title}`,
+      pipelineId,
+      subjectId,
       topicId,
-      topicTitle: node.title,
-      theory: theory.theory,
-      difficulty1Questions,
-      contentBrief,
-    }),
-    enableThinking,
-    externalSignal: pipelineAc.signal,
-    parseOutput: async (raw) => {
-      const parsed = parseTopicCardsPayload(raw);
-      if (!parsed.ok) {
-        return { ok: false, error: parsed.error, parseError: parsed.error };
+      chat,
+      model,
+      messages: buildTopicMiniGameCardsMessages({
+        topicId,
+        topicTitle: node.title,
+        theory: theory.theory,
+        difficulty1Questions,
+        contentBrief,
+      }),
+      enableThinking,
+      externalSignal: pipelineAc.signal,
+      parseOutput: async (raw) => {
+        const parsed = parseTopicCardsPayload(raw);
+        if (!parsed.ok) {
+          return { ok: false, error: parsed.error, parseError: parsed.error };
+        }
+        return { ok: true, data: parsed.cards };
+      },
+      persistOutput: async (c) => {
+        await writer.appendTopicCards(subjectId, topicId, c);
+      },
+    });
+
+    if (!miniResult.ok) {
+      return { ok: false, error: miniResult.error ?? 'Mini-games job failed' };
+    }
+    return { ok: true };
+  };
+
+  try {
+    if (stage === 'theory') {
+      const t = await runTheoryJob();
+      return t.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: t.error };
+    }
+
+    if (stage === 'study-cards') {
+      let theory: ParsedTopicTheoryPayload;
+      try {
+        theory = loadTheoryPayloadFromTopicDetails(details);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { ok: false, pipelineId, error: message };
       }
-      return { ok: true, data: parsed.cards };
-    },
-    persistOutput: async (cards) => {
-      await writer.appendTopicCards(subjectId, topicId, cards);
-    },
-  });
+      const s = await runStudyJob(theory);
+      return s.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: s.error };
+    }
 
-  if (!miniResult.ok) {
-    return { ok: false, pipelineId, error: miniResult.error };
+    if (stage === 'mini-games') {
+      let theory: ParsedTopicTheoryPayload;
+      try {
+        theory = loadTheoryPayloadFromTopicDetails(details);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { ok: false, pipelineId, error: message };
+      }
+      const m = await runMiniJob(theory);
+      return m.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: m.error };
+    }
+
+    // full
+    const theoryStep = await runTheoryJob();
+    if (!theoryStep.ok) {
+      return { ok: false, pipelineId, error: theoryStep.error };
+    }
+
+    const theory = theoryData!;
+    const studyStep = await runStudyJob(theory);
+    if (!studyStep.ok) {
+      return { ok: false, pipelineId, error: studyStep.error };
+    }
+
+    const miniStep = await runMiniJob(theory);
+    if (!miniStep.ok) {
+      return { ok: false, pipelineId, error: miniStep.error };
+    }
+
+    return { ok: true, pipelineId };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, pipelineId, error: message };
   }
-
-  return { ok: true, pipelineId };
 }

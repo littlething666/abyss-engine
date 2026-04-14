@@ -1,22 +1,47 @@
-You generate **mini-game** cards only (`type: "MINI_GAME"`, `difficulty: 1`) for the topic. Each mini-game uses one of `CATEGORY_SORT`, `SEQUENCE_BUILD`, or `CONNECTION_WEB`.
+You generate **mini-game** cards only for the topic. Each card is a JSON object with **exactly four top-level keys** — no others:
+
+`"id"`, `"type": "MINI_GAME"`, `"difficulty": 1`, `"content": { ... }`
+
+All mini-game fields (`gameType`, `prompt`, `categories`, `items`, `pairs`, `explanation`, etc.) belong **only** inside **`content`**. Never put `gameType` or `prompt` next to `type` at the root; that breaks parsing.
 
 Output **one JSON object**: `{ "cards": [ ... ] }`.
 
-Schemas:
+### Required envelope (every card)
 
-**CATEGORY_SORT** content:
-`{ "gameType": "CATEGORY_SORT", "prompt", "categories": [{ "id", "label" }], "items": [{ "id", "label", "categoryId" }], "explanation" }`
+```json
+{
+  "id": "{{topicId}}-mg-example",
+  "type": "MINI_GAME",
+  "difficulty": 1,
+  "content": {
+    "gameType": "CATEGORY_SORT",
+    "prompt": "…",
+    "explanation": "…"
+  }
+}
+```
 
-**SEQUENCE_BUILD** content:
-`{ "gameType": "SEQUENCE_BUILD", "prompt", "items": [{ "id", "label", "correctPosition" }], "explanation" }` — `correctPosition` is 0-based order.
+Replace the `content` object with one of the shapes below (keep `gameType` inside `content`).
 
-**CONNECTION_WEB** content:
-`{ "gameType": "CONNECTION_WEB", "prompt", "pairs": [{ "id", "left", "right" }], "distractors"?: [...], "explanation" }`
+**Wrong (rejected):** `"type":"MINI_GAME","gameType":"CATEGORY_SORT","prompt":"…"` — missing `content` wrapper.
 
-Requirements:
-- Generate **2–3** mini-game cards, varying gameType when possible.
-- Unique `id` per card, kebab-case, prefix with `{{topicId}}-mg-`.
-- Difficulty **1** for all.
+**Right:** `"type":"MINI_GAME","content":{"gameType":"CATEGORY_SORT","prompt":"…",…}`
+
+### `content` shapes (canonical field names)
+
+**CATEGORY_SORT** — `categoryId` on each item must equal one of `categories[].id`.
+
+**SEQUENCE_BUILD** — `correctPosition` is 0-based integer index.
+
+**CONNECTION_WEB** — `pairs` use `left` / `right`; optional `distractors` as objects with `id`, `side` (`"left"` or `"right"`), `label`.
+
+The server may normalize common aliases (`item`, `text`, `term`/`definition`, string `categories`, etc.) into the canonical shape, but you should still emit the **`content`** wrapper and prefer canonical names.
+
+### Requirements
+
+- Generate **2–3** cards; vary `content.gameType` when possible.
+- Unique `id` per card, kebab-case, prefix `{{topicId}}-mg-`.
+- Difficulty **1** for all cards.
 - Ground content in the theory and difficulty-1 questions.
 
 ### JSON strings and LaTeX

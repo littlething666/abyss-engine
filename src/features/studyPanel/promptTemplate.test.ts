@@ -3,15 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { buildDiagramSystemPrompt, extractExamplesSection, interpolatePromptTemplate } from './promptTemplate';
 
 describe('interpolatePromptTemplate', () => {
-  it('supports both {{}} and {} placeholders', () => {
-    expect(interpolatePromptTemplate('Hello {{name}}, your role is {role}.', {
-      name: 'Ari',
-      role: 'guide',
-    })).toBe('Hello Ari, your role is guide.');
+  it('interpolates {{key}} and preserves literal single-brace JSON', () => {
+    expect(
+      interpolatePromptTemplate('Hello {{name}}, your role is {{role}}. Literal {a:1}', {
+        name: 'Ari',
+        role: 'guide',
+      }),
+    ).toBe('Hello Ari, your role is guide. Literal {a:1}');
   });
 
-  it('leaves missing placeholders empty', () => {
-    expect(interpolatePromptTemplate('Missing {missing} value', { known: 'value' })).toBe('Missing  value');
+  it('replaces missing {{key}} with empty string', () => {
+    expect(interpolatePromptTemplate('Hello {{unknown}}', { known: 'value' })).toBe('Hello ');
   });
 });
 

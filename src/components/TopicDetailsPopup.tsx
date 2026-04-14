@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import {
   activeTopicGenerationLabel,
   triggerTopicGenerationPipeline,
   useContentGenerationStore,
+  type TopicGenerationStage,
 } from '@/features/contentGeneration';
 import { useTopicDetails } from '@/hooks/useDeckData';
 
@@ -27,6 +28,28 @@ import { useTopicDetails } from '@/hooks/useDeckData';
  */
 export function scheduleTopicDetailsDismiss(onDismiss: () => void) {
   window.setTimeout(onDismiss, 0);
+}
+
+const GENERATION_STEPS: readonly TopicGenerationStage[] = [
+  'theory',
+  'study-cards',
+  'mini-games',
+  'full',
+] as const;
+
+function stepButtonLabel(stage: TopicGenerationStage): string {
+  switch (stage) {
+    case 'theory':
+      return 'Theory';
+    case 'study-cards':
+      return 'Study cards';
+    case 'mini-games':
+      return 'Mini-games';
+    case 'full':
+      return 'Full';
+    default:
+      return stage;
+  }
 }
 
 export interface TopicDetailsPopupProps {
@@ -52,14 +75,19 @@ export function TopicDetailsPopup({
   const detailsQuery = useTopicDetails(topic.subjectId, topic.id);
   const syllabus = detailsQuery.data?.coreQuestionsByDifficulty;
   const isGenerating = activeJobLabel !== null;
-  const showGenerateContent = topic.isLocked && !isContentAvailable;
 
-  const handleGenerateContent = () => {
-    if (isGenerating) {
-      return;
-    }
-    void triggerTopicGenerationPipeline(topic.subjectId, topic.id);
-  };
+  const runGenerationStep = useCallback(
+    (stage: TopicGenerationStage) => {
+      if (isGenerating) {
+        return;
+      }
+      void triggerTopicGenerationPipeline(topic.subjectId, topic.id, {
+        forceRegenerate: true,
+        stage,
+      });
+    },
+    [isGenerating, topic.id, topic.subjectId],
+  );
 
   return (
     <AbyssDialog
@@ -78,21 +106,37 @@ export function TopicDetailsPopup({
         <div className="min-h-0 overflow-y-auto">
           <p className="text-muted-foreground mb-4 text-sm">{topic.description}</p>
 
-          {showGenerateContent ? (
-            <p className="text-muted-foreground mb-3 text-sm">
-              Generate study content for this topic first. When it finishes, you can unlock and spawn the crystal.
-            </p>
-          ) : null}
+          <p className="text-muted-foreground mb-3 text-sm">
+            Run one generation step, or the full sequence. Each step replaces existing generated content for
+            that part of the deck.
+          </p>
 
-          {!isContentAvailable && !showGenerateContent ? (
-            <p className="text-accent-foreground mb-3 text-sm font-semibold">
-              Content not available yet for this topic.
-            </p>
-          ) : null}
+          <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {GENERATION_STEPS.map((stage) => (
+              <Button
+                key={stage}
+                type="button"
+                variant="secondary"
+                className="min-h-11 w-full"
+                disabled={isGenerating}
+                onClick={() => runGenerationStep(stage)}
+                aria-label={`Generate ${stepButtonLabel(stage)} for this topic`}
+              >
+                {stepButtonLabel(stage)}
+              </Button>
+            ))}
+          </div>
 
           {activeJobLabel ? (
             <p className="text-primary mb-3 text-sm font-medium" role="status">
               Synthesizing knowledge: {activeJobLabel}
+            </p>
+          ) : null}
+
+          {!isContentAvailable ? (
+            <p className="text-accent-foreground mb-3 text-sm font-semibold">
+              Study-ready content is not loaded yet for this topic (theory plus at least one difficulty-1
+              card).
             </p>
           ) : null}
 
@@ -134,17 +178,6 @@ export function TopicDetailsPopup({
             </div>
           )}
 
-          {topic.isLocked && showGenerateContent ? (
-            <Button
-              type="button"
-              onClick={handleGenerateContent}
-              disabled={isGenerating}
-              className="mb-3 w-full min-h-11 rounded-lg border border-primary/30 bg-primary px-6 py-3 font-semibold text-primary-foreground"
-            >
-              {isGenerating ? activeJobLabel || 'Generating…' : 'Generate content'}
-            </Button>
-          ) : null}
-
           {topic.isLocked && (
             <Button
               type="button"
@@ -165,8 +198,8 @@ export function TopicDetailsPopup({
           )}
 
           {topic.isUnlocked && (
-            <div className="text-muted-foreground text-center text-sm">
-              ✅ This topic is already unlocked
+            <div className="text-muted-foreground mt-3 text-center text-sm">
+              This topic is already unlocked
             </div>
           )}
         </div>

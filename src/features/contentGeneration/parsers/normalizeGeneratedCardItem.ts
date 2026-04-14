@@ -1,7 +1,10 @@
 /**
  * Maps common LLM field aliases to the canonical Card content shapes expected by
  * {@link validateGeneratedCard}. Does not mutate the original value.
+ * For `MINI_GAME`, runs {@link normalizeMiniGameCardContent} (deterministic ids).
  */
+
+import { normalizeMiniGameCardContent } from './normalizeMiniGameCardContent';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -52,6 +55,13 @@ export function normalizeGeneratedCardItem(raw: unknown): unknown {
       next.explanation = '';
     }
     return { ...raw, content: next };
+  }
+
+  if (type === 'MINI_GAME' && typeof raw.id === 'string') {
+    return {
+      ...raw,
+      content: normalizeMiniGameCardContent(raw.id, content),
+    };
   }
 
   return raw;

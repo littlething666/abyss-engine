@@ -5,7 +5,7 @@ export { runContentGenerationJob } from './runContentGenerationJob';
 export type { ContentGenerationJobParams } from './runContentGenerationJob';
 
 export { runTopicGenerationPipeline } from './pipelines/runTopicGenerationPipeline';
-export type { RunTopicGenerationPipelineParams } from './pipelines/runTopicGenerationPipeline';
+export type { RunTopicGenerationPipelineParams, TopicGenerationStage } from './pipelines/runTopicGenerationPipeline';
 export { triggerTopicGenerationPipeline } from './pipelines/triggerTopicGenerationPipeline';
 
 export { runExpansionJob } from './jobs/runExpansionJob';
@@ -28,3 +28,4 @@ export type { ParsedTopicTheoryPayload, ParseTopicTheoryResult } from './parsers
 export { parseTopicCardsPayload, diagnoseTopicCardsPayload } from './parsers/parseTopicCardsPayload';
 export type { ParseTopicCardsResult } from './parsers/parseTopicCardsPayload';
 export { validateGeneratedCard } from './parsers/validateGeneratedCard';
+export { normalizeMiniGameCardContent } from './parsers/normalizeMiniGameCardContent';
