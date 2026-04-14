@@ -73,7 +73,6 @@
     - [ ] abort and retry functionality
     - [ ] sort by date desc and uncollapse only latest run
     - [ ] switch to openrouter models
-    - [ ] clear history button
     - [ ] improve generation state display consistency and UX
   - [ ] Study Panel Modal
     - [ ] Card id copy button
