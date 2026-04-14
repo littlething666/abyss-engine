@@ -314,9 +314,11 @@ export async function runTopicGenerationPipeline(
     }
 
     // Stage 2: mini-games
-    const miniStep = await runMiniJob(theory);
-    if (!miniStep.ok) {
-      return { ok: false, pipelineId, error: miniStep.error };
+    if (startIdx <= 2) {
+      const miniStep = await runMiniJob(theory);
+      if (!miniStep.ok) {
+        return { ok: false, pipelineId, error: miniStep.error };
+      }
     }
 
     return { ok: true, pipelineId };
