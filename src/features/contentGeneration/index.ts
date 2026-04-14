@@ -14,6 +14,8 @@ export type { RunExpansionJobParams } from './jobs/runExpansionJob';
 export { topicStudyContentReady } from './topicStudyContentReady';
 export { activeTopicGenerationLabel } from './activeTopicGenerationLabel';
 
+export { canRetryJob, canRetryPipeline, retryFailedJob, retryFailedPipeline } from './retryContentGeneration';
+
 export { buildTopicTheoryMessages } from './messages/buildTopicTheoryMessages';
 export type { TopicTheoryPromptParams } from './messages/buildTopicTheoryMessages';
 export { buildTopicStudyCardsMessages } from './messages/buildTopicStudyCardsMessages';

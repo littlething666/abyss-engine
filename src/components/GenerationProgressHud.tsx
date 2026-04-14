@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { RotateCcw, Sparkles } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/abyss-dialog';
-import { MAX_PERSISTED_LOGS, useContentGenerationStore } from '@/features/contentGeneration';
+import {
+  MAX_PERSISTED_LOGS,
+  useContentGenerationStore,
+  canRetryJob,
+  canRetryPipeline,
+  retryFailedJob,
+  retryFailedPipeline,
+} from '@/features/contentGeneration';
 import type { ContentGenerationJob, ContentGenerationJobStatus } from '@/types/contentGeneration';
 
 function isJobActive(status: ContentGenerationJobStatus): boolean {
@@ -82,6 +89,11 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
           Parse: {job.parseError}
         </p>
       ) : null}
+      {job.retryOf ? (
+        <p className="text-muted-foreground text-[11px]">
+          ↻ Retry of job {job.retryOf.slice(0, 8)}…
+        </p>
+      ) : null}
       <p className="text-muted-foreground text-xs">Input (messages)</p>
       <CopyableLlmTextBlock
         copyText={input}
@@ -140,7 +152,7 @@ export function GenerationProgressHud() {
   const statusLabel =
     !isBusy ? 'Generation idle' : activeJobs.length === 1 ? activeJobs[0]!.label : `${activeJobs.length} jobs running`;
 
-  const { activeStandalone, pipelineIdsOrdered, activeByPipeline, terminalSorted } = useMemo(() => {
+  const { activeStandalone, pipelineIdsOrdered, activeByPipeline, terminalSorted, terminalPipelineGroups } = useMemo(() => {
     const all = Object.values(jobs);
     const active = all.filter((j) => isJobActive(j.status));
     const terminal = all.filter((j) => !isJobActive(j.status));
@@ -163,11 +175,22 @@ export function GenerationProgressHud() {
       (a, b) => (pipelines[a]?.createdAt ?? 0) - (pipelines[b]?.createdAt ?? 0),
     );
 
+    // Group terminal jobs by pipeline for retry support
+    const termPipelineMap = new Map<string, ContentGenerationJob[]>();
+    for (const j of terminal) {
+      if (j.pipelineId) {
+        const list = termPipelineMap.get(j.pipelineId) ?? [];
+        list.push(j);
+        termPipelineMap.set(j.pipelineId, list);
+      }
+    }
+
     return {
       activeStandalone: standalone,
       activeByPipeline: pipelineGroups,
       pipelineIdsOrdered: pipelineIds,
       terminalSorted: terminal,
+      terminalPipelineGroups: termPipelineMap,
     };
   }, [jobs, pipelines]);
 
@@ -281,30 +304,70 @@ export function GenerationProgressHud() {
                 <p className="text-muted-foreground text-sm">No completed or failed runs yet.</p>
               ) : (
                 <div className="space-y-2">
-                  {terminalSorted.map((j) => (
-                    <details
-                      key={j.id}
-                      className="border-border bg-muted/20 rounded-md border"
-                      open={j.status === 'failed'}
-                    >
-                      <summary className="px-3 py-2 text-sm font-semibold">
-                        <span className="mr-2 inline-flex align-middle">
-                          <Badge variant={terminalBadgeVariant(j.status)} className="text-[10px]">
-                            {statusBadgeLabel(j.status)}
-                          </Badge>
-                        </span>
-                        {j.label}
-                        {j.finishedAt ? (
-                          <span className="text-muted-foreground ml-2 text-xs font-normal">
-                            {new Date(j.finishedAt).toLocaleString()}
+                  {terminalSorted.map((j) => {
+                    const pipelineMeta = j.pipelineId ? pipelines[j.pipelineId] : undefined;
+                    const pipelineJobs = j.pipelineId ? terminalPipelineGroups.get(j.pipelineId) : undefined;
+                    const showPipelineRetry =
+                      pipelineMeta &&
+                      pipelineJobs &&
+                      canRetryPipeline(pipelineMeta, pipelineJobs) &&
+                      // Only show pipeline retry on the first failed job to avoid duplicate buttons
+                      pipelineJobs.find((pj) => pj.status === 'failed' || pj.status === 'aborted')?.id === j.id;
+
+                    return (
+                      <details
+                        key={j.id}
+                        className="border-border bg-muted/20 rounded-md border"
+                        open={j.status === 'failed'}
+                      >
+                        <summary className="px-3 py-2 text-sm font-semibold">
+                          <span className="mr-2 inline-flex align-middle">
+                            <Badge variant={terminalBadgeVariant(j.status)} className="text-[10px]">
+                              {statusBadgeLabel(j.status)}
+                            </Badge>
                           </span>
-                        ) : null}
-                      </summary>
-                      <div className="border-border border-t px-3 py-2">
-                        <GenerationJobDetails job={j} />
-                      </div>
-                    </details>
-                  ))}
+                          {j.label}
+                          {j.finishedAt ? (
+                            <span className="text-muted-foreground ml-2 text-xs font-normal">
+                              {new Date(j.finishedAt).toLocaleString()}
+                            </span>
+                          ) : null}
+                        </summary>
+                        <div className="border-border border-t px-3 py-2">
+                          <GenerationJobDetails job={j} />
+                          {/* Retry controls for failed/aborted jobs */}
+                          {(j.status === 'failed' || j.status === 'aborted') ? (
+                            <div className="mt-3 flex flex-wrap gap-2 border-t border-border/60 pt-2">
+                              {canRetryJob(j) && j.pipelineId === null ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1.5 text-xs"
+                                  onClick={() => void retryFailedJob(j)}
+                                >
+                                  <RotateCcw className="size-3" aria-hidden />
+                                  Retry job
+                                </Button>
+                              ) : null}
+                              {showPipelineRetry && j.pipelineId ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1.5 text-xs"
+                                  onClick={() => retryFailedPipeline(j.pipelineId!)}
+                                >
+                                  <RotateCcw className="size-3" aria-hidden />
+                                  Retry pipeline from failed stage
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      </details>
+                    );
+                  })}
                 </div>
               )}
             </section>

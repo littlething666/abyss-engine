@@ -25,6 +25,9 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
   persistOutput: (data: TParsed, job: ContentGenerationJob) => Promise<void>;
 
   externalSignal?: AbortSignal;
+
+  /** If this job is a retry, the ID of the original job. */
+  retryOf?: string;
 }
 
 export async function runContentGenerationJob<TParsed>(
@@ -58,6 +61,7 @@ export async function runContentGenerationJob<TParsed>(
     reasoningText: null,
     error: null,
     parseError: null,
+    retryOf: params.retryOf ?? null,
   };
 
   store.registerJob(job, ac);

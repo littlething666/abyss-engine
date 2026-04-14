@@ -53,6 +53,9 @@ export interface ContentGenerationJob {
   error: string | null;
   /** Parse-specific error (distinct from LLM/network errors). */
   parseError: string | null;
+
+  /** If this job is a retry, the ID of the original job it was retried from. */
+  retryOf: string | null;
 }
 
 /** Lightweight reference for pipeline grouping (HUD header + pipeline-level abort). */
@@ -60,4 +63,6 @@ export interface ContentGenerationPipeline {
   id: string;
   label: string;
   createdAt: number;
+  /** If this pipeline is a retry, the ID of the original pipeline it was retried from. */
+  retryOf?: string | null;
 }

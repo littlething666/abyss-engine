@@ -33,6 +33,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
         id: pipelineId,
         label: `New subject: ${request.checklist.topicName}`,
         createdAt: Date.now(),
+        retryOf: deps.retryOf ?? null,
       },
       pipelineAc,
     );
@@ -58,6 +59,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       messages,
       enableThinking: deps.enableThinking ?? false,
       externalSignal: pipelineAc.signal,
+      retryOf: deps.retryOf,
       parseOutput: async (raw) => {
         const parseResult = parseGraphResponse(raw);
         if (!parseResult.ok) {
