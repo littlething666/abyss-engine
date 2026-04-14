@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { RotateCcw, Sparkles } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -91,7 +91,7 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
       ) : null}
       {job.retryOf ? (
         <p className="text-muted-foreground text-[11px]">
-          ↻ Retry of job {job.retryOf.slice(0, 8)}…
+          \u21bb Retry of job {job.retryOf.slice(0, 8)}\u2026
         </p>
       ) : null}
       <p className="text-muted-foreground text-xs">Input (messages)</p>
@@ -138,11 +138,22 @@ function JobRowSummary({ job }: { job: ContentGenerationJob }) {
  */
 export function GenerationProgressHud() {
   const [open, setOpen] = useState(false);
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const jobs = useContentGenerationStore((s) => s.jobs);
   const pipelines = useContentGenerationStore((s) => s.pipelines);
   const abortJob = useContentGenerationStore((s) => s.abortJob);
   const abortPipeline = useContentGenerationStore((s) => s.abortPipeline);
   const clearCompletedJobs = useContentGenerationStore((s) => s.clearCompletedJobs);
+
+  // Reset retrying state when dialog closes
+  const handleOpenChange = useCallback((next: boolean) => {
+    setOpen(next);
+    if (!next) setRetryingIds(new Set());
+  }, []);
+
+  const markRetrying = useCallback((id: string) => {
+    setRetryingIds((prev) => new Set(prev).add(id));
+  }, []);
 
   const activeJobs = useMemo(
     () => Object.values(jobs).filter((j) => isJobActive(j.status)),
@@ -209,14 +220,14 @@ export function GenerationProgressHud() {
           variant="outline"
           size="sm"
           className="h-7 shrink-0 px-2 text-xs"
-          onClick={() => setOpen(true)}
+          onClick={() => handleOpenChange(true)}
           aria-label="Open background LLM content generation"
         >
           Info
         </Button>
       </div>
 
-      <AbyssDialog open={open} onOpenChange={setOpen}>
+      <AbyssDialog open={open} onOpenChange={handleOpenChange}>
         <AbyssDialogContent className="flex max-h-[85vh] w-[min(100%,28rem)] max-w-[28rem] flex-col gap-3">
           <DialogHeader>
             <DialogTitle>Background LLM content generation</DialogTitle>
@@ -314,6 +325,8 @@ export function GenerationProgressHud() {
                       // Only show pipeline retry on the first failed job to avoid duplicate buttons
                       pipelineJobs.find((pj) => pj.status === 'failed' || pj.status === 'aborted')?.id === j.id;
 
+                    const isRetryableJob = j.status === 'failed' || j.status === 'aborted';
+
                     return (
                       <details
                         key={j.id}
@@ -336,30 +349,57 @@ export function GenerationProgressHud() {
                         <div className="border-border border-t px-3 py-2">
                           <GenerationJobDetails job={j} />
                           {/* Retry controls for failed/aborted jobs */}
-                          {(j.status === 'failed' || j.status === 'aborted') ? (
+                          {isRetryableJob ? (
                             <div className="mt-3 flex flex-wrap gap-2 border-t border-border/60 pt-2">
+                              {/* Standalone job retry */}
                               {canRetryJob(j) && j.pipelineId === null ? (
                                 <Button
                                   type="button"
                                   variant="outline"
                                   size="sm"
                                   className="gap-1.5 text-xs"
-                                  onClick={() => void retryFailedJob(j)}
+                                  disabled={retryingIds.has(j.id)}
+                                  onClick={() => {
+                                    markRetrying(j.id);
+                                    void retryFailedJob(j);
+                                  }}
                                 >
                                   <RotateCcw className="size-3" aria-hidden />
-                                  Retry job
+                                  {retryingIds.has(j.id) ? 'Retrying\u2026' : 'Retry job'}
                                 </Button>
                               ) : null}
+                              {/* Pipeline-member single stage retry */}
+                              {canRetryJob(j) && j.pipelineId !== null ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1.5 text-xs"
+                                  disabled={retryingIds.has(j.id)}
+                                  onClick={() => {
+                                    markRetrying(j.id);
+                                    void retryFailedJob(j);
+                                  }}
+                                >
+                                  <RotateCcw className="size-3" aria-hidden />
+                                  {retryingIds.has(j.id) ? 'Retrying\u2026' : 'Retry this stage'}
+                                </Button>
+                              ) : null}
+                              {/* Pipeline retry from failed stage onward */}
                               {showPipelineRetry && j.pipelineId ? (
                                 <Button
                                   type="button"
                                   variant="outline"
                                   size="sm"
                                   className="gap-1.5 text-xs"
-                                  onClick={() => retryFailedPipeline(j.pipelineId!)}
+                                  disabled={retryingIds.has(j.pipelineId)}
+                                  onClick={() => {
+                                    markRetrying(j.pipelineId!);
+                                    void retryFailedPipeline(j.pipelineId!);
+                                  }}
                                 >
                                   <RotateCcw className="size-3" aria-hidden />
-                                  Retry pipeline from failed stage
+                                  {retryingIds.has(j.pipelineId) ? 'Retrying\u2026' : 'Retry pipeline from failed stage'}
                                 </Button>
                               ) : null}
                             </div>
@@ -376,7 +416,7 @@ export function GenerationProgressHud() {
             <Button type="button" variant="outline" size="sm" onClick={() => clearCompletedJobs()}>
               Clear history
             </Button>
-            <Button type="button" size="sm" onClick={() => setOpen(false)}>
+            <Button type="button" size="sm" onClick={() => handleOpenChange(false)}>
               Close
             </Button>
           </DialogFooter>

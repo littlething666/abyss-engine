@@ -28,6 +28,9 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
 
   /** If this job is a retry, the ID of the original job. */
   retryOf?: string;
+
+  /** Extra key–value pairs stored on the job for retry context. */
+  metadata?: Record<string, unknown>;
 }
 
 export async function runContentGenerationJob<TParsed>(
@@ -62,6 +65,10 @@ export async function runContentGenerationJob<TParsed>(
     error: null,
     parseError: null,
     retryOf: params.retryOf ?? null,
+    metadata: {
+      enableThinking: params.enableThinking,
+      ...(params.metadata ?? {}),
+    },
   };
 
   store.registerJob(job, ac);

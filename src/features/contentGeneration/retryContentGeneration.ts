@@ -3,6 +3,7 @@
  *
  * Re-derives all LLM params (messages, model, chat repo) from current DB state
  * rather than replaying snapshots. This ensures retries use the latest data.
+ * enableThinking is replayed from the original job's metadata.
  */
 
 import type { ContentGenerationJob, ContentGenerationJobKind, ContentGenerationPipeline } from '@/types/contentGeneration';
@@ -14,6 +15,7 @@ import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProv
 import { runTopicGenerationPipeline } from './pipelines/runTopicGenerationPipeline';
 import { runExpansionJob } from './jobs/runExpansionJob';
 import { createSubjectGenerationOrchestrator } from '@/features/subjectGeneration';
+import { toast } from 'sonner';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -26,12 +28,15 @@ const JOB_KIND_TO_STAGE: Partial<Record<ContentGenerationJobKind, Exclude<TopicG
   'topic-mini-games': 'mini-games',
 };
 
-/**
- * Parses the crystal level from an expansion job label.
- * Label format is deterministic: "Expansion L{n} — {title}".
- */
-function parseExpansionLevel(label: string): number | null {
-  const match = label.match(/^Expansion L(\d+)/);
+function getEnableThinking(job: ContentGenerationJob): boolean {
+  return (job.metadata?.enableThinking as boolean) ?? false;
+}
+
+function getNextLevel(job: ContentGenerationJob): number | null {
+  const fromMeta = job.metadata?.nextLevel;
+  if (typeof fromMeta === 'number') return fromMeta;
+  // Fallback: parse from label for backwards-compat with jobs created before metadata
+  const match = job.label.match(/^Expansion L(\d+)/);
   return match ? Number(match[1]) : null;
 }
 
@@ -43,7 +48,7 @@ function isRetryable(status: ContentGenerationJob['status']): boolean {
 // Public API
 // ---------------------------------------------------------------------------
 
-/** Whether the given standalone job can be retried. */
+/** Whether the given job can be retried. */
 export function canRetryJob(job: ContentGenerationJob): boolean {
   return isRetryable(job.status) && job.subjectId !== null;
 }
@@ -59,7 +64,7 @@ export function canRetryPipeline(
 }
 
 /**
- * Retry a single failed/aborted standalone job.
+ * Retry a single failed/aborted job.
  * Re-derives params from the current DB state and launches a fresh job
  * with a new ID (linked via `retryOf`).
  */
@@ -68,58 +73,73 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
 
   const subjectId = job.subjectId!;
   const topicId = job.topicId;
+  const enableThinking = getEnableThinking(job);
 
-  // ── Topic pipeline stage (standalone single-stage retry) ──────────
-  const stage = JOB_KIND_TO_STAGE[job.kind];
-  if (stage && topicId) {
-    void runTopicGenerationPipeline({
-      chat: getChatCompletionsRepositoryForSurface('topicContent'),
-      deckRepository,
-      writer: deckWriter,
-      subjectId,
-      topicId,
-      enableThinking: false,
-      forceRegenerate: true,
-      stage,
-      retryOf: job.id,
-    });
-    return;
-  }
-
-  // ── Expansion job ─────────────────────────────────────────────────
-  if (job.kind === 'topic-expansion-cards' && topicId) {
-    const nextLevel = parseExpansionLevel(job.label);
-    if (!nextLevel) return;
-    void runExpansionJob({
-      chat: getChatCompletionsRepositoryForSurface('topicContent'),
-      deckRepository,
-      writer: deckWriter,
-      subjectId,
-      topicId,
-      nextLevel,
-      enableThinking: false,
-      retryOf: job.id,
-    });
-    return;
-  }
-
-  // ── Subject graph ─────────────────────────────────────────────────
-  if (job.kind === 'subject-graph') {
-    const manifest = await deckRepository.getManifest();
-    const subject = manifest.subjects.find((s) => s.id === subjectId);
-    const checklist = subject?.metadata?.checklist;
-    if (!checklist) {
-      console.warn('[retryContentGeneration] Cannot retry subject-graph: checklist not found in manifest');
+  try {
+    // ── Topic pipeline stage ──────────────────────────────────────────
+    const stage = JOB_KIND_TO_STAGE[job.kind];
+    if (stage && topicId) {
+      void runTopicGenerationPipeline({
+        chat: getChatCompletionsRepositoryForSurface('topicContent'),
+        deckRepository,
+        writer: deckWriter,
+        subjectId,
+        topicId,
+        enableThinking,
+        forceRegenerate: true,
+        stage,
+        retryOf: job.id,
+      });
+      toast(`Retrying ${job.label}\u2026`);
       return;
     }
-    const chat = getChatCompletionsRepositoryForSurface('subjectGeneration');
-    const model = resolveModelForSurface('subjectGeneration');
-    const orchestrator = createSubjectGenerationOrchestrator();
-    void orchestrator.execute(
-      { subjectId, checklist },
-      { chat, writer: deckWriter, model, enableThinking: false, retryOf: job.id },
-    );
-    return;
+
+    // ── Expansion job ─────────────────────────────────────────────────
+    if (job.kind === 'topic-expansion-cards' && topicId) {
+      const nextLevel = getNextLevel(job);
+      if (!nextLevel) {
+        toast.error(`Cannot retry expansion: unable to determine crystal level from job "${job.label}"`);
+        return;
+      }
+      void runExpansionJob({
+        chat: getChatCompletionsRepositoryForSurface('topicContent'),
+        deckRepository,
+        writer: deckWriter,
+        subjectId,
+        topicId,
+        nextLevel,
+        enableThinking,
+        retryOf: job.id,
+      });
+      toast(`Retrying ${job.label}\u2026`);
+      return;
+    }
+
+    // ── Subject graph ─────────────────────────────────────────────────
+    if (job.kind === 'subject-graph') {
+      const manifest = await deckRepository.getManifest();
+      const subject = manifest.subjects.find((s) => s.id === subjectId);
+      const checklist = subject?.metadata?.checklist;
+      if (!checklist) {
+        toast.error('Cannot retry subject generation: checklist not found in manifest');
+        return;
+      }
+      const chat = getChatCompletionsRepositoryForSurface('subjectGeneration');
+      const model = resolveModelForSurface('subjectGeneration');
+      const orchestrator = createSubjectGenerationOrchestrator();
+      void orchestrator.execute(
+        { subjectId, checklist },
+        { chat, writer: deckWriter, model, enableThinking, retryOf: job.id },
+      );
+      toast(`Retrying ${job.label}\u2026`);
+      return;
+    }
+
+    toast.error(`Cannot retry job: unsupported kind "${job.kind}"`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[retryContentGeneration] retryFailedJob error:', msg);
+    toast.error(`Retry failed: ${msg}`);
   }
 }
 
@@ -127,7 +147,7 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
  * Retry a failed/aborted pipeline from the first failed stage onward.
  * Completed stages are skipped; the pipeline resumes with fresh LLM calls.
  */
-export function retryFailedPipeline(pipelineId: string): void {
+export async function retryFailedPipeline(pipelineId: string): Promise<void> {
   const store = useContentGenerationStore.getState();
   const pipelineJobs = Object.values(store.jobs)
     .filter((j) => j.pipelineId === pipelineId)
@@ -143,25 +163,37 @@ export function retryFailedPipeline(pipelineId: string): void {
   const topicId = failedJob.topicId;
   if (!subjectId) return;
 
-  // ── Topic content pipeline ────────────────────────────────────────
-  const resumeStage = JOB_KIND_TO_STAGE[failedJob.kind];
-  if (resumeStage && topicId) {
-    void runTopicGenerationPipeline({
-      chat: getChatCompletionsRepositoryForSurface('topicContent'),
-      deckRepository,
-      writer: deckWriter,
-      subjectId,
-      topicId,
-      enableThinking: false,
-      forceRegenerate: true,
-      resumeFromStage: resumeStage,
-      retryOf: pipelineId,
-    });
-    return;
-  }
+  const enableThinking = getEnableThinking(failedJob);
 
-  // ── Subject generation pipeline (single-job pipeline) ─────────────
-  if (failedJob.kind === 'subject-graph') {
-    void retryFailedJob(failedJob);
+  try {
+    // ── Topic content pipeline ────────────────────────────────────────
+    const resumeStage = JOB_KIND_TO_STAGE[failedJob.kind];
+    if (resumeStage && topicId) {
+      void runTopicGenerationPipeline({
+        chat: getChatCompletionsRepositoryForSurface('topicContent'),
+        deckRepository,
+        writer: deckWriter,
+        subjectId,
+        topicId,
+        enableThinking,
+        forceRegenerate: true,
+        resumeFromStage: resumeStage,
+        retryOf: pipelineId,
+      });
+      toast(`Retrying pipeline from ${resumeStage}\u2026`);
+      return;
+    }
+
+    // ── Subject generation pipeline (single-job pipeline) ─────────────
+    if (failedJob.kind === 'subject-graph') {
+      await retryFailedJob(failedJob);
+      return;
+    }
+
+    toast.error('Cannot retry pipeline: unknown job kind');
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[retryContentGeneration] retryFailedPipeline error:', msg);
+    toast.error(`Pipeline retry failed: ${msg}`);
   }
 }

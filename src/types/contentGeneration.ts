@@ -56,6 +56,16 @@ export interface ContentGenerationJob {
 
   /** If this job is a retry, the ID of the original job it was retried from. */
   retryOf: string | null;
+
+  /**
+   * Lightweight key–value bag for retry context and kind-specific data.
+   * Stored in Dexie automatically (not indexed).
+   *
+   * Known keys:
+   * - `enableThinking` (boolean) — whether thinking/reasoning was enabled for this job.
+   * - `nextLevel` (number) — for expansion jobs, the crystal level that triggered expansion.
+   */
+  metadata: Record<string, unknown> | null;
 }
 
 /** Lightweight reference for pipeline grouping (HUD header + pipeline-level abort). */
@@ -64,5 +74,5 @@ export interface ContentGenerationPipeline {
   label: string;
   createdAt: number;
   /** If this pipeline is a retry, the ID of the original pipeline it was retried from. */
-  retryOf?: string | null;
+  retryOf: string | null;
 }
