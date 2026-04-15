@@ -20,6 +20,7 @@ function baseState(over: Partial<ProgressionState> = {}): ProgressionState {
       [cardKey('card-1')]: { ...defaultSM2 },
     },
     unlockPoints: 3,
+    resonancePoints: 0,
     currentSubjectId: null,
     currentSession: {
       subjectId: SUB,

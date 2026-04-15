@@ -11,6 +11,7 @@ const mockRunTopicPipeline = vi.fn();
 const mockRunExpansionJob = vi.fn();
 const mockOrchExecute = vi.fn();
 const mockGetManifest = vi.fn();
+const mockGenerateTrialQuestions = vi.fn();
 
 vi.mock('./pipelines/runTopicGenerationPipeline', () => ({
   runTopicGenerationPipeline: (...args: unknown[]) => mockRunTopicPipeline(...args),
@@ -18,6 +19,10 @@ vi.mock('./pipelines/runTopicGenerationPipeline', () => ({
 
 vi.mock('./jobs/runExpansionJob', () => ({
   runExpansionJob: (...args: unknown[]) => mockRunExpansionJob(...args),
+}));
+
+vi.mock('@/features/crystalTrial/generateTrialQuestions', () => ({
+  generateTrialQuestions: (...args: unknown[]) => mockGenerateTrialQuestions(...args),
 }));
 
 vi.mock('@/features/subjectGeneration', () => ({
@@ -123,6 +128,7 @@ describe('retryFailedJob', () => {
     mockRunExpansionJob.mockReset();
     mockOrchExecute.mockReset();
     mockGetManifest.mockReset();
+    mockGenerateTrialQuestions.mockReset();
   });
 
   it('calls runTopicGenerationPipeline for topic-theory jobs', async () => {
@@ -151,6 +157,39 @@ describe('retryFailedJob', () => {
 
     expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
     expect(mockRunTopicPipeline.mock.calls[0]?.[0]?.stage).toBe('mini-games');
+  });
+
+  it('calls generateTrialQuestions for crystal-trial jobs using metadata currentLevel', async () => {
+    const job = makeJob({
+      kind: 'crystal-trial',
+      label: 'Crystal Trial L3 — Topic A',
+      metadata: { enableThinking: true, currentLevel: 2 },
+    });
+
+    await retryFailedJob(job);
+
+    expect(mockGenerateTrialQuestions).toHaveBeenCalledTimes(1);
+    expect(mockGenerateTrialQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chat: {},
+        subjectId: 'sub-1',
+        topicId: 'top-1',
+        currentLevel: 2,
+      }),
+    );
+  });
+
+  it('falls back to label parsing when crystal-trial metadata is missing', async () => {
+    const job = makeJob({
+      kind: 'crystal-trial',
+      label: 'Crystal Trial L4 — Topic A',
+      metadata: { enableThinking: true },
+    });
+
+    await retryFailedJob(job);
+
+    expect(mockGenerateTrialQuestions).toHaveBeenCalledTimes(1);
+    expect(mockGenerateTrialQuestions.mock.calls[0]?.[0]?.currentLevel).toBe(3);
   });
 
   it('calls runExpansionJob with nextLevel from metadata', async () => {
@@ -209,6 +248,7 @@ describe('retryFailedJob', () => {
     expect(mockRunTopicPipeline).not.toHaveBeenCalled();
     expect(mockRunExpansionJob).not.toHaveBeenCalled();
     expect(mockOrchExecute).not.toHaveBeenCalled();
+    expect(mockGenerateTrialQuestions).not.toHaveBeenCalled();
   });
 });
 
@@ -218,6 +258,7 @@ describe('retryFailedPipeline', () => {
     mockRunTopicPipeline.mockReset();
     mockOrchExecute.mockReset();
     mockGetManifest.mockReset();
+    mockGenerateTrialQuestions.mockReset();
   });
 
   it('resumes topic pipeline from first failed stage', async () => {

@@ -17,8 +17,11 @@ import {
   calculateLevelFromXP,
   crystalCeremonyStore,
   getCrystalScale,
+  isXpMaxedForCurrentLevel,
   subjectSeedFromId,
+  useProgressionStore,
 } from '../features/progression';
+import { useCrystalTrialStore } from '../features/crystalTrial/crystalTrialStore';
 import { useUIStore } from '../store/uiStore';
 import { getSubjectColor } from '../utils/geometryMapping';
 import { useTopicMetadata } from '../features/content';
@@ -30,6 +33,13 @@ import { useManifest } from '../hooks/useDeckData';
 import {
   createCrystalInstancedAttributes,
   createCrystalNodeMaterial,
+  CRYSTAL_INSTANCE_OFFSET_COLOR,
+  CRYSTAL_INSTANCE_OFFSET_LEVEL,
+  CRYSTAL_INSTANCE_OFFSET_MORPH,
+  CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY,
+  CRYSTAL_INSTANCE_OFFSET_SEED,
+  CRYSTAL_INSTANCE_OFFSET_TRIAL_READY,
+  CRYSTAL_INSTANCE_STRIDE,
   CRYSTAL_MAX_INSTANCES,
   getClusterGeometry,
 } from '../graphics/crystals';
@@ -83,11 +93,15 @@ function resolveCrystalBaseShape(
   return subject?.crystalBaseShape ?? DEFAULT_CRYSTAL_BASE_SHAPE;
 }
 
+/** Trial statuses that should show the trial-ready pulse VFX on the crystal. */
+const TRIAL_READY_STATUSES = new Set(['awaiting_player']);
+
 export const Crystals: React.FC<CrystalsProps> = ({
   crystals,
   onStartTopicStudySession,
   isStudyPanelOpen = false,
 }) => {
+  const activeCrystals = useProgressionStore((state) => state.activeCrystals);
   const metadataLookup = useTopicMetadata(
     crystals.map((crystal) => ({ subjectId: crystal.subjectId, topicId: crystal.topicId })),
   );
@@ -134,6 +148,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
       geometry.setAttribute('instanceSubjectSeed', attributes.instanceSubjectSeed);
       geometry.setAttribute('instanceColor', attributes.instanceColor);
       geometry.setAttribute('instanceSelectCeremony', attributes.instanceSelectCeremony);
+      geometry.setAttribute('instanceTrialReady', attributes.instanceTrialReady);
       const material = createCrystalNodeMaterial(attributes, environmentMap);
       groups[shape] = { geometry, material, arrays, attributes };
     }
@@ -144,7 +159,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
   const count = Math.min(crystals.length, CRYSTAL_MAX_INSTANCES);
 
-  /** When layout or per-instance scale (xp → level) changes, drop cached bounds so raycast recomputes. */
+  /** When layout or per-instance scale (xp -> level) changes, drop cached bounds so raycast recomputes. */
   const crystalBoundsKey = useMemo(
     () =>
       crystals
@@ -198,6 +213,19 @@ export const Crystals: React.FC<CrystalsProps> = ({
     }
     if (!ceremonyKey) {
       lastCeremonyKey.current = null;
+    }
+
+    // Pre-compute trial-ready keys once per frame to avoid N individual getTrialStatus calls
+    const trialStoreState = useCrystalTrialStore.getState();
+    const crystalXpByTopic = new Map(activeCrystals.map((crystal) => [topicRefKey(crystal), crystal.xp]));
+    const trialReadyKeys = new Set<string>();
+    for (const [key, trial] of Object.entries(trialStoreState.trials)) {
+      if (
+        TRIAL_READY_STATUSES.has(trial.status)
+        && isXpMaxedForCurrentLevel(crystalXpByTopic.get(key) ?? 0)
+      ) {
+        trialReadyKeys.add(key);
+      }
     }
 
     let needsInvalidate = false;
@@ -258,14 +286,23 @@ export const Crystals: React.FC<CrystalsProps> = ({
       const colorHex = getSubjectColor(topicMeta?.subjectId ?? null, subjects);
       const color = new THREE.Color(colorHex);
 
-      group.arrays.instanceLevel[localIdx] = level;
-      group.arrays.instanceMorphProgress[localIdx] = morphProgress;
-      group.arrays.instanceSubjectSeed[localIdx] = subjectSeedFromId(topicMeta?.subjectId);
-      group.arrays.instanceColor[localIdx * 3] = color.r;
-      group.arrays.instanceColor[localIdx * 3 + 1] = color.g;
-      group.arrays.instanceColor[localIdx * 3 + 2] = color.b;
-      group.arrays.instanceSelectCeremony[localIdx * 2] = isSelected ? 1 : 0;
-      group.arrays.instanceSelectCeremony[localIdx * 2 + 1] = ceremonyPhase;
+      const row = localIdx * CRYSTAL_INSTANCE_STRIDE;
+      const d = group.arrays.instanceData;
+      d[row + CRYSTAL_INSTANCE_OFFSET_LEVEL] = level;
+      d[row + CRYSTAL_INSTANCE_OFFSET_MORPH] = morphProgress;
+      d[row + CRYSTAL_INSTANCE_OFFSET_SEED] = subjectSeedFromId(topicMeta?.subjectId);
+      d[row + CRYSTAL_INSTANCE_OFFSET_COLOR] = color.r;
+      d[row + CRYSTAL_INSTANCE_OFFSET_COLOR + 1] = color.g;
+      d[row + CRYSTAL_INSTANCE_OFFSET_COLOR + 2] = color.b;
+      d[row + CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY] = isSelected ? 1 : 0;
+      d[row + CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY + 1] = ceremonyPhase;
+
+      // Crystal Trial VFX: use pre-computed trial-ready set instead of per-crystal getTrialStatus
+      const isTrialReady = trialReadyKeys.has(topicKey) ? 1 : 0;
+      d[row + CRYSTAL_INSTANCE_OFFSET_TRIAL_READY] = isTrialReady;
+      if (isTrialReady) {
+        needsInvalidate = true; // Keep rendering for pulse animation
+      }
 
       const anchor = labelAnchorRefs.current[i];
       if (anchor) {
@@ -296,11 +333,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
         mesh.count = shapeCount;
         if (shapeCount > 0) {
           mesh.instanceMatrix.needsUpdate = true;
-          group.attributes.instanceLevel.needsUpdate = true;
-          group.attributes.instanceMorphProgress.needsUpdate = true;
-          group.attributes.instanceSubjectSeed.needsUpdate = true;
-          group.attributes.instanceColor.needsUpdate = true;
-          group.attributes.instanceSelectCeremony.needsUpdate = true;
+          group.attributes.interleaved.needsUpdate = true;
         }
       }
     }
@@ -373,6 +406,15 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
     const ref = parseTopicRefKey(topicKey);
     if (selectedTopic && topicRefKey(selectedTopic) === topicKey) {
+      const isCurrentCrystalReadyForTrial = isXpMaxedForCurrentLevel(
+        activeCrystals.find((item) => topicRefKey(item) === topicKey)?.xp ?? 0,
+      );
+      // Check if trial is awaiting player — open trial modal instead of study
+      const trialStatus = useCrystalTrialStore.getState().getTrialStatus(ref);
+      if (trialStatus === 'awaiting_player' && isCurrentCrystalReadyForTrial) {
+        useUIStore.getState().openCrystalTrial();
+        return;
+      }
       onStartTopicStudySession?.(ref);
     } else {
       selectTopic(ref);

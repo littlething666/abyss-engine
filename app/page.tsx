@@ -13,7 +13,7 @@ import DebugControls from '@/components/debug/DebugControls';
 import { initAbyssDev } from '@/utils/abyssDev';
 import { AttunementRitualPayload } from '@/types/progression';
 import { filterCardsForStudy, useTopicMetadata, type StudyCardFilterSelection } from '@/features/content';
-import { syncDeckIndexedDbDebugFromApp } from '@/infrastructure/deckDb/deckDbDebugLog';
+import { initializeDebugMode, isDebugModeEnabled } from '@/infrastructure/debugMode';
 import { Button } from '@/components/ui/button';
 import { CloudLoadingScreen } from '@/components/ui/CloudLoadingScreen';
 import { Search } from 'lucide-react';
@@ -30,6 +30,7 @@ import { AbyssCommandPalette } from '@/components/AbyssCommandPalette';
 import { ScreenCaptureLlmSummarySurface } from '@/components/ScreenCaptureLlmSummarySurface';
 import SubjectNavigation from '@/components/SubjectNavigation';
 import PomodoroTimerOverlay from '@/components/PomodoroTimer3D';
+import { CrystalTrialModal } from '@/components/CrystalTrial';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useScreenCaptureLlmSummary } from '@/hooks/useScreenCaptureLlmSummary';
 import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
@@ -57,7 +58,8 @@ const Scene = dynamic(() => import('@/components/Scene'), {
  */
 const HomeContent: React.FC = () => {
   const searchParams = useSearchParams();
-  const isDebugMode = searchParams.get('debug') === '1';
+  initializeDebugMode(searchParams);
+  const isDebugMode = isDebugModeEnabled();
   /** E2E / Playwright: full-screen loader stays until WebGPU `onCreated`; skip it so UI is reachable even if GPU init stalls. */
   const skipSceneLoadingOverlay =
     searchParams.get('e2e') === '1' || process.env.NEXT_PUBLIC_PLAYWRIGHT === '1';
@@ -174,11 +176,6 @@ const HomeContent: React.FC = () => {
 
   const currentTopicId = currentSession?.topicId || null;
   const currentSubjectIdSession = currentSession?.subjectId ?? null;
-
-  useEffect(() => {
-    syncDeckIndexedDbDebugFromApp(isDebugMode);
-    return () => syncDeckIndexedDbDebugFromApp(null);
-  }, [isDebugMode]);
 
   // Initialize on mount - only once
   useEffect(() => {
@@ -300,10 +297,7 @@ const HomeContent: React.FC = () => {
 
       <div
         className="fixed z-20 max-w-[min(100%,11rem)] text-left"
-        style={{
-          top: 'calc(0.75rem + env(safe-area-inset-top))',
-          left: 'calc(0.75rem + env(safe-area-inset-left))',
-        }}
+        style={{ top: 'calc(0.75rem + env(safe-area-inset-top))', left: 'calc(0.75rem + env(safe-area-inset-left))' }}
       >
         <h1 className="m-0 text-sm font-semibold tracking-tight text-foreground">
           Abyss Engine
@@ -324,10 +318,7 @@ const HomeContent: React.FC = () => {
 
       <div
         className="fixed z-20 flex flex-col items-end gap-1.5"
-        style={{
-          top: 'calc(0.75rem + env(safe-area-inset-top))',
-          right: 'calc(0.75rem + env(safe-area-inset-right))',
-        }}
+        style={{ top: 'calc(0.75rem + env(safe-area-inset-top))', right: 'calc(0.75rem + env(safe-area-inset-right))' }}
       >
         <GenerationProgressHud />
         <StatsOverlay activeBuffs={activeBuffs} />
@@ -335,10 +326,7 @@ const HomeContent: React.FC = () => {
 
       <div
         className="fixed z-20 flex flex-row items-end justify-end gap-2"
-        style={{
-          bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
-          right: 'calc(0.75rem + env(safe-area-inset-right))',
-        }}
+        style={{ bottom: 'calc(0.75rem + env(safe-area-inset-bottom))', right: 'calc(0.75rem + env(safe-area-inset-right))' }}
       >
         <PomodoroTimerOverlay />
         <Button
@@ -426,6 +414,8 @@ const HomeContent: React.FC = () => {
         topicMetadata={allTopicMetadata}
         onOpenEntryStudy={handleTimelineOpenStudy}
       />
+
+      <CrystalTrialModal />
 
       {isDebugMode && (
         <DebugControls

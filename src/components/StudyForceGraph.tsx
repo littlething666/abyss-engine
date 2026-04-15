@@ -174,7 +174,7 @@ function truncateTopicTitle(title: string, maxChars = TOPIC_TITLE_MAX_CHARS): st
   if (t.length <= maxChars) {
     return t;
   }
-  return `${t.slice(0, Math.max(1, maxChars - 1))}\u2026`;
+  return `${t.slice(0, Math.max(1, maxChars - 1))}...`;
 }
 
 /** ~11px UI font: upper bound for half-width of truncated titles (horizontal clip guard). */

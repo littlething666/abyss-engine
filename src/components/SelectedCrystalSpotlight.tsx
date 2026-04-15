@@ -10,10 +10,14 @@ interface SelectedCrystalSpotlightProps {
   spotlightOpacity: number
 }
 
-const SPOTLIGHT_RADIUS_TOP = 0.2
-const SPOTLIGHT_RADIUS_BOTTOM = 0.5
-const SPOTLIGHT_ANGLE_POWER = 5
-const SPOTLIGHT_INTENSITY = 1
+const SPOTLIGHT_RADIUS_TOP = 0.1
+const SPOTLIGHT_RADIUS_BOTTOM = 0.55
+const SPOTLIGHT_ANGLE_POWER = 4
+const SPOTLIGHT_INTENSITY = 1.2
+const SPOTLIGHT_DISTANCE = 5
+const SPOTLIGHT_ANGLE = 0.35
+const SPOTLIGHT_ATTENUATION = 10
+const SPOTLIGHT_PENUMBRA = 0.2
 
 export const SelectedCrystalSpotlight: React.FC<SelectedCrystalSpotlightProps> = ({
   spotlightPosition,
@@ -28,12 +32,12 @@ export const SelectedCrystalSpotlight: React.FC<SelectedCrystalSpotlightProps> =
         castShadow
         target={spotlightTargetRef}
         position={spotlightPosition}
-        penumbra={0.2}
+        penumbra={SPOTLIGHT_PENUMBRA}
         radiusTop={SPOTLIGHT_RADIUS_TOP}
         radiusBottom={SPOTLIGHT_RADIUS_BOTTOM}
-        distance={6}
-        angle={0.45}
-        attenuation={11}
+        distance={SPOTLIGHT_DISTANCE}
+        angle={SPOTLIGHT_ANGLE}
+        attenuation={SPOTLIGHT_ATTENUATION}
         anglePower={SPOTLIGHT_ANGLE_POWER}
         intensity={SPOTLIGHT_INTENSITY}
         opacity={spotlightOpacity}

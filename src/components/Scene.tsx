@@ -370,7 +370,7 @@ export const Scene: React.FC<SceneProps> = ({
             />
           </Suspense>
 
-          {/* <GlowPostProcessing bloomExcludeLayer={BLOOM_EXCLUDE_LAYER} /> */}
+          <GlowPostProcessing />
 
           {/* Invisible floor plane to detect clicks outside crystals */}
           <mesh

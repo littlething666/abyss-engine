@@ -23,6 +23,7 @@ function buildRestoredPartial(
     activeCrystals: snapshot.activeCrystals,
     activeBuffs: restoredActiveBuffs,
     unlockPoints: snapshot.unlockPoints,
+    resonancePoints: snapshot.resonancePoints,
     currentSession: snapshot.currentSession,
   };
 }

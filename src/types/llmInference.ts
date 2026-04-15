@@ -5,6 +5,7 @@ export type InferenceSurfaceId =
   | 'studyQuestionMermaid'
   | 'screenCaptureSummary'
   | 'subjectGeneration'
-  | 'topicContent';
+  | 'topicContent'
+  | 'crystalTrial';
 
 export type LlmInferenceProviderId = 'openai-compatible' | 'gemini';

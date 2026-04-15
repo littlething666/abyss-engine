@@ -19,6 +19,7 @@ export const LLM_INFERENCE_PROVIDER_BY_SURFACE: Record<
   screenCaptureSummary: 'openai-compatible',
   subjectGeneration: 'gemini',
   topicContent: 'gemini',
+  crystalTrial: 'gemini',
 };
 
 export function inferenceProviderForSurface(surfaceId: InferenceSurfaceId): LlmInferenceProviderId {

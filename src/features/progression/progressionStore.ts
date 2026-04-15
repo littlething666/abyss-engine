@@ -12,6 +12,8 @@ import {
   filterCardsByDifficulty,
   getTopicUnlockStatus,
   getTopicsByTier as computeTopicsByTier,
+  CRYSTAL_XP_PER_LEVEL,
+  MAX_CRYSTAL_LEVEL,
 } from './progressionUtils';
 import { defaultSM2, sm2, SM2Data } from './sm2';
 import { Card, SubjectGraph, TopicRef } from '../../types/core';
@@ -33,9 +35,19 @@ import {
 } from '../analytics/attunementMetrics';
 import { calculateRitualHarmony, deriveRitualBuffs } from './progressionRitual';
 import { undoManager } from './undoManager';
+import {
+  emitCrystalTrialPregenerateForTopic,
+  trialStatusRequiresXpCapAtLevelBoundary,
+} from '../crystalTrial';
+import { useCrystalTrialStore } from '../crystalTrial/crystalTrialStore';
+import {
+  hasAddedAnyXp,
+  wouldCrossLevelBoundary,
+  capXpBelowThreshold,
+} from '../crystalTrial/progressionIntegration';
 
 type ProgressionStore = ProgressionState & ProgressionActions;
-const PROGRESSION_STORAGE_KEY = 'abyss-progression-v2';
+const PROGRESSION_STORAGE_KEY = 'abyss-progression-v3';
 export const ATTUNEMENT_SUBMISSION_COOLDOWN_MS = 8 * 60 * 60 * 1000;
 
 interface CardWithSm2 extends Card {
@@ -79,6 +91,7 @@ export const useProgressionStore = create<ProgressionStore>()(
       activeCrystals: [],
       sm2Data: {},
       unlockPoints: INITIAL_UNLOCK_POINTS,
+      resonancePoints: 0,
       currentSubjectId: null,
       currentSession: null,
       activeBuffs: [],
@@ -315,10 +328,34 @@ export const useProgressionStore = create<ProgressionStore>()(
         const activeBuffs = state.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
         const buffMultiplier = BuffEngine.get().getModifierTotal('xp_multiplier', activeBuffs);
         const buffedReward = Math.max(0, Math.round(reward * buffMultiplier));
+
+        // --- Crystal Trial: XP gating ---
+        const ref: TopicRef = { subjectId: session.subjectId, topicId: session.topicId };
+        const previousXp = crystal.xp;
+        const currentLevel = calculateLevelFromXP(previousXp);
+        const trialStore = useCrystalTrialStore.getState();
+        const trialStatus = trialStore.getTrialStatus(ref);
+
+        let effectiveReward = buffedReward;
+        let hasBoundaryPregeneration = false;
+
+        if (currentLevel < MAX_CRYSTAL_LEVEL) {
+          const { crosses } = wouldCrossLevelBoundary(previousXp, buffedReward);
+
+          if (crosses && trialStatusRequiresXpCapAtLevelBoundary(trialStatus)) {
+            const { maxReward } = capXpBelowThreshold(previousXp, currentLevel);
+            effectiveReward = maxReward;
+            if (trialStatus === 'idle') {
+              emitCrystalTrialPregenerateForTopic(ref, state.activeCrystals);
+              hasBoundaryPregeneration = true;
+            }
+          }
+        }
+
         const applied = applyCrystalXpDelta(
           state.activeCrystals,
-          { subjectId: session.subjectId, topicId: session.topicId },
-          buffedReward,
+          ref,
+          effectiveReward,
         );
         if (!applied) {
           return;
@@ -328,10 +365,8 @@ export const useProgressionStore = create<ProgressionStore>()(
 
         const difficulty = session.cardDifficultyById?.[rawCardId] ?? 1;
         const isCorrect = rating >= 3;
-        const sessionId = session.sessionId ?? makeStudySessionId({
-          subjectId: session.subjectId,
-          topicId: session.topicId,
-        });
+        const nextResonance = isCorrect ? state.resonancePoints + 1 : state.resonancePoints;
+        const sessionId = session.sessionId ?? makeStudySessionId(ref);
         const attempt: StudySessionAttempt = {
           cardId: cardRefKeyStr,
           rating,
@@ -357,6 +392,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           : null;
 
         set({
+          resonancePoints: nextResonance,
           unlockPoints: applied.levelsGained > 0 ? state.unlockPoints + applied.levelsGained : state.unlockPoints,
           sm2Data: {
             ...state.sm2Data,
@@ -390,7 +426,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           topicId: session.topicId,
           sessionId,
           timeTakenMs,
-          buffedReward,
+          buffedReward: effectiveReward,
           buffMultiplier,
           difficulty,
           isCorrect,
@@ -406,6 +442,21 @@ export const useProgressionStore = create<ProgressionStore>()(
             sessionId,
             isStudyPanelOpen: useUIStore.getState().isStudyPanelOpen,
           });
+        }
+
+        // --- Crystal Trial: XP pregeneration trigger ---
+        if (currentLevel < MAX_CRYSTAL_LEVEL && effectiveReward > 0) {
+          const newXp = previousXp + effectiveReward;
+          const trialStatusAfter = useCrystalTrialStore.getState().getTrialStatus(ref);
+          if (!hasBoundaryPregeneration && hasAddedAnyXp(previousXp, newXp) && trialStatusAfter === 'idle') {
+            // Use level from pre-reward XP (currentLevel); post-set crystal XP can differ
+            appEventBus.emit('crystal:trial-pregenerate', {
+              subjectId: ref.subjectId,
+              topicId: ref.topicId,
+              currentLevel,
+              targetLevel: currentLevel + 1,
+            });
+          }
         }
 
         if (isSessionComplete && sessionMetrics) {
@@ -532,14 +583,49 @@ export const useProgressionStore = create<ProgressionStore>()(
       },
 
       addXP: (ref, xpAmount, options) => {
-        const snapshotCrystals = get().activeCrystals;
-        const xpForEvents = applyCrystalXpDelta(snapshotCrystals, ref, xpAmount);
+        const state = get();
+
+        // --- Crystal Trial: XP gating (mirrors submitStudyResult) ---
+        const crystal = state.activeCrystals.find(
+          (item) => item.subjectId === ref.subjectId && item.topicId === ref.topicId,
+        );
+        let effectiveXpAmount = xpAmount;
+
+        if (crystal) {
+          const previousXp = crystal.xp;
+          const currentLevel = calculateLevelFromXP(previousXp);
+
+          if (currentLevel < MAX_CRYSTAL_LEVEL) {
+            const trialStore = useCrystalTrialStore.getState();
+            const trialStatus = trialStore.getTrialStatus(ref);
+            const { crosses } = wouldCrossLevelBoundary(previousXp, xpAmount);
+
+            if (crosses && trialStatus !== 'idle' && trialStatusRequiresXpCapAtLevelBoundary(trialStatus)) {
+              const { maxReward } = capXpBelowThreshold(previousXp, currentLevel);
+              effectiveXpAmount = maxReward;
+            }
+          }
+
+          const trialStatus = useCrystalTrialStore.getState().getTrialStatus(ref);
+          const newXp = previousXp + effectiveXpAmount;
+          if (currentLevel < MAX_CRYSTAL_LEVEL && hasAddedAnyXp(previousXp, newXp) && trialStatus === 'idle') {
+            appEventBus.emit('crystal:trial-pregenerate', {
+              subjectId: ref.subjectId,
+              topicId: ref.topicId,
+              currentLevel,
+              targetLevel: currentLevel + 1,
+            });
+          }
+        }
+
+        const snapshotCrystals = state.activeCrystals;
+        const xpForEvents = applyCrystalXpDelta(snapshotCrystals, ref, effectiveXpAmount);
         if (!xpForEvents) {
           return 0;
         }
 
         set((current) => {
-          const applied = applyCrystalXpDelta(current.activeCrystals, ref, xpAmount);
+          const applied = applyCrystalXpDelta(current.activeCrystals, ref, effectiveXpAmount);
           if (!applied) {
             return {};
           }
@@ -586,6 +672,7 @@ export const useProgressionStore = create<ProgressionStore>()(
         activeCrystals: state.activeCrystals,
         sm2Data: state.sm2Data,
         unlockPoints: state.unlockPoints,
+        resonancePoints: state.resonancePoints,
         currentSubjectId: state.currentSubjectId,
         currentSession: state.currentSession,
         activeBuffs: state.activeBuffs,
