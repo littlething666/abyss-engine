@@ -9,6 +9,15 @@ import { runExpansionJob } from '@/features/contentGeneration/jobs/runExpansionJ
 import { runTopicGenerationPipeline } from '@/features/contentGeneration/pipelines/runTopicGenerationPipeline';
 import { createSubjectGenerationOrchestrator } from '@/features/subjectGeneration';
 import { resolveModelForSurface } from './llmInferenceSurfaceProviders';
+import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
+import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
+import {
+  resolveCrystalTrialPregenerateLevels,
+  busMayStartTrialPregeneration,
+} from '@/features/crystalTrial';
+import { useProgressionStore } from '@/features/progression/progressionStore';
+import { calculateLevelFromXP } from '@/features/progression/progressionUtils';
+import { pubSubClient } from './pubsub';
 
 const g = globalThis as typeof globalThis & {
   __abyssEventBusHandlersRegistered?: boolean;
@@ -53,6 +62,33 @@ if (!g.__abyssEventBusHandlersRegistered) {
       },
       { subjectId: e.subjectId, topicId: e.topicId, sessionId: e.sessionId },
     );
+
+    // Track cooldown card reviews for Crystal Trial
+    const trialStore = useCrystalTrialStore.getState();
+    const ref = { subjectId: e.subjectId, topicId: e.topicId };
+    if (trialStore.getTrialStatus(ref) === 'cooldown') {
+      trialStore.recordCooldownCardReview(ref);
+
+      // Check if cooldown is now complete — trigger question regeneration for retry
+      if (trialStore.isCooldownComplete(ref, Date.now())) {
+        trialStore.clearCooldown(ref);
+
+        // Trigger question regeneration for the retry
+        const crystal = useProgressionStore.getState().activeCrystals.find(
+          (c) => c.subjectId === ref.subjectId && c.topicId === ref.topicId,
+        );
+        if (crystal) {
+          const currentLevel = calculateLevelFromXP(crystal.xp);
+          void generateTrialQuestions({
+            chat: getChatCompletionsRepositoryForSurface('crystalTrial'),
+            deckRepository,
+            subjectId: ref.subjectId,
+            topicId: ref.topicId,
+            currentLevel,
+          });
+        }
+      }
+    }
   });
 
   appEventBus.on('xp:gained', (e) => {
@@ -108,8 +144,10 @@ if (!g.__abyssEventBusHandlersRegistered) {
       .getState()
       .notifyLevelUp({ subjectId: e.subjectId, topicId: e.topicId }, e.isStudyPanelOpen);
 
+    // UPDATED: Expansion now runs for L1 through L3 (was L2-L3 only).
+    // L1 level-up creates difficulty 2 cards, L2 creates diff 3, L3 creates diff 4.
     const expansionKey = topicRefKey({ subjectId: e.subjectId, topicId: e.topicId });
-    if (e.to >= 2 && e.to <= 3) {
+    if (e.to >= 1 && e.to <= 3) {
       const prev = activeExpansionJobs.get(expansionKey);
       prev?.abort();
       const ac = new AbortController();
@@ -125,6 +163,98 @@ if (!g.__abyssEventBusHandlersRegistered) {
         signal: ac.signal,
       }).finally(() => {
         activeExpansionJobs.delete(expansionKey);
+      });
+    }
+  });
+
+  // Crystal Trial: background pre-generation triggered on positive XP gains
+  appEventBus.on('crystal:trial-pregenerate', (e) => {
+    const trialStore = useCrystalTrialStore.getState();
+    const ref = { subjectId: e.subjectId, topicId: e.topicId };
+
+    const status = trialStore.getTrialStatus(ref);
+    if (!busMayStartTrialPregeneration(status)) {
+      return;
+    }
+
+    trialStore.startPregeneration({
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      targetLevel: e.targetLevel,
+    });
+
+    void generateTrialQuestions({
+      chat: getChatCompletionsRepositoryForSurface('crystalTrial'),
+      deckRepository,
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      currentLevel: e.currentLevel,
+    });
+
+    telemetry.log('crystal_trial_pregeneration_started', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      targetLevel: e.targetLevel,
+    });
+  });
+
+  // Crystal Trial: completed (pass or fail)
+  // NOTE: On pass, the trial is NOT cleared here. It stays in 'passed' status
+  // so the modal can display results. clearTrial() is called from the modal's
+  // handleLevelUp callback after the user clicks the Level Up button and XP
+  // is applied to cross the level boundary.
+  appEventBus.on('crystal:trial-completed', (e) => {
+    telemetry.log(
+      'crystal_trial_completed',
+      {
+        subjectId: e.subjectId,
+        topicId: e.topicId,
+        targetLevel: e.targetLevel,
+        passed: e.passed,
+        score: e.score,
+        trialId: e.trialId,
+      },
+      { subjectId: e.subjectId, topicId: e.topicId },
+    );
+
+    // On failure, trial status is already set to 'cooldown' by submitTrial().
+    // On pass, trial status is already set to 'passed' by submitTrial().
+    // clearTrial for passed trials is handled by the modal's Level Up button.
+  });
+
+  // Card pool change detection: invalidate pre-generated trials
+  pubSubClient.on('cards-updated', (msg) => {
+    if (!msg.subjectId || !msg.topicId) {
+      return;
+    }
+    const ref = { subjectId: msg.subjectId, topicId: msg.topicId };
+    const trialStore = useCrystalTrialStore.getState();
+    const status = trialStore.getTrialStatus(ref);
+    // Topic-scoped: refresh when generating or ready (`awaiting_player`), not during `in_progress`.
+    if (status === 'pregeneration' || status === 'awaiting_player') {
+      // Atomic invalidation + regeneration: look up crystal level and create new trial in one store update
+      const levels = resolveCrystalTrialPregenerateLevels(
+        ref,
+        useProgressionStore.getState().activeCrystals,
+      );
+      if (!levels) {
+        return;
+      }
+      const { currentLevel } = levels;
+
+      trialStore.invalidateAndRegenerate(ref, {
+        subjectId: ref.subjectId,
+        topicId: ref.topicId,
+        targetLevel: levels.targetLevel,
+      });
+
+      // Now trigger the LLM generation (trial already exists in store in pregeneration state)
+      void generateTrialQuestions({
+        chat: getChatCompletionsRepositoryForSurface('crystalTrial'),
+        deckRepository,
+        subjectId: ref.subjectId,
+        topicId: ref.topicId,
+        currentLevel,
       });
     }
   });

@@ -11,6 +11,7 @@ import {
   Minus,
   Network,
   Sparkles,
+  ShieldCheck,
   Zap,
 } from 'lucide-react';
 
@@ -28,8 +29,13 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { appEventBus } from '@/infrastructure/eventBus';
+import { deckRepository } from '@/infrastructure/di';
+import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
 import { useProgressionStore } from '@/features/progression';
 import { uiStore, useUIStore } from '@/store/uiStore';
+import { calculateLevelFromXP, MAX_CRYSTAL_LEVEL } from '@/features/progression/progressionUtils';
+import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
+import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 
 const DEV_XP_BUFF_ID = 'dev_xp_multiplier_5x' as const;
 const DEV_BUFF_SOURCE = 'command_palette' as const;
@@ -185,8 +191,24 @@ export function AbyssCommandPalette({
 }: AbyssCommandPaletteProps) {
   const selectedTopic = useUIStore((s) => s.selectedTopic);
   const devXpBuffActive = useProgressionStore((s) => s.activeBuffs.some(matchesDevXpBuff));
+  const activeCrystals = useProgressionStore((s) => s.activeCrystals);
+  const trialStatus = useCrystalTrialStore((s) => (selectedTopic ? s.getTrialStatus(selectedTopic) : 'idle'));
   const [studyCardFilter, setStudyCardFilter] = useState(createDefaultStudyCardFilter);
   const skipNextCardFilterSaveRef = useRef(true);
+  const selectedCrystal = activeCrystals.find(
+    (crystal) =>
+      selectedTopic?.subjectId === crystal.subjectId &&
+      selectedTopic?.topicId === crystal.topicId,
+  );
+  const selectedCrystalLevel = selectedCrystal ? calculateLevelFromXP(selectedCrystal.xp) : null;
+  const canPrepareTrialReady =
+    Boolean(selectedTopic) &&
+    selectedCrystal != null &&
+    selectedCrystalLevel !== null &&
+    selectedCrystalLevel < MAX_CRYSTAL_LEVEL &&
+    (trialStatus === 'idle' || trialStatus === 'failed' || trialStatus === 'cooldown');
+  const canForceTrialPass =
+    Boolean(selectedTopic) && (trialStatus === 'awaiting_player' || trialStatus === 'in_progress');
 
   useEffect(() => {
     setStudyCardFilter(loadStudyCardFilterFromStorage());
@@ -222,6 +244,61 @@ export function AbyssCommandPalette({
     Boolean(selectedTopic) &&
     (enabledBaseTypes.length > 0 || enabledMiniGameTypes.length > 0) &&
     Boolean(onStartStudyWithCardTypes);
+
+  const handlePrepareTrialReady = () => {
+    if (!selectedTopic) {
+      return;
+    }
+    if (!selectedCrystal || selectedCrystalLevel == null || selectedCrystalLevel >= MAX_CRYSTAL_LEVEL) {
+      return;
+    }
+    const trialStore = useCrystalTrialStore.getState();
+    const currentTrialStatus = trialStore.getTrialStatus(selectedTopic);
+
+    if (currentTrialStatus === 'cooldown') {
+      trialStore.clearCooldown(selectedTopic);
+    }
+
+    if (currentTrialStatus === 'idle') {
+      appEventBus.emit('crystal:trial-pregenerate', {
+        subjectId: selectedTopic.subjectId,
+        topicId: selectedTopic.topicId,
+        currentLevel: selectedCrystalLevel,
+        targetLevel: selectedCrystalLevel + 1,
+      });
+      onOpenChange(false);
+      return;
+    }
+
+    if (currentTrialStatus === 'failed' || currentTrialStatus === 'cooldown') {
+      trialStore.invalidateAndRegenerate(selectedTopic, {
+        subjectId: selectedTopic.subjectId,
+        topicId: selectedTopic.topicId,
+        targetLevel: selectedCrystalLevel + 1,
+      });
+      void generateTrialQuestions({
+        chat: getChatCompletionsRepositoryForSurface('crystalTrial'),
+        deckRepository,
+        subjectId: selectedTopic.subjectId,
+        topicId: selectedTopic.topicId,
+        currentLevel: selectedCrystalLevel,
+      });
+      onOpenChange(false);
+    }
+  };
+
+  const handleForceTrialPass = () => {
+    if (!selectedTopic || !canForceTrialPass) {
+      return;
+    }
+
+    const result = useCrystalTrialStore.getState().forceCompleteWithCorrectAnswers(selectedTopic);
+    if (!result) {
+      return;
+    }
+    uiStore.getState().openCrystalTrial();
+    onOpenChange(false);
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -438,6 +515,22 @@ export function AbyssCommandPalette({
           ) : null}
           {isDebugMode ? (
             <CommandGroup heading="Dev">
+              <CommandItem
+                value="prepare trial ready selected crystal crystal trial"
+                disabled={!canPrepareTrialReady}
+                onSelect={handlePrepareTrialReady}
+              >
+                <ShieldCheck className="size-4" />
+                <span>Prepare selected crystal trial for challenge</span>
+              </CommandItem>
+              <CommandItem
+                value="force complete selected crystal trial correct answers debug"
+                disabled={!canForceTrialPass}
+                onSelect={handleForceTrialPass}
+              >
+                <Check className="size-4 text-primary" />
+                <span>Force complete selected crystal trial (correct answers)</span>
+              </CommandItem>
               <CommandItem
                 value="add xp crystal dev"
                 disabled={!canDevAddXp}

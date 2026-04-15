@@ -9,7 +9,8 @@ export type ContentGenerationJobKind =
   | 'topic-study-cards'
   | 'topic-mini-games'
   | 'topic-expansion-cards'
-  | 'subject-graph';
+  | 'subject-graph'
+  | 'crystal-trial';
 
 export type ContentGenerationJobStatus =
   | 'pending'

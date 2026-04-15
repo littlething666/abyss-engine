@@ -24,16 +24,23 @@ export async function runExpansionJob(
 ): Promise<{ ok: boolean; jobId?: string; error?: string; skipped?: boolean }> {
   const { chat, deckRepository, writer, subjectId, topicId, nextLevel, enableThinking, signal, retryOf } = params;
 
-  if (nextLevel < 2 || nextLevel > 3) {
+  // UPDATED: was (nextLevel < 2 || nextLevel > 3), now L1 through L3.
+  // L1 level-up creates difficulty 2, L2 creates diff 3, L3 creates diff 4.
+  if (nextLevel < 1 || nextLevel > 3) {
     return { ok: true, skipped: true };
   }
 
-  const difficulty = nextLevel;
+  // Difficulty of cards to generate = nextLevel + 1
+  // (L1 -> diff 2, L2 -> diff 3, L3 -> diff 4)
+  const difficulty = nextLevel + 1;
 
   const details = await deckRepository.getTopicDetails(subjectId, topicId);
-  const bucket = details.coreQuestionsByDifficulty?.[difficulty as 1 | 2 | 3];
+  // For difficulty 4, coreQuestionsByDifficulty only has keys 1-3.
+  // Fall back to bucket 3 for difficulty 4.
+  const bucketKey = Math.min(difficulty, 3) as 1 | 2 | 3;
+  const bucket = details.coreQuestionsByDifficulty?.[bucketKey];
   if (!bucket?.length) {
-    return { ok: false, error: `No syllabus questions for difficulty ${difficulty}` };
+    return { ok: false, error: `No syllabus questions for difficulty bucket ${bucketKey}` };
   }
 
   const manifest = await deckRepository.getManifest();

@@ -69,6 +69,22 @@ export type AppEventMap = {
     subjectId: string;
     checklist: StudyChecklist;
   };
+  /** Fired when positive crystal XP gains should trigger background trial pre-generation. */
+  'crystal:trial-pregenerate': {
+    subjectId: string;
+    topicId: string;
+    currentLevel: number;
+    targetLevel: number;
+  };
+  /** Fired when a Crystal Trial is submitted and evaluated. */
+  'crystal:trial-completed': {
+    subjectId: string;
+    topicId: string;
+    targetLevel: number;
+    passed: boolean;
+    score: number;
+    trialId: string;
+  };
 };
 
 const PREFIX = 'abyss-';

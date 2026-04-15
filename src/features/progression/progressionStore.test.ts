@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { cardRefKey } from '@/lib/topicRef';
+import { cardRefKey, topicRefKey } from '@/lib/topicRef';
 import { Card, ActiveCrystal } from '../../types';
 import { SubjectGraph } from '../../types/core';
+import type { CrystalTrial, CrystalTrialStatus } from '@/types/crystalTrial';
+import { appEventBus } from '@/infrastructure/eventBus';
 import { ATTUNEMENT_SUBMISSION_COOLDOWN_MS, MAX_UNDO_DEPTH, useProgressionStore } from '.';
 import { BuffEngine } from './buffs/buffEngine';
 import { AttunementRitualPayload } from '../../types/progression';
 import { undoManager } from './undoManager';
+import { PASS_THRESHOLD } from '../crystalTrial/crystalTrialConfig';
+import { useCrystalTrialStore } from '../crystalTrial/crystalTrialStore';
 
 const DS = 'data-science' as const;
 
@@ -75,8 +79,43 @@ function resetStore() {
     currentSession: null,
     unlockPoints: 0,
     lastRitualSubmittedAt: null,
+    resonancePoints: 0,
+  });
+  useCrystalTrialStore.setState({
+    trials: {},
+    cooldownCardsReviewed: {},
+    cooldownStartedAt: {},
   });
 }
+
+function makeTrialWithStatus(
+  topicId: string,
+  status: CrystalTrial['status'],
+): CrystalTrial {
+  return {
+    trialId: `trial-${DS}-${topicId}-L1-test`,
+    subjectId: DS,
+    topicId,
+    targetLevel: 1,
+    questions: [],
+    status,
+    answers: {},
+    score: status === 'passed' ? PASS_THRESHOLD : null,
+    passThreshold: PASS_THRESHOLD,
+    createdAt: Date.now(),
+    completedAt: status === 'passed' ? Date.now() : null,
+    cardPoolHash: null,
+  };
+}
+
+const CAP_STATUSES_FOR_MATRIX: CrystalTrialStatus[] = [
+  'idle',
+  'pregeneration',
+  'awaiting_player',
+  'in_progress',
+  'failed',
+  'cooldown',
+];
 
 function seedLastRitualTimestamp(timestamp: number) {
   useProgressionStore.setState({ lastRitualSubmittedAt: timestamp });
@@ -153,18 +192,157 @@ describe('progressionStore card-only canonical API', () => {
   });
 
   it('adds an unlock point when a study result levels up a crystal', () => {
+    const ref = topicRef('topic-a');
+    const key = topicRefKey(ref);
+    useCrystalTrialStore.setState({
+      trials: { [key]: makeTrialWithStatus('topic-a', 'passed') },
+    });
+
     const cards = [createCard('a-1')];
     useProgressionStore.setState({
       activeCrystals: [crystal('topic-a', 95)],
       unlockPoints: 0,
     });
 
-    useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
+    useProgressionStore.getState().startTopicStudySession(ref, cards);
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
 
     const updatedState = useProgressionStore.getState();
     expect(updatedState.activeCrystals[0]).toMatchObject({ xp: 110 });
     expect(updatedState.unlockPoints).toBe(1);
+  });
+
+  it('caps XP at level boundary during awaiting_player and still grants Resonance on correct', () => {
+    const ref = topicRef('topic-a');
+    const key = topicRefKey(ref);
+    useCrystalTrialStore.setState({
+      trials: { [key]: makeTrialWithStatus('topic-a', 'awaiting_player') },
+    });
+
+    const cards = [createCard('a-1')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a', 95)],
+      unlockPoints: 0,
+      resonancePoints: 0,
+    });
+
+    useProgressionStore.getState().startTopicStudySession(ref, cards);
+    useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
+
+    expect(useProgressionStore.getState().activeCrystals[0]).toMatchObject({ xp: 99 });
+    expect(useProgressionStore.getState().resonancePoints).toBe(1);
+  });
+
+  it.each(CAP_STATUSES_FOR_MATRIX)(
+    'caps XP at level boundary when trial status is %s',
+    (status) => {
+      const ref = topicRef('topic-a');
+      const key = topicRefKey(ref);
+      if (status === 'idle') {
+        useCrystalTrialStore.setState({ trials: {} });
+      } else {
+        useCrystalTrialStore.setState({
+          trials: { [key]: makeTrialWithStatus('topic-a', status) },
+        });
+      }
+
+      const cards = [createCard('a-1')];
+      useProgressionStore.setState({
+        activeCrystals: [crystal('topic-a', 95)],
+        unlockPoints: 0,
+        resonancePoints: 0,
+      });
+
+      useProgressionStore.getState().startTopicStudySession(ref, cards);
+      useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
+
+      expect(useProgressionStore.getState().activeCrystals[0]).toMatchObject({ xp: 99 });
+    },
+  );
+
+  it('does not emit crystal:trial-pregenerate when XP is capped at boundary while trial is failed', () => {
+    const ref = topicRef('topic-a');
+    const key = topicRefKey(ref);
+    useCrystalTrialStore.setState({
+      trials: { [key]: makeTrialWithStatus('topic-a', 'failed') },
+    });
+
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    const cards = [createCard('a-1')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a', 95)],
+      unlockPoints: 0,
+    });
+
+    useProgressionStore.getState().startTopicStudySession(ref, cards);
+    useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
+
+    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal:trial-pregenerate');
+    expect(pregenCalls).toHaveLength(0);
+    emitSpy.mockRestore();
+  });
+
+  it('emits crystal:trial-pregenerate on positive XP gain during submitStudyResult', () => {
+    const ref = topicRef('topic-a');
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+    const cards = [createCard('a-1')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a', 10)],
+      unlockPoints: 0,
+    });
+
+    useProgressionStore.getState().startTopicStudySession(ref, cards);
+    useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
+
+    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal:trial-pregenerate');
+    expect(pregenCalls).toHaveLength(1);
+    expect(pregenCalls[0]?.[1]).toMatchObject({
+      subjectId: DS,
+      topicId: 'topic-a',
+      currentLevel: 0,
+      targetLevel: 1,
+    });
+    emitSpy.mockRestore();
+  });
+
+  it('does not emit crystal:trial-pregenerate on addXP when trial is failed', () => {
+    const ref = topicRef('topic-a');
+    const key = topicRefKey(ref);
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+    useCrystalTrialStore.setState({
+      trials: { [key]: makeTrialWithStatus('topic-a', 'failed') },
+    });
+
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a', 10)],
+      unlockPoints: 0,
+    });
+
+    useProgressionStore.getState().addXP(ref, 10);
+
+    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal:trial-pregenerate');
+    expect(pregenCalls).toHaveLength(0);
+    emitSpy.mockRestore();
+  });
+
+  it('restores resonancePoints on undo after a correct review', () => {
+    const ref = topicRef('topic-a');
+    const key = topicRefKey(ref);
+    useCrystalTrialStore.setState({
+      trials: { [key]: makeTrialWithStatus('topic-a', 'awaiting_player') },
+    });
+    const cards = [createCard('a-1')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a', 50)],
+      unlockPoints: 0,
+      resonancePoints: 2,
+    });
+    useProgressionStore.getState().startTopicStudySession(ref, cards);
+    useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
+    expect(useProgressionStore.getState().resonancePoints).toBe(3);
+    useProgressionStore.getState().undoLastStudyResult();
+    expect(useProgressionStore.getState().resonancePoints).toBe(2);
   });
 
   it('uses graph prerequisites and unlock points when unlocking topics', () => {
@@ -228,6 +406,28 @@ describe('progressionStore card-only canonical API', () => {
     const nextXp = useProgressionStore.getState().addXP(topicRef('topic-a'), -80);
     expect(nextXp).toBe(0);
     expect(useProgressionStore.getState().activeCrystals[0]?.xp).toBe(0);
+  });
+
+  it('emits crystal:trial-pregenerate on positive XP gain during addXP', () => {
+    const ref = topicRef('topic-a');
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a', 10)],
+      unlockPoints: 0,
+    });
+
+    useProgressionStore.getState().addXP(ref, 10);
+
+    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal:trial-pregenerate');
+    expect(pregenCalls).toHaveLength(1);
+    expect(pregenCalls[0]?.[1]).toMatchObject({
+      subjectId: DS,
+      topicId: 'topic-a',
+      currentLevel: 0,
+      targetLevel: 1,
+    });
+    emitSpy.mockRestore();
   });
 
   it('addXP grants unlock points when crossing a level boundary', () => {
@@ -351,7 +551,7 @@ describe('progressionStore card-only canonical API', () => {
     useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
 
-    const persisted = window.localStorage.getItem('abyss-progression-v2');
+    const persisted = window.localStorage.getItem('abyss-progression-v3');
     expect(persisted).not.toBeNull();
     const storedState = persisted ? JSON.parse(persisted) : null;
     expect(storedState?.state?.currentSession?.undoStack).toBeUndefined();
@@ -436,13 +636,19 @@ describe('progressionStore card-only canonical API', () => {
 
   it('emits crystal:leveled when XP crosses a level boundary', () => {
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    const ref = topicRef('topic-a');
+    const key = topicRefKey(ref);
+    useCrystalTrialStore.setState({
+      trials: { [key]: makeTrialWithStatus('topic-a', 'passed') },
+    });
+
     const cards = [createCard('a-1')];
     useProgressionStore.setState({
       activeCrystals: [crystal('topic-a', 99)],
       unlockPoints: 3,
     });
 
-    useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
+    useProgressionStore.getState().startTopicStudySession(ref, cards);
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
 
     const levelUpEvent = dispatchSpy.mock.calls.find(

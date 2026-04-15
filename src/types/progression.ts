@@ -106,6 +106,8 @@ export interface StudyUndoSnapshot {
   activeCrystals: ActiveCrystal[];
   activeBuffs: Buff[];
   unlockPoints: number;
+  /** Account-wide earn-only currency snapshot for undo/redo. */
+  resonancePoints: number;
   currentSession: StudySessionCore;
 }
 
@@ -118,6 +120,8 @@ export interface ProgressionState {
     nextReview: number;
   }>;
   unlockPoints: number;
+  /** Global earn-only meta-currency (v1: no spend). */
+  resonancePoints: number;
   currentSubjectId: string | null;
   currentSession: StudySession | null;
   activeBuffs: Buff[];
