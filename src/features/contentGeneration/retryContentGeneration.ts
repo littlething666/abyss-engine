@@ -15,6 +15,7 @@ import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProv
 import { runTopicGenerationPipeline } from './pipelines/runTopicGenerationPipeline';
 import { runExpansionJob } from './jobs/runExpansionJob';
 import { createSubjectGenerationOrchestrator } from '@/features/subjectGeneration';
+import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
 import { toast } from 'sonner';
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,19 @@ function getNextLevel(job: ContentGenerationJob): number | null {
   // Fallback: parse from label for backwards-compat with jobs created before metadata
   const match = job.label.match(/^Expansion L(\d+)/);
   return match ? Number(match[1]) : null;
+}
+
+function getCrystalTrialCurrentLevel(job: ContentGenerationJob): number | null {
+  const fromMeta = job.metadata?.currentLevel;
+  if (typeof fromMeta === 'number' && Number.isInteger(fromMeta)) {
+    return fromMeta;
+  }
+
+  const match = job.label.match(/Crystal Trial L(\d+)/);
+  if (!match) return null;
+
+  const level = Number(match[1]) - 1;
+  return Number.isInteger(level) ? level : null;
 }
 
 function isRetryable(status: ContentGenerationJob['status']): boolean {
@@ -90,6 +104,25 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         forceRegenerate: true,
         stage,
         retryOf: job.id,
+      });
+      return;
+    }
+
+    // ── Crystal Trial ───────────────────────────────────────────────
+    if (job.kind === 'crystal-trial' && topicId) {
+      const trialCurrentLevel = getCrystalTrialCurrentLevel(job);
+      if (trialCurrentLevel === null) {
+        toast.error(`Cannot retry crystal-trial: unable to determine current level from job "${job.label}"`);
+        return;
+      }
+
+      toast(`Retrying ${job.label}…`);
+      await generateTrialQuestions({
+        chat: getChatCompletionsRepositoryForSurface('crystalTrial'),
+        deckRepository,
+        subjectId,
+        topicId,
+        currentLevel: trialCurrentLevel,
       });
       return;
     }

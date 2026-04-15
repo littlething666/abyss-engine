@@ -1,57 +1,56 @@
 import * as THREE from 'three/webgpu';
 
-/** level, morph, seed, color×3, selectCeremony×2 = 8 floats per instance */
-export const CRYSTAL_INSTANCE_FLOAT_COUNT = 8;
+/** Floats per instance: level, morph, seed, color×3, selectCeremony×2, trialReady */
+export const CRYSTAL_INSTANCE_STRIDE = 9;
+
+export const CRYSTAL_INSTANCE_OFFSET_LEVEL = 0;
+export const CRYSTAL_INSTANCE_OFFSET_MORPH = 1;
+export const CRYSTAL_INSTANCE_OFFSET_SEED = 2;
+/** 3 floats (rgb) */
+export const CRYSTAL_INSTANCE_OFFSET_COLOR = 3;
+/** Packed vec2: x = selected (0|1), y = ceremonyPhase (0–1) */
+export const CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY = 6;
+/** 0 = normal, 1 = trial ready (drives sinusoidal pulse VFX) */
+export const CRYSTAL_INSTANCE_OFFSET_TRIAL_READY = 8;
+
+export const CRYSTAL_INSTANCE_FLOAT_COUNT = CRYSTAL_INSTANCE_STRIDE;
 
 export const CRYSTAL_MAX_INSTANCES = 64;
 
 export interface CrystalInstanceArrays {
-  instanceLevel: Float32Array;
-  instanceMorphProgress: Float32Array;
-  instanceSubjectSeed: Float32Array;
-  instanceColor: Float32Array;
-  /** Packed vec2: x = selected (0|1), y = ceremonyPhase (0–1) */
-  instanceSelectCeremony: Float32Array;
+  /** Packed rows: `maxInstances * CRYSTAL_INSTANCE_STRIDE` floats */
+  instanceData: Float32Array;
 }
 
 export interface CrystalInstancedAttributes {
-  instanceLevel: THREE.InstancedBufferAttribute;
-  instanceMorphProgress: THREE.InstancedBufferAttribute;
-  instanceSubjectSeed: THREE.InstancedBufferAttribute;
-  instanceColor: THREE.InstancedBufferAttribute;
-  /** Packed vec2: x = selected (0|1), y = ceremonyPhase (0–1) */
-  instanceSelectCeremony: THREE.InstancedBufferAttribute;
+  interleaved: THREE.InstancedInterleavedBuffer;
+  instanceLevel: THREE.InterleavedBufferAttribute;
+  instanceMorphProgress: THREE.InterleavedBufferAttribute;
+  instanceSubjectSeed: THREE.InterleavedBufferAttribute;
+  instanceColor: THREE.InterleavedBufferAttribute;
+  instanceSelectCeremony: THREE.InterleavedBufferAttribute;
+  instanceTrialReady: THREE.InterleavedBufferAttribute;
 }
 
 export function createCrystalInstancedAttributes(
   maxInstances: number = CRYSTAL_MAX_INSTANCES,
 ): { arrays: CrystalInstanceArrays; attributes: CrystalInstancedAttributes } {
-  const instanceLevel = new Float32Array(maxInstances);
-  const instanceMorphProgress = new Float32Array(maxInstances);
-  const instanceSubjectSeed = new Float32Array(maxInstances);
-  const instanceColor = new Float32Array(maxInstances * 3);
-  const instanceSelectCeremony = new Float32Array(maxInstances * 2);
+  const instanceData = new Float32Array(maxInstances * CRYSTAL_INSTANCE_STRIDE);
+  const interleaved = new THREE.InstancedInterleavedBuffer(instanceData, CRYSTAL_INSTANCE_STRIDE, 1);
+  interleaved.setUsage(THREE.DynamicDrawUsage);
 
   const attributes: CrystalInstancedAttributes = {
-    instanceLevel: new THREE.InstancedBufferAttribute(instanceLevel, 1),
-    instanceMorphProgress: new THREE.InstancedBufferAttribute(instanceMorphProgress, 1),
-    instanceSubjectSeed: new THREE.InstancedBufferAttribute(instanceSubjectSeed, 1),
-    instanceColor: new THREE.InstancedBufferAttribute(instanceColor, 3),
-    instanceSelectCeremony: new THREE.InstancedBufferAttribute(instanceSelectCeremony, 2),
+    interleaved,
+    instanceLevel: new THREE.InterleavedBufferAttribute(interleaved, 1, CRYSTAL_INSTANCE_OFFSET_LEVEL),
+    instanceMorphProgress: new THREE.InterleavedBufferAttribute(interleaved, 1, CRYSTAL_INSTANCE_OFFSET_MORPH),
+    instanceSubjectSeed: new THREE.InterleavedBufferAttribute(interleaved, 1, CRYSTAL_INSTANCE_OFFSET_SEED),
+    instanceColor: new THREE.InterleavedBufferAttribute(interleaved, 3, CRYSTAL_INSTANCE_OFFSET_COLOR),
+    instanceSelectCeremony: new THREE.InterleavedBufferAttribute(interleaved, 2, CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY),
+    instanceTrialReady: new THREE.InterleavedBufferAttribute(interleaved, 1, CRYSTAL_INSTANCE_OFFSET_TRIAL_READY),
   };
 
-  for (const attr of Object.values(attributes)) {
-    attr.setUsage(THREE.DynamicDrawUsage);
-  }
-
   return {
-    arrays: {
-      instanceLevel,
-      instanceMorphProgress,
-      instanceSubjectSeed,
-      instanceColor,
-      instanceSelectCeremony,
-    },
+    arrays: { instanceData },
     attributes,
   };
 }

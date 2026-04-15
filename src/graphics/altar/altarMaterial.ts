@@ -68,7 +68,7 @@ export function createAltarMaterialBundle(
 ): AltarMaterialBundle {
   const hueNode = cyclicHue(uniforms.cycleSpeed);
   const glowColor = hslToRgb(hueNode, float(0.82), float(0.52));
-  const pulse = float(1).add(time.mul(1.25).sin().mul(uniforms.pulseAmplitude));
+  const pulse = float(0.8).add(time.mul(1.05).sin().mul(uniforms.pulseAmplitude));
 
   const viewDir = cameraPosition.sub(positionWorld).normalize();
   const fresnelRaw = float(1).sub(normalWorld.dot(viewDir).abs()).pow(float(2.2));

@@ -89,6 +89,7 @@ export function captureUndoSnapshot(state: ProgressionState): StudyUndoSnapshot 
     activeCrystals: cloneDeep(state.activeCrystals),
     activeBuffs: cloneDeep(state.activeBuffs),
     unlockPoints: state.unlockPoints,
+    resonancePoints: state.resonancePoints,
     currentSession: coreSession,
   };
 }
@@ -108,6 +109,7 @@ export function restoreUndoSnapshot(state: ProgressionState, snapshot: StudyUndo
     activeCrystals: snapshot.activeCrystals,
     activeBuffs: restoredActiveBuffs,
     unlockPoints: snapshot.unlockPoints,
+    resonancePoints: snapshot.resonancePoints,
     currentSession: snapshot.currentSession,
   };
 }
@@ -215,6 +217,31 @@ export interface CrystalLevelProgressToNext {
   isMax: boolean;
   /** Total XP after clamping negatives to 0 (same basis as level math). */
   totalXp: number;
+}
+
+/** XP required to be at the capped value for the current crystal level band (e.g. 99, 199, ...). */
+export function isXpMaxedForCurrentLevel(xp: number): boolean {
+  const safeXp = Math.max(0, xp);
+  const level = calculateLevelFromXP(safeXp);
+
+  if (level >= MAX_CRYSTAL_LEVEL) {
+    return false;
+  }
+
+  return safeXp >= level * CRYSTAL_XP_PER_LEVEL + (CRYSTAL_XP_PER_LEVEL - 1);
+}
+
+/** XP left to reach the next band boundary (e.g. from 50 → 50, from 99 → 1). */
+export function getXpToNextBandThreshold(xp: number): number {
+  const safeXp = Math.max(0, xp);
+  const level = calculateLevelFromXP(safeXp);
+
+  if (level >= MAX_CRYSTAL_LEVEL) {
+    return 0;
+  }
+
+  const nextThreshold = (level + 1) * CRYSTAL_XP_PER_LEVEL;
+  return Math.max(0, nextThreshold - safeXp);
 }
 
 /**

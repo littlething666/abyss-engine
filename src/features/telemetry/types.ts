@@ -16,6 +16,8 @@ export const TelemetryEventTypeSchema = z.enum([
   'study_panel_tab_switched',
   'modal_opened',
   'performance_frame_time',
+  'crystal_trial_pregeneration_started',
+  'crystal_trial_completed',
 ]);
 
 export type TelemetryEventType = z.infer<typeof TelemetryEventTypeSchema>;
@@ -105,6 +107,25 @@ export const LevelUpPayloadSchema = z.object({
 });
 export type LevelUpPayload = z.infer<typeof LevelUpPayloadSchema>;
 
+export const CrystalTrialPregenerationStartedPayloadSchema = z.object({
+  subjectId: z.string(),
+  topicId: z.string(),
+  targetLevel: z.number().nonnegative(),
+});
+export type CrystalTrialPregenerationStartedPayload = z.infer<
+  typeof CrystalTrialPregenerationStartedPayloadSchema
+>;
+
+export const CrystalTrialCompletedPayloadSchema = z.object({
+  subjectId: z.string(),
+  topicId: z.string(),
+  targetLevel: z.number().nonnegative(),
+  passed: z.boolean(),
+  score: z.number().min(0).max(1),
+  trialId: z.string(),
+});
+export type CrystalTrialCompletedPayload = z.infer<typeof CrystalTrialCompletedPayloadSchema>;
+
 export const StudyPanelTabSwitchedPayloadSchema = z.object({
   topicId: z.string().nullable(),
   sessionId: z.string().nullable(),
@@ -155,6 +176,8 @@ export const TelemetryEventMap: Record<TelemetryEventType, z.ZodSchema<unknown>>
   crystal_unlocked: CrystalUnlockedPayloadSchema,
   xp_gained: XpGainedPayloadSchema,
   level_up: LevelUpPayloadSchema,
+  crystal_trial_pregeneration_started: CrystalTrialPregenerationStartedPayloadSchema,
+  crystal_trial_completed: CrystalTrialCompletedPayloadSchema,
   study_panel_tab_switched: StudyPanelTabSwitchedPayloadSchema,
   modal_opened: ModalOpenedPayloadSchema,
   performance_frame_time: PerformanceFrameTimePayloadSchema,

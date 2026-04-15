@@ -1,0 +1,43 @@
+diff --git a/node_modules/three/build/three.webgpu.js b/node_modules/three/build/three.webgpu.js
+--- a/node_modules/three/build/three.webgpu.js
++++ b/node_modules/three/build/three.webgpu.js
+@@ -78677,12 +78677,28 @@
+ 
+ 		const renderer = this.renderer;
+ 		const canvasTarget = renderer.getCanvasTarget();
+-		const canvasData = this.get( canvasTarget );
++		let canvasData = this.get( canvasTarget );
+ 		const samples = renderer.currentSamples;
++
++		// Align internal drawing-buffer size with the canvas bitmap. If the backing store was resized
++		// without a matching renderer.setSize/setDrawingBufferSize (e.g. R3F resize timing), color
++		// attachments from getCurrentTexture() and depth from getDepthBuffer() can disagree.
++		const dom = canvasTarget.domElement;
++		let drawingBufferSize = this.getDrawingBufferSize();
++		if ( dom.width !== drawingBufferSize.x || dom.height !== drawingBufferSize.y ) {
++
++			const pixelRatio = renderer.getPixelRatio();
++			renderer.setDrawingBufferSize( dom.width / pixelRatio, dom.height / pixelRatio, pixelRatio );
++			canvasData = this.get( canvasTarget );
++			drawingBufferSize = this.getDrawingBufferSize();
+ 
++		}
++
+ 		let descriptor = canvasData.descriptor;
+ 
+-		if ( descriptor === undefined || canvasData.samples !== samples ) {
++		if ( descriptor === undefined || canvasData.samples !== samples ||
++			canvasData.drawingBufferWidth !== drawingBufferSize.x ||
++			canvasData.drawingBufferHeight !== drawingBufferSize.y ) {
+ 
+ 			descriptor = {
+ 				colorAttachments: [ {
+@@ -78712,6 +78728,8 @@
+ 
+ 			canvasData.descriptor = descriptor;
+ 			canvasData.samples = samples;
++			canvasData.drawingBufferWidth = drawingBufferSize.x;
++			canvasData.drawingBufferHeight = drawingBufferSize.y;
+ 
+ 		}
+ 

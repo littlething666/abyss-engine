@@ -4,9 +4,11 @@ import type { TopicRef } from '@/types/core';
 import { ActiveCrystal, SubjectGraph } from '../../types';
 import {
   applyCrystalXpDelta,
+  getXpToNextBandThreshold,
   getCrystalLevelProgressToNext,
   getTopicUnlockStatus,
   getTopicsByTier,
+  isXpMaxedForCurrentLevel,
   getVisibleTopicIds,
 } from './progressionUtils';
 
@@ -45,6 +47,23 @@ describe('progressionUtils', () => {
         isMax,
         totalXp,
       });
+    });
+  });
+
+  describe('XP band max helpers', () => {
+    it.each([
+      { xp: -10, isMaxed: false, nextThresholdDelta: 100 },
+      { xp: 0, isMaxed: false, nextThresholdDelta: 100 },
+      { xp: 50, isMaxed: false, nextThresholdDelta: 50 },
+      { xp: 99, isMaxed: true, nextThresholdDelta: 1 },
+      { xp: 100, isMaxed: false, nextThresholdDelta: 100 },
+      { xp: 150, isMaxed: false, nextThresholdDelta: 50 },
+      { xp: 199, isMaxed: true, nextThresholdDelta: 1 },
+      { xp: 399, isMaxed: true, nextThresholdDelta: 1 },
+      { xp: 500, isMaxed: false, nextThresholdDelta: 0 },
+    ] as const)('xp=$xp → isXpMaxed=$isMaxed next= $nextThresholdDelta', ({ xp, isMaxed, nextThresholdDelta }) => {
+      expect(isXpMaxedForCurrentLevel(xp)).toBe(isMaxed);
+      expect(getXpToNextBandThreshold(xp)).toBe(nextThresholdDelta);
     });
   });
 
