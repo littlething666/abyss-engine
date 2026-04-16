@@ -381,7 +381,7 @@ export function StudyPanelModal({
               <RatingFeedbackCanvas ref={feedbackCanvasRef} containerRef={studyCardContainerRef} />
               {model.isMiniGame && model.renderedCard.miniGame ? (
                 <MiniGameView
-                  key={`${currentSession?.currentCardId ?? 'none'}-${currentSession?.attempts?.length ?? 0}`}
+                  key={currentSession?.currentCardId ?? 'none'}
                   content={model.renderedCard.miniGame as MiniGameContent}
                   isRevealed={isRevealed}
                   onSubmit={handleMiniGameComplete}

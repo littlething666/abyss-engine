@@ -375,7 +375,9 @@ export const useProgressionStore = create<ProgressionStore>()(
         const nextAttempts = [...(session.attempts ?? []), attempt];
         const buffsAfterUsage = BuffEngine.get().consumeForEvent(activeBuffs, 'card_reviewed');
         const nextAttemptsCount = nextAttempts.length;
-        const isSessionComplete = nextAttemptsCount >= session.queueCardIds.length;
+        // Compare against totalCards (original queue size set at session start)
+        // instead of the shrinking queueCardIds to avoid premature completion.
+        const isSessionComplete = nextAttemptsCount >= session.totalCards;
         const nextBuffs = isSessionComplete
           ? BuffEngine.get().consumeForEvent(buffsAfterUsage, 'session_ended')
           : buffsAfterUsage;
@@ -476,7 +478,8 @@ export const useProgressionStore = create<ProgressionStore>()(
             ...session,
             queueCardIds: nextQueue,
             currentCardId: nextCard,
-            totalCards: Math.max(session.totalCards - 1, 0),
+            // Keep totalCards unchanged — it represents the original queue
+            // size used for session completion detection.
             ...(nextQueue.length > 0 ? { lastCardStart: now } : {}),
           },
         });
