@@ -24,20 +24,22 @@ function MermaidAssistantRawCollapsible({ assistantText }: { assistantText: stri
     <UiCard className="w-full">
       <CardContent>
         <Collapsible defaultOpen={false} className="group rounded-md data-[state=open]:bg-muted">
-          <CollapsibleTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-auto min-h-10 w-full justify-start gap-2 px-2 py-2 text-left font-normal"
-              data-testid="study-card-llm-mermaid-streaming-output-toggle"
-            >
-              <span>Show raw model output</span>
-              <ChevronDown
-                className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180"
-                aria-hidden
-              />
-            </Button>
-          </CollapsibleTrigger>
+          <CollapsibleTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto min-h-10 w-full justify-start gap-2 px-2 py-2 text-left font-normal"
+                data-testid="study-card-llm-mermaid-streaming-output-toggle"
+              >
+                <span>Show raw model output</span>
+                <ChevronDown
+                  className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180"
+                  aria-hidden
+                />
+              </Button>
+            }
+          />
           <CollapsibleContent className="flex flex-col items-stretch gap-2 p-2.5 pt-0 text-sm">
             <CopyableLlmTextBlock
               copyText={assistantText}

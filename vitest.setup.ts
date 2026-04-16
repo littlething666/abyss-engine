@@ -58,16 +58,31 @@ global.cancelAnimationFrame = (id: number) => {
   clearTimeout(id);
 };
 
-// Mock ResizeObserver
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
+// Mock ResizeObserver / IntersectionObserver as real constructors (`new X(...)`),
+// not `vi.fn()` factories — Vitest 4 + Floating UI require constructible globals.
+class ResizeObserverMock {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+  constructor(_callback: ResizeObserverCallback) {}
+}
 
-// Mock IntersectionObserver
-global.IntersectionObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
+globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
+
+class IntersectionObserverMock {
+  readonly root: Element | Document | null = null;
+  readonly rootMargin = '';
+  readonly scrollMargin = '';
+  readonly thresholds: ReadonlyArray<number> = [];
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+  takeRecords = vi.fn().mockReturnValue([]);
+  constructor(
+    _callback: IntersectionObserverCallback,
+    _options?: IntersectionObserverInit,
+  ) {}
+}
+
+globalThis.IntersectionObserver =
+  IntersectionObserverMock as typeof IntersectionObserver;

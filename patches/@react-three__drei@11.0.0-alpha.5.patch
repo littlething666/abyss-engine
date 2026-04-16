@@ -1,7 +1,7 @@
-diff --git a/node_modules/@react-three/drei/webgpu/index.mjs b/node_modules/@react-three/drei/webgpu/index.mjs
+diff --git a/webgpu/index.mjs b/webgpu/index.mjs
 index 265237b344dcfbec0670881af532f2e8af6730ea..bd50600b3946c657a88227cfb6ce2ce039034519 100644
---- a/node_modules/@react-three/drei/webgpu/index.mjs
-+++ b/node_modules/@react-three/drei/webgpu/index.mjs
+--- a/webgpu/index.mjs
++++ b/webgpu/index.mjs
 @@ -2,7 +2,7 @@ import * as React from 'react';
  import { forwardRef, useImperativeHandle, useMemo, useEffect, useCallback, useRef, useLayoutEffect, useState, Fragment, createContext, useContext } from 'react';
  import { useThree, useFrame, extend, createPortal, applyProps, useInstanceHandle, context as context$a, useLoader, addEffect, addAfterEffect } from '@react-three/fiber';

@@ -132,20 +132,30 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
           </FieldSet>
 
           <Collapsible open={customizeOpen} onOpenChange={setCustomizeOpen}>
-            <CollapsibleTrigger asChild>
-              <Button type="button" variant="ghost" size="sm" className="w-full justify-start px-0">
-                {customizeOpen ? '▼' : '▸'} Customize (optional)
-              </Button>
-            </CollapsibleTrigger>
+            <CollapsibleTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start px-0"
+                  data-testid="incremental-subject-modal-customize-toggle"
+                >
+                  {customizeOpen ? '▼' : '▸'} Customize (optional)
+                </Button>
+              }
+            />
             <CollapsibleContent className="space-y-4 pt-2">
               <Field>
                 <FieldLabel>Goal</FieldLabel>
                 <FieldContent>
                   <ToggleGroup
-                    type="single"
-                    value={studyGoal}
-                    onValueChange={(v) => {
-                      if (v) setStudyGoal(v as StudyGoal);
+                    value={studyGoal ? [studyGoal] : []}
+                    onValueChange={(values) => {
+                      const next = values[0];
+                      if (next) {
+                        setStudyGoal(next as StudyGoal);
+                      }
                     }}
                     variant="outline"
                     size="sm"
@@ -171,10 +181,12 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
                 <FieldLabel>Experience</FieldLabel>
                 <FieldContent>
                   <ToggleGroup
-                    type="single"
-                    value={priorKnowledge}
-                    onValueChange={(v) => {
-                      if (v) setPriorKnowledge(v as PriorKnowledge);
+                    value={priorKnowledge ? [priorKnowledge] : []}
+                    onValueChange={(values) => {
+                      const next = values[0];
+                      if (next) {
+                        setPriorKnowledge(next as PriorKnowledge);
+                      }
                     }}
                     variant="outline"
                     size="sm"
@@ -200,10 +212,12 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
                 <FieldLabel>Style</FieldLabel>
                 <FieldContent>
                   <ToggleGroup
-                    type="single"
-                    value={learningStyle}
-                    onValueChange={(v) => {
-                      if (v) setLearningStyle(v as LearningStyle);
+                    value={learningStyle ? [learningStyle] : []}
+                    onValueChange={(values) => {
+                      const next = values[0];
+                      if (next) {
+                        setLearningStyle(next as LearningStyle);
+                      }
                     }}
                     variant="outline"
                     size="sm"
