@@ -4,23 +4,24 @@ import { topicRefKey } from '@/lib/topicRef';
 import type { TopicRef } from '@/types/core';
 
 /** Level-up morph + FX window (matches plan §8). */
-export const CRYSTAL_CEREMONY_DURATION_MS = 1500;
+export const CRYSTAL_CEREMONY_DURATION_MS = 1700;
 
 export interface CrystalCeremonyState {
-  /** Latest topic that leveled up while study panel was open; `topicRefKey` string. */
+  /** Latest topic that leveled up while a dialog was open; `topicRefKey` string. */
   pendingTopicKey: string | null;
   ceremonyTopicKey: string | null;
+  /** Timestamp from performance.now() — must match the time base used by useFrame callers. */
   ceremonyStartedAt: number | null;
 }
 
 export interface CrystalCeremonyActions {
   /**
-   * Call when a crystal's level increases. Latest-only: overwrites `pendingTopicKey` when panel is open.
-   * Starts ceremony immediately when the panel is closed (replaces any in-progress ceremony).
+   * Call when a crystal's level increases. Latest-only: overwrites `pendingTopicKey` when a dialog is open.
+   * Starts ceremony immediately when no dialog is open (replaces any in-progress ceremony).
    */
-  notifyLevelUp: (ref: TopicRef, isStudyPanelOpen: boolean) => void;
-  /** When the study panel closes, play the pending ceremony if any. */
-  onStudyPanelClosed: () => void;
+  notifyLevelUp: (ref: TopicRef, isDialogOpen: boolean) => void;
+  /** When every dialog closes, play the pending ceremony if any. */
+  onDialogClosed: () => void;
   /** Clear finished ceremonies so morph settles to 1 without keeping dead state. */
   syncCeremonyClock: (now: number) => void;
   /** 0–1 eased progress for the active ceremony topic; 1 if idle or completed for this topic. */
@@ -44,21 +45,23 @@ export const crystalCeremonyStore = create<CrystalCeremonyState & CrystalCeremon
   ceremonyTopicKey: null,
   ceremonyStartedAt: null,
 
-  notifyLevelUp: (ref, isStudyPanelOpen) => {
+  notifyLevelUp: (ref, isDialogOpen) => {
     const key = topicRefKey(ref);
-    if (isStudyPanelOpen) {
+    if (isDialogOpen) {
       set({ pendingTopicKey: key });
       return;
     }
-    set(startCeremony(key, Date.now()));
+    // Use performance.now() to match the time base passed by useFrame callers.
+    set(startCeremony(key, performance.now()));
   },
 
-  onStudyPanelClosed: () => {
+  onDialogClosed: () => {
     const pending = get().pendingTopicKey;
     if (!pending) {
       return;
     }
-    set(startCeremony(pending, Date.now()));
+    // Use performance.now() to match the time base passed by useFrame callers.
+    set(startCeremony(pending, performance.now()));
   },
 
   syncCeremonyClock: (now) => {

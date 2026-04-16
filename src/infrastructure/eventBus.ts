@@ -30,7 +30,8 @@ export type AppEventMap = {
     to: number;
     levelsGained: number;
     sessionId: string;
-    isStudyPanelOpen: boolean;
+    /** True when any modal/dialog is open at emission time. */
+    isDialogOpen: boolean;
   };
   'session:completed': {
     subjectId: string;

@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 
 import { cardRefKey, parseCardRefKey } from '@/lib/topicRef';
 import { appEventBus } from '@/infrastructure/eventBus';
-import { useUIStore } from '@/store/uiStore';
+import { selectIsAnyModalOpen, useUIStore } from '@/store/uiStore';
 import {
   applyCrystalXpDelta,
   calculateLevelFromXP,
@@ -440,7 +440,7 @@ export const useProgressionStore = create<ProgressionStore>()(
             to: applied.nextLevel,
             levelsGained: applied.levelsGained,
             sessionId,
-            isStudyPanelOpen: useUIStore.getState().isStudyPanelOpen,
+            isDialogOpen: selectIsAnyModalOpen(useUIStore.getState()),
           });
         }
 
@@ -644,7 +644,7 @@ export const useProgressionStore = create<ProgressionStore>()(
             to: xpForEvents.nextLevel,
             levelsGained: xpForEvents.levelsGained,
             sessionId: options?.sessionId ?? 'xp-adjustment',
-            isStudyPanelOpen: useUIStore.getState().isStudyPanelOpen,
+            isDialogOpen: selectIsAnyModalOpen(useUIStore.getState()),
           });
         }
         return xpForEvents.nextXp;
