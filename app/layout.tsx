@@ -29,7 +29,7 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geist.variable} font-sans`}
     >
-      <body style={{ margin: 0, padding: 0 }}>
+      <body className="m-0 p-0">
         <React.StrictMode>
           <ThemeProvider
             attribute="class"

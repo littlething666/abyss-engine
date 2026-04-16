@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/modal-body-scroll-lock';
 
 const OVERLAY_CLASS =
-  'fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0';
+  'fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 pointer-events-auto';
 
 const RemoveScrollSlot = createSlot('AbyssDialog.RemoveScroll');
 
@@ -126,7 +126,6 @@ export const AbyssDialogContent = React.forwardRef<HTMLDivElement, AbyssDialogCo
               data-slot="dialog-overlay"
               data-state={dialogOpen ? 'open' : 'closed'}
               className={cn(OVERLAY_CLASS)}
-              style={{ pointerEvents: 'auto' }}
               aria-hidden
             />
           </RemoveScroll>

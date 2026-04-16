@@ -273,6 +273,10 @@ const HomeContent: React.FC = () => {
     [topicCardsByKey, selectTopic, startTopicStudySession, openStudyPanel],
   );
 
+  const TOP_LEFT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', left: 'calc(0.75rem + env(safe-area-inset-left))' }
+  const TOP_RIGHT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', right: 'calc(0.75rem + env(safe-area-inset-right))' }
+  const BOTTOM_RIGHT_STYLE: React.CSSProperties = { bottom: 'calc(0.75rem + env(safe-area-inset-bottom))', right: 'calc(0.75rem + env(safe-area-inset-right))' }
+
   return (
     <div className="w-screen h-screen relative overflow-hidden">
       {sceneOverlayMounted && (
@@ -297,7 +301,7 @@ const HomeContent: React.FC = () => {
 
       <div
         className="fixed z-20 max-w-[min(100%,11rem)] text-left"
-        style={{ top: 'calc(0.75rem + env(safe-area-inset-top))', left: 'calc(0.75rem + env(safe-area-inset-left))' }}
+        style={TOP_LEFT_STYLE}
       >
         <h1 className="m-0 text-sm font-semibold tracking-tight text-foreground">
           Abyss Engine
@@ -318,7 +322,7 @@ const HomeContent: React.FC = () => {
 
       <div
         className="fixed z-20 flex flex-col items-end gap-1.5"
-        style={{ top: 'calc(0.75rem + env(safe-area-inset-top))', right: 'calc(0.75rem + env(safe-area-inset-right))' }}
+        style={TOP_RIGHT_STYLE}
       >
         <GenerationProgressHud />
         <StatsOverlay activeBuffs={activeBuffs} />
@@ -326,7 +330,7 @@ const HomeContent: React.FC = () => {
 
       <div
         className="fixed z-20 flex flex-row items-end justify-end gap-2"
-        style={{ bottom: 'calc(0.75rem + env(safe-area-inset-bottom))', right: 'calc(0.75rem + env(safe-area-inset-right))' }}
+        style={BOTTOM_RIGHT_STYLE}
       >
         <PomodoroTimerOverlay />
         <Button

@@ -21,6 +21,7 @@ import { Card, type TopicRef } from '../types/core'
 import { useTopicCardQueriesForActiveTopics } from '../hooks/useTopicCardQueries'
 import { useSceneInvalidator } from '../hooks/useSceneInvalidator'
 import { useSelectedCrystalSpotlight } from '../hooks/useSelectedCrystalSpotlight'
+import { useCeremonyCameraDolly } from '../hooks/useCeremonyCameraDolly'
 import '../graphics/nodeMaterialRegistration'
 import { SceneSky, SunSyncedAmbientFill, SunSyncedDirectionalLight } from './SceneSky'
 import { FLOOR_SURFACE_Y } from '../constants/sceneFloor'
@@ -36,7 +37,7 @@ interface SceneProps {
   dynamicReflections?: boolean
   /** Fires once the WebGPU renderer is initialized (R3F `onCreated`). */
   onCanvasReady?: () => void
-  /** Fires when the scene unmounts (e.g. Strict Mode remount); clear any “ready” UI state. */
+  /** Fires when the scene unmounts (e.g. Strict Mode remount); clear any "ready" UI state. */
   onCanvasReleased?: () => void
 }
 
@@ -97,6 +98,7 @@ const CAMERA_UNLOCKED_MIN_POLAR_ANGLE = 0.08
 const CAMERA_UNLOCKED_MAX_POLAR_ANGLE = Math.PI - CAMERA_UNLOCKED_MIN_POLAR_ANGLE
 const CAMERA_FAR = 2_000_000
 const CANVAS_BACKDROP = '#1a1f33'
+const CANVAS_WRAPPER_STYLE: React.CSSProperties = { position: 'relative', width: '100%', height: '100%', background: CANVAS_BACKDROP }
 
 /** Sun is near horizon — floor needs fill; keep renderer exposure low so SkyMesh stays balanced. */
 const LIGHT_AMBIENT_INTENSITY = 2.12
@@ -105,6 +107,7 @@ const LIGHT_SUN_INTENSITY = 2.5
 
 interface OrbitCameraControlsProps {
   isCameraAngleUnlocked: boolean
+  controlsRef: React.RefObject<{ target: THREE.Vector3; update: () => void } | null>
 }
 
 const SceneFrameLimiter: React.FC = () => {
@@ -166,13 +169,14 @@ const DefaultCameraReflectionExcludedLayer: React.FC = () => {
   return null
 }
 
-const OrbitCameraControls: React.FC<OrbitCameraControlsProps> = ({ isCameraAngleUnlocked }) => {
+const OrbitCameraControls: React.FC<OrbitCameraControlsProps> = ({ isCameraAngleUnlocked, controlsRef }) => {
   const { invalidate, isPaused } = useSceneInvalidator()
   const minPolarAngle = isCameraAngleUnlocked ? CAMERA_UNLOCKED_MIN_POLAR_ANGLE : CAMERA_START_POLAR_ANGLE
   const maxPolarAngle = isCameraAngleUnlocked ? CAMERA_UNLOCKED_MAX_POLAR_ANGLE : CAMERA_START_POLAR_ANGLE
 
   return (
     <OrbitControls
+      ref={controlsRef as React.Ref<any>}
       enabled={!isPaused}
       enablePan={false}
       enableZoom
@@ -191,6 +195,14 @@ const OrbitCameraControls: React.FC<OrbitCameraControlsProps> = ({ isCameraAngle
   )
 }
 
+/** Ceremony camera dolly — mounts inside Canvas to access R3F hooks. */
+const CeremonyCameraDollyMount: React.FC<{
+  controlsRef: React.RefObject<{ target: THREE.Vector3; update: () => void } | null>
+}> = ({ controlsRef }) => {
+  useCeremonyCameraDolly(controlsRef)
+  return null
+}
+
 export const Scene: React.FC<SceneProps> = ({
   showStats = false,
   isCameraAngleUnlocked = false,
@@ -199,6 +211,7 @@ export const Scene: React.FC<SceneProps> = ({
   onCanvasReleased,
 }) => {
   const cameraRef = useRef<THREE.PerspectiveCamera>(null)
+  const orbitControlsRef = useRef<{ target: THREE.Vector3; update: () => void } | null>(null)
   const sunDirectionRef = useRef(new THREE.Vector3(0, 1, 0))
   const activeCrystals = useStudyStore((state) => state.activeCrystals)
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId)
@@ -286,11 +299,11 @@ export const Scene: React.FC<SceneProps> = ({
   }, [onCanvasReleased])
 
   return (
-    <div style={{ width: '100%', height: '100%', backgroundColor: CANVAS_BACKDROP }}>
+    <div style={CANVAS_WRAPPER_STYLE}>
       <Canvas
         frameloop="demand"
         dpr={renderQuality.dpr}
-        style={{ background: CANVAS_BACKDROP }}
+        className="w-full h-full"
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping
           gl.toneMappingExposure = 0.55
@@ -321,7 +334,8 @@ export const Scene: React.FC<SceneProps> = ({
           }}
         />
         <DefaultCameraReflectionExcludedLayer />
-        <OrbitCameraControls isCameraAngleUnlocked={isCameraAngleUnlocked} />
+        <OrbitCameraControls isCameraAngleUnlocked={isCameraAngleUnlocked} controlsRef={orbitControlsRef} />
+        <CeremonyCameraDollyMount controlsRef={orbitControlsRef} />
 
         <SceneSky sunDirectionRef={sunDirectionRef} />
 

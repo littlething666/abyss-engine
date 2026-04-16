@@ -22,7 +22,7 @@ import {
   useProgressionStore,
 } from '../features/progression';
 import { useCrystalTrialStore } from '../features/crystalTrial/crystalTrialStore';
-import { useUIStore } from '../store/uiStore';
+import { selectIsAnyModalOpen, useUIStore } from '../store/uiStore';
 import { getSubjectColor } from '../utils/geometryMapping';
 import { useTopicMetadata } from '../features/content';
 import { GrowthParticles } from '../graphics/GrowthParticles';
@@ -129,7 +129,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
   const { invalidate, isPaused } = useSceneInvalidator();
   const environmentMap = useThree((state) => state.scene.environment);
 
-  const prevPanelOpen = useRef(isStudyPanelOpen);
   const lastCeremonyKey = useRef<string | null>(null);
 
   const [particleTopicId, setParticleTopicId] = useState<string | null>(null);
@@ -181,15 +180,16 @@ export const Crystals: React.FC<CrystalsProps> = ({
     }
   }, [crystalBoundsKey]);
 
+  // Phase 2: Dialog-aware ceremony deferral — trigger onDialogClosed when
+  // any modal transitions from open to closed.
+  const isAnyDialogOpen = useUIStore(selectIsAnyModalOpen);
+  const prevDialogOpen = useRef(isAnyDialogOpen);
   useEffect(() => {
-    if (!prevPanelOpen.current && isStudyPanelOpen) {
-      // opened — no flush
+    if (prevDialogOpen.current && !isAnyDialogOpen) {
+      crystalCeremonyStore.getState().onDialogClosed();
     }
-    if (prevPanelOpen.current && !isStudyPanelOpen) {
-      crystalCeremonyStore.getState().onStudyPanelClosed();
-    }
-    prevPanelOpen.current = isStudyPanelOpen;
-  }, [isStudyPanelOpen]);
+    prevDialogOpen.current = isAnyDialogOpen;
+  }, [isAnyDialogOpen]);
 
   useFrame(() => {
     if (isPaused) return;
@@ -215,6 +215,9 @@ export const Crystals: React.FC<CrystalsProps> = ({
       lastCeremonyKey.current = null;
     }
 
+    // Phase 4: Force continuous rendering while ceremony is active
+    let needsInvalidate = ceremonyApi.ceremonyTopicKey != null;
+
     // Pre-compute trial-ready keys once per frame to avoid N individual getTrialStatus calls
     const trialStoreState = useCrystalTrialStore.getState();
     const crystalXpByTopic = new Map(activeCrystals.map((crystal) => [topicRefKey(crystal), crystal.xp]));
@@ -227,8 +230,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
         trialReadyKeys.add(key);
       }
     }
-
-    let needsInvalidate = false;
 
     const shapeCounts: Record<CrystalBaseShape, number> = {
       icosahedron: 0,
@@ -260,7 +261,25 @@ export const Crystals: React.FC<CrystalsProps> = ({
       const py = 0.3 + bob;
       const isSelected = selectedTopic !== null && topicRefKey(selectedTopic) === topicKey;
       const rotY = isSelected ? elapsedTime * 0.4 : 0;
-      const scale = getCrystalScale(level);
+
+      // Phase 1: Animated instance scale — lerp between old and new scale
+      // during the ceremony window, synced with morphProgress (2.5s smoothstep).
+      const isCeremonyActive = ceremonyApi.isCeremonyActiveForTopic(
+        { subjectId: crystal.subjectId, topicId: crystal.topicId },
+        now,
+      );
+      const morphProgress = ceremonyApi.getCeremonyMorphProgress(
+        { subjectId: crystal.subjectId, topicId: crystal.topicId },
+        now,
+      );
+      let scale: number;
+      if (isCeremonyActive && level > 0) {
+        const fromScale = getCrystalScale(level - 1);
+        const toScale = getCrystalScale(level);
+        scale = fromScale + (toScale - fromScale) * morphProgress;
+      } else {
+        scale = getCrystalScale(level);
+      }
 
       positionScratch.set(gx, py, gz);
       quaternionScratch.setFromAxisAngle(yAxis, rotY);
@@ -273,10 +292,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
         topicMap.get(mesh)![localIdx] = topicKey;
       }
 
-      const morphProgress = ceremonyApi.getCeremonyMorphProgress(
-        { subjectId: crystal.subjectId, topicId: crystal.topicId },
-        now,
-      );
       const linear = ceremonyApi.getCeremonyLinearProgress(
         { subjectId: crystal.subjectId, topicId: crystal.topicId },
         now,
@@ -327,13 +342,13 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
     for (const shape of CRYSTAL_BASE_SHAPES) {
       const mesh = meshRefs.current[shape];
-      const group = shapeGroups[shape];
+      const shapeGroup = shapeGroups[shape];
       const shapeCount = shapeCounts[shape];
       if (mesh) {
         mesh.count = shapeCount;
         if (shapeCount > 0) {
           mesh.instanceMatrix.needsUpdate = true;
-          group.attributes.interleaved.needsUpdate = true;
+          shapeGroup.attributes.interleaved.needsUpdate = true;
         }
       }
     }
@@ -468,20 +483,13 @@ export const Crystals: React.FC<CrystalsProps> = ({
                 sprite
                 position={[0, -0.7, 0]}
                 zIndexRange={labelLayerRange}
-                style={{
-                  pointerEvents: 'none',
-                  width: '100px',
-                  textAlign: 'center',
-                  display: 'flex',
-                  justifyContent: 'center',
-                }}
+                className="pointer-events-none"
               >
                 <div
                   ref={(el: HTMLDivElement | null) => {
                     labelOpacityRefs.current[index] = el;
                   }}
-                  style={{ opacity: 0 }}
-                  className="pointer-events-none max-w-[100px] truncate rounded-sm border border-border/50 bg-card/75 px-0.5 py-0.5 text-center font-sans text-[5px] font-normal leading-none tracking-wide text-foreground shadow-sm backdrop-blur-sm"
+                  className="opacity-0 pointer-events-none max-w-[100px] truncate rounded-sm border border-border/50 bg-card/75 px-0.5 py-0.5 text-center font-sans text-[5px] font-normal leading-none tracking-wide text-foreground shadow-sm backdrop-blur-sm"
                 >
                   {topicMeta.topicName}
                 </div>

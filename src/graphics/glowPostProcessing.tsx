@@ -4,7 +4,7 @@ import { useStore, useThree } from '@react-three/fiber/webgpu'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { emissive, mrt, output, pass, vec4 } from 'three/tsl'
 
-const BLOOM_STRENGTH = 1.5
+const BLOOM_STRENGTH = 1.25
 const BLOOM_RADIUS = 0.75
 
 interface GlowPostProcessingProps {

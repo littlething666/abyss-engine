@@ -76,11 +76,8 @@ export function playPositiveSound(): void {
   }
 }
 
-/**
- * Play a sharper level-up sound for growth milestones
- * Uses a bright retro power-up climb, inspired by classic Mario growth cues
- */
-export function playLevelUpSound(): void {
+// Mario-style coin pickup sound
+export function playCoinPickupSound(): void {
   try {
     const ctx = getAudioContext();
 
@@ -157,6 +154,8 @@ export interface SproutOptions {
   speed?: number
   /** Total number of notes to play before stopping */
   totalNotes?: number
+  /** Output gain (0..1) */
+  volume?: number
 }
 
 export function playSproutSound(options: SproutOptions = {}): void {
@@ -167,7 +166,8 @@ export function playSproutSound(options: SproutOptions = {}): void {
     freqMultiplier = 1.5,
     freqStep = 3,
     speed = 0.036,
-    totalNotes = 30
+    totalNotes = 30,
+    volume = 0.07
   } = options
 
   try {
@@ -201,8 +201,8 @@ export function playSproutSound(options: SproutOptions = {}): void {
     }
 
     // Volume envelope
-    gainNode.gain.setValueAtTime(0.08, currentTime)
-    gainNode.gain.setValueAtTime(0.08, stopTime - 0.05)
+    gainNode.gain.setValueAtTime(volume, currentTime)
+    gainNode.gain.setValueAtTime(volume, stopTime - 0.05)
     gainNode.gain.linearRampToValueAtTime(0, stopTime)
 
     osc.connect(gainNode)
@@ -215,10 +215,11 @@ export function playSproutSound(options: SproutOptions = {}): void {
   }
 }
 
+export const playLevelUpSound = () => playSproutSound({ freqMultiplier: 1.25, baseFreqStart: 150, freqStep: 3.5, totalNotes: 30, speed: 0.033, volume: 0.04 })
+
 /**
  * Play a retro victory fanfare motif.
  */
-
 const fanfareMelody: Array<[number, number, number]> = [
   [523.25, 0.00, 0.10],
   [523.25, 0.15, 0.10],
