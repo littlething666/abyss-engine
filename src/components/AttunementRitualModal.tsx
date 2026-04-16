@@ -28,6 +28,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectGroup,
   SelectTrigger,
   SelectValue,
 } from './ui/select';
@@ -134,6 +135,15 @@ export function AttunementRitualModal({
         };
       });
   }, [activeTopicRefs, allTopicMetadata]);
+
+  const targetCrystalSelectItems = useMemo(
+    () =>
+      targetCrystalOptions.length > 0
+        ? targetCrystalOptions
+        : [{ value: '__empty__', label: 'No unlocked crystals' }],
+    [targetCrystalOptions],
+  );
+  const microGoalSelectItems = useMemo(() => MICRO_GOAL_OPTIONS, []);
 
   const cooldownHours = Math.max(0, Math.floor(remainingCooldownMs / (60 * 60 * 1000)));
   const cooldownMinutes = Math.max(
@@ -269,10 +279,9 @@ export function AttunementRitualModal({
                 <Field>
                   <FieldLabel>😴 Sleep (Biological Readiness)</FieldLabel>
                   <ToggleGroup
-                    type="single"
                     variant="outline"
-                    value={sleepQuality}
-                    onValueChange={setSleepQuality}
+                    value={sleepQuality ? [sleepQuality] : []}
+                    onValueChange={(values) => setSleepQuality(values[0] ?? '')}
                   >
                     {SLEEP_OPTIONS.map((option) => (
                       <ToggleGroupItem key={option.value} value={option.value}>
@@ -284,10 +293,9 @@ export function AttunementRitualModal({
                 <Field>
                   <FieldLabel>🍽️ Fuel Quality</FieldLabel>
                   <ToggleGroup
-                    type="single"
                     variant="outline"
-                    value={fuelQuality}
-                    onValueChange={setFuelQuality}
+                    value={fuelQuality ? [fuelQuality] : []}
+                    onValueChange={(values) => setFuelQuality(values[0] ?? '')}
                   >
                     {FUEL_QUALITY_OPTIONS.map((option) => (
                       <ToggleGroupItem key={option.value} value={option.value}>
@@ -299,10 +307,9 @@ export function AttunementRitualModal({
                 <Field>
                   <FieldLabel>💧 Hydration</FieldLabel>
                   <ToggleGroup
-                    type="single"
                     variant="outline"
-                    value={hydration}
-                    onValueChange={setHydration}
+                    value={hydration ? [hydration] : []}
+                    onValueChange={(values) => setHydration(values[0] ?? '')}
                   >
                     {HYDRATION_OPTIONS.map((option) => (
                       <ToggleGroupItem key={option.value} value={option.value}>
@@ -314,10 +321,9 @@ export function AttunementRitualModal({
                 <Field>
                   <FieldLabel>🏃 Movement</FieldLabel>
                   <ToggleGroup
-                    type="single"
                     variant="outline"
-                    value={movementQuality}
-                    onValueChange={setMovementQuality}
+                    value={movementQuality ? [movementQuality] : []}
+                    onValueChange={(values) => setMovementQuality(values[0] ?? '')}
                   >
                     {MOVEMENT_OPTIONS.map((option) => (
                       <ToggleGroupItem key={option.value} value={option.value}>
@@ -394,37 +400,51 @@ export function AttunementRitualModal({
               <FieldGroup className="space-y-1">
                 <Field>
                   <FieldLabel>💎 Target Crystal</FieldLabel>
-                  <Select value={targetCrystal} onValueChange={setTargetCrystal}>
+                  <Select
+                    items={targetCrystalSelectItems}
+                    value={targetCrystal}
+                    onValueChange={(value) => {
+                      setTargetCrystal(value ?? '');
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pick a crystal" />
                     </SelectTrigger>
                     <SelectContent>
-                      {targetCrystalOptions.length === 0 ? (
-                        <SelectItem value="__empty__" disabled>
-                          No unlocked crystals
-                        </SelectItem>
-                      ) : (
-                        targetCrystalOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
+                      <SelectGroup>
+                        {targetCrystalSelectItems.map((option) => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            disabled={option.value === '__empty__'}
+                          >
                             {option.label}
                           </SelectItem>
-                        ))
-                      )}
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </Field>
                 <Field>
                   <FieldLabel>🎯 Micro-Goal</FieldLabel>
-                  <Select value={microGoal} onValueChange={setMicroGoal}>
+                  <Select
+                    items={microGoalSelectItems}
+                    value={microGoal}
+                    onValueChange={(value) => {
+                      setMicroGoal(value ?? '');
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pick a micro-goal" />
                     </SelectTrigger>
                     <SelectContent>
-                      {MICRO_GOAL_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        {microGoalSelectItems.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </Field>
@@ -433,9 +453,10 @@ export function AttunementRitualModal({
                   <FieldContent>
                     <ToggleGroup
                       variant="outline"
-                      type="single"
-                      value={confidenceRating === 0 ? '' : String(confidenceRating)}
-                      onValueChange={(value) => setConfidenceRating(value.length ? Number(value) : 0)}
+                      value={confidenceRating === 0 ? [] : [String(confidenceRating)]}
+                      onValueChange={(values) =>
+                        setConfidenceRating(values.length > 0 ? Number(values[0]) : 0)
+                      }
                     >
                       {[1, 2, 3, 4, 5].map((rating) => (
                         <ToggleGroupItem key={rating} value={String(rating)}>

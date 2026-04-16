@@ -8,6 +8,7 @@ import TopicSelectionBar from '@/components/TopicSelectionBar';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -88,6 +89,25 @@ export function StudyGraphPageClient() {
     const effective = resolveEffectiveTopicGraphDistances(full, unlockedNodeIds, distances);
     return getSelectableMaxHop(effective);
   }, [visibleGraphsForStudy, unlockedNodeIds]);
+
+  const maxHopSelectItems = useMemo(
+    () => [
+      ...Array.from({ length: selectableMaxHop + 1 }, (_, i) => ({
+        value: String(i),
+        label:
+          i === 0
+            ? 'Entry topics only'
+            : i === 1
+              ? 'Within 1 hop'
+              : `Within ${i} hops`,
+      })),
+      {
+        value: 'all',
+        label: 'Show all',
+      },
+    ],
+    [selectableMaxHop],
+  );
 
   useEffect(() => {
     setMaxHop((h) => (h === null ? h : Math.min(h, selectableMaxHop)));
@@ -184,25 +204,27 @@ export function StudyGraphPageClient() {
                 Topic hops from progress
               </Label>
               <Select
+                items={maxHopSelectItems}
                 value={maxHop === null ? 'all' : String(maxHop)}
-                onValueChange={(v) => {
-                  setMaxHop(v === 'all' ? null : Number.parseInt(v, 10));
+                onValueChange={(value) => {
+                  if (value === null) {
+                    setMaxHop(null);
+                    return;
+                  }
+                  setMaxHop(value === 'all' ? null : Number.parseInt(value, 10));
                 }}
               >
                 <SelectTrigger id="study-graph-hop-select" size="sm" className="w-full min-w-0">
                   <SelectValue placeholder="Hop depth" />
                 </SelectTrigger>
-                <SelectContent position="popper">
-                  {Array.from({ length: selectableMaxHop + 1 }, (_, i) => (
-                    <SelectItem key={i} value={String(i)}>
-                      {i === 0
-                        ? 'Entry topics only'
-                        : i === 1
-                          ? 'Within 1 hop'
-                          : `Within ${i} hops`}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="all">Show all</SelectItem>
+                <SelectContent>
+                  <SelectGroup>
+                    {maxHopSelectItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>

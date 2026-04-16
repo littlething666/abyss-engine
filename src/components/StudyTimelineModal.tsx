@@ -163,21 +163,23 @@ function TimelineReviewBlock({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={`${cardLabel}, ${correctnessText.toLowerCase()}, review duration ${formatDuration(durationMs)}.`}
-          data-card-id={entry.cardId ?? ''}
-          data-session-id={entry.sessionId}
-          data-correctness={correctnessText.toLowerCase()}
-          className={`h-12 shrink-0 rounded-none border shadow-sm ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/80 ${getCorrectnessStyles(bucket)}`}
-          style={{ width }}
-        >
-          <span className="sr-only">
-            {cardLabel}, {correctnessText}, {formatDuration(durationMs)}, {entry.topicName}.
-          </span>
-        </button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`${cardLabel}, ${correctnessText.toLowerCase()}, review duration ${formatDuration(durationMs)}.`}
+            data-card-id={entry.cardId ?? ''}
+            data-session-id={entry.sessionId}
+            data-correctness={correctnessText.toLowerCase()}
+            className={`h-12 shrink-0 rounded-none border shadow-sm ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/80 ${getCorrectnessStyles(bucket)}`}
+            style={{ width }}
+          >
+            <span className="sr-only">
+              {cardLabel}, {correctnessText}, {formatDuration(durationMs)}, {entry.topicName}.
+            </span>
+          </button>
+        }
+      />
       <PopoverContent className="w-60 p-2">
         <Card className="border-0 bg-transparent shadow-none">
           <CardHeader className="px-2 py-2">

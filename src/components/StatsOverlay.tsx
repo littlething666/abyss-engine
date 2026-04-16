@@ -63,17 +63,19 @@ function BuffTypePopover({ group }: { group: GroupedBuffSummary }) {
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-lg"
-          aria-label={`${summaryLabel} — open details`}
-          title={summaryLabel}
-        >
-          <span aria-hidden="true">{icon}</span>
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-lg"
+            aria-label={`${summaryLabel} — open details`}
+            title={summaryLabel}
+          >
+            <span aria-hidden="true">{icon}</span>
+          </Button>
+        }
+      />
       <PopoverContent align="start" side="left" sideOffset={8} className="w-72">
         <PopoverHeader>
           <PopoverTitle>{summaryLabel}</PopoverTitle>

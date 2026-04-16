@@ -262,22 +262,18 @@ test.describe('Challenge Format Types', () => {
     // Verify flashcard badge
     await expect(page.getByTestId('study-card-format-flashcard')).toBeVisible({ timeout: 3000 });
 
-    // Click Show Answer button
-    const showAnswerButton = page.getByTestId('study-card-show-answer');
-    await showAnswerButton.click();
+    // Submit a recall rating (flashcard answer reveal + rating happen together).
+    const priorEvents = await getEventCount(page);
+    const ratingButton = page.getByTestId('study-card-rating-3');
+    await ratingButton.click();
     await page.waitForTimeout(300);
 
     // Verify answer is shown
     await expect(page.getByTestId('study-card-answer-section')).toBeVisible({ timeout: 3000 });
 
-    // Click a rating button (Good)
-    const goodButton = page.locator('button:has-text("Good")');
-    const priorEvents = await getEventCount(page);
-    await goodButton.click();
-    await page.waitForTimeout(500);
-
-    // Verify feedback message is visible
+    // Verify progression event after rating
     await assertProgressionEventIncrease(page, priorEvents);
+    await page.waitForTimeout(500);
 
     // Verify we can still see the current card's content (feedback visible)
     await expect(page.getByTestId('study-card-question')).toBeVisible({ timeout: 3000 });
@@ -302,22 +298,22 @@ test.describe('Challenge Format Types', () => {
     await optionButton.click();
     await page.waitForTimeout(200);
 
-    // Click Submit Answer
+    // Click Submit Answer (choice result is scored immediately for progression)
     const submitButton = page.getByTestId('study-card-submit-answer');
     const submitEventCount = await getEventCount(page);
     await submitButton.click();
     await page.waitForTimeout(500);
 
-    // Verify choice feedback and XP are not shown on submit
-    await assertNoNewEvents(page, submitEventCount);
+    // Verify XP/feedback event is emitted on submit.
+    await assertProgressionEventIncrease(page, submitEventCount);
 
     // Click Continue to finalize the answer
     const continueButton = page.getByTestId('study-card-continue');
     const continueEventCount = await getEventCount(page);
     await continueButton.click();
 
-    // Verify feedback message and XP gain animation appear after continue
-    await assertProgressionEventIncrease(page, continueEventCount);
+    // Continue should only advance state, not add additional progression events.
+    await assertNoNewEvents(page, continueEventCount);
   });
 
   /**
@@ -351,13 +347,13 @@ test.describe('Challenge Format Types', () => {
     await submitButton.click();
     await page.waitForTimeout(500);
 
-    // Verify choice feedback and XP are not shown on submit
-    await assertNoNewEvents(page, submitEventCount);
+    // Verify XP/feedback event is emitted on submit.
+    await assertProgressionEventIncrease(page, submitEventCount);
 
-    // Verify feedback message and XP gain animation appear after continue
+    // Continue should only advance state, not add additional progression events.
     const continueEventCount = await getEventCount(page);
     await page.getByTestId('study-card-continue').click();
-    await assertProgressionEventIncrease(page, continueEventCount);
+    await assertNoNewEvents(page, continueEventCount);
 
   });
 

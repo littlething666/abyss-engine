@@ -738,8 +738,8 @@ export function AbyssCommandPalette({
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} showCloseButton={false}>
-      <Command className="rounded-lg! border-none! bg-transparent! shadow-none!">
-        <CommandInput placeholder="Search commands…" />
+      <Command className="max-w-sm rounded-lg border">
+        <CommandInput placeholder="Type a command or search..." />
         <CommandList>
           <CommandEmpty>No commands found.</CommandEmpty>
           {visibleRecentCommands.length > 0 ? (
