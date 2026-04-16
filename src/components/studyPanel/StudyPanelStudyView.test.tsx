@@ -22,13 +22,12 @@ const baseProps: StudyPanelStudyViewProps = {
   selectedAnswers: [],
   isAnswerSubmitted: false,
   isCorrect: false,
-  isCardFlipped: false,
+  isRevealed: false,
   sm2State: null,
   activeCard: null,
   onSelectAnswer: vi.fn(),
   onChoiceSubmit: vi.fn(),
   onChoiceContinue: vi.fn(),
-  onFlip: vi.fn(),
   onRate: vi.fn(),
   getRatingLabel: vi.fn(),
   getRatingColor: vi.fn(),
@@ -408,6 +407,44 @@ describe('StudyPanelStudyView', () => {
     expect(submitButton()).toBeNull();
     expect(continueButton()).not.toBeNull();
     expect(container.textContent).toContain('Numbers divisible by only 1 and itself are prime.');
+
+    unmount();
+  });
+
+  it('shows flashcard rating on the first screen and answer/explanation on reveal', () => {
+    const onRate = vi.fn();
+    const { container, rerender, unmount } = renderStudyPanelView({
+      isFlashcard: true,
+      isChoiceQuestion: false,
+      isSingleChoice: false,
+      isMultiChoice: false,
+      isAnswerSubmitted: false,
+      isRevealed: false,
+      onRate,
+      getRatingLabel: (rating) => `Rate ${rating}`,
+      renderedCard: {
+        id: 'card-flash',
+        type: 'flashcard',
+        question: 'What is a lambda?',
+        answer: 'An anonymous function.',
+      },
+    });
+
+    expect(container.querySelector('[data-testid="study-card-rating-1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="study-card-rating-4"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="study-card-answer-section"]')).toBeNull();
+
+    const ratingButton = container.querySelector('[data-testid="study-card-rating-3"]') as HTMLButtonElement;
+    ratingButton?.click();
+    expect(onRate).toHaveBeenCalledTimes(1);
+    expect(onRate).toHaveBeenCalledWith(3);
+
+    rerender({
+      isAnswerSubmitted: true,
+      isRevealed: true,
+    });
+    expect(container.querySelector('[data-testid="study-card-answer-section"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="study-card-continue"]')).not.toBeNull();
 
     unmount();
   });

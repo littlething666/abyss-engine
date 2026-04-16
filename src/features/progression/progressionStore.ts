@@ -45,6 +45,7 @@ import {
   wouldCrossLevelBoundary,
   capXpBelowThreshold,
 } from '../crystalTrial/progressionIntegration';
+import { crystalCeremonyStore } from './crystalCeremonyStore';
 
 type ProgressionStore = ProgressionState & ProgressionActions;
 const PROGRESSION_STORAGE_KEY = 'abyss-progression-v3';
@@ -250,7 +251,6 @@ export const useProgressionStore = create<ProgressionStore>()(
           },
           pendingRitual: null,
         });
-        useUIStore.getState().resetCardFlip();
         appEventBus.emit('study-panel:history', {
           action: 'submit',
           subjectId: ref.subjectId,
@@ -288,7 +288,6 @@ export const useProgressionStore = create<ProgressionStore>()(
               currentCardId: focusKey,
             },
           });
-          useUIStore.getState().resetCardFlip();
           return;
         }
 
@@ -301,7 +300,6 @@ export const useProgressionStore = create<ProgressionStore>()(
             totalCards: queue.length,
           },
         });
-        useUIStore.getState().resetCardFlip();
       },
 
       submitStudyResult: (cardRefKeyStr, rating) => {
@@ -375,19 +373,18 @@ export const useProgressionStore = create<ProgressionStore>()(
           isCorrect,
         };
         const nextAttempts = [...(session.attempts ?? []), attempt];
-        const nextQueue = session.queueCardIds.filter((id) => id !== cardRefKeyStr);
-        const nextCard = nextQueue[0] ?? null;
         const buffsAfterUsage = BuffEngine.get().consumeForEvent(activeBuffs, 'card_reviewed');
-        const nextBuffs = nextQueue.length > 0
-          ? buffsAfterUsage
-          : BuffEngine.get().consumeForEvent(buffsAfterUsage, 'session_ended');
-        const isSessionComplete = nextQueue.length === 0;
+        const nextAttemptsCount = nextAttempts.length;
+        const isSessionComplete = nextAttemptsCount >= session.queueCardIds.length;
+        const nextBuffs = isSessionComplete
+          ? BuffEngine.get().consumeForEvent(buffsAfterUsage, 'session_ended')
+          : buffsAfterUsage;
         const sessionMetrics = isSessionComplete
           ? buildStudySessionMetrics(
               sessionId,
               session.topicId,
               nextAttempts,
-              session.startedAt ?? Date.now(),
+              session.startedAt ?? now,
             )
           : null;
 
@@ -402,22 +399,10 @@ export const useProgressionStore = create<ProgressionStore>()(
           currentSession: {
             ...session,
             attempts: nextAttempts,
-            queueCardIds: nextQueue,
-            currentCardId: nextCard,
-            totalCards: Math.max(session.totalCards - 1, 0),
-            ...(isSessionComplete
-              ? {
-                  startedAt: session.startedAt ?? Date.now(),
-                  lastCardStart: now,
-                }
-              : {
-                  lastCardStart: now,
-                }),
+            lastCardStart: now,
           },
           activeBuffs: nextBuffs,
         });
-
-        useUIStore.getState().resetCardFlip();
 
         appEventBus.emit('card:reviewed', {
           cardId: cardRefKeyStr,
@@ -471,6 +456,32 @@ export const useProgressionStore = create<ProgressionStore>()(
         }
       },
 
+      advanceStudyAfterReveal: () => {
+        const state = get();
+        const session = state.currentSession;
+        if (!session || !session.currentCardId) {
+          return;
+        }
+
+        if (!session.queueCardIds.includes(session.currentCardId)) {
+          return;
+        }
+
+        const nextQueue = session.queueCardIds.filter((id) => id !== session.currentCardId);
+        const nextCard = nextQueue[0] ?? null;
+        const now = Date.now();
+
+        set({
+          currentSession: {
+            ...session,
+            queueCardIds: nextQueue,
+            currentCardId: nextCard,
+            totalCards: Math.max(session.totalCards - 1, 0),
+            ...(nextQueue.length > 0 ? { lastCardStart: now } : {}),
+          },
+        });
+      },
+
       undoLastStudyResult: () => {
         const state = get();
         const restored = undoManager.undo(state);
@@ -484,7 +495,6 @@ export const useProgressionStore = create<ProgressionStore>()(
           throw new Error('undoLastStudyResult: restored session missing subjectId, topicId or sessionId');
         }
         set(restored);
-        useUIStore.getState().resetCardFlip();
         appEventBus.emit('study-panel:history', {
           action: 'undo',
           subjectId,
@@ -508,7 +518,6 @@ export const useProgressionStore = create<ProgressionStore>()(
           throw new Error('redoLastStudyResult: restored session missing subjectId, topicId or sessionId');
         }
         set(restored);
-        useUIStore.getState().resetCardFlip();
         appEventBus.emit('study-panel:history', {
           action: 'redo',
           subjectId,
@@ -538,6 +547,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           return null;
         }
 
+        const isDialogOpen = selectIsAnyModalOpen(useUIStore.getState());
         set((current) => ({
           activeCrystals: [
             ...current.activeCrystals,
@@ -551,6 +561,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           ],
           unlockPoints: Math.max(0, current.unlockPoints - 1),
         }));
+        crystalCeremonyStore.getState().notifyLevelUp(ref, isDialogOpen);
 
         return nextPosition;
       },

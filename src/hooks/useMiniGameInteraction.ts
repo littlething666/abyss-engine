@@ -85,6 +85,7 @@ export function useMiniGameInteraction({
     setResult(evalResult);
     setPhase('submitted');
     setSelectedItemId(null);
+    return evalResult;
   }, [phase, evaluateFn, placements]);
 
   const reset = useCallback(() => {

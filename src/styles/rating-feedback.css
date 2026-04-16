@@ -1,0 +1,67 @@
+/* ============================================================
+   Rating Feedback — CSS companion animations
+   Applied/removed programmatically by useRatingFeedback hook.
+   ============================================================ */
+
+/* --- Tier 1: Forgot — Shudder --- */
+@keyframes rating-shudder {
+  0% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+  100% { transform: translateX(0); }
+}
+
+.rating-fx-shudder {
+  animation: rating-shudder 300ms ease-in-out;
+  will-change: transform;
+}
+
+/* --- Tier 2: Hard — Ember Border Pulse --- */
+@keyframes rating-ember-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 140, 40, 0); }
+  40% { box-shadow: 0 0 18px 4px rgba(255, 140, 40, 0.35); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 140, 40, 0); }
+}
+
+.rating-fx-ember-pulse {
+  animation: rating-ember-pulse 450ms ease-out;
+  will-change: box-shadow;
+}
+
+/* --- Tier 3: Good — Shimmer Sweep --- */
+@keyframes rating-shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.rating-fx-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(140, 220, 255, 0.15) 25%,
+    rgba(180, 140, 255, 0.2) 50%,
+    rgba(140, 220, 255, 0.15) 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: rating-shimmer 800ms ease-in-out;
+  will-change: background-position;
+}
+
+/* --- Tier 4: Perfect — Golden Vignette Glow --- */
+@keyframes rating-golden-vignette {
+  0% { box-shadow: 0 0 0 0 rgba(255, 200, 80, 0); }
+  30% { box-shadow: 0 0 30px 8px rgba(255, 200, 80, 0.3), inset 0 0 20px 4px rgba(255, 215, 100, 0.1); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 200, 80, 0); }
+}
+
+.rating-fx-golden-vignette {
+  animation: rating-golden-vignette 650ms ease-out;
+  will-change: box-shadow;
+}
