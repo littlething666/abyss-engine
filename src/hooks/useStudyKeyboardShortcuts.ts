@@ -36,4 +36,3 @@ export function useStudyKeyboardShortcuts(
     };
   }, [onUndo, onRedo, canRedo, canUndo]);
 }
-

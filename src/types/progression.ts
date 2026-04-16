@@ -141,6 +141,7 @@ export interface ProgressionActions {
   clearActiveBuffs: () => void;
   clearPendingRitual: () => void;
   submitStudyResult: (cardRefKey: string, rating: Rating) => void;
+  advanceStudyAfterReveal: () => void;
   undoLastStudyResult: () => void;
   redoLastStudyResult: () => void;
   unlockTopic: (ref: TopicRef, allGraphs: SubjectGraph[]) => [number, number] | null;

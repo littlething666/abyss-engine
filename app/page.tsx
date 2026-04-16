@@ -150,13 +150,12 @@ const HomeContent: React.FC = () => {
 
   // Get store actions - stable references
   const initialize = useStudyStore(s => s.initialize);
-  const flipCurrentCard = useUIStore(s => s.flipCurrentCard);
   const submitStudyResult = useStudyStore(s => s.submitStudyResult);
+  const advanceStudyAfterReveal = useStudyStore((state) => state.advanceStudyAfterReveal);
   const undoLastStudyResult = useStudyStore(s => s.undoLastStudyResult);
   const redoLastStudyResult = useStudyStore(s => s.redoLastStudyResult);
   const submitAttunementRitual = useStudyStore(s => s.submitAttunementRitual);
   const clearPendingRitual = useStudyStore(s => s.clearPendingRitual);
-  const isCurrentCardFlipped = useUIStore(s => s.isCurrentCardFlipped);
 
   // UI store - modal state - stable selectors
   const isDiscoveryModalOpen = useUIStore(s => s.isDiscoveryModalOpen);
@@ -403,11 +402,10 @@ const HomeContent: React.FC = () => {
         currentCardId={currentSession?.currentCardId || null}
         currentTopicId={currentTopicId}
         currentSubjectId={currentSubjectIdSession}
-        isCardFlipped={isCurrentCardFlipped}
         totalCards={currentSession?.totalCards ?? totalCards}
         onClose={handleCloseStudyPanel}
-        onFlip={flipCurrentCard}
         onSubmitResult={handleRate}
+        onAdvance={advanceStudyAfterReveal}
         onUndo={handleUndo}
         onRedo={handleRedo}
       />
@@ -421,13 +419,13 @@ const HomeContent: React.FC = () => {
 
       <CrystalTrialModal />
 
-      {isDebugMode && (
+      {/* {isDebugMode && (
         <DebugControls
           onShowStatsChange={setShowStats}
           onCameraAngleUnlockChange={setIsCameraAngleUnlocked}
           defaultCameraAngleUnlocked
         />
-      )}
+      )} */}
     </div>
   );
 }

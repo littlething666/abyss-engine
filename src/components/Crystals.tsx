@@ -273,8 +273,8 @@ export const Crystals: React.FC<CrystalsProps> = ({
         now,
       );
       let scale: number;
-      if (isCeremonyActive && level > 0) {
-        const fromScale = getCrystalScale(level - 1);
+      if (isCeremonyActive) {
+        const fromScale = level > 0 ? getCrystalScale(level - 1) : 0;
         const toScale = getCrystalScale(level);
         scale = fromScale + (toScale - fromScale) * morphProgress;
       } else {

@@ -10,6 +10,7 @@ import { AttunementRitualPayload } from '../../types/progression';
 import { undoManager } from './undoManager';
 import { PASS_THRESHOLD } from '../crystalTrial/crystalTrialConfig';
 import { useCrystalTrialStore } from '../crystalTrial/crystalTrialStore';
+import { crystalCeremonyStore } from './crystalCeremonyStore';
 
 const DS = 'data-science' as const;
 
@@ -86,6 +87,11 @@ function resetStore() {
     cooldownCardsReviewed: {},
     cooldownStartedAt: {},
   });
+  crystalCeremonyStore.setState({
+    pendingTopicKey: null,
+    ceremonyTopicKey: null,
+    ceremonyStartedAt: null,
+  });
 }
 
 function makeTrialWithStatus(
@@ -149,7 +155,7 @@ describe('progressionStore card-only canonical API', () => {
     resetStore();
   });
 
-  it('starts a study session using card input and advances to next card on submit', () => {
+  it('starts a study session using card input and applies outcome without queue auto-advancing', () => {
     const cards = [createCard('a-1'), createCard('a-2')];
     useProgressionStore.setState({
       activeCrystals: [crystal('topic-a')],
@@ -165,7 +171,11 @@ describe('progressionStore card-only canonical API', () => {
 
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
     const sessionAfterSubmit = useProgressionStore.getState().currentSession;
-    expect(sessionAfterSubmit?.currentCardId).toBe(cr('topic-a', 'a-2'));
+    expect(sessionAfterSubmit?.currentCardId).toBe(cr('topic-a', 'a-1'));
+    expect(sessionAfterSubmit?.attempts).toHaveLength(1);
+
+    useProgressionStore.getState().advanceStudyAfterReveal();
+    expect(useProgressionStore.getState().currentSession?.currentCardId).toBe(cr('topic-a', 'a-2'));
 
     const updated = useProgressionStore.getState().sm2Data[cr('topic-a', 'a-1')];
     expect(updated).toBeDefined();
@@ -188,6 +198,9 @@ describe('progressionStore card-only canonical API', () => {
     expect(session?.queueCardIds).toEqual([cr('topic-a', 'a-1'), cr('topic-a', 'a-2')]);
 
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-2'), 4);
+    expect(useProgressionStore.getState().currentSession?.currentCardId).toBe(cr('topic-a', 'a-2'));
+
+    useProgressionStore.getState().advanceStudyAfterReveal();
     expect(useProgressionStore.getState().currentSession?.currentCardId).toBe(cr('topic-a', 'a-1'));
   });
 
@@ -362,6 +375,24 @@ describe('progressionStore card-only canonical API', () => {
     expect(useProgressionStore.getState().activeCrystals.map((storeCrystal) => storeCrystal.topicId)).toContain('topic-b');
   });
 
+  it('triggers the unlock ceremony animation when unlocking a topic', () => {
+    const notifySpy = vi.spyOn(crystalCeremonyStore.getState(), 'notifyLevelUp');
+    useProgressionStore.setState({
+      activeCrystals: [],
+      unlockPoints: 1,
+    });
+
+    const firstUnlock = useProgressionStore.getState().unlockTopic(topicRef('topic-a'), topicGraphs);
+    expect(firstUnlock).not.toBeNull();
+    expect(notifySpy).toHaveBeenCalledTimes(1);
+    expect(notifySpy).toHaveBeenCalledWith(
+      { subjectId: DS, topicId: 'topic-a' },
+      false,
+    );
+
+    notifySpy.mockRestore();
+  });
+
   it('returns deterministic topic tiers from graph data', () => {
     expect(useProgressionStore.getState().getTopicTier(topicRef('topic-a'), topicGraphs)).toBe(1);
     expect(useProgressionStore.getState().getTopicTier(topicRef('topic-b'), topicGraphs)).toBe(2);
@@ -468,6 +499,7 @@ describe('progressionStore card-only canonical API', () => {
     expect(startedState?.activeBuffIds).toEqual(expect.arrayContaining(result?.buffs.map((buff) => buff.buffId) ?? []));
 
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
+    useProgressionStore.getState().advanceStudyAfterReveal();
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-2'), 4);
 
     expect(useProgressionStore.getState().activeBuffs).toHaveLength(0);
@@ -508,7 +540,9 @@ describe('progressionStore card-only canonical API', () => {
 
     useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
+    useProgressionStore.getState().advanceStudyAfterReveal();
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-2'), 3);
+    useProgressionStore.getState().advanceStudyAfterReveal();
 
     let session = useProgressionStore.getState().currentSession;
     expect(session?.currentCardId).toBe(cr('topic-a', 'a-3'));
@@ -567,8 +601,11 @@ describe('progressionStore card-only canonical API', () => {
 
     useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
 
-    cards.forEach((card) => {
+    cards.forEach((card, index) => {
       useProgressionStore.getState().submitStudyResult(cr('topic-a', card.id), 4);
+      if (index < cards.length - 1) {
+        useProgressionStore.getState().advanceStudyAfterReveal();
+      }
     });
 
     expect(undoManager.undoStackSize).toBe(MAX_UNDO_DEPTH);

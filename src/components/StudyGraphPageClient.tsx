@@ -33,11 +33,10 @@ export function StudyGraphPageClient() {
   const initialize = useProgressionStore((s) => s.initialize);
   const startTopicStudySession = useProgressionStore((s) => s.startTopicStudySession);
   const currentSession = useProgressionStore((s) => s.currentSession);
-  const flipCurrentCard = useUIStore((s) => s.flipCurrentCard);
   const submitStudyResult = useProgressionStore((s) => s.submitStudyResult);
+  const advanceStudyAfterReveal = useProgressionStore((s) => s.advanceStudyAfterReveal);
   const undoLastStudyResult = useProgressionStore((s) => s.undoLastStudyResult);
   const redoLastStudyResult = useProgressionStore((s) => s.redoLastStudyResult);
-  const isCurrentCardFlipped = useUIStore((s) => s.isCurrentCardFlipped);
   const activeCrystals = useProgressionStore((s) => s.activeCrystals);
   const unlockPoints = useProgressionStore((s) => s.unlockPoints);
 
@@ -234,11 +233,10 @@ export function StudyGraphPageClient() {
         currentCardId={currentSession?.currentCardId ?? null}
         currentTopicId={currentTopicId}
         currentSubjectId={currentSession?.subjectId ?? null}
-        isCardFlipped={isCurrentCardFlipped}
         totalCards={currentSession?.totalCards ?? 0}
         onClose={handleCloseStudyPanel}
-        onFlip={flipCurrentCard}
         onSubmitResult={handleRate}
+        onAdvance={advanceStudyAfterReveal}
         onUndo={handleUndo}
         onRedo={handleRedo}
       />

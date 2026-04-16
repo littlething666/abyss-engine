@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import React from 'react';
 import './globals.css';
+import '@/styles/rating-feedback.css';
 import QueryProvider from './providers/QueryProvider';
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";

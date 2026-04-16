@@ -13,7 +13,10 @@ import { Card } from '../../types/core';
 import { SM2Data } from '../../features/progression/sm2';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ResponsiveLlmInferenceSurface } from '../ResponsiveLlmInferenceSurface';
+import {
+  ResponsiveLlmInferenceSurface,
+  type ResponsiveLlmInferenceDescription,
+} from '../ResponsiveLlmInferenceSurface';
 import { LlmThinkingBlock } from '../LlmThinkingBlock';
 import { LlmThinkingToggle } from '../LlmThinkingToggle';
 import { LlmTtsToggle } from '../LlmTtsToggle';
@@ -147,13 +150,12 @@ interface StudyPanelStudyViewProps {
   selectedAnswers: string[];
   isAnswerSubmitted: boolean;
   isCorrect: boolean;
-  isCardFlipped: boolean;
+  isRevealed: boolean;
   sm2State: SM2Data | null;
   activeCard: Card | null;
   onSelectAnswer: (answer: string) => void;
   onChoiceSubmit: () => void;
   onChoiceContinue: () => void;
-  onFlip: () => void;
   onRate: (rating: Rating) => void;
   getRatingLabel: (rating: Rating) => string;
   getRatingColor: (rating: Rating) => string;
@@ -203,13 +205,12 @@ export function StudyPanelStudyView({
   selectedAnswers,
   isAnswerSubmitted,
   isCorrect,
-  isCardFlipped,
+  isRevealed,
   sm2State,
   activeCard,
   onSelectAnswer,
   onChoiceSubmit,
   onChoiceContinue,
-  onFlip,
   onRate,
   getRatingLabel,
   getRatingColor,
@@ -308,7 +309,18 @@ export function StudyPanelStudyView({
   );
 
   const formulaDescSource = formulaDescriptionMarkdown(activeFormulaLatex);
-
+  const questionExplainDescription: ResponsiveLlmInferenceDescription = {
+    kind: 'srOnly',
+    text: QUESTION_EXPLAIN_DESCRIPTION,
+  };
+  const questionMermaidDescription: ResponsiveLlmInferenceDescription = {
+    kind: 'srOnly',
+    text: QUESTION_MERMAID_DESCRIPTION,
+  };
+  const formulaExplainDescription: ResponsiveLlmInferenceDescription = {
+    kind: 'markdown',
+    source: formulaDescSource,
+  };
   return (
     <div className="w-full relative" data-testid="study-panel-card-root">
       <div className="bg-card rounded-[15px] p-5 min-h-[150px] flex flex-col justify-center">
@@ -385,10 +397,10 @@ export function StudyPanelStudyView({
         </div>
 
         {/* Flashcard Answer */}
-        {isFlashcard && isCardFlipped && renderedCard.answer && (
+        {isFlashcard && isRevealed && renderedCard.answer && (
           <div className="mt-4 pt-4 border-t border-border" data-testid="study-card-answer-section">
             <div className="mb-2">
-              <Badge variant="outline">Answer</Badge>
+              <Badge variant="outline">Answer & explanation</Badge>
             </div>
             <StudyKatexInteractive
               className="study-katex-interactive"
@@ -445,7 +457,7 @@ export function StudyPanelStudyView({
         )}
 
         {/* Context - shown after answering */}
-        {((isFlashcard && isCardFlipped) || (isChoiceQuestion && isAnswerSubmitted)) && renderedCard.context && (
+        {((isFlashcard && isRevealed) || (isChoiceQuestion && isAnswerSubmitted)) && renderedCard.context && (
           <div className="mt-4 pt-4 border-t border-border">
             <div className="mb-2">
               <Badge variant="outline">💡 Explanation</Badge>
@@ -486,7 +498,7 @@ export function StudyPanelStudyView({
         onOpenChange={handleExplainOpenChange}
         isDesktop={isDesktop}
         title="Explain question"
-        description={{ kind: 'srOnly', text: QUESTION_EXPLAIN_DESCRIPTION }}
+        description={questionExplainDescription}
         onDismissOutside={dismissExplainInference}
         desktopContentClassName="sm:max-w-md"
         sheetMaxHeightClassName="data-[side=bottom]:max-h-[70vh]"
@@ -513,7 +525,7 @@ export function StudyPanelStudyView({
         onOpenChange={handleMermaidOpenChange}
         isDesktop={isDesktop}
         title="Question diagram"
-        description={{ kind: 'srOnly', text: QUESTION_MERMAID_DESCRIPTION }}
+        description={questionMermaidDescription}
         onDismissOutside={dismissMermaidInference}
         desktopContentClassName="sm:max-w-xl"
         sheetMaxHeightClassName="data-[side=bottom]:max-h-[80vh]"
@@ -540,7 +552,7 @@ export function StudyPanelStudyView({
         onOpenChange={handleFormulaOpenChange}
         isDesktop={isDesktop}
         title="Formula explanation"
-        description={{ kind: 'markdown', source: formulaDescSource }}
+        description={formulaExplainDescription}
         onDismissOutside={dismissFormulaInference}
         desktopContentClassName="sm:max-w-md"
         sheetMaxHeightClassName="data-[side=bottom]:max-h-[70vh]"
@@ -566,27 +578,22 @@ export function StudyPanelStudyView({
       <div className="mt-4 text-center sticky bottom-0 z-10 bg-card pt-3">
 
         {/* Flashcard Actions */}
-        {isFlashcard && !isCardFlipped && (
-          <Button
-            onClick={onFlip}
-            className="w-full"
-            data-testid="study-card-show-answer"
-          >
-            Show Answer
-          </Button>
-        )}
-
-        {isFlashcard && isCardFlipped && (
+        {isFlashcard && !isAnswerSubmitted && (
           <div className="grid grid-cols-4 gap-2">
             <span className="col-span-4 text-muted-foreground text-sm mb-2">Rate your recall:</span>
             {([1, 2, 3, 4] as Rating[]).map((rating) => {
               const label = getRatingLabel(rating);
               const color = getRatingColor(rating);
+              const BUTTON_STYLE: React.CSSProperties = {
+                backgroundColor: color,
+              };
               return (
                 <Button
                   key={rating}
-                  onClick={() => onRate(rating)}
-                  style={{ backgroundColor: color }}
+                  style={BUTTON_STYLE}
+                  onClick={() => {
+                    onRate(rating);
+                  }}
                   className="flex-1 py-3 rounded-md text-sm font-bold cursor-pointer hover:opacity-90"
                   data-testid={`study-card-rating-${rating}`}
                 >
@@ -595,6 +602,16 @@ export function StudyPanelStudyView({
               );
             })}
           </div>
+        )}
+
+        {isFlashcard && isRevealed && isAnswerSubmitted && (
+          <Button
+            onClick={onChoiceContinue}
+            className="w-full"
+            data-testid="study-card-continue"
+          >
+            Continue
+          </Button>
         )}
 
         {/* Choice Question Actions */}

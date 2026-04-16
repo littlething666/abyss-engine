@@ -19,7 +19,8 @@ import MathMarkdownRenderer from '../MathMarkdownRenderer';
 
 interface MiniGameViewProps {
   content: MiniGameContent;
-  onComplete: (isCorrect: boolean) => void;
+  isRevealed: boolean;
+  onSubmit: (isCorrect: boolean) => void;
   onContinue: () => void;
 }
 
@@ -51,7 +52,7 @@ function getRequiredItemIds(content: MiniGameContent): string[] | undefined {
   return undefined;
 }
 
-export function MiniGameView({ content, onComplete, onContinue }: MiniGameViewProps) {
+export function MiniGameView({ content, isRevealed, onSubmit, onContinue }: MiniGameViewProps) {
   const itemIds = useMemo(() => getItemIds(content), [content]);
   const requiredItemIds = useMemo(() => getRequiredItemIds(content), [content]);
 
@@ -65,15 +66,15 @@ export function MiniGameView({ content, onComplete, onContinue }: MiniGameViewPr
   const interaction = useMiniGameInteraction({ itemIds, requiredItemIds, evaluateFn });
 
   const handleSubmit = useCallback(() => {
-    interaction.submit();
-  }, [interaction]);
+    const result = interaction.submit();
+    if (result) {
+      onSubmit(result.isCorrect);
+    }
+  }, [interaction, onSubmit]);
 
   const handleContinue = useCallback(() => {
-    if (interaction.result) {
-      onComplete(interaction.result.isCorrect);
-    }
     onContinue();
-  }, [interaction.result, onComplete, onContinue]);
+  }, [onContinue]);
 
   const scorePercent = interaction.result
     ? Math.round(interaction.result.score * 100)
@@ -96,7 +97,7 @@ export function MiniGameView({ content, onComplete, onContinue }: MiniGameViewPr
           <Badge variant="secondary" data-testid="study-card-format-mini-game">
             🎮 {GAME_TYPE_LABELS[content.gameType] ?? 'Mini Game'}
           </Badge>
-          {interaction.phase === 'submitted' && interaction.result && (
+          {interaction.phase === 'submitted' && isRevealed && interaction.result && (
             <Badge variant={interaction.result.isCorrect ? 'default' : 'destructive'}>
               {scorePercent}% — {interaction.result.correctItems}/{interaction.result.totalItems}
             </Badge>
@@ -134,7 +135,7 @@ export function MiniGameView({ content, onComplete, onContinue }: MiniGameViewPr
         )}
 
         {/* Explanation (post-submit) */}
-        {interaction.phase === 'submitted' && content.explanation && (
+        {interaction.phase === 'submitted' && isRevealed && content.explanation && (
           <div className="mt-4 pt-4 border-t border-border">
             <div className="mb-2">
               <Badge variant="outline">💡 Explanation</Badge>
@@ -160,7 +161,7 @@ export function MiniGameView({ content, onComplete, onContinue }: MiniGameViewPr
           </Button>
         )}
 
-        {interaction.phase === 'submitted' && (
+        {interaction.phase === 'submitted' && isRevealed && (
           <Button
             onClick={handleContinue}
             className="w-full"

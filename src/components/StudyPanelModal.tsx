@@ -33,17 +33,18 @@ import { StudyPanelTab } from './studyPanel/types';
 import { MiniGameView } from './miniGames/MiniGameView';
 import type { MiniGameContent } from '../types/core';
 import { cardRefKey } from '@/lib/topicRef';
+import { RatingFeedbackCanvas, type RatingFeedbackCanvasHandle } from './studyPanel/RatingFeedbackCanvas';
+import { useRatingFeedback } from '@/hooks/useRatingFeedback';
 
 interface StudyPanelModalProps {
   isOpen: boolean;
   currentCardId: string | null;
   currentTopicId: string | null;
   currentSubjectId: string | null;
-  isCardFlipped: boolean;
   totalCards: number;
   onClose: () => void;
-  onFlip: () => void;
   onSubmitResult: (cardId: string, isCorrect?: boolean, rating?: Rating) => void;
+  onAdvance: () => void;
   onUndo: () => void;
   onRedo: () => void;
 }
@@ -53,11 +54,10 @@ export function StudyPanelModal({
   currentCardId,
   currentTopicId,
   currentSubjectId,
-  isCardFlipped,
   totalCards,
   onClose,
-  onFlip,
   onSubmitResult,
+  onAdvance,
   onUndo,
   onRedo,
 }: StudyPanelModalProps) {
@@ -120,13 +120,39 @@ export function StudyPanelModal({
     llmMermaidDiagram.cancelInflight,
   ]);
 
-  useStudyKeyboardShortcuts(onUndo, onRedo, model.canUndo, model.canRedo);
-
   const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]);
   const [isAnswerSubmitted, setIsAnswerSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
+  const [isRevealed, setIsRevealed] = useState(false);
   const systemPromptRef = useRef<HTMLPreElement>(null);
   const previousActiveTabRef = useRef<StudyPanelTab>('study');
+  const feedbackCanvasRef = useRef<RatingFeedbackCanvasHandle>(null);
+  const studyCardContainerRef = useRef<HTMLDivElement>(null);
+  const { triggerForRating, triggerForChoice } = useRatingFeedback({
+    canvasRef: feedbackCanvasRef,
+    cardRef: studyCardContainerRef,
+  });
+
+  const applySubmissionStateFromSession = () => {
+    const currentCardKey = currentSession?.currentCardId;
+    const attempts = currentSession?.attempts ?? [];
+    const hasSubmittedCurrentCard = attempts.some((attempt) => attempt.cardId === currentCardKey);
+    setIsAnswerSubmitted(hasSubmittedCurrentCard);
+    setIsRevealed(hasSubmittedCurrentCard);
+    setIsCorrect(false);
+  };
+
+  const handleUndo = () => {
+    onUndo();
+    applySubmissionStateFromSession();
+  };
+
+  const handleRedo = () => {
+    onRedo();
+    applySubmissionStateFromSession();
+  };
+
+  useStudyKeyboardShortcuts(handleUndo, handleRedo, model.canUndo, model.canRedo);
 
   useEffect(() => {
     if (previousActiveTabRef.current !== activeTab) {
@@ -154,13 +180,19 @@ export function StudyPanelModal({
     setSelectedAnswers([]);
     setIsAnswerSubmitted(false);
     setIsCorrect(false);
+    setIsRevealed(false);
   }, [model.activeCard?.id]);
+
+  useEffect(() => {
+    applySubmissionStateFromSession();
+  }, [currentSession?.attempts?.length, currentSession?.currentCardId]);
 
   useEffect(() => {
     if (!isOpen) {
       setSelectedAnswers([]);
       setIsAnswerSubmitted(false);
       setIsCorrect(false);
+      setIsRevealed(false);
     }
   }, [isOpen]);
 
@@ -200,8 +232,13 @@ export function StudyPanelModal({
     if (!activeCard) return;
 
     const nextIsCorrect = evaluateChoiceAnswer(activeCard, selectedAnswers);
+    const cardKey = resolveSubmitCardKey();
+    if (!cardKey) return;
+
     setIsCorrect(nextIsCorrect);
     setIsAnswerSubmitted(true);
+    submitResultWithFeedback(cardKey, undefined, nextIsCorrect);
+    setIsRevealed(true);
   };
 
   /** Must match `progressionStore` queue keys — composite `cardRefKey`, not raw deck `Card.id`. */
@@ -221,32 +258,46 @@ export function StudyPanelModal({
     return null;
   };
 
-  const handleChoiceContinue = () => {
-    const cardKey = resolveSubmitCardKey();
-    if (!cardKey) return;
+  const submitResultWithFeedback = (cardKey: string, rating?: Rating, isCorrect?: boolean) => {
+    if (typeof rating === 'number') {
+      triggerForRating(rating);
+    } else if (typeof isCorrect === 'boolean') {
+      triggerForChoice(isCorrect);
+    }
 
-    onSubmitResult(cardKey, isCorrect);
+    onSubmitResult(cardKey, isCorrect, rating);
+  };
+
+  const handleChoiceContinue = () => {
     setSelectedAnswers([]);
     setIsAnswerSubmitted(false);
     setIsCorrect(false);
+    setIsRevealed(false);
+    onAdvance();
   };
 
   const handleRating = (rating: Rating) => {
     const cardKey = resolveSubmitCardKey();
     if (!cardKey) return;
 
-    onSubmitResult(cardKey, undefined, rating);
+    submitResultWithFeedback(cardKey, rating);
+    setIsAnswerSubmitted(true);
+    setIsRevealed(true);
   };
 
   const handleMiniGameComplete = (miniGameIsCorrect: boolean) => {
     setIsCorrect(miniGameIsCorrect);
-  };
-
-  const handleMiniGameContinue = () => {
     const cardKey = resolveSubmitCardKey();
     if (!cardKey) return;
 
-    onSubmitResult(cardKey, isCorrect);
+    submitResultWithFeedback(cardKey, undefined, miniGameIsCorrect);
+    setIsRevealed(true);
+  };
+
+  const handleMiniGameContinue = () => {
+    setIsRevealed(false);
+    setIsCorrect(false);
+    onAdvance();
   };
 
   if (!isOpen) return null;
@@ -325,56 +376,60 @@ export function StudyPanelModal({
             systemPromptRef={systemPromptRef}
           />
 
-          {model.renderedCard && activeTab === 'study' && model.isMiniGame && model.renderedCard.miniGame && (
-            <MiniGameView
-              content={model.renderedCard.miniGame as MiniGameContent}
-              onComplete={handleMiniGameComplete}
-              onContinue={handleMiniGameContinue}
-            />
-          )}
-
-          {model.renderedCard && activeTab === 'study' && !model.isMiniGame && (
-            <StudyPanelStudyView
-              renderedCard={model.renderedCard}
-              isFlashcard={model.isFlashcard}
-              isSingleChoice={model.isSingleChoice}
-              isMultiChoice={model.isMultiChoice}
-              isChoiceQuestion={model.isChoiceQuestion}
-              selectedAnswers={selectedAnswers}
-              isAnswerSubmitted={isAnswerSubmitted}
-              isCorrect={isCorrect}
-              isCardFlipped={isCardFlipped}
-              sm2State={model.sm2State}
-              activeCard={model.activeCard}
-              onSelectAnswer={handleAnswerSelect}
-              onChoiceSubmit={handleChoiceSubmit}
-              onChoiceContinue={handleChoiceContinue}
-              onFlip={onFlip}
-              onRate={handleRating}
-              getRatingLabel={getRatingLabel}
-              getRatingColor={getRatingColor}
-              onUndo={onUndo}
-              onRedo={onRedo}
-              canUndo={model.canUndo}
-              canRedo={model.canRedo}
-              undoCount={model.undoCount}
-              redoCount={model.redoCount}
-              llmExplain={llmExplain}
-              llmFormulaExplain={llmFormulaExplain}
-              llmMermaidDiagram={llmMermaidDiagram}
-              explainThinkingEnabled={explainThinking.enableThinking}
-              formulaThinkingEnabled={formulaThinking.enableThinking}
-              mermaidThinkingEnabled={mermaidThinking.enableThinking}
-              onToggleExplainThinking={explainThinking.toggleThinking}
-              onToggleFormulaThinking={formulaThinking.toggleThinking}
-              onToggleMermaidThinking={mermaidThinking.toggleThinking}
-              explainTtsEnabled={explainTts.enableTts}
-              formulaTtsEnabled={formulaTts.enableTts}
-              mermaidTtsEnabled={mermaidTts.enableTts}
-              onToggleExplainTts={explainTts.toggleTts}
-              onToggleFormulaTts={formulaTts.toggleTts}
-              onToggleMermaidTts={mermaidTts.toggleTts}
-            />
+          {model.renderedCard && activeTab === 'study' && (
+            <div ref={studyCardContainerRef} className="relative">
+              <RatingFeedbackCanvas ref={feedbackCanvasRef} containerRef={studyCardContainerRef} />
+              {model.isMiniGame && model.renderedCard.miniGame ? (
+                <MiniGameView
+                  key={currentSession?.currentCardId ?? 'none'}
+                  content={model.renderedCard.miniGame as MiniGameContent}
+                  isRevealed={isRevealed}
+                  onSubmit={handleMiniGameComplete}
+                  onContinue={handleMiniGameContinue}
+                />
+              ) : (
+                <StudyPanelStudyView
+                  renderedCard={model.renderedCard}
+                  isFlashcard={model.isFlashcard}
+                  isSingleChoice={model.isSingleChoice}
+                  isMultiChoice={model.isMultiChoice}
+                  isChoiceQuestion={model.isChoiceQuestion}
+                  selectedAnswers={selectedAnswers}
+                  isAnswerSubmitted={isAnswerSubmitted}
+                  isCorrect={isCorrect}
+                  isRevealed={isRevealed}
+                  sm2State={model.sm2State}
+                  activeCard={model.activeCard}
+                  onSelectAnswer={handleAnswerSelect}
+                  onChoiceSubmit={handleChoiceSubmit}
+                  onChoiceContinue={handleChoiceContinue}
+                  onRate={handleRating}
+                  getRatingLabel={getRatingLabel}
+                  getRatingColor={getRatingColor}
+                  onUndo={handleUndo}
+                  onRedo={handleRedo}
+                  canUndo={model.canUndo}
+                  canRedo={model.canRedo}
+                  undoCount={model.undoCount}
+                  redoCount={model.redoCount}
+                  llmExplain={llmExplain}
+                  llmFormulaExplain={llmFormulaExplain}
+                  llmMermaidDiagram={llmMermaidDiagram}
+                  explainThinkingEnabled={explainThinking.enableThinking}
+                  formulaThinkingEnabled={formulaThinking.enableThinking}
+                  mermaidThinkingEnabled={mermaidThinking.enableThinking}
+                  onToggleExplainThinking={explainThinking.toggleThinking}
+                  onToggleFormulaThinking={formulaThinking.toggleThinking}
+                  onToggleMermaidThinking={mermaidThinking.toggleThinking}
+                  explainTtsEnabled={explainTts.enableTts}
+                  formulaTtsEnabled={formulaTts.enableTts}
+                  mermaidTtsEnabled={mermaidTts.enableTts}
+                  onToggleExplainTts={explainTts.toggleTts}
+                  onToggleFormulaTts={formulaTts.toggleTts}
+                  onToggleMermaidTts={mermaidTts.toggleTts}
+                />
+              )}
+            </div>
           )}
       </div>
       </AbyssDialogContent>
