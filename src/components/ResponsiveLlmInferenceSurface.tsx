@@ -21,7 +21,6 @@ import {
   SheetFooter,
   SheetTitle,
 } from '@/components/ui/abyss-sheet';
-import { useRegisterModalBodyScrollShard } from '@/components/ui/modal-body-scroll-lock';
 import { cn } from '@/lib/utils';
 
 export const LLM_INFERENCE_SURFACE_Z_CLASS = 'z-[60]';
@@ -50,8 +49,8 @@ export type ResponsiveLlmInferenceSurfaceProps = {
 
 /**
  * Base UI outside-press reasons that should trigger `onDismissOutside`.
- * Radix `onPointerDownOutside`/`onInteractOutside` map to Base UI's `onOpenChange`
- * event-details `reason` values.
+ * Replaces Radix's separate `onPointerDownOutside` / `onInteractOutside` callbacks,
+ * which Base UI exposes as a `reason` on `onOpenChange`.
  */
 const OUTSIDE_DISMISS_REASONS: ReadonlyArray<string> = ['outside-press', 'focus-out'];
 
@@ -77,21 +76,22 @@ export function ResponsiveLlmInferenceSurface({
   const desktopSurfaceRef = useRef<HTMLDivElement>(null);
   const sheetSurfaceRef = useRef<HTMLDivElement>(null);
 
-  // Sheet still runs on Radix via `abyss-sheet`, so its scroll-lock shard registration is meaningful.
-  // The desktop dialog now runs on Base UI (no custom body-scroll-lock context), so no desktop shard is needed.
-  useRegisterModalBodyScrollShard(sheetSurfaceRef, open && !isDesktop);
+  const handleOpenChangeWithOutsideReason = (
+    nextOpen: boolean,
+    eventDetails?: unknown,
+  ) => {
+    const reason = (eventDetails as BaseUiOpenChangeDetails)?.reason;
+    if (!nextOpen && reason && OUTSIDE_DISMISS_REASONS.includes(reason)) {
+      onDismissOutside();
+    }
+    onOpenChange(nextOpen);
+  };
 
   if (isDesktop) {
     return (
       <Dialog
         open={open}
-        onOpenChange={(nextOpen, eventDetails) => {
-          const reason = (eventDetails as BaseUiOpenChangeDetails)?.reason;
-          if (!nextOpen && reason && OUTSIDE_DISMISS_REASONS.includes(reason)) {
-            onDismissOutside();
-          }
-          onOpenChange(nextOpen);
-        }}
+        onOpenChange={handleOpenChangeWithOutsideReason}
         modal={false}
       >
         <DialogContent
@@ -122,7 +122,7 @@ export function ResponsiveLlmInferenceSurface({
   }
 
   return (
-    <AbyssSheet open={open} onOpenChange={onOpenChange} modal={false}>
+    <AbyssSheet open={open} onOpenChange={handleOpenChangeWithOutsideReason} modal={false}>
       <AbyssSheetContent
         ref={sheetSurfaceRef}
         data-llm-inference-surface=""
@@ -135,8 +135,6 @@ export function ResponsiveLlmInferenceSurface({
           'gap-0 p-0',
           sheetMaxHeightClassName,
         )}
-        onPointerDownOutside={onDismissOutside}
-        onInteractOutside={onDismissOutside}
       >
         <AbyssSheetHeader className="text-left">
           <div className="flex items-center gap-2">
@@ -146,22 +144,20 @@ export function ResponsiveLlmInferenceSurface({
           {description.kind === 'srOnly' ? (
             <SheetDescription className="sr-only">{description.text}</SheetDescription>
           ) : (
-            <SheetDescription asChild>
+            <SheetDescription render={
               <MathMarkdownRenderer
                 source={description.source}
                 className="text-lg text-muted-foreground markdown-body markdown-body--inline break-all"
               />
-            </SheetDescription>
+            } />
           )}
         </AbyssSheetHeader>
         <div className={cn('overflow-y-auto px-4', sheetBodyScrollClassName)}>
           {children}
         </div>
         <SheetFooter className="border-t bg-background pt-2">
-          <SheetClose asChild>
-            <Button type="button" variant="outline">
-              Close
-            </Button>
+          <SheetClose render={<Button type="button" variant="outline" />}>
+            Close
           </SheetClose>
         </SheetFooter>
       </AbyssSheetContent>

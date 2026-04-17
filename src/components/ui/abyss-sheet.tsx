@@ -1,15 +1,21 @@
 'use client';
 
 /**
- * Abyss sheet: same `lockScroll` + shard behavior as `abyss-dialog.tsx`. Keep classNames aligned with `./sheet`.
- * When nested inside `AbyssDialog` (or another sheet that already provided scroll lock context), no inner provider is added.
+ * Abyss sheet: Base UI Dialog with drag-to-dismiss for bottom sheets.
+ *
+ * Wraps `@base-ui/react/dialog` with an extra drag-to-dismiss gesture on the header grip
+ * (bottom sheets only, opt-in via `headerDragToDismiss` + `onHeaderDragDismiss` + controlled `sheetOpen`).
+ * Overlay opacity ramps with drag offset, popup follows via inline transform.
+ * When the drag exceeds the dismiss threshold, the popup animates off-screen then calls `onHeaderDragDismiss`.
+ *
+ * Public API kept stable: AbyssSheet, AbyssSheetContent, AbyssSheetHeader plus re-exports for SheetClose,
+ * SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger.
+ *
+ * Sheet sub-components are re-exported from `./sheet` (single source of truth).
  */
 
 import * as React from 'react';
-import { Dialog as SheetPrimitive } from 'radix-ui';
-import { RemoveScroll } from 'react-remove-scroll';
-import { createSlot } from '@radix-ui/react-slot';
-import { useComposedRefs } from '@radix-ui/react-compose-refs';
+import { Dialog as SheetPrimitive } from '@base-ui/react/dialog';
 import { animate, useMotionValue } from 'motion/react';
 
 import { cn } from '@/lib/utils';
@@ -18,7 +24,6 @@ import {
   shouldDismissSheetDrag,
 } from '@/lib/sheetHeaderDragDismiss';
 import { Button } from '@/components/ui/button';
-import { GripHorizontal, XIcon } from 'lucide-react';
 import {
   SheetClose,
   SheetDescription,
@@ -26,20 +31,19 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/radix-sheet';
-import {
-  ModalBodyScrollLockProvider,
-  useModalBodyScrollLockContext,
-} from '@/components/ui/modal-body-scroll-lock';
+} from '@/components/ui/sheet';
+import { GripHorizontal, XIcon } from 'lucide-react';
 
 const SHEET_OVERLAY_CLASS =
-  'fixed inset-0 z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0';
+  'fixed inset-0 z-50 bg-black/10 transition-opacity duration-150 data-starting-style:opacity-0 data-ending-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs data-[drag-dismiss-exit]:transition-none';
 
-/** Exit slide/fade when `data-drag-dismiss-exit` is absent. With drag-dismiss flush, Radix closes with `animate-none` so Presence unmounts without resetting transform. */
+/**
+ * Side slide/fade animation uses Base UI's data-starting-style / data-ending-style pattern.
+ * When drag-dismiss completes, `data-drag-dismiss-exit` disables the transition so the inline
+ * transform set by the drag handlers stays put through unmount (no snap-back and no double-translate).
+ */
 const SHEET_CONTENT_BASE =
-  'fixed z-50 flex flex-col gap-4 bg-background bg-clip-padding text-sm shadow-lg transition duration-200 ease-in-out data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-[side=bottom]:data-open:slide-in-from-bottom-10 data-[side=left]:data-open:slide-in-from-left-10 data-[side=right]:data-open:slide-in-from-right-10 data-[side=top]:data-open:slide-in-from-top-10 data-closed:animate-out data-closed:fade-out-0 data-[side=bottom]:data-closed:slide-out-to-bottom-10 data-[side=left]:data-closed:slide-out-to-left-10 data-[side=right]:data-closed:slide-out-to-right-10 data-[side=top]:data-closed:slide-out-to-top-10 data-[drag-dismiss-exit]:data-[state=closed]:animate-none';
-
-const RemoveScrollSlot = createSlot('AbyssSheet.RemoveScroll');
+  'fixed z-50 flex flex-col gap-4 bg-popover bg-clip-padding text-sm text-popover-foreground shadow-lg transition duration-200 ease-in-out data-ending-style:opacity-0 data-starting-style:opacity-0 data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=bottom]:data-ending-style:translate-y-[2.5rem] data-[side=bottom]:data-starting-style:translate-y-[2.5rem] data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=left]:data-ending-style:translate-x-[-2.5rem] data-[side=left]:data-starting-style:translate-x-[-2.5rem] data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=right]:data-ending-style:translate-x-[2.5rem] data-[side=right]:data-starting-style:translate-x-[2.5rem] data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=top]:data-ending-style:translate-y-[-2.5rem] data-[side=top]:data-starting-style:translate-y-[-2.5rem] data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm data-[drag-dismiss-exit]:transition-none';
 
 type SheetHeaderDragDismissContextValue = {
   gripDragHandlers: {
@@ -60,54 +64,31 @@ function overlayOpacityForDrag(dragY: number): number {
   return 1 - t * 0.55;
 }
 
-export type AbyssSheetProps = React.ComponentProps<typeof SheetPrimitive.Root> & {
-  lockScroll?: boolean;
-};
-
-export function AbyssSheet({
-  lockScroll = false,
-  modal,
-  open,
-  defaultOpen,
-  children,
-  ...props
-}: AbyssSheetProps) {
-  const parentLock = useModalBodyScrollLockContext();
-  const modalResolved = modal !== false;
-
-  React.useEffect(() => {
-    if (process.env.NODE_ENV !== 'development') return;
-    if (modalResolved && lockScroll) {
-      // eslint-disable-next-line no-console -- dev-only guidance
-      console.warn('AbyssSheet: lockScroll is ignored when modal is true (default).');
+function composeRefs<T>(
+  ...refs: Array<React.Ref<T> | undefined>
+): React.RefCallback<T> {
+  return (value) => {
+    for (const ref of refs) {
+      if (typeof ref === 'function') {
+        ref(value);
+      } else if (ref != null) {
+        (ref as React.MutableRefObject<T | null>).current = value;
+      }
     }
-  }, [modalResolved, lockScroll]);
+  };
+}
 
-  const dialogOpen = open !== undefined ? Boolean(open) : Boolean(defaultOpen);
+export type AbyssSheetProps = SheetPrimitive.Root.Props;
 
-  const root = (
-    <SheetPrimitive.Root data-slot="sheet" modal={modal} open={open} defaultOpen={defaultOpen} {...props}>
+export function AbyssSheet({ children, ...props }: AbyssSheetProps) {
+  return (
+    <SheetPrimitive.Root data-slot="sheet" {...props}>
       {children}
     </SheetPrimitive.Root>
   );
-
-  if (parentLock) {
-    return root;
-  }
-
-  return (
-    <ModalBodyScrollLockProvider
-      modal={modalResolved}
-      lockScroll={lockScroll}
-      dialogOpen={dialogOpen}
-      barrierSource="sheet"
-    >
-      {root}
-    </ModalBodyScrollLockProvider>
-  );
 }
 
-export type AbyssSheetContentProps = React.ComponentProps<typeof SheetPrimitive.Content> & {
+export type AbyssSheetContentProps = SheetPrimitive.Popup.Props & {
   side?: 'top' | 'right' | 'bottom' | 'left';
   showCloseButton?: boolean;
   /** Bottom sheets only: drag the header grip down to dismiss (use with `AbyssSheetHeader`). */
@@ -131,15 +112,12 @@ export const AbyssSheetContent = React.forwardRef<HTMLDivElement, AbyssSheetCont
     },
     forwardedRef,
   ) {
-    const lockCtx = useModalBodyScrollLockContext();
-    const modalResolved = lockCtx?.modal ?? true;
-    const useCustomBodyLock = Boolean(
-      lockCtx?.lockScroll && !modalResolved && lockCtx.barrierSource === 'sheet',
-    );
-
     const primaryContentRef = React.useRef<HTMLDivElement | null>(null);
     const overlayElRef = React.useRef<HTMLDivElement | null>(null);
-    const composedRefs = useComposedRefs(forwardedRef, primaryContentRef);
+    const composedContentRef = React.useMemo(
+      () => composeRefs<HTMLDivElement>(forwardedRef, primaryContentRef),
+      [forwardedRef],
+    );
 
     const dragY = useMotionValue(0);
     const draggingRef = React.useRef(false);
@@ -327,74 +305,56 @@ export const AbyssSheetContent = React.forwardRef<HTMLDivElement, AbyssSheetCont
       onGripPointerCancel,
     ]);
 
-    const shards = React.useMemo(() => {
-      const extra = lockCtx?.shardRefs ?? [];
-      return [primaryContentRef, ...extra];
-    }, [lockCtx?.shardRefs, primaryContentRef]);
-
-    const content = (
-      <SheetPrimitive.Content
-        data-slot="sheet-content"
-        data-side={side}
-        className={cn(
-          SHEET_CONTENT_BASE,
-          headerDragActive && 'will-change-transform',
-          headerDragActive && sheetDragSuppressTransition && 'transition-none',
-          className,
-        )}
-        ref={composedRefs}
-        {...props}
-        {...(dragDismissExit ? { 'data-drag-dismiss-exit': '' } : {})}
-      >
-        {dragContext ? (
-          <SheetHeaderDragDismissContext.Provider value={dragContext}>
-            {children}
-          </SheetHeaderDragDismissContext.Provider>
-        ) : (
-          children
-        )}
-        {showCloseButton && (
-          <SheetPrimitive.Close data-slot="sheet-close" asChild>
-            <Button variant="ghost" className="absolute top-3 right-3" size="icon-sm">
-              <XIcon />
-              <span className="sr-only">Close</span>
-            </Button>
-          </SheetPrimitive.Close>
-        )}
-      </SheetPrimitive.Content>
-    );
-
-    const overlayRef = React.useCallback((node: HTMLDivElement | null) => {
+    const overlayCallbackRef = React.useCallback((node: HTMLDivElement | null) => {
       overlayElRef.current = node;
     }, []);
 
-    if (useCustomBodyLock) {
-      const dialogOpen = lockCtx?.dialogOpen ?? true;
-      return (
-        <SheetPrimitive.Portal data-slot="sheet-portal">
-          <RemoveScroll as={RemoveScrollSlot} allowPinchZoom shards={shards}>
-            <div
-              ref={headerDragActive ? overlayRef : undefined}
-              data-slot="sheet-overlay"
-              data-state={dialogOpen ? 'open' : 'closed'}
-              className={cn(SHEET_OVERLAY_CLASS)}
-              style={{ pointerEvents: 'auto' }}
-              aria-hidden
-            />
-          </RemoveScroll>
-          {content}
-        </SheetPrimitive.Portal>
-      );
-    }
+    const dragDismissAttrs = dragDismissExit ? { 'data-drag-dismiss-exit': '' } : {};
 
     return (
       <SheetPrimitive.Portal data-slot="sheet-portal">
-        <SheetPrimitive.Overlay
-          ref={headerDragActive ? overlayRef : undefined}
+        <SheetPrimitive.Backdrop
+          ref={headerDragActive ? overlayCallbackRef : undefined}
           data-slot="sheet-overlay"
           className={cn(SHEET_OVERLAY_CLASS)}
+          {...dragDismissAttrs}
         />
-        {content}
+        <SheetPrimitive.Popup
+          data-slot="sheet-content"
+          data-side={side}
+          className={cn(
+            SHEET_CONTENT_BASE,
+            headerDragActive && 'will-change-transform',
+            headerDragActive && sheetDragSuppressTransition && 'transition-none',
+            className,
+          )}
+          ref={composedContentRef}
+          {...props}
+          {...dragDismissAttrs}
+        >
+          {dragContext ? (
+            <SheetHeaderDragDismissContext.Provider value={dragContext}>
+              {children}
+            </SheetHeaderDragDismissContext.Provider>
+          ) : (
+            children
+          )}
+          {showCloseButton && (
+            <SheetPrimitive.Close
+              data-slot="sheet-close"
+              render={
+                <Button
+                  variant="ghost"
+                  className="absolute top-3 right-3"
+                  size="icon-sm"
+                />
+              }
+            >
+              <XIcon />
+              <span className="sr-only">Close</span>
+            </SheetPrimitive.Close>
+          )}
+        </SheetPrimitive.Popup>
       </SheetPrimitive.Portal>
     );
   },
