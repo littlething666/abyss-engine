@@ -12,7 +12,10 @@ export { runExpansionJob } from './jobs/runExpansionJob';
 export type { RunExpansionJobParams } from './jobs/runExpansionJob';
 
 export { topicStudyContentReady } from './topicStudyContentReady';
-export { activeTopicGenerationLabel } from './activeTopicGenerationLabel';
+export {
+  activeTopicGenerationLabel,
+  activeTopicContentGenerationLabel,
+} from './activeTopicGenerationLabel';
 
 export { canRetryJob, canRetryPipeline, retryFailedJob, retryFailedPipeline } from './retryContentGeneration';
 

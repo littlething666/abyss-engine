@@ -13,7 +13,9 @@ import {
 import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from './ui/particles-animation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useTopicContentAvailabilityMap } from '@/hooks/useTopicContentAvailabilityMap';
+import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
+import { topicRefKey } from '@/lib/topicRef';
+import { triggerTopicGenerationPipeline } from '@/features/contentGeneration';
 import { TopicDetailsPopup } from './TopicDetailsPopup';
 import { IncrementalSubjectModal } from './IncrementalSubjectModal';
 
@@ -65,11 +67,11 @@ export function DiscoveryModal({
 
   const subjectList = useMemo(() => subjects.map((subject) => ({ id: subject.id, name: subject.name })), [subjects]);
 
-  const contentAvailabilityByTopicKey = useTopicContentAvailabilityMap();
+  const contentStatusMap = useTopicContentStatusMap();
 
   const topicsByTier = useMemo(() => {
-    return getTopicsByTier(allGraphs, subjectList, undefined, contentAvailabilityByTopicKey);
-  }, [getTopicsByTier, allGraphs, subjectList, contentAvailabilityByTopicKey]);
+    return getTopicsByTier(allGraphs, subjectList, undefined, contentStatusMap);
+  }, [getTopicsByTier, allGraphs, subjectList, contentStatusMap]);
 
   const tiersWithVisibleTopics = useMemo(
     () => topicsByTier.filter((tierData) => tierData.topics.some((t) => t.isCurriculumVisible)),
@@ -118,7 +120,15 @@ export function DiscoveryModal({
       return;
     }
 
-    unlockTopic({ subjectId: selectedTopic.subjectId, topicId: selectedTopic.id }, allGraphs);
+    const ref = { subjectId: selectedTopic.subjectId, topicId: selectedTopic.id };
+    unlockTopic(ref, allGraphs);
+
+    // Auto-trigger generation pipeline when content is not ready.
+    const tKey = topicRefKey(ref);
+    const status = contentStatusMap[tKey];
+    if (status !== 'ready') {
+      triggerTopicGenerationPipeline(ref.subjectId, ref.topicId, { stage: 'full' });
+    }
 
     setSelectedTopicKey(null);
     onClose();
@@ -244,7 +254,12 @@ export function DiscoveryModal({
                               >
                                 {topic.subjectName}
                               </Badge>
-                              {!topic.isContentAvailable && (
+                              {topic.contentStatus === 'generating' && (
+                                <p className="text-primary mt-2 text-xs">
+                                  ⏳ Generating…
+                                </p>
+                              )}
+                              {topic.contentStatus === 'unavailable' && (
                                 <p className="text-accent-foreground mt-2 text-xs">
                                   📦 Content not available yet
                                 </p>

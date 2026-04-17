@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { useLayoutEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { useStore, useThree } from '@react-three/fiber/webgpu'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { emissive, mrt, output, pass, vec4 } from 'three/tsl'
@@ -10,6 +10,50 @@ const BLOOM_RADIUS = 0.75
 interface GlowPostProcessingProps {
   bloomExcludeLayer?: number
   bloomMode?: 'emissive' | 'color'
+}
+
+/**
+ * Schedules two demand-loop frames once {@link THREE.RenderPipeline} is installed so
+ * {@link BloomNode}'s first `updateBefore` (RT allocation + blur pipeline creation) runs
+ * while the scene graph is stable — not on the same frame as the first crystal mount.
+ * Uses the root store `invalidate` so this still runs when UI modals pause the scene
+ * invalidator hook.
+ */
+function PostPipelineBloomPrewarm() {
+  const invalidate = useThree((s) => s.invalidate)
+  const store = useStore()
+
+  useEffect(() => {
+    let raf0 = 0
+    let raf1 = 0
+
+    const warm = () => {
+      raf0 = requestAnimationFrame(() => {
+        invalidate()
+        raf1 = requestAnimationFrame(() => {
+          invalidate()
+        })
+      })
+    }
+
+    const unsub = store.subscribe((state, prev) => {
+      if (state.postProcessing != null && prev?.postProcessing == null) {
+        warm()
+      }
+    })
+
+    if (store.getState().postProcessing != null) {
+      warm()
+    }
+
+    return () => {
+      unsub()
+      cancelAnimationFrame(raf0)
+      cancelAnimationFrame(raf1)
+    }
+  }, [invalidate, store])
+
+  return null
 }
 
 export function GlowPostProcessing({
@@ -140,5 +184,5 @@ export function GlowPostProcessing({
     }
   }, [renderer, store])
 
-  return null
+  return <PostPipelineBloomPrewarm />
 }

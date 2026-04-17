@@ -5,7 +5,14 @@ import { Layers, Lock, Loader2, Play, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useAllGraphs, useSubjects } from '@/features/content';
-import { useTopicContentAvailabilityMap } from '@/hooks/useTopicContentAvailabilityMap';
+import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
+import type { TopicContentStatus } from '@/types/progression';
+import { topicRefKey } from '@/lib/topicRef';
+import {
+  activeTopicContentGenerationLabel,
+  triggerTopicGenerationPipeline,
+  useContentGenerationStore,
+} from '@/features/contentGeneration';
 import {
   getXpToNextBandThreshold,
   isXpMaxedForCurrentLevel,
@@ -60,11 +67,11 @@ export default function TopicSelectionBar({
     [subjects],
   );
 
-  const contentAvailabilityByTopicKey = useTopicContentAvailabilityMap();
+  const contentStatusMap = useTopicContentStatusMap();
 
   const topicsByTier = useMemo(
-    () => getTopicsByTier(allGraphs, subjectList, undefined, contentAvailabilityByTopicKey),
-    [getTopicsByTier, allGraphs, subjectList, contentAvailabilityByTopicKey],
+    () => getTopicsByTier(allGraphs, subjectList, undefined, contentStatusMap),
+    [getTopicsByTier, allGraphs, subjectList, contentStatusMap],
   );
 
   const selectedTieredTopic = useMemo(() => {
@@ -88,6 +95,23 @@ export default function TopicSelectionBar({
     }
     return getTopicUnlockStatus(selectedTopic, allGraphs);
   }, [allGraphs, getTopicUnlockStatus, selectedTopic]);
+
+  // Content generation awareness
+  const selectedTopicContentStatus: TopicContentStatus = useMemo(() => {
+    if (!selectedTopic) {
+      return 'ready';
+    }
+    const key = topicRefKey(selectedTopic);
+    return contentStatusMap[key] ?? 'ready';
+  }, [selectedTopic, contentStatusMap]);
+
+  const activeTopicContentGenLabel = useContentGenerationStore((s) => {
+    if (!selectedTopic) return null;
+    return activeTopicContentGenerationLabel(s, selectedTopic.subjectId, selectedTopic.topicId);
+  });
+
+  const isTopicStudyContentGenerating =
+    selectedTopicContentStatus === 'generating' || activeTopicContentGenLabel !== null;
 
   const [detailsOpen, setDetailsOpen] = useState(false);
 
@@ -119,8 +143,27 @@ export default function TopicSelectionBar({
       return;
     }
     unlockTopic(selectedTopic, allGraphs);
+
+    // Auto-trigger generation pipeline when content is not ready.
+    const tKey = topicRefKey(selectedTopic);
+    const status = contentStatusMap[tKey];
+    if (status !== 'ready') {
+      triggerTopicGenerationPipeline(selectedTopic.subjectId, selectedTopic.topicId, { stage: 'full' });
+    }
+
     setDetailsOpen(false);
-  }, [allGraphs, barUnlockStatus?.canUnlock, selectedTieredTopic, selectedTopic, unlockTopic]);
+  }, [allGraphs, barUnlockStatus?.canUnlock, contentStatusMap, selectedTieredTopic, selectedTopic, unlockTopic]);
+
+  const handleTriggerGeneration = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      if (!selectedTopic || isTopicStudyContentGenerating) {
+        return;
+      }
+      triggerTopicGenerationPipeline(selectedTopic.subjectId, selectedTopic.topicId, { stage: 'full' });
+    },
+    [isTopicStudyContentGenerating, selectedTopic],
+  );
 
   if (!isSelectionMode || !selectedTopic) {
     return null;
@@ -130,7 +173,7 @@ export default function TopicSelectionBar({
     event.stopPropagation();
   };
 
-  const handleBegin: React.MouseEventHandler<HTMLButtonElement> = (event) => {
+  const handleBeginStudySession: React.MouseEventHandler<HTMLButtonElement> = (event) => {
     stopPropagation(event);
     if (!selectedCards?.length) {
       console.warn(`[TopicSelectionBar] No cards available for topic ${selectedTopic.topicId}`);
@@ -167,6 +210,59 @@ export default function TopicSelectionBar({
     left: '0.25rem',
     right: '0.25rem',
     bottom: 'calc(3.5rem + env(safe-area-inset-bottom))',
+  };
+
+  // Determine the primary action button in the action area.
+  const renderPrimaryAction = () => {
+    if (isTopicStudyContentGenerating) {
+      // Replace Play with generation status label.
+      const label = activeTopicContentGenLabel ?? 'Generating…';
+      return (
+        <span
+          className="inline-flex shrink-0 items-center gap-1 text-[10px] leading-tight text-primary"
+          role="status"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
+          <span className="max-w-[6rem] truncate">{label}</span>
+        </span>
+      );
+    }
+
+    if (selectedTopicContentStatus === 'unavailable' && !showUnlockButton) {
+      // Unlocked but no content and not generating — offer a Generate button.
+      return (
+        <Button
+          type="button"
+          size="icon-sm"
+          onClick={handleTriggerGeneration}
+          onPointerDown={stopPropagation}
+          onMouseDown={stopPropagation}
+          onTouchStart={stopPropagation}
+          aria-label="Generate content"
+          title="Generate content"
+          className="shrink-0"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+        </Button>
+      );
+    }
+
+    // Default: Play button.
+    return (
+      <Button
+        type="button"
+        size="icon-sm"
+        onClick={handleBeginStudySession}
+        onPointerDown={stopPropagation}
+        onMouseDown={stopPropagation}
+        onTouchStart={stopPropagation}
+        aria-label="Begin study session"
+        title="Begin study session"
+        className="shrink-0"
+      >
+        <Play className="h-3.5 w-3.5" />
+      </Button>
+    );
   };
 
   return (
@@ -218,52 +314,42 @@ export default function TopicSelectionBar({
               </Button>
             ) : null}
 
-            <Button
-              type="button"
-              size="icon-sm"
-              onClick={handleBegin}
-              onPointerDown={stopPropagation}
-              onMouseDown={stopPropagation}
-              onTouchStart={stopPropagation}
-              aria-label="Begin study session"
-              title="Begin study session"
-              className="shrink-0"
-            >
-              <Play className="h-3.5 w-3.5" />
-            </Button>
+            {renderPrimaryAction()}
 
-            <Button
-              type="button"
-              size="icon-sm"
-              variant={trialReady ? 'default' : 'secondary'}
-              disabled={!trialReady || isTrialLoading}
-              onClick={handleBeginTrial}
-              onPointerDown={stopPropagation}
-              onMouseDown={stopPropagation}
-              onTouchStart={stopPropagation}
-              aria-label={
-                isTrialLoading
-                  ? 'Generating trial'
-                  : trialReady
-                    ? 'Begin trial'
-                    : trialDisabledText
-                      ? `Trial unavailable: ${trialDisabledText}`
-                    : 'Trial unavailable'
-              }
-              title={
-                isTrialLoading
-                  ? 'Generating trial questions...'
-                  : trialReady
-                    ? 'Begin trial'
-                    : trialDisabledText
-                      ? `Trial unavailable: ${trialDisabledText}`
-                    : 'Trial unavailable'
-              }
-              className="shrink-0 disabled:opacity-60"
-            >
-              {isTrialLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            </Button>
-            {trialDisabledText ? (
+            {!isTopicStudyContentGenerating && selectedTopicContentStatus === 'ready' ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant={trialReady ? 'default' : 'secondary'}
+                disabled={!trialReady || isTrialLoading}
+                onClick={handleBeginTrial}
+                onPointerDown={stopPropagation}
+                onMouseDown={stopPropagation}
+                onTouchStart={stopPropagation}
+                aria-label={
+                  isTrialLoading
+                    ? 'Generating trial'
+                    : trialReady
+                      ? 'Begin trial'
+                      : trialDisabledText
+                        ? `Trial unavailable: ${trialDisabledText}`
+                      : 'Trial unavailable'
+                }
+                title={
+                  isTrialLoading
+                    ? 'Generating trial questions...'
+                    : trialReady
+                      ? 'Begin trial'
+                      : trialDisabledText
+                        ? `Trial unavailable: ${trialDisabledText}`
+                      : 'Trial unavailable'
+                }
+                className="shrink-0 disabled:opacity-60"
+              >
+                {isTrialLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              </Button>
+            ) : null}
+            {trialDisabledText && !isTopicStudyContentGenerating && selectedTopicContentStatus === 'ready' ? (
               <span className="shrink-0 text-[9px] leading-tight text-muted-foreground">
                 {trialDisabledText}
               </span>

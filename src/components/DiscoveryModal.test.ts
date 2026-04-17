@@ -28,8 +28,8 @@ vi.mock('../features/content', () => ({
   useSubjectGraphs: () => [],
 }));
 
-vi.mock('../hooks/useTopicContentAvailabilityMap', () => ({
-  useTopicContentAvailabilityMap: () => ({}),
+vi.mock('@/hooks/useTopicContentStatusMap', () => ({
+  useTopicContentStatusMap: () => ({}),
 }));
 
 function renderDiscoveryModal(props: Parameters<typeof DiscoveryModal>[0]) {
@@ -131,7 +131,7 @@ describe('DiscoveryModal', () => {
             description: 'Description text',
             subjectId: 'sub-x',
             subjectName: 'Quantum Physics',
-            isContentAvailable: true,
+            contentStatus: 'ready' as const,
             isLocked: false,
             isUnlocked: true,
             isCurriculumVisible: true,
@@ -162,7 +162,7 @@ describe('DiscoveryModal', () => {
             description: '',
             subjectId: 's',
             subjectName: 'S',
-            isContentAvailable: true,
+            contentStatus: 'ready' as const,
             isLocked: true,
             isUnlocked: false,
             isCurriculumVisible: true,
@@ -178,7 +178,7 @@ describe('DiscoveryModal', () => {
             description: '',
             subjectId: 's',
             subjectName: 'S',
-            isContentAvailable: true,
+            contentStatus: 'ready' as const,
             isLocked: true,
             isUnlocked: false,
             isCurriculumVisible: false,

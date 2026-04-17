@@ -1,54 +1,25 @@
-import { useQueries } from '@tanstack/react-query';
+/**
+ * @deprecated Use `useTopicContentStatusMap` from `./useTopicContentStatusMap` instead.
+ * This wrapper exists for backward compatibility during migration.
+ */
 import { useMemo } from 'react';
 
-import { topicRefKey } from '@/lib/topicRef';
-import { useAllGraphs } from '@/features/content';
-import { topicStudyContentReady } from '@/features/contentGeneration';
-import { deckRepository } from '@/infrastructure/di';
+import { useTopicContentStatusMap } from './useTopicContentStatusMap';
 
-/** TanStack key for whether a topic has theory + difficulty-1 cards (study-ready). */
-export function topicContentAvailabilityQueryKey(subjectId: string, topicId: string) {
-  return ['content', 'topic-ready', subjectId, topicId] as const;
-}
+export { topicContentAvailabilityQueryKey } from './useTopicContentStatusMap';
+export type { TopicContentStatus } from '@/types/progression';
 
 /**
- * For every node in loaded graphs, whether IndexedDB has study-ready content for that topic.
- * Keyed by `topicRefKey` (`subjectId::topicId`).
+ * @deprecated Prefer `useTopicContentStatusMap()` for tri-state awareness.
+ * Returns a boolean map (true = ready, false = generating or unavailable).
  */
 export function useTopicContentAvailabilityMap(): Record<string, boolean> {
-  const allGraphs = useAllGraphs();
-
-  const topicRefs = useMemo(() => {
-    const out: { subjectId: string; topicId: string }[] = [];
-    for (const g of allGraphs) {
-      for (const n of g.nodes) {
-        out.push({ subjectId: g.subjectId, topicId: n.topicId });
-      }
-    }
-    return out;
-  }, [allGraphs]);
-
-  const results = useQueries({
-    queries: topicRefs.map(({ subjectId, topicId }) => ({
-      queryKey: topicContentAvailabilityQueryKey(subjectId, topicId),
-      queryFn: async (): Promise<boolean> => {
-        const [details, cards] = await Promise.all([
-          deckRepository.getTopicDetails(subjectId, topicId),
-          deckRepository.getTopicCards(subjectId, topicId),
-        ]);
-        return topicStudyContentReady(details, cards);
-      },
-      enabled: Boolean(subjectId) && Boolean(topicId),
-    })),
-  });
-
+  const statusMap = useTopicContentStatusMap();
   return useMemo(() => {
-    const map: Record<string, boolean> = {};
-    topicRefs.forEach((t, i) => {
-      const r = results[i];
-      const key = topicRefKey(t);
-      map[key] = r?.data ?? false;
-    });
-    return map;
-  }, [topicRefs, results]);
+    const boolMap: Record<string, boolean> = {};
+    for (const [key, status] of Object.entries(statusMap)) {
+      boolMap[key] = status === 'ready';
+    }
+    return boolMap;
+  }, [statusMap]);
 }

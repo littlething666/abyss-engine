@@ -577,12 +577,12 @@ export const useProgressionStore = create<ProgressionStore>()(
         return calculateTopicTier(ref, allGraphs);
       },
 
-      getTopicsByTier: (allGraphs, subjects, currentSubjectId, contentAvailabilityByTopicKey) => {
+      getTopicsByTier: (allGraphs, subjects, currentSubjectId, contentStatusByTopicKey) => {
         return computeTopicsByTier(
           allGraphs,
           subjects,
           currentSubjectId,
-          contentAvailabilityByTopicKey,
+          contentStatusByTopicKey,
           get().activeCrystals,
         );
       },
