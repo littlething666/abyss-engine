@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { useLayoutEffect } from 'react'
+import { useLayoutEffect, useMemo } from 'react'
 import { useStore, useThree } from '@react-three/fiber/webgpu'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { emissive, mrt, output, pass, vec4 } from 'three/tsl'
@@ -32,13 +32,33 @@ export function GlowPostProcessing({
   const scene = useThree((state) => state.scene)
   const camera = useThree((state) => state.camera)
   const isLegacy = useThree((state) => state.isLegacy)
+  const size = useThree((state) => state.size)
+  const viewportDpr = useThree((state) => state.viewport.dpr)
   const store = useStore()
+
+  // Pixel-accurate signature of the drawing buffer. When this key changes the
+  // RenderPipeline (and every pass/MRT target it owns) must be rebuilt so the
+  // WebGPU backend does not issue a CopyTextureToTexture with mismatched sizes
+  // between source and destination textures.
+  const pipelineSizeKey = useMemo(() => {
+    const pixelWidth = Math.max(1, Math.round(size.width * viewportDpr))
+    const pixelHeight = Math.max(1, Math.round(size.height * viewportDpr))
+    return `${pixelWidth}x${pixelHeight}`
+  }, [size.width, size.height, viewportDpr])
+
   useLayoutEffect(() => {
     if (isLegacy) {
       throw new Error('GlowPostProcessing requires a WebGPU renderer.')
     }
 
     if (!renderer || !scene || !camera || !isRendererInitialized) {
+      return
+    }
+
+    // Skip before the canvas has laid out. Building the pipeline against a
+    // zero-sized drawing buffer would immediately invalidate on the first real
+    // resize, reproducing the very race this effect guards against.
+    if (size.width <= 0 || size.height <= 0) {
       return
     }
 
@@ -117,6 +137,9 @@ export function GlowPostProcessing({
     bloomMode,
     bloomExcludeLayer,
     isRendererInitialized,
+    pipelineSizeKey,
+    size.width,
+    size.height,
   ])
 
   useLayoutEffect(() => {
