@@ -1,11 +1,17 @@
 import * as THREE from 'three/webgpu'
-import { useLayoutEffect, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useStore, useThree } from '@react-three/fiber/webgpu'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { emissive, mrt, output, pass, vec4 } from 'three/tsl'
 
 const BLOOM_STRENGTH = 1.25
 const BLOOM_RADIUS = 0.75
+
+// Time the canvas pixel dimensions must be stable before the bloom pipeline
+// is rebuilt. Shorter than a typical resize drag and longer than a single R3F
+// layout pass, so transient sizes during a rapid mobile<->desktop transition
+// never reach the WebGPU command encoder.
+const PIPELINE_REBUILD_SETTLE_MS = 200
 
 interface GlowPostProcessingProps {
   bloomExcludeLayer?: number
@@ -36,15 +42,43 @@ export function GlowPostProcessing({
   const viewportDpr = useThree((state) => state.viewport.dpr)
   const store = useStore()
 
-  // Pixel-accurate signature of the drawing buffer. When this key changes the
-  // RenderPipeline (and every pass/MRT target it owns) must be rebuilt so the
-  // WebGPU backend does not issue a CopyTextureToTexture with mismatched sizes
-  // between source and destination textures.
+  // Pixel-accurate signature of the drawing buffer. The bloom node chain can
+  // only be safely rebuilt once this key has stopped changing.
   const pipelineSizeKey = useMemo(() => {
     const pixelWidth = Math.max(1, Math.round(size.width * viewportDpr))
     const pixelHeight = Math.max(1, Math.round(size.height * viewportDpr))
     return `${pixelWidth}x${pixelHeight}`
   }, [size.width, size.height, viewportDpr])
+
+  // Settled key: lags pipelineSizeKey by PIPELINE_REBUILD_SETTLE_MS. While the
+  // live key disagrees with the settled key the post-processing pipeline is
+  // torn down so that no CopyTextureToTexture runs against mismatched targets.
+  const [settledSizeKey, setSettledSizeKey] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!pipelineSizeKey) {
+      return
+    }
+    // Tear down immediately so in-flight command encoders stop referencing the
+    // old pipeline. Rebuild only after the size stops changing.
+    const previousPostProcessing = store.getState().postProcessing as THREE.RenderPipeline | null
+    if (previousPostProcessing?.dispose) {
+      previousPostProcessing.dispose()
+    }
+    store.setState({
+      postProcessing: null,
+      passes: {},
+    })
+    setSettledSizeKey(null)
+
+    const timer = window.setTimeout(() => {
+      setSettledSizeKey(pipelineSizeKey)
+    }, PIPELINE_REBUILD_SETTLE_MS)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [pipelineSizeKey, store])
 
   useLayoutEffect(() => {
     if (isLegacy) {
@@ -55,9 +89,13 @@ export function GlowPostProcessing({
       return
     }
 
-    // Skip before the canvas has laid out. Building the pipeline against a
-    // zero-sized drawing buffer would immediately invalidate on the first real
-    // resize, reproducing the very race this effect guards against.
+    // Wait for the debounced size to match the live size before building the
+    // pipeline. Until then, no bloom pass exists and frames render directly
+    // from the renderer, so no texture copy can fail.
+    if (!settledSizeKey || settledSizeKey !== pipelineSizeKey) {
+      return
+    }
+
     if (size.width <= 0 || size.height <= 0) {
       return
     }
@@ -137,6 +175,7 @@ export function GlowPostProcessing({
     bloomMode,
     bloomExcludeLayer,
     isRendererInitialized,
+    settledSizeKey,
     pipelineSizeKey,
     size.width,
     size.height,
