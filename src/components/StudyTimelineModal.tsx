@@ -12,12 +12,12 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
-  AbyssDialog,
-  AbyssDialogContent,
+  Dialog,
+  DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/abyss-dialog';
+} from '@/components/ui/dialog';
 import {
   Popover,
   PopoverContent,
@@ -154,7 +154,7 @@ function TimelineReviewBlock({
   const durationMs = entry.durationMs || 0;
   const isCorrect = entry.isCorrect === true;
   const bucket = getCorrectnessBucket(isCorrect);
-  const width = `${getSessionRelativeWidth(durationMs, sessionDurationMs, sessionEventCount)}%`;
+  const widthStyle = { width: `${getSessionRelativeWidth(durationMs, sessionDurationMs, sessionEventCount)}%` };
   const ratingValue = entry.metrics.find((metric) => metric.label === 'Rating')?.value ?? '—';
   const difficultyValue = entry.metrics.find((metric) => metric.label === 'Difficulty')?.value ?? '—';
   const buffValue = entry.metrics.find((metric) => metric.label === 'Buff x')?.value ?? '—';
@@ -172,7 +172,7 @@ function TimelineReviewBlock({
             data-session-id={entry.sessionId}
             data-correctness={correctnessText.toLowerCase()}
             className={`h-12 shrink-0 rounded-none border shadow-sm ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/80 ${getCorrectnessStyles(bucket)}`}
-            style={{ width }}
+            style={widthStyle}
           >
             <span className="sr-only">
               {cardLabel}, {correctnessText}, {formatDuration(durationMs)}, {entry.topicName}.
@@ -462,8 +462,8 @@ export function StudyTimelineModal({
   const mainContent = drilledBucket ? detailContent : summaryContent;
 
   return (
-    <AbyssDialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <AbyssDialogContent className="max-h-[95vh] flex flex-col">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[95vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-2">
             {drilledBucket ? (
@@ -501,8 +501,8 @@ export function StudyTimelineModal({
         <div className="overflow-y-auto -mx-4 px-4 flex-1 min-h-0">
           {mainContent}
         </div>
-      </AbyssDialogContent>
-    </AbyssDialog>
+      </DialogContent>
+    </Dialog>
   );
 }
 

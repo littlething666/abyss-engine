@@ -12,13 +12,13 @@ import { buildDiagramSystemPrompt, extractExamplesSection, stripTheoryMarkdownFo
 import { TTS_ICON_SPEAKING_CLASSNAME } from '@/components/LlmTtsToggle';
 import { Button } from '@/components/ui/button';
 import {
-  AbyssDialog,
-  AbyssDialogContent,
+  Dialog,
+  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/abyss-dialog';
+} from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { resolveDefaultOpenAiChatCompletionsUrl } from '@/infrastructure/openAiCompatibleDefaults';
@@ -214,7 +214,6 @@ export function StudyPanelStateViews({
 
   return (
     <div className="min-h-0 pr-1" data-testid="study-panel-state">
-      {/* Empty State */}
       {isEmptyDeck && (
         <div className="text-center py-8 px-5">
           <p className="text-muted-foreground mb-4" data-testid="study-panel-empty-state">
@@ -223,21 +222,18 @@ export function StudyPanelStateViews({
         </div>
       )}
 
-      {/* Loading State for cards */}
       {isLoadingCards && (
         <div className="text-center py-8 px-5 text-muted-foreground" data-testid="study-panel-loading">
           Loading cards for this topic...
         </div>
       )}
 
-      {/* Error State for cards */}
       {isCardsLoadError && (
         <div className="text-center py-8 px-5 text-destructive" data-testid="study-panel-error">
           Unable to load cards for this topic. Open a topic and try again.
         </div>
       )}
 
-      {/* Missing card data */}
       {!isLoadingCards && !isCardsLoadError && !hasActiveCard && !isEmptyDeck && !isCompleted && (
         <div className="text-center py-8 px-5 text-muted-foreground">
           <p className="mb-4" data-testid="study-panel-no-card">
@@ -253,7 +249,6 @@ export function StudyPanelStateViews({
         </div>
       )}
 
-      {/* Theory View */}
       {hasTheory && activeTab === 'theory' && resolvedTopicTheory && (
         <div className="w-full">
           <div className="bg-card rounded-[15px] p-5" data-testid="study-panel-theory">
@@ -291,7 +286,6 @@ export function StudyPanelStateViews({
         </div>
       )}
 
-      {/* System Prompt View */}
       {activeTab === 'system_prompt' && (
         <div className="w-full">
           <div className="bg-card rounded-[15px] p-5" data-testid="study-panel-system-prompt">
@@ -333,7 +327,7 @@ export function StudyPanelStateViews({
               {topicSystemPrompt}
             </pre>
           </div>
-          <AbyssDialog
+          <Dialog
             open={isDiagramPromptDialogOpen}
             onOpenChange={(open) => {
               if (!open) {
@@ -343,7 +337,7 @@ export function StudyPanelStateViews({
               }
             }}
           >
-            <AbyssDialogContent className="w-[min(95vw,42rem)]">
+            <DialogContent className="w-[min(95vw,42rem)]">
               <DialogHeader>
                 <DialogTitle>Diagram Prompt</DialogTitle>
                 <DialogDescription>
@@ -377,12 +371,11 @@ export function StudyPanelStateViews({
                   Process
                 </Button>
               </DialogFooter>
-            </AbyssDialogContent>
-          </AbyssDialog>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 
-      {/* Study Settings View */}
       {activeTab === 'settings' && (
         <div className="w-full">
           <div className="bg-card rounded-[15px] p-5" data-testid="study-panel-settings">
@@ -483,7 +476,6 @@ export function StudyPanelStateViews({
         </div>
       )}
 
-      {/* Completed State */}
       {isCompleted && (
         <div className="text-center py-6 px-5">
           <h3 className="text-primary text-xl mb-2">🎉 All Done!</h3>

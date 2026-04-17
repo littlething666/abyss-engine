@@ -7,13 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CopyableLlmTextBlock } from '@/components/CopyableLlmTextBlock';
 import {
-  AbyssDialog,
-  AbyssDialogContent,
+  Dialog,
+  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/abyss-dialog';
+} from '@/components/ui/dialog';
 import {
   MAX_PERSISTED_LOGS,
   useContentGenerationStore,
@@ -145,7 +145,6 @@ export function GenerationProgressHud() {
   const abortPipeline = useContentGenerationStore((s) => s.abortPipeline);
   const clearCompletedJobs = useContentGenerationStore((s) => s.clearCompletedJobs);
 
-  // Reset retrying state when dialog closes
   const handleOpenChange = useCallback((next: boolean) => {
     setOpen(next);
     if (!next) setRetryingIds(new Set());
@@ -186,7 +185,6 @@ export function GenerationProgressHud() {
       (a, b) => (pipelines[a]?.createdAt ?? 0) - (pipelines[b]?.createdAt ?? 0),
     );
 
-    // Group terminal jobs by pipeline for retry support
     const termPipelineMap = new Map<string, ContentGenerationJob[]>();
     for (const j of terminal) {
       if (j.pipelineId) {
@@ -227,8 +225,8 @@ export function GenerationProgressHud() {
         </Button>
       </div>
 
-      <AbyssDialog open={open} onOpenChange={handleOpenChange}>
-        <AbyssDialogContent className="flex max-h-[85vh] w-[min(100%,28rem)] max-w-[28rem] flex-col gap-3">
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="flex max-h-[85vh] w-[min(100%,28rem)] max-w-[28rem] flex-col gap-3">
           <DialogHeader>
             <DialogTitle>Background LLM content generation</DialogTitle>
             <DialogDescription>
@@ -322,7 +320,6 @@ export function GenerationProgressHud() {
                       pipelineMeta &&
                       pipelineJobs &&
                       canRetryPipeline(pipelineMeta, pipelineJobs) &&
-                      // Only show pipeline retry on the first failed job to avoid duplicate buttons
                       pipelineJobs.find((pj) => pj.status === 'failed' || pj.status === 'aborted')?.id === j.id;
 
                     const isRetryableJob = j.status === 'failed' || j.status === 'aborted';
@@ -348,10 +345,8 @@ export function GenerationProgressHud() {
                         </summary>
                         <div className="border-border border-t px-3 py-2">
                           <GenerationJobDetails job={j} />
-                          {/* Retry controls for failed/aborted jobs */}
                           {isRetryableJob ? (
                             <div className="mt-3 flex flex-wrap gap-2 border-t border-border/60 pt-2">
-                              {/* Standalone job retry */}
                               {canRetryJob(j) && j.pipelineId === null ? (
                                 <Button
                                   type="button"
@@ -368,7 +363,6 @@ export function GenerationProgressHud() {
                                   {retryingIds.has(j.id) ? 'Retrying…' : 'Retry job'}
                                 </Button>
                               ) : null}
-                              {/* Pipeline-member single stage retry */}
                               {canRetryJob(j) && j.pipelineId !== null ? (
                                 <Button
                                   type="button"
@@ -385,7 +379,6 @@ export function GenerationProgressHud() {
                                   {retryingIds.has(j.id) ? 'Retrying…' : 'Retry this stage'}
                                 </Button>
                               ) : null}
-                              {/* Pipeline retry from failed stage onward */}
                               {showPipelineRetry && j.pipelineId ? (
                                 <Button
                                   type="button"
@@ -420,8 +413,8 @@ export function GenerationProgressHud() {
               Close
             </Button>
           </DialogFooter>
-        </AbyssDialogContent>
-      </AbyssDialog>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

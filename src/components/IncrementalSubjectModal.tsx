@@ -5,13 +5,13 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import {
-  AbyssDialog,
-  AbyssDialogContent,
+  Dialog,
+  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/abyss-dialog';
+} from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldSet } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -94,7 +94,7 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
   };
 
   return (
-    <AbyssDialog
+    <Dialog
       open={isOpen}
       onOpenChange={(open) => {
         if (!open) {
@@ -102,7 +102,7 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
         }
       }}
     >
-      <AbyssDialogContent className="flex max-h-[95vh] flex-col gap-4 overflow-y-auto sm:max-w-lg">
+      <DialogContent className="flex max-h-[95vh] flex-col gap-4 overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New subject</DialogTitle>
           <DialogDescription>
@@ -267,7 +267,7 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
             {submitting ? 'Checking…' : 'Generate curriculum'}
           </Button>
         </DialogFooter>
-      </AbyssDialogContent>
-    </AbyssDialog>
+      </DialogContent>
+    </Dialog>
   );
 }

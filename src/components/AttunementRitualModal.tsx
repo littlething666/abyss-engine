@@ -42,19 +42,26 @@ import {
   FieldSet,
 } from './ui/field';
 import {
-  AbyssDialog,
-  AbyssDialogContent,
+  Dialog,
+  DialogContent,
   DialogClose,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/abyss-dialog';
+} from '@/components/ui/dialog';
 import { parseTopicRefKey, topicRefKey } from '@/lib/topicRef';
 import { useTopicMetadata } from '../features/content';
 import { deckRepository } from '../infrastructure/di';
 import { topicCardsQueryKey } from '../hooks/useDeckData';
 import { Card } from '../types/core';
+
+const motionFadeInitial = { opacity: 0, scale: 0.95 };
+const motionFadeAnimate = { opacity: 1, scale: 1 };
+const motionFadeExit = { opacity: 0, scale: 0.95 };
+const motionHoverScale = { scale: 1.02 };
+const motionTapScale = { scale: 0.98 };
+
 interface AttunementRitualModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -232,12 +239,12 @@ export function AttunementRitualModal({
   };
 
   return (
-    <AbyssDialog open={isOpen} onOpenChange={(open) => {
+    <Dialog open={isOpen} onOpenChange={(open) => {
       if (!open) {
         onClose();
       }
     }}>
-      <AbyssDialogContent
+      <DialogContent
         className="max-h-[95vh] overflow-hidden flex flex-col"
       >
         <DialogHeader>
@@ -248,9 +255,9 @@ export function AttunementRitualModal({
         </DialogHeader>
         <div className="-mx-4 max-h-full overflow-y-auto px-4">
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
+            initial={motionFadeInitial}
+            animate={motionFadeAnimate}
+            exit={motionFadeExit}
             className="w-full"
           >
             {isSubmitBlockedByCooldown && (
@@ -476,10 +483,8 @@ export function AttunementRitualModal({
           </motion.div>
         </div>
         <DialogFooter className="sticky bottom-0 z-20">
-          <DialogClose asChild>
-            <Button variant="outline">Close</Button>
-          </DialogClose>
-          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+          <DialogClose render={<Button variant="outline" />}>Close</DialogClose>
+          <motion.div whileHover={motionHoverScale} whileTap={motionTapScale}>
             <Button
               onClick={handleSubmit}
               disabled={isSubmitBlockedByCooldown || !canStartWithSelection}
@@ -488,7 +493,7 @@ export function AttunementRitualModal({
             </Button>
           </motion.div>
         </DialogFooter>
-      </AbyssDialogContent>
-    </AbyssDialog>
+      </DialogContent>
+    </Dialog>
   );
 }

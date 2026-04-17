@@ -1,18 +1,18 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Dialog as DialogPrimitive } from 'radix-ui';
+import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { XIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
-  AbyssDialog,
+  Dialog,
   DialogDescription,
   DialogHeader,
   DialogOverlay,
   DialogPortal,
   DialogTitle,
-} from '@/components/ui/abyss-dialog';
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 type StudyMermaidPreviewProps = {
@@ -101,6 +101,13 @@ function StudyMermaidFullscreenPane({ code }: { code: string }) {
   );
 }
 
+const FULLSCREEN_OVERLAY_CLASS = 'z-[200] bg-black/40 supports-backdrop-filter:backdrop-blur-xs';
+const FULLSCREEN_POPUP_CLASS = cn(
+  'data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0',
+  'fixed top-0 left-0 z-[201] flex h-dvh max-h-dvh w-full max-w-none flex-col gap-3 rounded-none border-0 bg-background p-4 text-sm shadow-lg outline-none duration-100 sm:p-6',
+);
+const FULLSCREEN_CLOSE_BUTTON_CLASS = 'absolute top-2 right-2 z-[202]';
+
 /**
  * Renders Mermaid source into SVG via dynamic import. Uses strict security level.
  * Tap the preview (or use keyboard) to open a full-screen view.
@@ -141,29 +148,31 @@ export function StudyMermaidPreview({ code }: StudyMermaidPreviewProps) {
         Tap diagram to view full screen
       </p>
 
-      <AbyssDialog open={fullscreenOpen} onOpenChange={setFullscreenOpen}>
+      <Dialog open={fullscreenOpen} onOpenChange={setFullscreenOpen}>
         <DialogPortal>
-          <DialogOverlay className="z-[200] bg-black/40 supports-backdrop-filter:backdrop-blur-xs" />
-          <DialogPrimitive.Content
-            className={cn(
-              'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-              'fixed top-0 left-0 z-[201] flex h-dvh max-h-dvh w-full max-w-none flex-col gap-3 rounded-none border-0 bg-background p-4 text-sm shadow-lg outline-none duration-100 sm:p-6',
-            )}
-          >
-            <DialogPrimitive.Close asChild>
-              <Button variant="ghost" className="absolute top-2 right-2 z-[202]" size="icon-sm" type="button">
-                <XIcon className="size-4" aria-hidden />
-                <span className="sr-only">Close full screen diagram</span>
-              </Button>
+          <DialogOverlay className={FULLSCREEN_OVERLAY_CLASS} />
+          <DialogPrimitive.Popup className={FULLSCREEN_POPUP_CLASS}>
+            <DialogPrimitive.Close
+              render={
+                <Button
+                  variant="ghost"
+                  className={FULLSCREEN_CLOSE_BUTTON_CLASS}
+                  size="icon-sm"
+                  type="button"
+                />
+              }
+            >
+              <XIcon className="size-4" aria-hidden />
+              <span className="sr-only">Close full screen diagram</span>
             </DialogPrimitive.Close>
             <DialogHeader className="shrink-0 pr-10 text-left">
               <DialogTitle>Diagram</DialogTitle>
               <DialogDescription className="sr-only">Full screen view of the study diagram</DialogDescription>
             </DialogHeader>
             {fullscreenOpen ? <StudyMermaidFullscreenPane code={code} /> : null}
-          </DialogPrimitive.Content>
+          </DialogPrimitive.Popup>
         </DialogPortal>
-      </AbyssDialog>
+      </Dialog>
     </div>
   );
 }

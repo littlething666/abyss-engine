@@ -7,12 +7,12 @@ import { getRatingColor, getRatingLabel, useProgressionStore as useStudyStore } 
 import { evaluateAnswer as evaluateChoiceAnswer } from '../features/content';
 import { telemetry } from '../features/telemetry';
 import {
-  AbyssDialog,
-  AbyssDialogContent,
+  Dialog,
+  DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/abyss-dialog';
+} from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import {
   AGENT_PERSONALITY_OPTIONS,
@@ -303,9 +303,8 @@ export function StudyPanelModal({
   if (!isOpen) return null;
 
   return (
-    <AbyssDialog
+    <Dialog
       modal={false}
-      lockScroll
       open={isOpen}
       onOpenChange={(open) => {
         if (!open) {
@@ -313,7 +312,7 @@ export function StudyPanelModal({
         }
       }}
     >
-      <AbyssDialogContent
+      <DialogContent
         className="max-h-[95vh] flex flex-col"
       >
       <DialogHeader>
@@ -432,8 +431,8 @@ export function StudyPanelModal({
             </div>
           )}
       </div>
-      </AbyssDialogContent>
-    </AbyssDialog>
+      </DialogContent>
+    </Dialog>
   );
 }
 

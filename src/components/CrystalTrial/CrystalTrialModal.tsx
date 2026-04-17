@@ -14,13 +14,13 @@ import {
 import type { CrystalTrialResult, CrystalTrialScenarioQuestion } from '@/types/crystalTrial';
 import { evaluateTrial } from '@/features/crystalTrial/evaluateTrial';
 import {
-  AbyssDialog,
-  AbyssDialogContent,
+  Dialog,
+  DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/abyss-dialog';
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { TrialQuestionCard } from './TrialQuestionCard';
 import { TrialResultsView } from './TrialResultsView';
@@ -136,18 +136,14 @@ export function CrystalTrialModal() {
       return;
     }
 
-    // Apply only the delta needed to reach the trial target level.
-    // The trial is in 'passed' status, so trialPolicy allows XP through.
-    // addXP handles the level-up event emission internally.
     addXP(selectedTopic, xpToLevel);
 
-    // Now clear the trial from the store
     useCrystalTrialStore.getState().clearTrial(selectedTopic);
 
     setResult(null);
     setCurrentQuestionIndex(0);
     closeCrystalTrial();
-  }, [selectedTopic, closeCrystalTrial]);
+  }, [selectedTopic, closeCrystalTrial, trial]);
 
   const handleClose = useCallback(() => {
     setResult(null);
@@ -156,22 +152,19 @@ export function CrystalTrialModal() {
   }, [closeCrystalTrial]);
 
   return (
-    <AbyssDialog
+    <Dialog
       open={isOpen && !!trial}
       onOpenChange={(open) => {
         if (!open) handleClose();
       }}
     >
-      <AbyssDialogContent className="max-h-[85vh] overflow-hidden flex flex-col sm:max-w-2xl">
-        {/* Header */}
+      <DialogContent className="max-h-[85vh] overflow-hidden flex flex-col sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>⚔️ Crystal Trial — Level {trial?.targetLevel}</DialogTitle>
           <DialogDescription>{trial?.topicId}</DialogDescription>
         </DialogHeader>
 
-        {/* Scrollable body */}
         <div className="-mx-4 max-h-full overflow-y-auto px-4">
-          {/* Awaiting player start */}
           {trialStatus === 'awaiting_player' && !isSubmitted && (
             <div className="flex flex-col items-center gap-6 py-8">
               <div className="text-6xl">🔮</div>
@@ -193,7 +186,6 @@ export function CrystalTrialModal() {
             </div>
           )}
 
-          {/* In progress: show questions */}
           {(trialStatus === 'in_progress' || trialStatus === 'passed' || isSubmitted) && currentQuestion && (
             <TrialQuestionCard
               question={currentQuestion}
@@ -205,7 +197,6 @@ export function CrystalTrialModal() {
             />
           )}
 
-          {/* Results view */}
           {completedResult && completedResult.passed && currentQuestionIndex === questions.length - 1 && (
             <div className="mt-6 pt-6 border-t border-border">
               <TrialResultsView
@@ -217,7 +208,6 @@ export function CrystalTrialModal() {
             </div>
           )}
 
-          {/* Generating state */}
           {trialStatus === 'pregeneration' && (
             <div className="flex flex-col items-center gap-4 py-12">
               <div className="animate-pulse text-4xl">🔮</div>
@@ -225,7 +215,6 @@ export function CrystalTrialModal() {
             </div>
           )}
 
-          {/* Failed state */}
           {trialStatus === 'failed' && (
             <div className="flex flex-col items-center gap-4 py-12">
               <div className="text-4xl">⚠️</div>
@@ -234,7 +223,6 @@ export function CrystalTrialModal() {
           )}
         </div>
 
-        {/* Footer navigation (only during in_progress) */}
         {trialStatus === 'in_progress' && !isSubmitted && (
           <DialogFooter className="flex-row items-center justify-between sm:flex-row sm:justify-between">
             <Button
@@ -246,7 +234,6 @@ export function CrystalTrialModal() {
               ← Previous
             </Button>
 
-            {/* Question dots */}
             <div className="flex gap-1.5">
               {questions.map((q: CrystalTrialScenarioQuestion, i: number) => (
                 <button
@@ -280,7 +267,6 @@ export function CrystalTrialModal() {
           </DialogFooter>
         )}
 
-        {/* Footer navigation during review (after submission) */}
         {completedResult && completedResult.passed && (
           <DialogFooter className="flex-row items-center justify-between sm:flex-row sm:justify-between">
             <Button
@@ -324,7 +310,7 @@ export function CrystalTrialModal() {
             </Button>
           </DialogFooter>
         )}
-      </AbyssDialogContent>
-    </AbyssDialog>
+      </DialogContent>
+    </Dialog>
   );
 }

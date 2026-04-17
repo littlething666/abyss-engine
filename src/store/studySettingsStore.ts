@@ -27,7 +27,7 @@ export const TARGET_AUDIENCE_OPTIONS = [
 /** First entry is empty: use env model via {@link resolveModelForSurface}. */
 export const OPENAI_COMPATIBLE_MODEL_OPTIONS = [
   '',
-  'prism-ml/Bonsai-8B-mlx-1bit',
+  'mlx-community/nanoLLaVA-1.5-8bit',
   'heretic-org/gemma-3-4b-it-heretic',
   'mlx-community/gemma-4-26b-a4b-4bit',
   'mlx-community/Qwen3.5-9B-MLX-4bit',

@@ -5,12 +5,12 @@ import React, { useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  AbyssDialog,
-  AbyssDialogContent,
+  Dialog,
+  DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/abyss-dialog';
+} from '@/components/ui/dialog';
 import type { TieredTopic, TopicUnlockStatus } from '@/features/progression/progressionUtils';
 import {
   activeTopicGenerationLabel,
@@ -21,7 +21,7 @@ import {
 import { useTopicDetails } from '@/hooks/useDeckData';
 
 /**
- * Radix controlled Dialog: if we unmount the details layer synchronously inside
+ * Controlled Dialog: if we unmount the details layer synchronously inside
  * onOpenChange(false) (or right after Close), dismiss handling can still reach the
  * sibling Wisdom Altar dialog. Deferring one macrotask lets the inner dialog finish
  * closing first (same effect as setTimeout(..., 0) in app code).
@@ -90,7 +90,7 @@ export function TopicDetailsPopup({
   );
 
   return (
-    <AbyssDialog
+    <Dialog
       open={isOpen}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
@@ -98,7 +98,7 @@ export function TopicDetailsPopup({
         }
       }}
     >
-      <AbyssDialogContent className="flex max-h-[95vh] min-h-0 w-[min(95%,30rem)] flex-col overflow-hidden rounded-[20px] border border-border bg-card p-3 shadow-2xl sm:p-6">
+      <DialogContent className="flex max-h-[95vh] min-h-0 w-[min(95%,30rem)] flex-col overflow-hidden rounded-[20px] border border-border bg-card p-3 shadow-2xl sm:p-6">
         <DialogHeader>
           <DialogTitle>{topic.name}</DialogTitle>
           <DialogDescription>{topic.subjectName}</DialogDescription>
@@ -203,7 +203,7 @@ export function TopicDetailsPopup({
             </div>
           )}
         </div>
-      </AbyssDialogContent>
-    </AbyssDialog>
+      </DialogContent>
+    </Dialog>
   );
 }
