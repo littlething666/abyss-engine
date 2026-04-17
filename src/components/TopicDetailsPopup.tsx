@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import type { TieredTopic, TopicUnlockStatus } from '@/features/progression/progressionUtils';
 import {
-  activeTopicGenerationLabel,
+  activeTopicContentGenerationLabel,
   triggerTopicGenerationPipeline,
   useContentGenerationStore,
   type TopicGenerationStage,
@@ -57,10 +57,12 @@ export function TopicDetailsPopup({
   onClose,
   onUnlock,
 }: TopicDetailsPopupProps) {
-  const isContentAvailable = topic.isContentAvailable;
+  const contentStatus = topic.contentStatus;
+  const isContentReady = contentStatus === 'ready';
+  const isContentGenerating = contentStatus === 'generating';
   const activeJobLabel = useContentGenerationStore((s) => {
     if (!isOpen) return null;
-    return activeTopicGenerationLabel(s, topic.subjectId, topic.id);
+    return activeTopicContentGenerationLabel(s, topic.subjectId, topic.id);
   });
   const detailsQuery = useTopicDetails(topic.subjectId, topic.id);
   const syllabus = detailsQuery.data?.coreQuestionsByDifficulty;
@@ -123,10 +125,15 @@ export function TopicDetailsPopup({
             </p>
           ) : null}
 
-          {!isContentAvailable ? (
+          {isContentGenerating && !activeJobLabel ? (
+            <p className="text-primary mb-3 text-sm font-medium" role="status">
+              ⏳ Content generation in progress…
+            </p>
+          ) : null}
+
+          {!isContentReady && !isContentGenerating ? (
             <p className="text-accent-foreground mb-3 text-sm font-semibold">
-              Study-ready content is not loaded yet for this topic (theory plus at least one difficulty-1
-              card).
+              Content will be generated after unlock.
             </p>
           ) : null}
 
@@ -172,18 +179,14 @@ export function TopicDetailsPopup({
             <Button
               type="button"
               onClick={onUnlock}
-              disabled={!unlockStatus.canUnlock || !isContentAvailable}
+              disabled={!unlockStatus.canUnlock}
               className={`w-full min-h-11 cursor-pointer rounded-lg border-none px-6 py-3 font-semibold transition-all ${
-                unlockStatus.canUnlock && isContentAvailable
+                unlockStatus.canUnlock
                   ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                   : 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'
               }`}
             >
-              {isContentAvailable
-                ? unlockStatus.canUnlock
-                  ? 'Unlock & Spawn'
-                  : 'Locked'
-                : 'Unlock after content is ready'}
+              {unlockStatus.canUnlock ? 'Unlock & Spawn' : 'Locked'}
             </Button>
           )}
 

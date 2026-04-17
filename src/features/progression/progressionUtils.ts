@@ -7,6 +7,7 @@ import {
   ProgressionState,
   StudySessionCore,
   StudyUndoSnapshot,
+  type TopicContentStatus,
 } from '../../types/progression';
 
 type RestorableProgressionState = Omit<ProgressionState, 'currentSession'> & {
@@ -55,7 +56,8 @@ export interface TieredTopic {
   description: string;
   subjectId: string;
   subjectName: string;
-  isContentAvailable: boolean;
+  /** Tri-state content status: 'ready' | 'generating' | 'unavailable'. */
+  contentStatus: TopicContentStatus;
   isLocked: boolean;
   isUnlocked: boolean;
   /** False when prerequisite crystal levels hide this topic from the curriculum list (tier > 1). */
@@ -454,12 +456,22 @@ export function filterCardsByDifficulty<T extends { difficulty: number }>(
   return cards.filter((card) => card.difficulty <= maxDifficulty);
 }
 
+function resolveTopicContentStatus(
+  tKey: string,
+  contentStatusByTopicKey?: Record<string, TopicContentStatus>,
+): TopicContentStatus {
+  if (!contentStatusByTopicKey) {
+    return 'ready';
+  }
+  return contentStatusByTopicKey[tKey] ?? 'unavailable';
+}
+
 export function getTopicsByTier(
   allGraphs: SubjectGraph[] = [],
   subjects: SubjectLike[] = [],
   currentSubjectId?: string | null,
-  /** Keyed by `topicRefKey` (`subjectId::topicId`). Missing key → false when map is provided. */
-  contentAvailabilityByTopicKey?: Record<string, boolean>,
+  /** Tri-state map keyed by `topicRefKey`. Omitted → all topics treated as `'ready'`. */
+  contentStatusByTopicKey?: Record<string, TopicContentStatus>,
   /** When set, `isCurriculumVisible` reflects prerequisite crystal levels per graph; unlock flags use crystal list. */
   activeCrystals?: readonly ActiveCrystal[],
 ) {
@@ -480,15 +492,14 @@ export function getTopicsByTier(
       const tKey = topicRefKey(ref);
       const tier = node.tier || calculateTopicTier(ref, allGraphs);
       const subjectName = subjectMap[graph.subjectId]?.name || 'Unknown';
+      const contentStatus = resolveTopicContentStatus(tKey, contentStatusByTopicKey);
       const topicData: TieredTopic = {
         id: node.topicId,
         name: node.title,
         description: node.learningObjective,
         subjectId: graph.subjectId,
         subjectName,
-        isContentAvailable: contentAvailabilityByTopicKey
-          ? Boolean(contentAvailabilityByTopicKey[tKey])
-          : true,
+        contentStatus,
         isLocked: !unlockedKeys.has(tKey),
         isUnlocked: unlockedKeys.has(tKey),
         isCurriculumVisible: visibleIds ? visibleIds.has(node.topicId) : true,

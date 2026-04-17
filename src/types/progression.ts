@@ -1,6 +1,9 @@
 import type { ActiveCrystal, Card, TopicRef } from './core';
 import type { SubjectGraph } from './core';
 
+/** Study-ready content state for a topic (IndexedDB + generation jobs). */
+export type TopicContentStatus = 'ready' | 'generating' | 'unavailable';
+
 export type BuffModifierType = 'growth_speed' | 'xp_multiplier' | 'clarity_boost' | 'mana_boost';
 export type BuffCondition = 'session_end' | 'next_10_cards' | 'next_5_cards' | 'manual';
 export type BuffStackingRule = 'multiplicative' | 'additive' | 'max' | 'override';
@@ -162,7 +165,8 @@ export interface ProgressionActions {
     allGraphs: SubjectGraph[],
     subjects: { id: string; name: string }[],
     currentSubjectId?: string | null,
-    contentAvailabilityByTopicKey?: Record<string, boolean>,
+    /** Keyed by `topicRefKey`. Omitted or missing keys → `'unavailable'`. */
+    contentStatusByTopicKey?: Record<string, TopicContentStatus>,
   ) => {
     tier: number;
     topics: {
@@ -171,7 +175,7 @@ export interface ProgressionActions {
       description: string;
       subjectId: string;
       subjectName: string;
-      isContentAvailable: boolean;
+      contentStatus: TopicContentStatus;
       isLocked: boolean;
       isUnlocked: boolean;
       isCurriculumVisible: boolean;

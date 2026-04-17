@@ -11,6 +11,7 @@ import {
   isXpMaxedForCurrentLevel,
   getVisibleTopicIds,
 } from './progressionUtils';
+import type { TopicContentStatus } from '@/types/progression';
 
 function createActiveCrystal(topicId: string, xp = 0, subjectId = 's1'): ActiveCrystal {
   return {
@@ -206,6 +207,60 @@ describe('progressionUtils', () => {
       ]);
       const bVisible = withCrystal.flatMap((t) => t.topics).find((x) => x.id === 'b');
       expect(bVisible?.isCurriculumVisible).toBe(true);
+    });
+  });
+
+  describe('getTopicsByTier tri-state contentStatus', () => {
+    const graphs: SubjectGraph[] = [
+      {
+        subjectId: 's',
+        title: 'T',
+        themeId: 's',
+        maxTier: 1,
+        nodes: [
+          { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: 'o' },
+          { topicId: 'b', title: 'B', tier: 1, prerequisites: [], learningObjective: 'o' },
+          { topicId: 'c', title: 'C', tier: 1, prerequisites: [], learningObjective: 'o' },
+        ],
+      },
+    ];
+
+    it('uses tri-state TopicContentStatus map when provided', () => {
+      const statusMap: Record<string, TopicContentStatus> = {
+        's::a': 'ready',
+        's::b': 'generating',
+        's::c': 'unavailable',
+      };
+      const tiers = getTopicsByTier(graphs, [], undefined, statusMap, []);
+      const topics = tiers.flatMap((t) => t.topics);
+
+      const topicA = topics.find((t) => t.id === 'a');
+      expect(topicA?.contentStatus).toBe('ready');
+
+      const topicB = topics.find((t) => t.id === 'b');
+      expect(topicB?.contentStatus).toBe('generating');
+
+      const topicC = topics.find((t) => t.id === 'c');
+      expect(topicC?.contentStatus).toBe('unavailable');
+    });
+
+    it('defaults to ready when no map is provided', () => {
+      const tiers = getTopicsByTier(graphs, [], undefined, undefined, []);
+      const topics = tiers.flatMap((t) => t.topics);
+      for (const topic of topics) {
+        expect(topic.contentStatus).toBe('ready');
+      }
+    });
+
+    it('treats missing map keys as unavailable when a map is provided', () => {
+      const partialMap: Record<string, TopicContentStatus> = {
+        's::a': 'ready',
+      };
+      const tiers = getTopicsByTier(graphs, [], undefined, partialMap, []);
+      const topics = tiers.flatMap((t) => t.topics);
+      expect(topics.find((t) => t.id === 'a')?.contentStatus).toBe('ready');
+      expect(topics.find((t) => t.id === 'b')?.contentStatus).toBe('unavailable');
+      expect(topics.find((t) => t.id === 'c')?.contentStatus).toBe('unavailable');
     });
   });
 

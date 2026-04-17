@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber/webgpu';
 import { Html } from '@react-three/drei/webgpu';
 import * as THREE from 'three/webgpu';
@@ -30,6 +30,9 @@ import { playLevelUpSound } from '../utils/sound';
 import { useSceneInvalidator } from '../hooks/useSceneInvalidator';
 import { useCrystalCeremonySync } from '../hooks/useCrystalCeremonySync';
 import { useManifest } from '../hooks/useDeckData';
+import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
+import { CrystalGeneratingIndicator } from './CrystalGeneratingIndicator';
+import { CrystalTrialGeneratingIndicator } from './CrystalTrialGeneratingIndicator';
 import {
   createCrystalInstancedAttributes,
   createCrystalNodeMaterial,
@@ -96,6 +99,89 @@ function resolveCrystalBaseShape(
 /** Trial statuses that should show the trial-ready pulse VFX on the crystal. */
 const TRIAL_READY_STATUSES = new Set(['awaiting_player']);
 
+/** Trial status that shows the trial-pregeneration balloon above the crystal. */
+const TRIAL_PREGENERATION_STATUS = 'pregeneration';
+
+/**
+ * Y coordinate of the balloon tail-tip (anchor) for the content-generating
+ * indicator — sits just above the crystal's bob-baseline (0.3).
+ */
+const GENERATING_INDICATOR_Y = 0.6;
+
+/**
+ * Y coordinate of the balloon tail-tip for the trial-pregeneration indicator.
+ * Offset slightly higher than the content indicator so the rare case where a
+ * crystal has both jobs live simultaneously still renders both balloons
+ * without overlap.
+ */
+const TRIAL_INDICATOR_Y = 0.8;
+
+/** Tracked state for a balloon indicator across its active + fade-out lifetime. */
+interface ManagedIndicatorEntry {
+  position: [number, number, number];
+  active: boolean;
+}
+
+interface ManagedGeneratingIndicatorProps {
+  topicKey: string;
+  entry: ManagedIndicatorEntry;
+  onFadeComplete: (topicKey: string) => void;
+}
+
+/**
+ * Wraps {@link CrystalGeneratingIndicator} with a stable `topicKey`-keyed identity so
+ * the underlying WebGPU material and geometries are created once per crystal and
+ * reused across the active → fade-out transition (prevents per-cycle shader recompile
+ * stalls that manifested as a screen freeze on unlock).
+ */
+const ManagedGeneratingIndicator: React.FC<ManagedGeneratingIndicatorProps> = ({
+  topicKey,
+  entry,
+  onFadeComplete,
+}) => {
+  const handleFadeOutComplete = useCallback(() => {
+    onFadeComplete(topicKey);
+  }, [onFadeComplete, topicKey]);
+
+  return (
+    <CrystalGeneratingIndicator
+      position={entry.position}
+      active={entry.active}
+      onFadeOutComplete={handleFadeOutComplete}
+    />
+  );
+};
+
+interface ManagedTrialIndicatorProps {
+  topicKey: string;
+  entry: ManagedIndicatorEntry;
+  onFadeComplete: (topicKey: string) => void;
+}
+
+/**
+ * Trial-pregeneration analogue of {@link ManagedGeneratingIndicator}.
+ * Stable per-`topicKey` React identity preserves the per-instance WebGPU pipeline
+ * across the active → fade-out transition (same rationale as the content
+ * indicator — avoids shader-recompile stalls on lifecycle flips).
+ */
+const ManagedTrialIndicator: React.FC<ManagedTrialIndicatorProps> = ({
+  topicKey,
+  entry,
+  onFadeComplete,
+}) => {
+  const handleFadeOutComplete = useCallback(() => {
+    onFadeComplete(topicKey);
+  }, [onFadeComplete, topicKey]);
+
+  return (
+    <CrystalTrialGeneratingIndicator
+      position={entry.position}
+      active={entry.active}
+      onFadeOutComplete={handleFadeOutComplete}
+    />
+  );
+};
+
 export const Crystals: React.FC<CrystalsProps> = ({
   crystals,
   onStartTopicStudySession,
@@ -110,6 +196,9 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
   const selectedTopic = useUIStore((state) => state.selectedTopic);
   const selectTopic = useUIStore((state) => state.selectTopic);
+
+  // Content status for generating indicator overlay
+  const contentStatusMap = useTopicContentStatusMap();
 
   const meshRefs = useRef<Record<CrystalBaseShape, THREE.InstancedMesh | null>>({
     icosahedron: null,
@@ -158,28 +247,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
   const count = Math.min(crystals.length, CRYSTAL_MAX_INSTANCES);
 
-  /** When layout or per-instance scale (xp -> level) changes, drop cached bounds so raycast recomputes. */
-  const crystalBoundsKey = useMemo(
-    () =>
-      crystals
-        .map(
-          (c) =>
-            `${topicRefKey(c)}:${c.gridPosition[0]},${c.gridPosition[1]}:${c.xp}`,
-        )
-        .join('|'),
-    [crystals],
-  );
-
-  useLayoutEffect(() => {
-    for (const shape of CRYSTAL_BASE_SHAPES) {
-      const mesh = meshRefs.current[shape];
-      if (mesh) {
-        mesh.boundingSphere = null;
-        mesh.boundingBox = null;
-      }
-    }
-  }, [crystalBoundsKey]);
-
   // Phase 2: Dialog-aware ceremony deferral — trigger onDialogClosed when
   // any modal transitions from open to closed.
   const isAnyDialogOpen = useUIStore(selectIsAnyModalOpen);
@@ -190,6 +257,170 @@ export const Crystals: React.FC<CrystalsProps> = ({
     }
     prevDialogOpen.current = isAnyDialogOpen;
   }, [isAnyDialogOpen]);
+
+  // Keys (sorted) of crystals currently in the 'generating' content status.
+  // Using a stable joined signature lets downstream effects depend on set identity
+  // without thrashing on every render from upstream `contentStatusMap` ref changes.
+  const generatingKeysSignature = useMemo(() => {
+    const keys: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const key = topicRefKey(crystals[i]);
+      if (contentStatusMap[key] === 'generating') {
+        keys.push(key);
+      }
+    }
+    keys.sort();
+    return keys.join('|');
+  }, [count, crystals, contentStatusMap]);
+
+  /**
+   * Unified indicator state — one entry per topicKey that ever went generating.
+   * `active: true` while generation is in-flight, flips to `false` on completion
+   * (and the entry is removed once {@link CrystalGeneratingIndicator} reports its
+   * fade-out is complete). Keeping the React element mounted across this lifecycle
+   * preserves the per-instance `MeshBasicNodeMaterial` pipeline cache and avoids
+   * the shader-recompile stall that previously froze the screen on unlock.
+   */
+  const [indicators, setIndicators] = useState<Map<string, ManagedIndicatorEntry>>(
+    () => new Map(),
+  );
+
+  useLayoutEffect(() => {
+    const activeKeys = generatingKeysSignature
+      ? new Set(generatingKeysSignature.split('|'))
+      : new Set<string>();
+
+    const crystalByKey = new Map<string, (typeof crystals)[number]>();
+    for (const c of crystals) {
+      crystalByKey.set(topicRefKey(c), c);
+    }
+
+    setIndicators((prev) => {
+      const next = new Map(prev);
+      let changed = false;
+
+      // Upsert entries for every topic currently generating.
+      for (const key of activeKeys) {
+        const crystal = crystalByKey.get(key);
+        if (!crystal) continue;
+        const [gx, gz] = crystal.gridPosition;
+        const existing = next.get(key);
+        if (!existing) {
+          next.set(key, { position: [gx, GENERATING_INDICATOR_Y, gz], active: true });
+          changed = true;
+        } else if (
+          !existing.active
+          || existing.position[0] !== gx
+          || existing.position[2] !== gz
+        ) {
+          next.set(key, { position: [gx, GENERATING_INDICATOR_Y, gz], active: true });
+          changed = true;
+        }
+      }
+
+      // Flip entries whose generation ended to inactive so they fade out.
+      for (const [key, entry] of next) {
+        if (!activeKeys.has(key) && entry.active) {
+          next.set(key, { ...entry, active: false });
+          changed = true;
+        }
+        // If the underlying crystal was removed entirely, drop the entry outright.
+        if (!crystalByKey.has(key)) {
+          next.delete(key);
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [generatingKeysSignature, crystals]);
+
+  const handleGeneratingIndicatorFadeOut = useCallback((topicKey: string) => {
+    setIndicators((prev) => {
+      if (!prev.has(topicKey)) return prev;
+      const next = new Map(prev);
+      next.delete(topicKey);
+      return next;
+    });
+  }, []);
+
+  // --- Trial pregeneration balloon lifecycle ---
+  //
+  // Mirrors the content-generation indicator pattern: a stable joined signature
+  // driven by the Crystal Trial store lets the sync effect react only on
+  // pregeneration-set membership changes, avoiding per-frame state churn.
+  const trialPregeneratingKeysSignature = useCrystalTrialStore((state) => {
+    const keys: string[] = [];
+    for (const [key, trial] of Object.entries(state.trials)) {
+      if (trial.status === TRIAL_PREGENERATION_STATUS) {
+        keys.push(key);
+      }
+    }
+    keys.sort();
+    return keys.join('|');
+  });
+
+  const [trialIndicators, setTrialIndicators] = useState<
+    Map<string, ManagedIndicatorEntry>
+  >(() => new Map());
+
+  useLayoutEffect(() => {
+    const activeKeys = trialPregeneratingKeysSignature
+      ? new Set(trialPregeneratingKeysSignature.split('|'))
+      : new Set<string>();
+
+    const crystalByKey = new Map<string, (typeof crystals)[number]>();
+    for (const c of crystals) {
+      crystalByKey.set(topicRefKey(c), c);
+    }
+
+    setTrialIndicators((prev) => {
+      const next = new Map(prev);
+      let changed = false;
+
+      for (const key of activeKeys) {
+        const crystal = crystalByKey.get(key);
+        if (!crystal) continue;
+        const [gx, gz] = crystal.gridPosition;
+        const existing = next.get(key);
+        if (!existing) {
+          next.set(key, { position: [gx, TRIAL_INDICATOR_Y, gz], active: true });
+          changed = true;
+        } else if (
+          !existing.active
+          || existing.position[0] !== gx
+          || existing.position[2] !== gz
+        ) {
+          next.set(key, { position: [gx, TRIAL_INDICATOR_Y, gz], active: true });
+          changed = true;
+        }
+      }
+
+      for (const [key, entry] of next) {
+        if (!activeKeys.has(key) && entry.active) {
+          next.set(key, { ...entry, active: false });
+          changed = true;
+        }
+        if (!crystalByKey.has(key)) {
+          next.delete(key);
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [trialPregeneratingKeysSignature, crystals]);
+
+  const handleTrialIndicatorFadeOut = useCallback((topicKey: string) => {
+    setTrialIndicators((prev) => {
+      if (!prev.has(topicKey)) return prev;
+      const next = new Map(prev);
+      next.delete(topicKey);
+      return next;
+    });
+  }, []);
+
+  const hasLiveIndicators = indicators.size > 0 || trialIndicators.size > 0;
 
   useFrame(() => {
     if (isPaused) return;
@@ -217,6 +448,11 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
     // Phase 4: Force continuous rendering while ceremony is active
     let needsInvalidate = ceremonyApi.ceremonyTopicKey != null;
+
+    // Keep rendering while any generating indicator is visible (active or fading out).
+    if (hasLiveIndicators) {
+      needsInvalidate = true;
+    }
 
     // Pre-compute trial-ready keys once per frame to avoid N individual getTrialStatus calls
     const trialStoreState = useCrystalTrialStore.getState();
@@ -350,6 +586,17 @@ export const Crystals: React.FC<CrystalsProps> = ({
           mesh.instanceMatrix.needsUpdate = true;
           shapeGroup.attributes.interleaved.needsUpdate = true;
         }
+        // InstancedMesh.raycast lazily computes boundingSphere once and caches it
+        // forever; if a pointer event triggered raycasting between a prop-driven
+        // re-render (e.g., a newly-unlocked crystal appended to `crystals`) and
+        // the next `useFrame` tick, Three.js would cache a sphere built from a
+        // stale `count` (or identity matrices during the spawn ceremony when the
+        // crystal scales from 0) and forever cull ray hits on the new crystal
+        // — the "crystal won't accept clicks after first unlock" bug. Nulling
+        // here guarantees the next raycast recomputes against the matrices and
+        // count we just wrote above.
+        mesh.boundingSphere = null;
+        mesh.boundingBox = null;
       }
     }
 
@@ -436,10 +683,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
     }
   };
 
-  if (crystals.length === 0) {
-    return <group />;
-  }
-
   const particleCrystal = particleTopicId
     ? crystals.find((c) => topicRefKey(c) === particleTopicId)
     : undefined;
@@ -498,6 +741,28 @@ export const Crystals: React.FC<CrystalsProps> = ({
           </group>
         );
       })}
+
+      {/* Content-generation indicators — stable identity per topic across the
+          active → fade-out lifecycle avoids per-cycle WebGPU shader recompiles. */}
+      {Array.from(indicators.entries()).map(([topicKey, entry]) => (
+        <ManagedGeneratingIndicator
+          key={topicKey}
+          topicKey={topicKey}
+          entry={entry}
+          onFadeComplete={handleGeneratingIndicatorFadeOut}
+        />
+      ))}
+
+      {/* Crystal Trial pregeneration indicators — same stable-identity pattern
+          so the WebGPU pipeline is preserved across active → fade-out. */}
+      {Array.from(trialIndicators.entries()).map(([topicKey, entry]) => (
+        <ManagedTrialIndicator
+          key={topicKey}
+          topicKey={topicKey}
+          entry={entry}
+          onFadeComplete={handleTrialIndicatorFadeOut}
+        />
+      ))}
 
       <GrowthParticles position={[px, particleY, pz]} active={!!particleTopicId} />
     </group>
