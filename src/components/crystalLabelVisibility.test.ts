@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { topicRefKey } from '@/lib/topicRef';
 import { ActiveCrystal } from '../types';
 import {
-  getLabelOcclusionFactor,
   CRYSTAL_LABEL_OFFSET_Y,
+  buildLabelCandidates,
   getLabelOpacity,
   getVisibleLabelCandidates,
 } from './crystalLabelVisibility';
@@ -18,7 +18,26 @@ describe('crystal label visibility helpers', () => {
     expect(getLabelOpacity(18)).toBe(0);
   });
 
-  it('filters by max distance and applies nearest-first visibility cap', () => {
+  it('buildLabelCandidates filters by max distance', () => {
+    const cameraPosition = new THREE.Vector3(0, 0, 0);
+    const sub = 'test-subject';
+    const crystals: ActiveCrystal[] = [
+      { subjectId: sub, topicId: 'near', gridPosition: [1, 0], xp: 0, spawnedAt: 0 },
+      { subjectId: sub, topicId: 'far', gridPosition: [30, 0], xp: 0, spawnedAt: 0 },
+    ];
+    const candidates = buildLabelCandidates(
+      crystals,
+      cameraPosition,
+      18,
+      CRYSTAL_LABEL_OFFSET_Y,
+    );
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].topicKey).toBe(
+      topicRefKey({ subjectId: sub, topicId: 'near' }),
+    );
+  });
+
+  it('getVisibleLabelCandidates applies nearest-first cap', () => {
     const cameraPosition = new THREE.Vector3(0, 0, 0);
     const sub = 'test-subject';
     const crystals: ActiveCrystal[] = [
@@ -42,83 +61,5 @@ describe('crystal label visibility helpers', () => {
       topicRefKey({ subjectId: sub, topicId: 'mid' }),
     ]);
     expect(candidates.every((item) => item.distance < 18)).toBe(true);
-  });
-
-  it('ignores self mesh when evaluating occlusion', () => {
-    const cameraPosition = new THREE.Vector3(0, 1.25, 0);
-    const targetPosition = new THREE.Vector3(0, 1.25, 5);
-    const selfMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.5, 8, 8),
-      new THREE.MeshBasicMaterial(),
-    );
-    selfMesh.position.copy(targetPosition);
-    selfMesh.updateMatrixWorld(true);
-
-    const raycaster = new THREE.Raycaster();
-    const occlusionFactor = getLabelOcclusionFactor(
-      cameraPosition,
-      targetPosition,
-      raycaster,
-      [selfMesh],
-      selfMesh,
-    );
-
-    expect(occlusionFactor).toBe(1);
-  });
-
-  it('hides label when both label targets are occluded', () => {
-    const cameraPosition = new THREE.Vector3(0, 1.25, 0);
-    const targetPosition = new THREE.Vector3(0, 1.25, 5);
-    const selfMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.35, 8, 8),
-      new THREE.MeshBasicMaterial(),
-    );
-    const blockerMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(2, 2, 2),
-      new THREE.MeshBasicMaterial(),
-    );
-    selfMesh.position.copy(targetPosition);
-    blockerMesh.position.set(0, 1.25, 2.5);
-    selfMesh.updateMatrixWorld(true);
-    blockerMesh.updateMatrixWorld(true);
-
-    const raycaster = new THREE.Raycaster();
-    const occlusionFactor = getLabelOcclusionFactor(
-      cameraPosition,
-      targetPosition,
-      raycaster,
-      [selfMesh, blockerMesh],
-      selfMesh,
-    );
-
-    expect(occlusionFactor).toBe(0);
-  });
-
-  it('partially hides label when one label target is occluded', () => {
-    const cameraPosition = new THREE.Vector3(0, 1.25, 0);
-    const targetPosition = new THREE.Vector3(0, 1.25, 5);
-    const selfMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.35, 8, 8),
-      new THREE.MeshBasicMaterial(),
-    );
-    const blockerMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.8, 0.7, 0.8),
-      new THREE.MeshBasicMaterial(),
-    );
-    selfMesh.position.copy(targetPosition);
-    blockerMesh.position.set(0, 1, 2.5);
-    selfMesh.updateMatrixWorld(true);
-    blockerMesh.updateMatrixWorld(true);
-
-    const raycaster = new THREE.Raycaster();
-    const occlusionFactor = getLabelOcclusionFactor(
-      cameraPosition,
-      targetPosition,
-      raycaster,
-      [selfMesh, blockerMesh],
-      selfMesh,
-    );
-
-    expect(occlusionFactor).toBe(0.5);
   });
 });

@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber/webgpu';
-import { Html } from '@react-three/drei/webgpu';
 import * as THREE from 'three/webgpu';
 import { parseTopicRefKey, topicRefKey } from '@/lib/topicRef';
 import {
@@ -49,15 +48,14 @@ import {
 import type { CrystalInstanceArrays, CrystalInstancedAttributes } from '../graphics/crystals';
 import { FLOOR_SURFACE_Y } from '../constants/sceneFloor';
 import {
+  CRYSTAL_LABEL_OFFSET_Y,
   getLabelOpacity,
-  getLabelOcclusionFactor,
   getVisibleLabelCandidates,
   LabelVisibilityState,
   MAX_LABEL_DISTANCE,
   MAX_VISIBLE_LABELS,
-  CRYSTAL_LABEL_OFFSET_Y,
-  LABEL_SECONDARY_OFFSET_Y,
 } from './crystalLabelVisibility';
+import { CrystalLabelBillboard } from './CrystalLabelBillboard';
 
 interface TopicMetadata {
   title?: string;
@@ -212,9 +210,12 @@ export const Crystals: React.FC<CrystalsProps> = ({
   const labelVisibility = useRef<LabelVisibilityState>({
     visibleIds: new Set(),
     distances: new Map(),
-    occlusion: new Map(),
   });
-  const raycasterRef = useRef(new THREE.Raycaster());
+  /**
+   * Per-frame-updated opacity map consumed by CrystalLabelBillboard meshes.
+   * Using a ref avoids React re-renders on every camera move.
+   */
+  const labelOpacitiesRef = useRef<Map<string, number>>(new Map());
   const { invalidate, isPaused } = useSceneInvalidator();
   const environmentMap = useThree((state) => state.scene.environment);
 
@@ -224,7 +225,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
   const suppressNextClickRef = useRef(false);
 
   const labelAnchorRefs = useRef<(THREE.Group | null)[]>([]);
-  const labelOpacityRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const shapeGroups = useMemo(() => {
     const groups = {} as Record<CrystalBaseShape, ShapeGroup>;
@@ -246,9 +246,27 @@ export const Crystals: React.FC<CrystalsProps> = ({
   useCrystalCeremonySync();
 
   const count = Math.min(crystals.length, CRYSTAL_MAX_INSTANCES);
+  const crystalBoundsKey = useMemo(
+    () =>
+      crystals
+        .map(
+          (c) =>
+            `${topicRefKey(c)}:${c.gridPosition[0]},${c.gridPosition[1]}:${c.xp}`,
+        )
+        .join('|'),
+    [crystals],
+  );
 
-  // Phase 2: Dialog-aware ceremony deferral — trigger onDialogClosed when
-  // any modal transitions from open to closed.
+  useLayoutEffect(() => {
+    for (const shape of CRYSTAL_BASE_SHAPES) {
+      const mesh = meshRefs.current[shape];
+      if (mesh) {
+        mesh.boundingSphere = null;
+        mesh.boundingBox = null;
+      }
+    }
+  }, [crystalBoundsKey]);
+
   const isAnyDialogOpen = useUIStore(selectIsAnyModalOpen);
   const prevDialogOpen = useRef(isAnyDialogOpen);
   useEffect(() => {
@@ -446,7 +464,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
       lastCeremonyKey.current = null;
     }
 
-    // Phase 4: Force continuous rendering while ceremony is active
     let needsInvalidate = ceremonyApi.ceremonyTopicKey != null;
 
     // Keep rendering while any generating indicator is visible (active or fading out).
@@ -498,8 +515,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
       const isSelected = selectedTopic !== null && topicRefKey(selectedTopic) === topicKey;
       const rotY = isSelected ? elapsedTime * 0.4 : 0;
 
-      // Phase 1: Animated instance scale — lerp between old and new scale
-      // during the ceremony window, synced with morphProgress (2.5s smoothstep).
       const isCeremonyActive = ceremonyApi.isCeremonyActiveForTopic(
         { subjectId: crystal.subjectId, topicId: crystal.topicId },
         now,
@@ -548,31 +563,29 @@ export const Crystals: React.FC<CrystalsProps> = ({
       d[row + CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY] = isSelected ? 1 : 0;
       d[row + CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY + 1] = ceremonyPhase;
 
-      // Crystal Trial VFX: use pre-computed trial-ready set instead of per-crystal getTrialStatus
       const isTrialReady = trialReadyKeys.has(topicKey) ? 1 : 0;
       d[row + CRYSTAL_INSTANCE_OFFSET_TRIAL_READY] = isTrialReady;
       if (isTrialReady) {
-        needsInvalidate = true; // Keep rendering for pulse animation
+        needsInvalidate = true;
       }
 
       const anchor = labelAnchorRefs.current[i];
       if (anchor) {
         anchor.position.set(gx, py, gz);
       }
+    }
 
-      const labelEl = labelOpacityRefs.current[i];
-      if (labelEl && topicMeta?.topicName) {
-        const isLabelVisible = labelVisibility.current.visibleIds.has(topicKey);
-        const distance = isLabelVisible
-          ? labelVisibility.current.distances.get(topicKey) ?? Infinity
-          : Infinity;
-        const occlusionFactor = labelVisibility.current.occlusion.get(topicKey) ?? 1;
-        const opacity = getLabelOpacity(distance) * occlusionFactor;
-        labelEl.style.opacity = `${opacity}`;
-        labelEl.style.display = opacity === 0 ? 'none' : 'block';
-        if (opacity > 0) {
-          needsInvalidate = true;
-        }
+    // Flush label opacities. GPU depth-test handles occlusion inside the
+    // billboard material; here we only drive distance-based LOD fade.
+    const labelOpacities = labelOpacitiesRef.current;
+    labelOpacities.clear();
+    const { visibleIds, distances } = labelVisibility.current;
+    for (const topicKey of visibleIds) {
+      const distance = distances.get(topicKey) ?? Infinity;
+      const opacity = getLabelOpacity(distance);
+      labelOpacities.set(topicKey, opacity);
+      if (opacity > 0) {
+        needsInvalidate = true;
       }
     }
 
@@ -618,29 +631,11 @@ export const Crystals: React.FC<CrystalsProps> = ({
     const { visibleIds, distances } = labelVisibility.current;
     visibleIds.clear();
     distances.clear();
-    labelVisibility.current.occlusion.clear();
 
-    const occluders: THREE.InstancedMesh[] = [];
-    for (const shape of CRYSTAL_BASE_SHAPES) {
-      const mesh = meshRefs.current[shape];
-      if (mesh && mesh.count > 0) occluders.push(mesh);
-    }
-
-    candidates.forEach((candidate) => {
+    for (const candidate of candidates) {
       visibleIds.add(candidate.topicKey);
       distances.set(candidate.topicKey, candidate.distance);
-
-      const occlusionFactor = getLabelOcclusionFactor(
-        cam.position,
-        candidate.worldPosition,
-        raycasterRef.current,
-        occluders,
-        null,
-        LABEL_SECONDARY_OFFSET_Y,
-        undefined,
-      );
-      labelVisibility.current.occlusion.set(candidate.topicKey, occlusionFactor);
-    });
+    }
   });
 
   const handleCrystalPointerUp = (e: ThreeEvent<PointerEvent>) => {
@@ -671,7 +666,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
       const isCurrentCrystalReadyForTrial = isXpMaxedForCurrentLevel(
         activeCrystals.find((item) => topicRefKey(item) === topicKey)?.xp ?? 0,
       );
-      // Check if trial is awaiting player — open trial modal instead of study
       const trialStatus = useCrystalTrialStore.getState().getTrialStatus(ref);
       if (trialStatus === 'awaiting_player' && isCurrentCrystalReadyForTrial) {
         useUIStore.getState().openCrystalTrial();
@@ -683,6 +677,12 @@ export const Crystals: React.FC<CrystalsProps> = ({
     }
   };
 
+  // Part of the public props API; not referenced after removing Html label zIndex wiring.
+  void isStudyPanelOpen;
+
+  if (crystals.length === 0) {
+    return <group />;
+  }
   const particleCrystal = particleTopicId
     ? crystals.find((c) => topicRefKey(c) === particleTopicId)
     : undefined;
@@ -707,11 +707,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
       {crystals.map((crystal, index) => {
         const topicKey = topicRefKey(crystal);
         const topicMeta = metadataLookup[topicKey] as TopicMetadata | undefined;
-        const labelLayerRange = isStudyPanelOpen
-          ? [0, 10]
-          : selectedTopic && topicRefKey(selectedTopic) === topicKey
-            ? [50, 100]
-            : [0, 10];
         return (
           <group
             key={topicKey}
@@ -720,23 +715,11 @@ export const Crystals: React.FC<CrystalsProps> = ({
             }}
           >
             {topicMeta?.topicName && (
-              <Html
-                center
-                transform
-                sprite
-                position={[0, -0.7, 0]}
-                zIndexRange={labelLayerRange}
-                className="pointer-events-none"
-              >
-                <div
-                  ref={(el: HTMLDivElement | null) => {
-                    labelOpacityRefs.current[index] = el;
-                  }}
-                  className="opacity-0 pointer-events-none max-w-[100px] truncate rounded-sm border border-border/50 bg-card/75 px-0.5 py-0.5 text-center font-sans text-[5px] font-normal leading-none tracking-wide text-foreground shadow-sm backdrop-blur-sm"
-                >
-                  {topicMeta.topicName}
-                </div>
-              </Html>
+              <CrystalLabelBillboard
+                topicKey={topicKey}
+                text={topicMeta.topicName}
+                opacitiesRef={labelOpacitiesRef}
+              />
             )}
           </group>
         );

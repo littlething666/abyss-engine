@@ -1,0 +1,13 @@
+export const LABEL_DEFAULT_PIXEL_HEIGHT = 36;
+export const LABEL_MAX_PIXEL_WIDTH = 320;
+export const LABEL_FONT = '600 12px system-ui, -apple-system, "Segoe UI", sans-serif';
+export const LABEL_PADDING_X = 6;
+export const LABEL_PADDING_Y = 0;
+export const LABEL_WORLD_HEIGHT = 0.32;
+export const LABEL_LOCAL_Y = 0.65;
+export const LABEL_OCCLUSION_FADE_BAND = 0.5;
+export const LABEL_TEXT_COLOR = '#f8fafc';
+export const LABEL_BG_COLOR = 'rgba(15, 23, 42, 0.72)';
+export const LABEL_BORDER_COLOR = 'rgba(148, 163, 184, 0.55)';
+export const LABEL_CORNER_RADIUS = 8;
+export const LABEL_RENDER_ORDER = 10;
