@@ -55,12 +55,13 @@ export function GlowPostProcessing({
   // torn down so that no CopyTextureToTexture runs against mismatched targets.
   const [settledSizeKey, setSettledSizeKey] = useState<string | null>(null)
 
-  useEffect(() => {
+  // Synchronous teardown when the drawing buffer size changes so no rAF frame
+  // between layout and the debounced effect still reads a stale pipeline from
+  // the store (avoids CopyTextureToTexture size mismatches after resize).
+  useLayoutEffect(() => {
     if (!pipelineSizeKey) {
       return
     }
-    // Tear down immediately so in-flight command encoders stop referencing the
-    // old pipeline. Rebuild only after the size stops changing.
     const previousPostProcessing = store.getState().postProcessing as THREE.RenderPipeline | null
     if (previousPostProcessing?.dispose) {
       previousPostProcessing.dispose()
@@ -70,6 +71,12 @@ export function GlowPostProcessing({
       passes: {},
     })
     setSettledSizeKey(null)
+  }, [pipelineSizeKey, store])
+
+  useEffect(() => {
+    if (!pipelineSizeKey) {
+      return
+    }
 
     const timer = window.setTimeout(() => {
       setSettledSizeKey(pipelineSizeKey)
@@ -78,7 +85,7 @@ export function GlowPostProcessing({
     return () => {
       window.clearTimeout(timer)
     }
-  }, [pipelineSizeKey, store])
+  }, [pipelineSizeKey])
 
   useLayoutEffect(() => {
     if (isLegacy) {
