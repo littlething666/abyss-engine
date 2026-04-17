@@ -20,16 +20,6 @@ import {
 } from '@/features/contentGeneration';
 import { useTopicDetails } from '@/hooks/useDeckData';
 
-/**
- * Controlled Dialog: if we unmount the details layer synchronously inside
- * onOpenChange(false) (or right after Close), dismiss handling can still reach the
- * sibling Wisdom Altar dialog. Deferring one macrotask lets the inner dialog finish
- * closing first (same effect as setTimeout(..., 0) in app code).
- */
-export function scheduleTopicDetailsDismiss(onDismiss: () => void) {
-  window.setTimeout(onDismiss, 0);
-}
-
 const GENERATION_STEPS: readonly TopicGenerationStage[] = [
   'theory',
   'study-cards',
@@ -94,7 +84,7 @@ export function TopicDetailsPopup({
       open={isOpen}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
-          scheduleTopicDetailsDismiss(onClose);
+          onClose();
         }
       }}
     >

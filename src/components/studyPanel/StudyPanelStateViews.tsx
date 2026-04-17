@@ -13,6 +13,7 @@ import { TTS_ICON_SPEAKING_CLASSNAME } from '@/components/LlmTtsToggle';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -359,14 +360,9 @@ export function StudyPanelStateViews({
                 </p>
               )}
               <DialogFooter className="pt-2">
-                <Button
-                  variant="outline"
-                  onClick={resetDiagramPromptDialogState}
-                  className="w-full sm:w-auto"
-                  type="button"
-                >
+                <DialogClose render={<Button type="button" variant="outline" className="w-full sm:w-auto" />}>
                   Close
-                </Button>
+                </DialogClose>
                 <Button onClick={handleDiagramPromptProcess} className="w-full sm:w-auto" type="button">
                   Process
                 </Button>

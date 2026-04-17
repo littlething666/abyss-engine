@@ -14,7 +14,7 @@ import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from './ui/particles-an
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTopicContentAvailabilityMap } from '@/hooks/useTopicContentAvailabilityMap';
-import { scheduleTopicDetailsDismiss, TopicDetailsPopup } from './TopicDetailsPopup';
+import { TopicDetailsPopup } from './TopicDetailsPopup';
 import { IncrementalSubjectModal } from './IncrementalSubjectModal';
 
 interface DiscoveryModalProps {
@@ -120,10 +120,8 @@ export function DiscoveryModal({
 
     unlockTopic({ subjectId: selectedTopic.subjectId, topicId: selectedTopic.id }, allGraphs);
 
-    scheduleTopicDetailsDismiss(() => {
-      setSelectedTopicKey(null);
-      onClose();
-    });
+    setSelectedTopicKey(null);
+    onClose();
   };
 
   if (!isOpen) {

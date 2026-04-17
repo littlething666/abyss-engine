@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -260,9 +261,9 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
         ) : null}
 
         <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+          <DialogClose render={<Button type="button" variant="outline" disabled={submitting} />}>
             Cancel
-          </Button>
+          </DialogClose>
           <Button type="button" onClick={() => void handleSubmit()} disabled={submitting}>
             {submitting ? 'Checking…' : 'Generate curriculum'}
           </Button>

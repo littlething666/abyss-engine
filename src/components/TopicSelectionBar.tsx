@@ -17,7 +17,7 @@ import type { Card } from '@/types/core';
 import { useUIStore } from '@/store/uiStore';
 
 import { LevelProgressCompact } from './LevelProgressCompact';
-import { scheduleTopicDetailsDismiss, TopicDetailsPopup } from './TopicDetailsPopup';
+import { TopicDetailsPopup } from './TopicDetailsPopup';
 
 interface TopicSelectionBarProps {
   onStartTopicStudySession?: (ref: { subjectId: string; topicId: string }, cards: Card[]) => void;
@@ -119,7 +119,7 @@ export default function TopicSelectionBar({
       return;
     }
     unlockTopic(selectedTopic, allGraphs);
-    scheduleTopicDetailsDismiss(() => setDetailsOpen(false));
+    setDetailsOpen(false);
   }, [allGraphs, barUnlockStatus?.canUnlock, selectedTieredTopic, selectedTopic, unlockTopic]);
 
   if (!isSelectionMode || !selectedTopic) {
