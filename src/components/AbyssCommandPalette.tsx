@@ -13,6 +13,8 @@ import {
   Settings,
   Sparkles,
   ShieldCheck,
+  Volume2,
+  VolumeX,
   Zap,
 } from 'lucide-react';
 
@@ -34,6 +36,7 @@ import { deckRepository } from '@/infrastructure/di';
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
 import { crystalCeremonyStore, useProgressionStore } from '@/features/progression';
 import { uiStore, useUIStore } from '@/store/uiStore';
+import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import { calculateLevelFromXP, MAX_CRYSTAL_LEVEL } from '@/features/progression/progressionUtils';
 import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
@@ -64,6 +67,7 @@ const RECENT_COMMAND_IDS = [
   'open-study-timeline',
   'open-wisdom-altar',
   'open-global-settings',
+  'toggle-sfx',
   'study-filtered-cards',
   'filter-flashcard',
   'filter-single-choice',
@@ -187,6 +191,8 @@ export function AbyssCommandPalette({
   const devXpBuffActive = useProgressionStore((s) => s.activeBuffs.some(matchesDevXpBuff));
   const activeCrystals = useProgressionStore((s) => s.activeCrystals);
   const trialStatus = useCrystalTrialStore((s) => (selectedTopic ? s.getTrialStatus(selectedTopic) : 'idle'));
+  const sfxEnabled = useFeatureFlagsStore((s) => s.sfxEnabled);
+  const toggleSfxEnabled = useFeatureFlagsStore((s) => s.toggleSfxEnabled);
   const [studyCardFilter, setStudyCardFilter] = useState(createDefaultStudyCardFilter);
   const skipNextCardFilterSaveRef = useRef(true);
   const [recentCommands, setRecentCommands] = useState<PaletteCommandId[]>(() => loadRecentCommandsFromStorage());
@@ -277,6 +283,7 @@ export function AbyssCommandPalette({
   const handleOpenTimeline = () => { uiStore.getState().openStudyTimeline(); onOpenChange(false); };
   const handleOpenDiscovery = () => { uiStore.getState().openDiscoveryModal(); onOpenChange(false); };
   const handleOpenGlobalSettings = () => { uiStore.getState().openGlobalSettings(); onOpenChange(false); };
+  const handleToggleSfx = () => { toggleSfxEnabled(); onOpenChange(false); };
 
   const handleDevAddXp = () => {
     const ref = uiStore.getState().selectedTopic;
@@ -330,10 +337,14 @@ export function AbyssCommandPalette({
   const handleSummarizeScreen = () => { if (!onSummarizeScreen) return; onSummarizeScreen(); onOpenChange(false); };
   const handleOpenSubjectCurriculum = () => { if (!onOpenSubjectCurriculum) return; onOpenSubjectCurriculum(); onOpenChange(false); };
 
+  const sfxLabel = sfxEnabled ? 'Turn off sound effects' : 'Turn on sound effects';
+  const SfxIcon = sfxEnabled ? Volume2 : VolumeX;
+
   const commandMetadata: Record<PaletteCommandId, PaletteCommandMeta> = {
     'open-study-timeline': { id: 'open-study-timeline', label: 'Open study timeline', value: 'timeline study history', icon: History, onSelect: () => handleCommandSelect('open-study-timeline', true, handleOpenTimeline), disabled: false },
     'open-wisdom-altar': { id: 'open-wisdom-altar', label: 'Open Wisdom Altar (Discovery)', value: 'discovery wisdom altar', icon: Landmark, onSelect: () => handleCommandSelect('open-wisdom-altar', true, handleOpenDiscovery), disabled: false },
     'open-global-settings': { id: 'open-global-settings', label: 'Open settings', value: 'open settings llm openrouter provider routing', icon: Settings, onSelect: () => handleCommandSelect('open-global-settings', true, handleOpenGlobalSettings), disabled: false },
+    'toggle-sfx': { id: 'toggle-sfx', label: sfxLabel, value: 'toggle sound effects sfx audio mute unmute', icon: SfxIcon, onSelect: () => handleCommandSelect('toggle-sfx', true, handleToggleSfx), disabled: false },
     'study-filtered-cards': { id: 'study-filtered-cards', label: 'Study filtered cards (selected topic)', value: 'study filtered cards selected topic crystal flashcard choice mini game', icon: BookOpen, onSelect: () => handleCommandSelect('study-filtered-cards', canStartFilteredStudy, handleStudyFilteredCards), disabled: !canStartFilteredStudy },
     'filter-flashcard': { id: 'filter-flashcard', label: 'Include ' + BASE_CARD_TYPE_LABELS.FLASHCARD, value: 'filter include FLASHCARD', icon: studyCardFilter.base.FLASHCARD ? Check : Circle, onSelect: () => handleCommandSelect('filter-flashcard', true, () => setStudyCardFilter((p) => ({ ...p, base: { ...p.base, FLASHCARD: !p.base.FLASHCARD } }))), disabled: false },
     'filter-single-choice': { id: 'filter-single-choice', label: 'Include ' + BASE_CARD_TYPE_LABELS.SINGLE_CHOICE, value: 'filter include SINGLE_CHOICE', icon: studyCardFilter.base.SINGLE_CHOICE ? Check : Circle, onSelect: () => handleCommandSelect('filter-single-choice', true, () => setStudyCardFilter((p) => ({ ...p, base: { ...p.base, SINGLE_CHOICE: !p.base.SINGLE_CHOICE } }))), disabled: false },
@@ -390,6 +401,9 @@ export function AbyssCommandPalette({
           <CommandGroup heading="Settings">
             <CommandItem value={commandMetadata['open-global-settings'].value} onSelect={commandMetadata['open-global-settings'].onSelect}>
               <Settings className="size-4" /><span>{commandMetadata['open-global-settings'].label}</span>
+            </CommandItem>
+            <CommandItem value={commandMetadata['toggle-sfx'].value} onSelect={commandMetadata['toggle-sfx'].onSelect}>
+              <SfxIcon className="size-4" /><span>{commandMetadata['toggle-sfx'].label}</span>
             </CommandItem>
           </CommandGroup>
           {onStartStudyWithCardTypes ? (

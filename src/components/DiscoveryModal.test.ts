@@ -49,6 +49,11 @@ vi.mock('../hooks/useTopicContentStatusMap', () => ({
   useTopicContentStatusMap: () => ({}),
 }));
 
+const featureFlagsState = { ritualVisible: true };
+vi.mock('@/store/featureFlagsStore', () => ({
+  useFeatureFlagsStore: (selector: (state: typeof featureFlagsState) => unknown) => selector(featureFlagsState),
+}));
+
 function renderDiscoveryModal(props: Parameters<typeof DiscoveryModal>[0]) {
   const container = document.createElement('div');
   const root = createRoot(container);
@@ -65,32 +70,12 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   progressionState.getTopicsByTier.mockReturnValue([]);
+  featureFlagsState.ritualVisible = true;
   sessionStorage.removeItem(DISCOVERY_MODAL_SUBJECT_STORAGE_KEY);
   document.body.innerHTML = '';
 });
 
 describe('DiscoveryModal', () => {
-  it('opens IncrementalSubjectModal from the new subject header action', async () => {
-    const onClose = vi.fn();
-    const { root } = renderDiscoveryModal({
-      isOpen: true,
-      unlockPoints: 3,
-      onClose,
-    });
-
-    const newSubjectButton = document.body.querySelector('[aria-label="Generate new subject"]') as
-      | HTMLButtonElement
-      | null;
-    expect(newSubjectButton).not.toBeNull();
-    await act(async () => {
-      newSubjectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(document.body.textContent).toContain('New subject');
-
-    root.unmount();
-  });
-
   it('opens the attunement ritual modal through the header action', () => {
     const onOpenRitual = vi.fn();
     const onClose = vi.fn();

@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useProgressionStore as useStudyStore } from '@/features/progression';
 import { undoManager } from '@/features/progression/undoManager';
 import { useUIStore } from '@/store/uiStore';
+import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import { Rating } from '@/types';
 import type { Card } from '@/types/core';
 import DebugControls from '@/components/debug/DebugControls';
@@ -16,7 +17,13 @@ import { filterCardsForStudy, useTopicMetadata, type StudyCardFilterSelection } 
 import { initializeDebugMode, isDebugModeEnabled } from '@/infrastructure/debugMode';
 import { Button } from '@/components/ui/button';
 import { CloudLoadingScreen } from '@/components/ui/CloudLoadingScreen';
-import { Search } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Sparkles } from 'lucide-react';
 
 // Components
 import StatsOverlay from '@/components/StatsOverlay';
@@ -60,9 +67,7 @@ const HomeContent: React.FC = () => {
   const searchParams = useSearchParams();
   initializeDebugMode(searchParams);
   const isDebugMode = isDebugModeEnabled();
-  /** E2E / Playwright: full-screen loader stays until WebGPU `onCreated`; skip it so UI is reachable even if GPU init stalls.
-   * issue is likely in <Canvas>/R3F/WebGPU renderer initialization
-  */
+  /** E2E / Playwright: full-screen loader stays until WebGPU `onCreated`; skip it so UI is reachable even if GPU init stalls. */
   const skipSceneLoadingOverlay =
     searchParams.get('e2e') === '1' || process.env.NEXT_PUBLIC_PLAYWRIGHT === '1';
   const [showStats, setShowStats] = useState(true);
@@ -84,23 +89,18 @@ const HomeContent: React.FC = () => {
 
   useContentGenerationHydration();
   useContentGenerationLifecycle();
-  // Track initialization to prevent infinite loops
   const initializedRef = useRef(false);
 
   const [sceneOverlayMounted, setSceneOverlayMounted] = useState(() => !skipSceneLoadingOverlay);
   const [sceneOverlayVisible, setSceneOverlayVisible] = useState(() => !skipSceneLoadingOverlay);
 
   const handleSceneCanvasReady = useCallback(() => {
-    if (skipSceneLoadingOverlay) {
-      return;
-    }
+    if (skipSceneLoadingOverlay) return;
     setSceneOverlayVisible(false);
   }, [skipSceneLoadingOverlay]);
 
   const handleSceneCanvasReleased = useCallback(() => {
-    if (skipSceneLoadingOverlay) {
-      return;
-    }
+    if (skipSceneLoadingOverlay) return;
     setSceneOverlayMounted(true);
     setSceneOverlayVisible(true);
   }, [skipSceneLoadingOverlay]);
@@ -109,12 +109,15 @@ const HomeContent: React.FC = () => {
     setSceneOverlayMounted(false);
   }, []);
 
+  // Feature flags
+  const pomodoroVisible = useFeatureFlagsStore((s) => s.pomodoroVisible);
+
   // Deck counts for Discovery modal and study panel
   const currentSession = useStudyStore((state) => state.currentSession);
-  const activeCrystals = useStudyStore(s => s.activeCrystals);
-  const currentSubjectId = useStudyStore(s => s.currentSubjectId);
-  const sm2Data = useStudyStore(s => s.sm2Data);
-  const unlockPoints = useStudyStore(s => s.unlockPoints);
+  const activeCrystals = useStudyStore((s) => s.activeCrystals);
+  const currentSubjectId = useStudyStore((s) => s.currentSubjectId);
+  const sm2Data = useStudyStore((s) => s.sm2Data);
+  const unlockPoints = useStudyStore((s) => s.unlockPoints);
   const activeBuffs = useStudyStore((state) => state.activeBuffs);
   const getRemainingRitualCooldownMs = useStudyStore((state) => state.getRemainingRitualCooldownMs);
   const getDueCardsCount = useStudyStore((state) => state.getDueCardsCount);
@@ -134,40 +137,37 @@ const HomeContent: React.FC = () => {
   const allTopicsCardCounts = useMemo(() => {
     let due = 0;
     let total = 0;
-
     topicCardQueries.forEach((query, index) => {
       const cards = query?.data ?? [];
       const ref = queriedTopicRefs[index];
-      if (!ref) {
-        return;
-      }
+      if (!ref) return;
       due += getDueCardsCount(ref, cards);
       total += cards.length;
     });
-
     return { due, total };
   }, [getDueCardsCount, topicCardQueries, queriedTopicRefs]);
   const totalCards = allTopicsCardCounts.total;
 
   // Get store actions - stable references
-  const initialize = useStudyStore(s => s.initialize);
-  const submitStudyResult = useStudyStore(s => s.submitStudyResult);
+  const initialize = useStudyStore((s) => s.initialize);
+  const submitStudyResult = useStudyStore((s) => s.submitStudyResult);
   const advanceStudyAfterReveal = useStudyStore((state) => state.advanceStudyAfterReveal);
-  const undoLastStudyResult = useStudyStore(s => s.undoLastStudyResult);
-  const redoLastStudyResult = useStudyStore(s => s.redoLastStudyResult);
-  const submitAttunementRitual = useStudyStore(s => s.submitAttunementRitual);
-  const clearPendingRitual = useStudyStore(s => s.clearPendingRitual);
+  const undoLastStudyResult = useStudyStore((s) => s.undoLastStudyResult);
+  const redoLastStudyResult = useStudyStore((s) => s.redoLastStudyResult);
+  const submitAttunementRitual = useStudyStore((s) => s.submitAttunementRitual);
+  const clearPendingRitual = useStudyStore((s) => s.clearPendingRitual);
 
   // UI store - modal state - stable selectors
-  const isDiscoveryModalOpen = useUIStore(s => s.isDiscoveryModalOpen);
-  const isStudyPanelOpen = useUIStore(s => s.isStudyPanelOpen);
-  const isRitualModalOpen = useUIStore(s => s.isRitualModalOpen);
+  const isDiscoveryModalOpen = useUIStore((s) => s.isDiscoveryModalOpen);
+  const isStudyPanelOpen = useUIStore((s) => s.isStudyPanelOpen);
+  const isRitualModalOpen = useUIStore((s) => s.isRitualModalOpen);
   const isStudyTimelineOpen = useUIStore((state) => state.isStudyTimelineOpen);
-  const closeDiscoveryModal = useUIStore(s => s.closeDiscoveryModal);
-  const openDiscoveryModal = useUIStore(s => s.openDiscoveryModal);
-  const closeStudyPanel = useUIStore(s => s.closeStudyPanel);
-  const openRitualModal = useUIStore(s => s.openRitualModal);
-  const closeRitualModal = useUIStore(s => s.closeRitualModal);
+  const closeDiscoveryModal = useUIStore((s) => s.closeDiscoveryModal);
+  const openDiscoveryModal = useUIStore((s) => s.openDiscoveryModal);
+  const openGlobalSettings = useUIStore((s) => s.openGlobalSettings);
+  const closeStudyPanel = useUIStore((s) => s.closeStudyPanel);
+  const openRitualModal = useUIStore((s) => s.openRitualModal);
+  const closeRitualModal = useUIStore((s) => s.closeRitualModal);
   const closeStudyTimeline = useUIStore((state) => state.closeStudyTimeline);
   const selectTopic = useUIStore((state) => state.selectTopic);
   const openStudyPanel = useUIStore((state) => state.openStudyPanel);
@@ -177,12 +177,8 @@ const HomeContent: React.FC = () => {
   const currentTopicId = currentSession?.topicId || null;
   const currentSubjectIdSession = currentSession?.subjectId ?? null;
 
-  // Initialize on mount - only once
   useEffect(() => {
-    // Initialize abyssDev for console access
     initAbyssDev();
-
-    // Only initialize once
     if (!initializedRef.current) {
       initializedRef.current = true;
       initialize();
@@ -191,56 +187,32 @@ const HomeContent: React.FC = () => {
 
   const handleRate = (cardId: string, isCorrect?: boolean, selfRating?: Rating) => {
     const reviewRating = selfRating ?? (isCorrect === undefined ? 3 : isCorrect ? 3 : 1);
-
     submitStudyResult(cardId || currentSession?.currentCardId || '', reviewRating);
   };
 
-  // Discovery Modal handlers
-  const handleCloseDiscoveryModal = () => {
-    closeDiscoveryModal();
-  };
-
-  // Study Panel Modal handlers
-  const handleCloseStudyPanel = () => {
-    closeStudyPanel();
-  };
+  const handleCloseDiscoveryModal = () => { closeDiscoveryModal(); };
+  const handleCloseStudyPanel = () => { closeStudyPanel(); };
 
   const handleUndo = useCallback(() => {
-    if (!undoManager.canUndo) { return; }
-
+    if (!undoManager.canUndo) return;
     undoLastStudyResult();
   }, [undoLastStudyResult]);
 
   const handleRedo = useCallback(() => {
-    if (!undoManager.canRedo) { return; }
-
+    if (!undoManager.canRedo) return;
     redoLastStudyResult();
   }, [redoLastStudyResult]);
 
-  const handleOpenRitualModal = () => {
-    openRitualModal();
-  };
-
-  const handleAttunementSubmit = (payload: AttunementRitualPayload) => {
-    return submitAttunementRitual(payload);
-  };
-
-  const handleCloseAttunement = () => {
-    clearPendingRitual();
-    closeRitualModal();
-  };
-
-  const handleCloseStudyTimeline = () => {
-    closeStudyTimeline();
-  };
+  const handleOpenRitualModal = () => { openRitualModal(); };
+  const handleAttunementSubmit = (payload: AttunementRitualPayload) => submitAttunementRitual(payload);
+  const handleCloseAttunement = () => { clearPendingRitual(); closeRitualModal(); };
+  const handleCloseStudyTimeline = () => { closeStudyTimeline(); };
 
   const handleTimelineOpenStudy = useCallback(
     (payload: { subjectId: string; topicId: string; cardId?: string }) => {
       const ref = { subjectId: payload.subjectId, topicId: payload.topicId };
       const cards = topicCardsByKey.get(topicRefKey(ref));
-      if (!cards?.length) {
-        return;
-      }
+      if (!cards?.length) return;
       focusStudyCard(ref, cards, payload.cardId ?? null);
       selectTopic(ref);
       closeStudyTimeline();
@@ -273,9 +245,28 @@ const HomeContent: React.FC = () => {
     [topicCardsByKey, selectTopic, startTopicStudySession, openStudyPanel],
   );
 
-  const TOP_LEFT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', left: 'calc(0.75rem + env(safe-area-inset-left))' }
-  const TOP_RIGHT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', right: 'calc(0.75rem + env(safe-area-inset-right))' }
-  const BOTTOM_RIGHT_STYLE: React.CSSProperties = { bottom: 'calc(0.75rem + env(safe-area-inset-bottom))', right: 'calc(0.75rem + env(safe-area-inset-right))' }
+  // Quick-actions dropdown handlers (each closes by virtue of Base-UI menu close-on-select)
+  const handleQuickActionNewSubject = useCallback(() => { setIsIncrementalSubjectOpen(true); }, []);
+  const handleQuickActionWisdomAltar = useCallback(() => { openDiscoveryModal(); }, [openDiscoveryModal]);
+  const handleQuickActionCommandPalette = useCallback(() => { setIsCommandPaletteOpen(true); }, []);
+  const handleQuickActionSettings = useCallback(() => { openGlobalSettings(); }, [openGlobalSettings]);
+
+  const TOP_LEFT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', left: 'calc(0.75rem + env(safe-area-inset-left))' };
+  const TOP_RIGHT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', right: 'calc(0.75rem + env(safe-area-inset-right))' };
+  const BOTTOM_RIGHT_STYLE: React.CSSProperties = { bottom: 'calc(0.75rem + env(safe-area-inset-bottom))', right: 'calc(0.75rem + env(safe-area-inset-right))' };
+
+  const quickActionsTrigger = (
+    <Button
+      size="icon-sm"
+      variant="outline"
+      type="button"
+      title="Quick actions"
+      aria-label="Quick actions"
+      data-testid="quick-actions-trigger"
+    >
+      <Sparkles className="h-3.5 w-3.5" />
+    </Button>
+  );
 
   return (
     <div className="w-screen h-screen relative overflow-hidden">
@@ -306,18 +297,6 @@ const HomeContent: React.FC = () => {
         <h1 className="m-0 text-sm font-semibold tracking-tight text-foreground">
           Abyss Engine
         </h1>
-        {unlockPoints > 0 && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-1"
-            onClick={() => openDiscoveryModal()}
-            aria-label="Open Wisdom Altar (unlocks)"
-          >
-            {unlockPoints} unlock{unlockPoints !== 1 ? 's' : ''}
-          </Button>
-        )}
       </div>
 
       <div
@@ -332,18 +311,24 @@ const HomeContent: React.FC = () => {
         className="fixed z-20 flex flex-row items-end justify-end gap-2"
         style={BOTTOM_RIGHT_STYLE}
       >
-        <PomodoroTimerOverlay />
-        <Button
-          size="icon-sm"
-          variant="outline"
-          type="button"
-          onClick={() => setIsCommandPaletteOpen(true)}
-          title="Command palette (Ctrl+K or ⌘K)"
-          aria-label="Open command palette"
-          data-testid="command-palette-trigger"
-        >
-          <Search className="h-3.5 w-3.5" />
-        </Button>
+        {pomodoroVisible ? <PomodoroTimerOverlay /> : null}
+        <DropdownMenu>
+          <DropdownMenuTrigger render={quickActionsTrigger} />
+          <DropdownMenuContent side="top" align="end" sideOffset={8}>
+            <DropdownMenuItem onClick={handleQuickActionNewSubject}>
+              🌱 New subject
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleQuickActionWisdomAltar}>
+              🏛️ Wisdom Altar
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleQuickActionCommandPalette}>
+              🔍 Command palette (⌘K)
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleQuickActionSettings}>
+              ⚙️ Settings
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <AbyssCommandPalette
