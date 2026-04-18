@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/infrastructure/toast';
 
 import { appEventBus } from '@/infrastructure/eventBus';
 import { getRandomXPMessage } from '@/features/progression/feedbackMessages';

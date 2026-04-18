@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useCallback, useMemo, useState } from 'react';
-import { RotateCcw, Sparkles } from 'lucide-react';
+import { ListTree, RotateCcw, Sparkles } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { CopyableLlmTextBlock } from '@/components/CopyableLlmTextBlock';
 import {
   Dialog,
@@ -67,7 +68,7 @@ function terminalBadgeVariant(
   status: ContentGenerationJobStatus,
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (status === 'failed') return 'destructive';
-  if (status === 'aborted') return 'secondary';
+  if (status === 'aborted') return 'destructive';
   if (status === 'completed') return 'outline';
   return 'default';
 }
@@ -76,6 +77,12 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
   const input = job.inputMessages ?? '';
   const raw = job.rawOutput;
   const reasoning = job.reasoningText ?? '';
+  const modelName =
+    typeof job.metadata?.model === 'string'
+      ? job.metadata.model
+      : typeof job.metadata?.modelId === 'string'
+        ? job.metadata.modelId
+        : undefined;
 
   return (
     <div className="border-border/60 mt-2 space-y-2 border-t pt-2">
@@ -94,6 +101,7 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
           ↻ Retry of job {job.retryOf.slice(0, 8)}…
         </p>
       ) : null}
+      {modelName ? <p className="text-muted-foreground text-xs">Model: {modelName}</p> : null}
       <p className="text-muted-foreground text-xs">Input (messages)</p>
       <CopyableLlmTextBlock
         copyText={input}
@@ -205,23 +213,27 @@ export function GenerationProgressHud() {
 
   return (
     <>
-      <div className="bg-card/90 text-foreground flex max-w-[min(100%,15rem)] items-center gap-2 self-end rounded-lg border border-border px-2 py-1.5 text-xs shadow-md backdrop-blur-sm">
-        <Sparkles
-          className={`size-3.5 shrink-0 ${isBusy ? 'text-primary animate-pulse' : 'text-muted-foreground'}`}
-          aria-hidden
-        />
-        <span className="min-w-0 flex-1 truncate" title={statusLabel}>
-          {statusLabel}
-        </span>
+      <div
+        className="text-foreground flex h-7 items-center gap-1 self-end rounded-lg border border-border bg-card/10 px-2 py-1"
+        aria-live="polite"
+      >
+        <span className="sr-only">{statusLabel}</span>
+        {isBusy ? (
+          <Spinner className="size-3.5 shrink-0 text-primary" aria-hidden />
+        ) : (
+          <Sparkles className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+        )}
+        <span className="mr-0.5 h-4 w-px bg-border/60" aria-hidden="true" />
         <Button
           type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-xs"
+          variant="ghost"
+          size="icon-xs"
+          className={isBusy ? 'motion-safe:animate-pulse' : undefined}
           onClick={() => handleOpenChange(true)}
           aria-label="Open background LLM content generation"
+          title={statusLabel}
         >
-          Info
+          <ListTree />
         </Button>
       </div>
 

@@ -1,1 +1,1 @@
-export type StudyPanelTab = 'study' | 'theory' | 'system_prompt' | 'settings';
+export type StudyPanelTab = 'study' | 'theory' | 'system_prompt';

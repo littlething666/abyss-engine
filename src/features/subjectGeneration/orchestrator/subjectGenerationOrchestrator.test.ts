@@ -121,11 +121,13 @@ describe('createSubjectGenerationOrchestrator', () => {
         label: 'Curriculum — Orch test',
         subjectId,
         topicId: null,
+        llmSurfaceId: 'subjectGeneration',
         pipelineId: expect.any(String),
         chat,
         model: 'test-model',
         enableThinking: false,
         externalSignal: expect.any(AbortSignal),
+        metadata: { checklist: { topicName: 'Orch test' } },
       }),
     );
 

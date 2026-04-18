@@ -7,7 +7,15 @@ import { useAllGraphs } from '@/features/content';
 import { topicStudyContentReady } from '@/features/contentGeneration';
 import { useContentGenerationStore } from '@/features/contentGeneration';
 import { deckRepository } from '@/infrastructure/di';
+import type { ContentGenerationJobKind } from '@/types/contentGeneration';
 import type { TopicContentStatus } from '@/types/progression';
+
+const CRYSTAL_CONTENT_JOB_KINDS = new Set<ContentGenerationJobKind>([
+  'topic-theory',
+  'topic-study-cards',
+  'topic-mini-games',
+  'topic-expansion-cards',
+]);
 
 export type { TopicContentStatus };
 
@@ -19,7 +27,8 @@ export function topicContentAvailabilityQueryKey(subjectId: string, topicId: str
 /**
  * For every node in loaded graphs, the content status for that topic:
  * - `'ready'`: IndexedDB has theory + at least one difficulty-1 card
- * - `'generating'`: a generation job is in-flight for this topic
+ * - `'generating'`: a topic content / expansion LLM job is in-flight for this topic
+ *   (excludes e.g. Crystal Trial jobs so the crystal clock stays content-specific)
  * - `'unavailable'`: no content and no active generation
  *
  * Keyed by `topicRefKey` (`subjectId::topicId`).
@@ -56,6 +65,9 @@ export function useTopicContentStatusMap(): Record<string, TopicContentStatus> {
     useShallow((state) => {
       const keys: string[] = [];
       for (const j of Object.values(state.jobs)) {
+        if (!CRYSTAL_CONTENT_JOB_KINDS.has(j.kind)) {
+          continue;
+        }
         if (
           j.status === 'pending' ||
           j.status === 'streaming' ||
@@ -81,10 +93,10 @@ export function useTopicContentStatusMap(): Record<string, TopicContentStatus> {
     topicRefs.forEach((t, i) => {
       const r = results[i];
       const key = topicRefKey(t);
-      if (r?.data === true) {
-        map[key] = 'ready';
-      } else if (activeJobKeySet.has(key)) {
+      if (activeJobKeySet.has(key)) {
         map[key] = 'generating';
+      } else if (r?.data === true) {
+        map[key] = 'ready';
       } else {
         map[key] = 'unavailable';
       }

@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Layers, Lock, Loader2, Play, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from '@/components/ui/particles-animation';
 import { useAllGraphs, useSubjects } from '@/features/content';
 import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
 import type { TopicContentStatus } from '@/types/progression';
@@ -21,6 +22,7 @@ import {
 import { useCrystalTrialStore } from '@/features/crystalTrial';
 import type { TopicMetadata } from '@/features/content';
 import type { Card } from '@/types/core';
+import { useCrystalContentCelebrationStore } from '@/store/crystalContentCelebrationStore';
 import { useUIStore } from '@/store/uiStore';
 
 import { LevelProgressCompact } from './LevelProgressCompact';
@@ -113,6 +115,11 @@ export default function TopicSelectionBar({
   const isTopicStudyContentGenerating =
     selectedTopicContentStatus === 'generating' || activeTopicContentGenLabel !== null;
 
+  const celebrationLookupKey = selectedTopic ? topicRefKey(selectedTopic) : '';
+  const isCelebrationPendingForTopic = useCrystalContentCelebrationStore((s) =>
+    celebrationLookupKey !== '' ? s.pendingByTopicKey[celebrationLookupKey] === true : false,
+  );
+
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
@@ -179,6 +186,7 @@ export default function TopicSelectionBar({
       console.warn(`[TopicSelectionBar] No cards available for topic ${selectedTopic.topicId}`);
       return;
     }
+    useCrystalContentCelebrationStore.getState().dismissPending(topicRefKey(selectedTopic));
     onStartTopicStudySession?.(selectedTopic, selectedCards);
     selectTopic(null);
   };
@@ -204,6 +212,14 @@ export default function TopicSelectionBar({
   };
 
   const showUnlockButton = Boolean(selectedTieredTopic?.isLocked);
+
+  const playCelebrationParticlesActive =
+    !isTopicStudyContentGenerating &&
+    trialStatus !== 'pregeneration' &&
+    selectedTopicContentStatus === 'ready' &&
+    isCelebrationPendingForTopic;
+
+  const trialGateParticlesActive = trialReady;
 
   const containerClass = 'fixed z-50 flex justify-center px-2 sm:px-3';
   const containerStyle: React.CSSProperties = {
@@ -258,9 +274,10 @@ export default function TopicSelectionBar({
         onTouchStart={stopPropagation}
         aria-label="Begin study session"
         title="Begin study session"
-        className="shrink-0"
+        className="relative shrink-0 overflow-visible"
       >
-        <Play className="h-3.5 w-3.5" />
+        <Play className="relative z-10 h-3.5 w-3.5" aria-hidden />
+        <ParticlesAnimation isActive={playCelebrationParticlesActive} particles={RITUAL_PARTICLE_ANIMATION} />
       </Button>
     );
   };
@@ -344,9 +361,14 @@ export default function TopicSelectionBar({
                         ? `Trial unavailable: ${trialDisabledText}`
                       : 'Trial unavailable'
                 }
-                className="shrink-0 disabled:opacity-60"
+                className="relative shrink-0 overflow-visible disabled:opacity-60"
               >
-                {isTrialLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {isTrialLoading ? (
+                  <Loader2 className="relative z-10 h-3.5 w-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <Sparkles className="relative z-10 h-3.5 w-3.5" aria-hidden />
+                )}
+                <ParticlesAnimation isActive={trialGateParticlesActive} particles={RITUAL_PARTICLE_ANIMATION} />
               </Button>
             ) : null}
             {trialDisabledText && !isTopicStudyContentGenerating && selectedTopicContentStatus === 'ready' ? (

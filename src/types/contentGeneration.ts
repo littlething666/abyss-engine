@@ -63,6 +63,7 @@ export interface ContentGenerationJob {
    * Stored in Dexie automatically (not indexed).
    *
    * Known keys:
+ * - `model` (string) — exact model identifier used for this job.
    * - `enableThinking` (boolean) — whether thinking/reasoning was enabled for this job.
    * - `nextLevel` (number) — for expansion jobs, the crystal level that triggered expansion.
    */

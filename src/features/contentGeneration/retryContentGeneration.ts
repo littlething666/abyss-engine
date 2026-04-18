@@ -7,6 +7,7 @@
  */
 
 import type { ContentGenerationJob, ContentGenerationJobKind, ContentGenerationPipeline } from '@/types/contentGeneration';
+import type { StudyChecklist } from '@/types/studyChecklist';
 import type { TopicGenerationStage } from './pipelines/topicGenerationStage';
 import { useContentGenerationStore } from './contentGenerationStore';
 import { deckRepository, deckWriter } from '@/infrastructure/di';
@@ -16,7 +17,7 @@ import { runTopicGenerationPipeline } from './pipelines/runTopicGenerationPipeli
 import { runExpansionJob } from './jobs/runExpansionJob';
 import { createSubjectGenerationOrchestrator } from '@/features/subjectGeneration';
 import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
-import { toast } from 'sonner';
+import { toast } from '@/infrastructure/toast';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,6 +53,19 @@ function getCrystalTrialCurrentLevel(job: ContentGenerationJob): number | null {
 
   const level = Number(match[1]) - 1;
   return Number.isInteger(level) ? level : null;
+}
+
+function hasTopicName(value: unknown): value is StudyChecklist {
+  return typeof value === 'object' && value !== null && 'topicName' in value && typeof (value as { topicName: unknown }).topicName === 'string';
+}
+
+function parseChecklistFromLabel(label: string): StudyChecklist | null {
+  const match = /^Curriculum\s*—\s*(.+)$/.exec(label);
+  if (!match?.[1]) {
+    return null;
+  }
+  const topicName = match[1]?.trim();
+  return topicName ? { topicName } : null;
 }
 
 function isRetryable(status: ContentGenerationJob['status']): boolean {
@@ -152,9 +166,16 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
     if (job.kind === 'subject-graph') {
       const manifest = await deckRepository.getManifest();
       const subject = manifest.subjects.find((s) => s.id === subjectId);
-      const checklist = subject?.metadata?.checklist;
+      const manifestChecklist = subject?.metadata && hasTopicName(subject.metadata.checklist)
+        ? subject.metadata.checklist
+        : subject?.name
+          ? { topicName: subject.name }
+          : null;
+      const checklist = hasTopicName(job.metadata?.checklist)
+        ? job.metadata.checklist
+        : manifestChecklist || parseChecklistFromLabel(job.label);
       if (!checklist) {
-        toast.error('Cannot retry subject generation: checklist not found in manifest');
+        toast.error('Cannot retry subject generation: checklist not recoverable from retry metadata, manifest, or label');
         return;
       }
       const chat = getChatCompletionsRepositoryForSurface('subjectGeneration');

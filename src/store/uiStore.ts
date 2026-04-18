@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import type { TopicRef } from '@/types/core';
 import { isDebugModeEnabled } from '@/infrastructure/debugMode';
+import { appEventBus } from '@/infrastructure/eventBus';
 import { telemetry } from '../features/telemetry';
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 
@@ -23,26 +24,21 @@ function topicRefsEqual(a: TopicRef | null, b: TopicRef | null) {
   return (
     (a?.subjectId ?? null) === (b?.subjectId ?? null)
     && (a?.topicId ?? null) === (b?.topicId ?? null)
-  )
+  );
 }
 
-/**
- * UI Store interface for managing UI state
- */
 export interface UIStore {
-  // State
   isDiscoveryModalOpen: boolean;
   isStudyPanelOpen: boolean;
   isRitualModalOpen: boolean;
   isStudyTimelineOpen: boolean;
   isCrystalTrialOpen: boolean;
+  isGlobalSettingsOpen: boolean;
   selectedTopic: TopicRef | null;
   isCurrentCardFlipped: boolean;
 
-  // Computed
   isSelectionMode: boolean;
 
-  // Actions
   openDiscoveryModal: () => void;
   closeDiscoveryModal: () => void;
   openStudyPanel: () => void;
@@ -53,6 +49,8 @@ export interface UIStore {
   closeStudyTimeline: () => void;
   openCrystalTrial: () => void;
   closeCrystalTrial: () => void;
+  openGlobalSettings: () => void;
+  closeGlobalSettings: () => void;
   selectTopic: (topic: TopicRef | null) => void;
   flipCurrentCard: () => void;
   resetCardFlip: () => void;
@@ -63,95 +61,56 @@ export const selectIsAnyModalOpen = (s: UIStore) =>
   || s.isStudyPanelOpen
   || s.isRitualModalOpen
   || s.isStudyTimelineOpen
-  || s.isCrystalTrialOpen;
+  || s.isCrystalTrialOpen
+  || s.isGlobalSettingsOpen;
 
-// Create store without persistence - safe for SSR
-// Using createStore pattern for Next.js App Router compatibility
 const createUIStore = () =>
   create<UIStore>((set, get) => ({
-    // Initial state
     isDiscoveryModalOpen: false,
     isStudyPanelOpen: false,
     isRitualModalOpen: false,
     isStudyTimelineOpen: false,
     isCrystalTrialOpen: false,
+    isGlobalSettingsOpen: false,
     selectedTopic: null,
     isCurrentCardFlipped: false,
 
-    // Computed state - derived from selectedTopic
     get isSelectionMode() {
       return get().selectedTopic !== null;
     },
 
-    // Actions
     openDiscoveryModal: () => {
-      const state = get();
-      if (state.isDiscoveryModalOpen) {
-        return;
-      }
-      set({
-        isDiscoveryModalOpen: true,
-      });
+      if (get().isDiscoveryModalOpen) return;
+      set({ isDiscoveryModalOpen: true });
       emitModalOpened('discovery', null, null);
     },
-    closeDiscoveryModal: () => {
-      set({
-        isDiscoveryModalOpen: false,
-      });
-    },
+    closeDiscoveryModal: () => set({ isDiscoveryModalOpen: false }),
     openStudyPanel: () => {
       const state = get();
-      if (state.isStudyPanelOpen) {
-        return;
-      }
-      set({
-        isStudyPanelOpen: true,
-      });
+      if (state.isStudyPanelOpen) return;
+      set({ isStudyPanelOpen: true });
       emitModalOpened('study_panel', state.selectedTopic);
+      appEventBus.emit('study-panel:opened', {});
     },
-    closeStudyPanel: () => {
-      set({
-        isStudyPanelOpen: false,
-      });
-    },
+    closeStudyPanel: () => set({ isStudyPanelOpen: false }),
     openRitualModal: () => {
       const state = get();
-      if (state.isRitualModalOpen) {
-        return;
-      }
-      set({
-        isRitualModalOpen: true,
-      });
+      if (state.isRitualModalOpen) return;
+      set({ isRitualModalOpen: true });
       emitModalOpened('attunement_ritual', state.selectedTopic);
     },
-    closeRitualModal: () => {
-      set({
-        isRitualModalOpen: false,
-      });
-    },
+    closeRitualModal: () => set({ isRitualModalOpen: false }),
     openStudyTimeline: () => {
       const state = get();
-      if (state.isStudyTimelineOpen) {
-        return;
-      }
-      set({
-        isStudyTimelineOpen: true,
-      });
+      if (state.isStudyTimelineOpen) return;
+      set({ isStudyTimelineOpen: true });
       emitModalOpened('study_timeline', state.selectedTopic);
     },
-    closeStudyTimeline: () => {
-      set({
-        isStudyTimelineOpen: false,
-      });
-    },
+    closeStudyTimeline: () => set({ isStudyTimelineOpen: false }),
     openCrystalTrial: () => {
       const state = get();
-      if (state.isCrystalTrialOpen) {
-        return;
-      }
-      set({
-        isCrystalTrialOpen: true,
-      });
+      if (state.isCrystalTrialOpen) return;
+      set({ isCrystalTrialOpen: true });
       emitModalOpened('crystal_trial', state.selectedTopic);
     },
     closeCrystalTrial: () => {
@@ -159,17 +118,18 @@ const createUIStore = () =>
       if (selectedTopic) {
         useCrystalTrialStore.getState().cancelTrialAttempt(selectedTopic);
       }
-      set({
-        isCrystalTrialOpen: false,
-      });
+      set({ isCrystalTrialOpen: false });
     },
+    openGlobalSettings: () => {
+      if (get().isGlobalSettingsOpen) return;
+      set({ isGlobalSettingsOpen: true });
+      emitModalOpened('global_settings', null, null);
+    },
+    closeGlobalSettings: () => set({ isGlobalSettingsOpen: false }),
 
-    // Select a topic (or clear selection if null)
     selectTopic: (topic) => {
-      const { selectedTopic } = get()
-      if (topicRefsEqual(selectedTopic, topic)) {
-        return
-      }
+      const { selectedTopic } = get();
+      if (topicRefsEqual(selectedTopic, topic)) return;
       if (isDebugModeEnabled()) {
         const trialStore = useCrystalTrialStore.getState();
         const nextStatus = topic ? trialStore.getTrialStatus(topic) : 'idle';
@@ -177,22 +137,14 @@ const createUIStore = () =>
           ? { subjectId: topic.subjectId, topicId: topic.topicId, trialStatus: nextStatus }
           : null);
       }
-      set({ selectedTopic: topic })
+      set({ selectedTopic: topic });
     },
 
     flipCurrentCard: () => set((s) => ({ isCurrentCardFlipped: !s.isCurrentCardFlipped })),
     resetCardFlip: () => set({ isCurrentCardFlipped: false }),
   }));
 
-// Create a singleton store - will be created once per module load
-// This is safe for UI state that doesn't need persistence
 const store = createUIStore();
 
-/**
- * Hook to use the UI store
- * Uses the singleton store instance
- */
 export const useUIStore = store;
-
-// Export the raw store for direct access (e.g., in event handlers)
 export { store as uiStore };

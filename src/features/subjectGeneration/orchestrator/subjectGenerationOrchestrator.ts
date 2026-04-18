@@ -54,11 +54,16 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       pipelineId,
       subjectId: request.subjectId,
       topicId: null,
+      llmSurfaceId: 'subjectGeneration',
       chat: deps.chat,
       model: deps.model,
       messages,
       enableThinking: deps.enableThinking ?? false,
+      enableStreaming: deps.enableStreaming ?? true,
       externalSignal: pipelineAc.signal,
+      metadata: {
+        checklist: request.checklist,
+      },
       retryOf: deps.retryOf,
       parseOutput: async (raw) => {
         const parseResult = parseGraphResponse(raw);

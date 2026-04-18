@@ -57,6 +57,8 @@ export type AppEventMap = {
     undoCount: number;
     redoCount: number;
   };
+  /** Emitted when the study panel is shown (after `startTopicStudySession` in normal flows). */
+  'study-panel:opened': Record<string, never>;
   'topic:generation-pipeline': {
     subjectId: string;
     topicId: string;

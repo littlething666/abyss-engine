@@ -3,10 +3,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChartNetwork, FileTerminal, TextSelect, Volume2, VolumeX } from 'lucide-react';
 
 import MathMarkdownRenderer from '../MathMarkdownRenderer';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '../ui/native-select';
 import { StudyPanelTab } from './types';
 import { buildDiagramSystemPrompt, extractExamplesSection, stripTheoryMarkdownForSpeech } from '../../features/studyPanel';
 import { TTS_ICON_SPEAKING_CLASSNAME } from '@/components/LlmTtsToggle';
@@ -21,9 +17,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { resolveDefaultOpenAiChatCompletionsUrl } from '@/infrastructure/openAiCompatibleDefaults';
 import { cn } from '@/lib/utils';
+
+const GOOGLE_SEARCH_BASE = 'https://google.com/search';
+
+function buildGoogleSearchUrl(query: string): string {
+  return GOOGLE_SEARCH_BASE + '?q=' + encodeURIComponent(query) + '&udm=50';
+}
 
 interface StudyPanelStateViewsProps {
   activeTab: StudyPanelTab;
@@ -35,21 +35,8 @@ interface StudyPanelStateViewsProps {
   isCompleted: boolean;
   resolvedTopicTheory: string | null;
   topicSystemPrompt: string;
-  targetAudience: string;
-  targetAudienceOptions: readonly string[];
-  agentPersonality: string;
-  agentPersonalityOptions: readonly string[];
   resolvedTopic: string;
   onClose: () => void;
-  onSetTargetAudience: (targetAudience: string) => void;
-  onSetAgentPersonality: (agentPersonality: string) => void;
-  openAiCompatibleModelId: string;
-  openAiCompatibleModelOptions: readonly string[];
-  onSetOpenAiCompatibleModelId: (openAiCompatibleModelId: string) => void;
-  openAiCompatibleChatUrl: string;
-  onSetOpenAiCompatibleChatUrl: (openAiCompatibleChatUrl: string) => void;
-  openAiCompatibleApiKey: string;
-  onSetOpenAiCompatibleApiKey: (openAiCompatibleApiKey: string) => void;
   onSystemPromptSelect: () => void;
   systemPromptRef: React.RefObject<HTMLPreElement | null>;
 }
@@ -64,20 +51,7 @@ export function StudyPanelStateViews({
   isCompleted,
   resolvedTopicTheory,
   topicSystemPrompt,
-  targetAudience,
-  targetAudienceOptions,
-  agentPersonality,
-  agentPersonalityOptions,
   onClose,
-  onSetTargetAudience,
-  onSetAgentPersonality,
-  openAiCompatibleModelId,
-  openAiCompatibleModelOptions,
-  onSetOpenAiCompatibleModelId,
-  openAiCompatibleChatUrl,
-  onSetOpenAiCompatibleChatUrl,
-  openAiCompatibleApiKey,
-  onSetOpenAiCompatibleApiKey,
   onSystemPromptSelect,
   systemPromptRef,
   resolvedTopic,
@@ -95,89 +69,54 @@ export function StudyPanelStateViews({
       setIsTheorySpeaking(false);
       return;
     }
-
     window.speechSynthesis.cancel();
     theoryUtteranceRef.current = null;
     setIsTheorySpeaking(false);
   }, []);
 
   const handleTheorySpeechToggle = useCallback(() => {
-    if (!resolvedTopicTheory?.trim()) {
-      return;
-    }
-
-    if (theoryUtteranceRef.current) {
-      stopTheorySpeech();
-      return;
-    }
-
+    if (!resolvedTopicTheory?.trim()) return;
+    if (theoryUtteranceRef.current) { stopTheorySpeech(); return; }
     if (
       typeof window === 'undefined'
       || typeof window.speechSynthesis === 'undefined'
       || typeof window.SpeechSynthesisUtterance === 'undefined'
-    ) {
-      return;
-    }
-
+    ) return;
     const cleanSpeechText = stripTheoryMarkdownForSpeech(resolvedTopicTheory);
-    if (!cleanSpeechText) {
-      return;
-    }
-
+    if (!cleanSpeechText) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
     utterance.onend = () => {
-      if (theoryUtteranceRef.current === utterance) {
-        theoryUtteranceRef.current = null;
-      }
+      if (theoryUtteranceRef.current === utterance) theoryUtteranceRef.current = null;
       setIsTheorySpeaking(false);
     };
     utterance.onerror = () => {
-      if (theoryUtteranceRef.current === utterance) {
-        theoryUtteranceRef.current = null;
-      }
+      if (theoryUtteranceRef.current === utterance) theoryUtteranceRef.current = null;
       setIsTheorySpeaking(false);
     };
-
     theoryUtteranceRef.current = utterance;
     setIsTheorySpeaking(true);
     window.speechSynthesis.speak(utterance);
   }, [resolvedTopicTheory, stopTheorySpeech]);
 
-  useEffect(() => {
-    if (activeTab !== 'theory') {
-      stopTheorySpeech();
-    }
-  }, [activeTab, stopTheorySpeech]);
-
+  useEffect(() => { if (activeTab !== 'theory') stopTheorySpeech(); }, [activeTab, stopTheorySpeech]);
   useEffect(() => {
     if (resolvedTheoryRef.current !== null && resolvedTheoryRef.current !== resolvedTopicTheory) {
       stopTheorySpeech();
     }
     resolvedTheoryRef.current = resolvedTopicTheory;
   }, [resolvedTopicTheory, stopTheorySpeech]);
-
-  useEffect(() => {
-    return () => {
-      stopTheorySpeech();
-    };
-  }, [stopTheorySpeech]);
+  useEffect(() => () => { stopTheorySpeech(); }, [stopTheorySpeech]);
 
   const resetDiagramPromptDialogState = () => {
-    setIsDiagramPromptDialogOpen(false);
-    setDiagramPromptText('');
-    setDiagramPromptError('');
+    setIsDiagramPromptDialogOpen(false); setDiagramPromptText(''); setDiagramPromptError('');
   };
   const openDiagramPromptDialog = () => {
-    setDiagramPromptError('');
-    setDiagramPromptText('');
-    setIsDiagramPromptDialogOpen(true);
+    setDiagramPromptError(''); setDiagramPromptText(''); setIsDiagramPromptDialogOpen(true);
   };
   const handleDiagramPromptChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setDiagramPromptText(event.currentTarget.value);
-    if (diagramPromptError) {
-      setDiagramPromptError('');
-    }
+    if (diagramPromptError) setDiagramPromptError('');
   };
   const processDiagramPromptText = (sourceText: string) => {
     const examples = extractExamplesSection(sourceText);
@@ -185,30 +124,25 @@ export function StudyPanelStateViews({
       setDiagramPromptError('Unable to find a valid "6. Examples" section in the pasted text.');
       return;
     }
-
     const diagramSystemPrompt = buildDiagramSystemPrompt(resolvedTopic, sourceText);
-    window.open(`https://google.com/search?q=${encodeURIComponent(diagramSystemPrompt)}&udm=50`, '_blank', 'noopener,noreferrer');
+    window.open(buildGoogleSearchUrl(diagramSystemPrompt), '_blank', 'noopener,noreferrer');
     resetDiagramPromptDialogState();
   };
-  const handleDiagramPromptProcess = () => {
-    processDiagramPromptText(diagramPromptText);
-  };
+  const handleDiagramPromptProcess = () => { processDiagramPromptText(diagramPromptText); };
   const handleDiagramPromptPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const pastedText = event.clipboardData.getData('text');
-    if (!pastedText) {
-      return;
-    }
-
+    if (!pastedText) return;
     const selectionStart = event.currentTarget.selectionStart ?? 0;
     const selectionEnd = event.currentTarget.selectionEnd ?? selectionStart;
-
-    const nextText = `${diagramPromptText.slice(0, selectionStart)}${pastedText}${diagramPromptText.slice(selectionEnd)}`;
+    const before = diagramPromptText.slice(0, selectionStart);
+    const after = diagramPromptText.slice(selectionEnd);
+    const nextText = before + pastedText + after;
     event.preventDefault();
     setDiagramPromptText(nextText);
     processDiagramPromptText(nextText);
   };
 
-  const systemPromptSearchUrl = `https://google.com/search?q=${encodeURIComponent(topicSystemPrompt)}&udm=50`;
+  const systemPromptSearchUrl = buildGoogleSearchUrl(topicSystemPrompt);
   const openSystemPromptSearch = () => {
     window.open(systemPromptSearchUrl, '_blank', 'noopener,noreferrer');
   };
@@ -240,11 +174,7 @@ export function StudyPanelStateViews({
           <p className="mb-4" data-testid="study-panel-no-card">
             No current card is available for this study session.
           </p>
-          <Button
-            onClick={onClose}
-            className="w-full"
-            data-testid="study-panel-return-to-grid"
-          >
+          <Button onClick={onClose} className="w-full" data-testid="study-panel-return-to-grid">
             Return to Grid
           </Button>
         </div>
@@ -330,13 +260,7 @@ export function StudyPanelStateViews({
           </div>
           <Dialog
             open={isDiagramPromptDialogOpen}
-            onOpenChange={(open) => {
-              if (!open) {
-                resetDiagramPromptDialogState();
-              } else {
-                setIsDiagramPromptDialogOpen(true);
-              }
-            }}
+            onOpenChange={(open) => { if (!open) resetDiagramPromptDialogState(); else setIsDiagramPromptDialogOpen(true); }}
           >
             <DialogContent className="w-[min(95vw,42rem)]">
               <DialogHeader>
@@ -355,9 +279,7 @@ export function StudyPanelStateViews({
                 className="mt-2 w-full min-h-52 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
               />
               {diagramPromptError && (
-                <p className="text-destructive text-sm mt-2" role="alert">
-                  {diagramPromptError}
-                </p>
+                <p className="text-destructive text-sm mt-2" role="alert">{diagramPromptError}</p>
               )}
               <DialogFooter className="pt-2">
                 <DialogClose render={<Button type="button" variant="outline" className="w-full sm:w-auto" />}>
@@ -372,117 +294,13 @@ export function StudyPanelStateViews({
         </div>
       )}
 
-      {activeTab === 'settings' && (
-        <div className="w-full">
-          <div className="bg-card rounded-[15px] p-5" data-testid="study-panel-settings">
-            <div className="mb-3">
-              <Badge variant="outline">🎚️ Study Settings</Badge>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm text-muted-foreground">Target Audience</label>
-              <NativeSelect
-                value={targetAudience}
-                onChange={(event) => onSetTargetAudience(event.currentTarget.value)}
-                aria-label="study-settings-target-audience"
-                className="w-full"
-              >
-                <NativeSelectOption value="" disabled>
-                  Select target audience
-                </NativeSelectOption>
-                {targetAudienceOptions.map((option) => (
-                  <NativeSelectOption key={option} value={option}>
-                    {option}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="space-y-1 pt-3">
-              <label className="text-sm text-muted-foreground">Agent personality</label>
-              <NativeSelect
-                value={agentPersonality}
-                onChange={(event) => onSetAgentPersonality(event.currentTarget.value)}
-                aria-label="study-settings-agent-personality"
-                className="w-full"
-              >
-                <NativeSelectOption value="" disabled>
-                  Select agent personality
-                </NativeSelectOption>
-                {agentPersonalityOptions.map((option) => (
-                  <NativeSelectOption key={option} value={option}>
-                    {option}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="space-y-1 pt-3">
-              <label className="text-sm text-muted-foreground">Inference model (OpenAI-compatible)</label>
-              <NativeSelect
-                value={openAiCompatibleModelId}
-                onChange={(event) => onSetOpenAiCompatibleModelId(event.currentTarget.value)}
-                aria-label="study-settings-openai-compatible-model"
-                className="w-full"
-              >
-                {openAiCompatibleModelOptions.map((option) => (
-                  <NativeSelectOption
-                    key={option === '' ? 'openai-model-default' : option}
-                    value={option}
-                  >
-                    {option === '' ? 'Default (NEXT_PUBLIC_LLM_MODEL)' : option}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="space-y-1 pt-3">
-              <label className="text-sm text-muted-foreground" htmlFor="study-settings-openai-chat-url">
-                LLM API URL (OpenAI-compatible)
-              </label>
-              <p className="text-xs text-muted-foreground">
-                Leave empty to use <span className="font-mono">NEXT_PUBLIC_LLM_CHAT_URL</span> or{' '}
-                <span className="font-mono break-all">{resolveDefaultOpenAiChatCompletionsUrl()}</span>.
-              </p>
-              <Input
-                id="study-settings-openai-chat-url"
-                type="text"
-                value={openAiCompatibleChatUrl}
-                onChange={(event) => onSetOpenAiCompatibleChatUrl(event.currentTarget.value)}
-                autoComplete="off"
-                aria-label="study-settings-openai-compatible-chat-url"
-                placeholder={resolveDefaultOpenAiChatCompletionsUrl()}
-                className="w-full"
-              />
-            </div>
-            <div className="space-y-1 pt-3">
-              <label className="text-sm text-muted-foreground" htmlFor="study-settings-openai-api-key">
-                LLM API key (OpenAI-compatible)
-              </label>
-              <p className="text-xs text-muted-foreground">
-                Leave empty to use <span className="font-mono">NEXT_PUBLIC_LLM_API_KEY</span>.
-              </p>
-              <Input
-                id="study-settings-openai-api-key"
-                type="password"
-                value={openAiCompatibleApiKey}
-                onChange={(event) => onSetOpenAiCompatibleApiKey(event.currentTarget.value)}
-                autoComplete="off"
-                aria-label="study-settings-openai-compatible-api-key"
-                className="w-full"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
       {isCompleted && (
         <div className="text-center py-6 px-5">
           <h3 className="text-primary text-xl mb-2">🎉 All Done!</h3>
           <p className="text-muted-foreground mb-2">You&apos;ve reviewed all cards due today.</p>
           <p className="text-muted-foreground mb-4">Return to the grid to see your crystals grow!</p>
           <div className="sticky bottom-0 z-10 bg-card py-3">
-            <Button
-              onClick={onClose}
-              className="w-full"
-              data-testid="study-panel-all-done-cta"
-            >
+            <Button onClick={onClose} className="w-full" data-testid="study-panel-all-done-cta">
               Back to Grid
             </Button>
           </div>

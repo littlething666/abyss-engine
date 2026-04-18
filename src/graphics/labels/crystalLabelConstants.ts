@@ -11,3 +11,7 @@ export const LABEL_BG_COLOR = 'rgba(15, 23, 42, 0.72)';
 export const LABEL_BORDER_COLOR = 'rgba(148, 163, 184, 0.55)';
 export const LABEL_CORNER_RADIUS = 8;
 export const LABEL_RENDER_ORDER = 10;
+/** World-space height of the crystal unicode notification sprite (emoji billboard). */
+export const CRYSTAL_NOTIFICATION_WORLD_HEIGHT = 0.26;
+/** Draw order for notifications so they layer above topic name labels. */
+export const CRYSTAL_NOTIFICATION_RENDER_ORDER = LABEL_RENDER_ORDER + 1;

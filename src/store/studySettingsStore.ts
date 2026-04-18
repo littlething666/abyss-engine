@@ -1,11 +1,20 @@
 import { create } from 'zustand';
 
-import { resolveModelForSurface } from '../infrastructure/llmInferenceSurfaceProviders';
 import {
   DEFAULT_AGENT_PERSONALITY,
   normalizeAgentPersonality,
 } from '../features/studyPanel/agentPersonalityPresets';
-import type { InferenceSurfaceId } from '../types/llmInference';
+import type {
+  InferenceSurfaceId,
+  LlmInferenceProviderId,
+  OpenRouterModelConfig,
+  SurfaceProviderBinding,
+} from '../types/llmInference';
+import { ALL_SURFACE_IDS } from '../types/llmInference';
+import {
+  buildSeedOpenRouterConfigs,
+  firstSeedOpenRouterConfigId,
+} from '../infrastructure/openRouterDefaults';
 
 export { AGENT_PERSONALITY_OPTIONS } from '../features/studyPanel/agentPersonalityPresets';
 
@@ -24,40 +33,63 @@ export const TARGET_AUDIENCE_OPTIONS = [
   'Logistics',
 ] as const;
 
-/** First entry is empty: use env model via {@link resolveModelForSurface}. */
-export const OPENAI_COMPATIBLE_MODEL_OPTIONS = [
-  '',
-  'mlx-community/nanoLLaVA-1.5-8bit',
-  'heretic-org/gemma-3-4b-it-heretic',
-  'mlx-community/gemma-4-26b-a4b-4bit',
-  'mlx-community/Qwen3.5-9B-MLX-4bit',
-] as const;
+const DEFAULT_TARGET_AUDIENCE = TARGET_AUDIENCE_OPTIONS[0];
+const targetAudienceSet = new Set<string>(TARGET_AUDIENCE_OPTIONS as readonly string[]);
+
+function buildDefaultSurfaceBindings(
+  configs: OpenRouterModelConfig[],
+): Record<InferenceSurfaceId, SurfaceProviderBinding> {
+  const firstConfigId = configs[0]?.id ?? null;
+  const orBind = (): SurfaceProviderBinding => ({
+    provider: firstConfigId ? 'openrouter' : 'local',
+    openRouterConfigId: firstConfigId,
+  });
+  return {
+    studyQuestionExplain: { provider: 'local', openRouterConfigId: null },
+    studyFormulaExplain: { provider: 'local', openRouterConfigId: null },
+    studyQuestionMermaid: { provider: 'local', openRouterConfigId: null },
+    screenCaptureSummary: { provider: 'local', openRouterConfigId: null },
+    subjectGeneration: orBind(),
+    topicContent: orBind(),
+    crystalTrial: orBind(),
+  };
+}
 
 export interface StudySettingsState {
   targetAudience: string;
   agentPersonality: string;
-  /** When empty, OpenAI-compatible requests use NEXT_PUBLIC_LLM_API_KEY. */
-  openAiCompatibleApiKey: string;
-  /** When empty, OpenAI-compatible requests use the repository default URL (env / localhost). */
-  openAiCompatibleChatUrl: string;
-  /** When empty (first preset), use {@link resolveModelForSurface} for the active surface. */
-  openAiCompatibleModelId: string;
+  /** Model string for the 'local' provider (env fallback is NEXT_PUBLIC_LLM_MODEL). */
+  localModelId: string;
+  /**
+   * When true and a surface uses OpenRouter, structured JSON jobs send the `response-healing` plugin.
+   * Those requests use non-streaming `json_object` mode (see OpenRouter docs). Defaults to on.
+   */
+  openRouterResponseHealing: boolean;
+  openRouterConfigs: OpenRouterModelConfig[];
+  surfaceProviders: Record<InferenceSurfaceId, SurfaceProviderBinding>;
 }
 
 export interface StudySettingsActions {
   setTargetAudience: (targetAudience: string) => void;
   resetTargetAudience: () => void;
   setAgentPersonality: (agentPersonality: string) => void;
-  setOpenAiCompatibleApiKey: (openAiCompatibleApiKey: string) => void;
-  setOpenAiCompatibleChatUrl: (openAiCompatibleChatUrl: string) => void;
-  setOpenAiCompatibleModelId: (openAiCompatibleModelId: string) => void;
+  setLocalModelId: (modelId: string) => void;
+  setOpenRouterResponseHealing: (enabled: boolean) => void;
+  addOpenRouterConfig: (partial: Omit<OpenRouterModelConfig, 'id'> & { id?: string }) => string;
+  updateOpenRouterConfig: (id: string, patch: Partial<Omit<OpenRouterModelConfig, 'id'>>) => void;
+  deleteOpenRouterConfig: (id: string) => void;
+  setSurfaceProvider: (surfaceId: InferenceSurfaceId, providerId: LlmInferenceProviderId) => void;
+  setSurfaceConfigId: (surfaceId: InferenceSurfaceId, configId: string) => void;
 }
 
 export type StudySettingsStore = StudySettingsState & StudySettingsActions;
 
-const DEFAULT_TARGET_AUDIENCE = TARGET_AUDIENCE_OPTIONS[0];
-const targetAudienceSet = new Set<string>(TARGET_AUDIENCE_OPTIONS as readonly string[]);
-const openAiCompatibleModelSet = new Set<string>(OPENAI_COMPATIBLE_MODEL_OPTIONS as readonly string[]);
+type Snapshot = StudySettingsState;
+
+function getStorage(): Storage | null {
+  if (typeof globalThis === 'undefined') return null;
+  return (globalThis as { localStorage?: Storage }).localStorage ?? null;
+}
 
 function safeParseJSON<T>(raw: string): T | null {
   try {
@@ -67,232 +99,277 @@ function safeParseJSON<T>(raw: string): T | null {
   }
 }
 
-function normalizeTargetAudience(targetAudience: string): string {
-  return targetAudienceSet.has(targetAudience) ? targetAudience : DEFAULT_TARGET_AUDIENCE;
+function normalizeTargetAudience(v: string): string {
+  return targetAudienceSet.has(v) ? v : DEFAULT_TARGET_AUDIENCE;
 }
 
-function normalizeOpenAiCompatibleApiKey(openAiCompatibleApiKey: string): string {
-  return openAiCompatibleApiKey;
+function isStringRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
 }
 
-function normalizeOpenAiCompatibleChatUrl(openAiCompatibleChatUrl: string): string {
-  return openAiCompatibleChatUrl;
-}
-
-function normalizeOpenAiCompatibleModelId(openAiCompatibleModelId: string): string {
-  return openAiCompatibleModelSet.has(openAiCompatibleModelId) ? openAiCompatibleModelId : '';
-}
-
-function getStorage(): Storage | null {
-  if (typeof globalThis === 'undefined') {
-    return null;
+function parseConfigs(raw: unknown): OpenRouterModelConfig[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: OpenRouterModelConfig[] = [];
+  for (const item of raw) {
+    if (!isStringRecord(item)) continue;
+    const id = typeof item.id === 'string' ? item.id : '';
+    const label = typeof item.label === 'string' ? item.label : '';
+    const model = typeof item.model === 'string' ? item.model : '';
+    const enableThinking = item.enableThinking === true;
+    const enableStreaming = item.enableStreaming !== false;
+    if (!id || !model) continue;
+    out.push({ id, label: label || model, model, enableThinking, enableStreaming });
   }
-
-  const storage = (globalThis as { localStorage?: Storage }).localStorage;
-  return storage ?? null;
+  return out;
 }
 
-type PersistedPayload = {
-  targetAudience?: unknown;
-  agentPersonality?: unknown;
-  openAiCompatibleApiKey?: unknown;
-  openAiCompatibleChatUrl?: unknown;
-  openAiCompatibleModelId?: unknown;
-};
+function parseBindings(
+  raw: unknown,
+  validConfigIds: Set<string>,
+): Record<InferenceSurfaceId, SurfaceProviderBinding> | null {
+  if (!isStringRecord(raw)) return null;
+  const fallbackConfigId = validConfigIds.values().next().value ?? null;
+  const result = {} as Record<InferenceSurfaceId, SurfaceProviderBinding>;
+  for (const surfaceId of ALL_SURFACE_IDS) {
+    const entry = raw[surfaceId];
+    if (isStringRecord(entry) && typeof entry.provider === 'string') {
+      const legacyProvider = entry.provider;
+      const normalizedProvider: LlmInferenceProviderId =
+        legacyProvider === 'local' ? 'local' : 'openrouter';
+      const candidateId = typeof entry.openRouterConfigId === 'string' ? entry.openRouterConfigId : null;
+      const configId =
+        normalizedProvider === 'openrouter'
+          ? candidateId && validConfigIds.has(candidateId)
+            ? candidateId
+            : fallbackConfigId
+          : null;
+      result[surfaceId] = { provider: normalizedProvider, openRouterConfigId: configId };
+    } else if (typeof entry === 'string') {
+      // Legacy v1 shape: Record<surfaceId, providerIdString>
+      const legacyProvider = entry;
+      const normalizedProvider: LlmInferenceProviderId = legacyProvider === 'local' ? 'local' : 'openrouter';
+      const configId = normalizedProvider === 'openrouter' ? fallbackConfigId : null;
+      result[surfaceId] = { provider: normalizedProvider, openRouterConfigId: configId };
+    }
+  }
+  // Fill any missing surfaces with safe defaults.
+  for (const surfaceId of ALL_SURFACE_IDS) {
+    if (!(surfaceId in result)) {
+      result[surfaceId] = { provider: 'local', openRouterConfigId: null };
+    }
+  }
+  return result;
+}
 
-type StudySettingsSnapshot = {
-  targetAudience: string;
-  agentPersonality: string;
-  openAiCompatibleApiKey: string;
-  openAiCompatibleChatUrl: string;
-  openAiCompatibleModelId: string;
-};
+function buildDefaultSnapshot(): Snapshot {
+  const configs = buildSeedOpenRouterConfigs();
+  return {
+    targetAudience: DEFAULT_TARGET_AUDIENCE,
+    agentPersonality: DEFAULT_AGENT_PERSONALITY,
+    localModelId: '',
+    openRouterResponseHealing: true,
+    openRouterConfigs: configs,
+    surfaceProviders: buildDefaultSurfaceBindings(configs),
+  };
+}
 
-const DEFAULT_STUDY_SETTINGS: StudySettingsSnapshot = {
-  targetAudience: DEFAULT_TARGET_AUDIENCE,
-  agentPersonality: DEFAULT_AGENT_PERSONALITY,
-  openAiCompatibleApiKey: '',
-  openAiCompatibleChatUrl: '',
-  openAiCompatibleModelId: '',
-};
-
-function readStudySettingsFromStorage(): StudySettingsSnapshot {
+function readSnapshotFromStorage(): Snapshot {
   const storage = getStorage();
-  if (!storage) {
-    return { ...DEFAULT_STUDY_SETTINGS };
-  }
-
+  if (!storage) return buildDefaultSnapshot();
   const raw = storage.getItem(STUDY_SETTINGS_STORAGE_KEY);
-  if (!raw) {
-    return { ...DEFAULT_STUDY_SETTINGS };
-  }
-
+  if (!raw) return buildDefaultSnapshot();
   const parsed = safeParseJSON<unknown>(raw);
-  if (typeof parsed === 'string') {
-    return {
-      ...DEFAULT_STUDY_SETTINGS,
-      targetAudience: normalizeTargetAudience(parsed),
-    };
-  }
+  if (!isStringRecord(parsed)) return buildDefaultSnapshot();
 
-  if (parsed && typeof parsed === 'object') {
-    const payload = parsed as PersistedPayload;
-    const targetAudience =
-      typeof payload.targetAudience === 'string'
-        ? normalizeTargetAudience(payload.targetAudience)
-        : DEFAULT_TARGET_AUDIENCE;
-    const agentPersonality =
-      typeof payload.agentPersonality === 'string'
-        ? normalizeAgentPersonality(payload.agentPersonality)
-        : DEFAULT_AGENT_PERSONALITY;
-    const openAiCompatibleApiKey =
-      typeof payload.openAiCompatibleApiKey === 'string'
-        ? normalizeOpenAiCompatibleApiKey(payload.openAiCompatibleApiKey)
-        : '';
-    const openAiCompatibleChatUrl =
-      typeof payload.openAiCompatibleChatUrl === 'string'
-        ? normalizeOpenAiCompatibleChatUrl(payload.openAiCompatibleChatUrl)
-        : '';
-    const openAiCompatibleModelId =
-      typeof payload.openAiCompatibleModelId === 'string'
-        ? normalizeOpenAiCompatibleModelId(payload.openAiCompatibleModelId)
-        : '';
-    return {
-      targetAudience,
-      agentPersonality,
-      openAiCompatibleApiKey,
-      openAiCompatibleChatUrl,
-      openAiCompatibleModelId,
-    };
-  }
+  const targetAudience =
+    typeof parsed.targetAudience === 'string'
+      ? normalizeTargetAudience(parsed.targetAudience)
+      : DEFAULT_TARGET_AUDIENCE;
+  const agentPersonality =
+    typeof parsed.agentPersonality === 'string'
+      ? normalizeAgentPersonality(parsed.agentPersonality)
+      : DEFAULT_AGENT_PERSONALITY;
+  const localModelId = typeof parsed.localModelId === 'string' ? parsed.localModelId : '';
+  const openRouterResponseHealing = parsed.openRouterResponseHealing !== false;
 
-  return { ...DEFAULT_STUDY_SETTINGS };
+  // Migration: if no configs persisted, seed defaults.
+  let configs = parseConfigs(parsed.openRouterConfigs);
+  if (!configs || configs.length === 0) {
+    configs = buildSeedOpenRouterConfigs();
+  }
+  const validConfigIds = new Set(configs.map((c) => c.id));
+
+  const bindings =
+    parseBindings(parsed.surfaceProviders, validConfigIds) ?? buildDefaultSurfaceBindings(configs);
+
+  return {
+    targetAudience,
+    agentPersonality,
+    localModelId,
+    openRouterResponseHealing,
+    openRouterConfigs: configs,
+    surfaceProviders: bindings,
+  };
 }
 
-function writeStudySettingsToStorage(
-  updates: Partial<{
-    targetAudience: string;
-    agentPersonality: string;
-    openAiCompatibleApiKey: string;
-    openAiCompatibleChatUrl: string;
-    openAiCompatibleModelId: string;
-  }>,
-): void {
+function writeSnapshotToStorage(snapshot: Snapshot): void {
   const storage = getStorage();
-  if (!storage) {
-    return;
-  }
-
-  const current = readStudySettingsFromStorage();
-  const targetAudience =
-    updates.targetAudience !== undefined
-      ? normalizeTargetAudience(updates.targetAudience)
-      : current.targetAudience;
-  const agentPersonality =
-    updates.agentPersonality !== undefined
-      ? normalizeAgentPersonality(updates.agentPersonality)
-      : current.agentPersonality;
-  const openAiCompatibleApiKey =
-    updates.openAiCompatibleApiKey !== undefined
-      ? normalizeOpenAiCompatibleApiKey(updates.openAiCompatibleApiKey)
-      : current.openAiCompatibleApiKey;
-  const openAiCompatibleChatUrl =
-    updates.openAiCompatibleChatUrl !== undefined
-      ? normalizeOpenAiCompatibleChatUrl(updates.openAiCompatibleChatUrl)
-      : current.openAiCompatibleChatUrl;
-  const openAiCompatibleModelId =
-    updates.openAiCompatibleModelId !== undefined
-      ? normalizeOpenAiCompatibleModelId(updates.openAiCompatibleModelId)
-      : current.openAiCompatibleModelId;
-
+  if (!storage) return;
   try {
-    storage.setItem(
-      STUDY_SETTINGS_STORAGE_KEY,
-      JSON.stringify({
-        targetAudience,
-        agentPersonality,
-        openAiCompatibleApiKey,
-        openAiCompatibleChatUrl,
-        openAiCompatibleModelId,
-      }),
-    );
+    storage.setItem(STUDY_SETTINGS_STORAGE_KEY, JSON.stringify(snapshot));
   } catch {
-    // localStorage writes can fail in restricted environments
+    // ignore quota / private mode
   }
+}
+
+function randomId(): string {
+  try {
+    const cryptoObj = (globalThis as { crypto?: Crypto }).crypto;
+    if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
+      return cryptoObj.randomUUID();
+    }
+  } catch {
+    // fall through
+  }
+  // Fallback: 32-char hex from Math.random (non-cryptographic; acceptable for local IDs).
+  let out = '';
+  for (let i = 0; i < 32; i++) {
+    out += Math.floor(Math.random() * 16).toString(16);
+  }
+  return `${out.slice(0, 8)}-${out.slice(8, 12)}-4${out.slice(13, 16)}-8${out.slice(17, 20)}-${out.slice(20, 32)}`;
 }
 
 export const createStudySettingsStore = () =>
-  create<StudySettingsStore>((set) => {
-    const initial = readStudySettingsFromStorage();
+  create<StudySettingsStore>((set, get) => {
+    const initial = readSnapshotFromStorage();
+    writeSnapshotToStorage(initial); // normalise stored blob after migration
+
+    const persist = (patch: Partial<Snapshot>) => {
+      const current = get();
+      const snapshot: Snapshot = {
+        targetAudience: patch.targetAudience ?? current.targetAudience,
+        agentPersonality: patch.agentPersonality ?? current.agentPersonality,
+        localModelId: patch.localModelId ?? current.localModelId,
+        openRouterResponseHealing: patch.openRouterResponseHealing ?? current.openRouterResponseHealing,
+        openRouterConfigs: patch.openRouterConfigs ?? current.openRouterConfigs,
+        surfaceProviders: patch.surfaceProviders ?? current.surfaceProviders,
+      };
+      writeSnapshotToStorage(snapshot);
+      set(patch);
+    };
+
     return {
-      targetAudience: initial.targetAudience,
-      agentPersonality: initial.agentPersonality,
-      openAiCompatibleApiKey: initial.openAiCompatibleApiKey,
-      openAiCompatibleChatUrl: initial.openAiCompatibleChatUrl,
-      openAiCompatibleModelId: initial.openAiCompatibleModelId,
+      ...initial,
 
-      setTargetAudience: (targetAudience) => {
-        const normalized = normalizeTargetAudience(targetAudience);
-        writeStudySettingsToStorage({ targetAudience: normalized });
-        set({ targetAudience: normalized });
+      setTargetAudience: (v) => persist({ targetAudience: normalizeTargetAudience(v) }),
+      resetTargetAudience: () => persist({ targetAudience: DEFAULT_TARGET_AUDIENCE }),
+      setAgentPersonality: (v) => persist({ agentPersonality: normalizeAgentPersonality(v) }),
+      setLocalModelId: (v) => persist({ localModelId: v }),
+      setOpenRouterResponseHealing: (enabled) => persist({ openRouterResponseHealing: enabled }),
+
+      addOpenRouterConfig: (partial) => {
+        const id = partial.id ?? randomId();
+        const config: OpenRouterModelConfig = {
+          id,
+          label: partial.label || partial.model,
+          model: partial.model,
+          enableThinking: partial.enableThinking === true,
+          enableStreaming: partial.enableStreaming === true,
+        };
+        const next = [...get().openRouterConfigs, config];
+        persist({ openRouterConfigs: next });
+        return id;
       },
 
-      resetTargetAudience: () => {
-        writeStudySettingsToStorage({ targetAudience: DEFAULT_TARGET_AUDIENCE });
-        set({ targetAudience: DEFAULT_TARGET_AUDIENCE });
+      updateOpenRouterConfig: (id, patch) => {
+        const next = get().openRouterConfigs.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                ...(patch.label !== undefined ? { label: patch.label } : {}),
+                ...(patch.model !== undefined ? { model: patch.model } : {}),
+                ...(patch.enableThinking !== undefined ? { enableThinking: patch.enableThinking } : {}),
+                ...(patch.enableStreaming !== undefined ? { enableStreaming: patch.enableStreaming } : {}),
+              }
+            : c,
+        );
+        persist({ openRouterConfigs: next });
       },
 
-      setAgentPersonality: (agentPersonality) => {
-        const normalized = normalizeAgentPersonality(agentPersonality);
-        writeStudySettingsToStorage({ agentPersonality: normalized });
-        set({ agentPersonality: normalized });
+      deleteOpenRouterConfig: (id) => {
+        const state = get();
+        const nextConfigs = state.openRouterConfigs.filter((c) => c.id !== id);
+        const fallbackId = nextConfigs[0]?.id ?? null;
+        const nextBindings = { ...state.surfaceProviders };
+        for (const surfaceId of ALL_SURFACE_IDS) {
+          const b = nextBindings[surfaceId];
+          if (b.provider === 'openrouter' && b.openRouterConfigId === id) {
+            nextBindings[surfaceId] = fallbackId
+              ? { provider: 'openrouter', openRouterConfigId: fallbackId }
+              : { provider: 'local', openRouterConfigId: null };
+          }
+        }
+        persist({ openRouterConfigs: nextConfigs, surfaceProviders: nextBindings });
       },
 
-      setOpenAiCompatibleApiKey: (openAiCompatibleApiKey) => {
-        const normalized = normalizeOpenAiCompatibleApiKey(openAiCompatibleApiKey);
-        writeStudySettingsToStorage({ openAiCompatibleApiKey: normalized });
-        set({ openAiCompatibleApiKey: normalized });
+      setSurfaceProvider: (surfaceId, providerId) => {
+        const state = get();
+        const current = state.surfaceProviders[surfaceId];
+        if (providerId === 'local') {
+          persist({
+            surfaceProviders: {
+              ...state.surfaceProviders,
+              [surfaceId]: { provider: 'local', openRouterConfigId: null },
+            },
+          });
+          return;
+        }
+        const configId =
+          current.openRouterConfigId && state.openRouterConfigs.some((c) => c.id === current.openRouterConfigId)
+            ? current.openRouterConfigId
+            : state.openRouterConfigs[0]?.id ?? null;
+        if (!configId) {
+          throw new Error(
+            `Cannot bind surface '${surfaceId}' to OpenRouter: no configs defined. Create one in Global Settings first.`,
+          );
+        }
+        persist({
+          surfaceProviders: {
+            ...state.surfaceProviders,
+            [surfaceId]: { provider: 'openrouter', openRouterConfigId: configId },
+          },
+        });
       },
 
-      setOpenAiCompatibleChatUrl: (openAiCompatibleChatUrl) => {
-        const normalized = normalizeOpenAiCompatibleChatUrl(openAiCompatibleChatUrl);
-        writeStudySettingsToStorage({ openAiCompatibleChatUrl: normalized });
-        set({ openAiCompatibleChatUrl: normalized });
-      },
-
-      setOpenAiCompatibleModelId: (openAiCompatibleModelId) => {
-        const normalized = normalizeOpenAiCompatibleModelId(openAiCompatibleModelId);
-        writeStudySettingsToStorage({ openAiCompatibleModelId: normalized });
-        set({ openAiCompatibleModelId: normalized });
+      setSurfaceConfigId: (surfaceId, configId) => {
+        const state = get();
+        if (!state.openRouterConfigs.some((c) => c.id === configId)) {
+          throw new Error(`Unknown OpenRouter config id: ${configId}`);
+        }
+        persist({
+          surfaceProviders: {
+            ...state.surfaceProviders,
+            [surfaceId]: { provider: 'openrouter', openRouterConfigId: configId },
+          },
+        });
       },
     };
   });
 
 const store = createStudySettingsStore();
 
-/** Non-empty when Study Settings should override `NEXT_PUBLIC_LLM_API_KEY` for OpenAI-compatible HTTP calls. */
-export function getOpenAiCompatibleApiKeyOverride(): string | undefined {
-  const v = store.getState().openAiCompatibleApiKey.trim();
-  return v.length > 0 ? v : undefined;
+export function getSurfaceBinding(surfaceId: InferenceSurfaceId): SurfaceProviderBinding {
+  return store.getState().surfaceProviders[surfaceId];
 }
 
-/** Non-empty when Study Settings should override the default chat completions URL for OpenAI-compatible HTTP calls. */
-export function getOpenAiCompatibleChatUrlOverride(): string | undefined {
-  const v = store.getState().openAiCompatibleChatUrl.trim();
-  return v.length > 0 ? v : undefined;
+export function getOpenRouterConfigById(id: string): OpenRouterModelConfig | undefined {
+  return store.getState().openRouterConfigs.find((c) => c.id === id);
 }
 
-/**
- * Resolves the model id for an OpenAI-compatible surface: Study Settings override when set,
- * otherwise {@link resolveModelForSurface} (env, including vision chain for screen capture).
- */
-export function resolveOpenAiCompatibleModelForSurface(surfaceId: InferenceSurfaceId): string {
-  const o = store.getState().openAiCompatibleModelId.trim();
-  if (o.length > 0) {
-    return o;
-  }
-  return resolveModelForSurface(surfaceId);
+export function getLocalModelId(): string {
+  return store.getState().localModelId;
 }
 
 export const useStudySettingsStore = store;
 export { store as studySettingsStore };
+export { firstSeedOpenRouterConfigId };

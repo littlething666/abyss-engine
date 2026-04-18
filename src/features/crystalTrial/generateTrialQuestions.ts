@@ -1,7 +1,10 @@
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckRepository } from '@/types/repository';
 import type { TopicRef } from '@/types/core';
-import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProviders';
+import {
+  resolveEnableStreamingForSurface,
+  resolveModelForSurface,
+} from '@/infrastructure/llmInferenceSurfaceProviders';
 import { runContentGenerationJob } from '@/features/contentGeneration/runContentGenerationJob';
 import {
   buildCrystalTrialMessages,
@@ -70,14 +73,16 @@ export async function generateTrialQuestions(
     subject?.metadata?.strategy?.content?.contentBrief?.trim() || undefined;
 
   // 6. Run content generation job
-  const model = resolveModelForSurface('crystalTrial' as any);
+  const model = resolveModelForSurface('crystalTrial');
+  const enableStreaming = resolveEnableStreamingForSurface('crystalTrial');
 
   const result = await runContentGenerationJob({
-    kind: 'crystal-trial' as any,
+    kind: 'crystal-trial',
     label: `Crystal Trial L${currentLevel + 1} — ${topicTitle}`,
     pipelineId: null,
     subjectId,
     topicId,
+    llmSurfaceId: 'crystalTrial',
     chat,
     model,
     messages: buildCrystalTrialMessages({
@@ -89,6 +94,7 @@ export async function generateTrialQuestions(
       contentBrief,
     }),
     enableThinking: false,
+    enableStreaming,
     parseOutput: async (raw) => {
       const parsed = parseCrystalTrialPayload(raw);
       if (!parsed.ok) {

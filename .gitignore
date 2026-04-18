@@ -1,5 +1,5 @@
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -42,3 +42,7 @@ next-env.d.ts
 /.cursor/plans/
 
 /public/hdri/
+
+.wrangler/
+workers/
+.github/workflows/deploy-worker.yml

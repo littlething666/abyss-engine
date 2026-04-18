@@ -13,13 +13,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
-import {
-  AGENT_PERSONALITY_OPTIONS,
-  OPENAI_COMPATIBLE_MODEL_OPTIONS,
-  TARGET_AUDIENCE_OPTIONS,
-  useStudySettingsStore,
-} from '../store/studySettingsStore';
 import { StudyPanelStateViews } from './studyPanel/StudyPanelStateViews';
 import { StudyPanelStudyView } from './studyPanel/StudyPanelStudyView';
 import { useStudyPanelModel } from '../hooks/useStudyPanelModel';
@@ -35,6 +30,8 @@ import type { MiniGameContent } from '../types/core';
 import { cardRefKey } from '@/lib/topicRef';
 import { RatingFeedbackCanvas, type RatingFeedbackCanvasHandle } from './studyPanel/RatingFeedbackCanvas';
 import { useRatingFeedback } from '@/hooks/useRatingFeedback';
+import { uiStore } from '@/store/uiStore';
+import { Settings } from 'lucide-react';
 
 interface StudyPanelModalProps {
   isOpen: boolean;
@@ -62,24 +59,9 @@ export function StudyPanelModal({
   onRedo,
 }: StudyPanelModalProps) {
   const [activeTab, setActiveTab] = useState<StudyPanelTab>('study');
-  const targetAudience = useStudySettingsStore((state) => state.targetAudience);
-  const setTargetAudience = useStudySettingsStore((state) => state.setTargetAudience);
-  const agentPersonality = useStudySettingsStore((state) => state.agentPersonality);
-  const setAgentPersonality = useStudySettingsStore((state) => state.setAgentPersonality);
-  const openAiCompatibleModelId = useStudySettingsStore((state) => state.openAiCompatibleModelId);
-  const setOpenAiCompatibleModelId = useStudySettingsStore((state) => state.setOpenAiCompatibleModelId);
-  const openAiCompatibleChatUrl = useStudySettingsStore((state) => state.openAiCompatibleChatUrl);
-  const setOpenAiCompatibleChatUrl = useStudySettingsStore((state) => state.setOpenAiCompatibleChatUrl);
-  const openAiCompatibleApiKey = useStudySettingsStore((state) => state.openAiCompatibleApiKey);
-  const setOpenAiCompatibleApiKey = useStudySettingsStore((state) => state.setOpenAiCompatibleApiKey);
   const currentSession = useStudyStore((state) => state.currentSession);
 
-  const model = useStudyPanelModel({
-    currentCardId,
-    currentTopicId,
-    currentSubjectId,
-    totalCards,
-  });
+  const model = useStudyPanelModel({ currentCardId, currentTopicId, currentSubjectId, totalCards });
   const explainThinking = useThinkingToggle('studyQuestionExplain');
   const formulaThinking = useThinkingToggle('studyFormulaExplain');
   const mermaidThinking = useThinkingToggle('studyQuestionMermaid');
@@ -111,14 +93,7 @@ export function StudyPanelModal({
       llmFormulaExplain.cancelInflight();
       llmMermaidDiagram.cancelInflight();
     }
-  }, [
-    isOpen,
-    activeTab,
-    model.renderedCard,
-    llmExplain.cancelInflight,
-    llmFormulaExplain.cancelInflight,
-    llmMermaidDiagram.cancelInflight,
-  ]);
+  }, [isOpen, activeTab, model.renderedCard, llmExplain.cancelInflight, llmFormulaExplain.cancelInflight, llmMermaidDiagram.cancelInflight]);
 
   const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]);
   const [isAnswerSubmitted, setIsAnswerSubmitted] = useState(false);
@@ -136,21 +111,14 @@ export function StudyPanelModal({
   const applySubmissionStateFromSession = () => {
     const currentCardKey = currentSession?.currentCardId;
     const attempts = currentSession?.attempts ?? [];
-    const hasSubmittedCurrentCard = attempts.some((attempt) => attempt.cardId === currentCardKey);
+    const hasSubmittedCurrentCard = attempts.some((a) => a.cardId === currentCardKey);
     setIsAnswerSubmitted(hasSubmittedCurrentCard);
     setIsRevealed(hasSubmittedCurrentCard);
     setIsCorrect(false);
   };
 
-  const handleUndo = () => {
-    onUndo();
-    applySubmissionStateFromSession();
-  };
-
-  const handleRedo = () => {
-    onRedo();
-    applySubmissionStateFromSession();
-  };
+  const handleUndo = () => { onUndo(); applySubmissionStateFromSession(); };
+  const handleRedo = () => { onRedo(); applySubmissionStateFromSession(); };
 
   useStudyKeyboardShortcuts(handleUndo, handleRedo, model.canUndo, model.canRedo);
 
@@ -171,134 +139,84 @@ export function StudyPanelModal({
   }, [activeTab, currentSession?.sessionId, currentSession?.topicId, currentTopicId]);
 
   useEffect(() => {
-    if (!model.resolvedTopicId || (activeTab === 'theory' && !model.hasTheory)) {
-      setActiveTab('study');
-    }
+    if (!model.resolvedTopicId || (activeTab === 'theory' && !model.hasTheory)) setActiveTab('study');
   }, [activeTab, model.hasTheory, model.resolvedTopicId]);
 
   useEffect(() => {
-    setSelectedAnswers([]);
-    setIsAnswerSubmitted(false);
-    setIsCorrect(false);
-    setIsRevealed(false);
+    setSelectedAnswers([]); setIsAnswerSubmitted(false); setIsCorrect(false); setIsRevealed(false);
   }, [model.activeCard?.id]);
 
-  useEffect(() => {
-    applySubmissionStateFromSession();
-  }, [currentSession?.attempts?.length, currentSession?.currentCardId]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setSelectedAnswers([]);
-      setIsAnswerSubmitted(false);
-      setIsCorrect(false);
-      setIsRevealed(false);
-    }
-  }, [isOpen]);
+  useEffect(() => { applySubmissionStateFromSession(); }, [currentSession?.attempts?.length, currentSession?.currentCardId]);
+  useEffect(() => { if (!isOpen) { setSelectedAnswers([]); setIsAnswerSubmitted(false); setIsCorrect(false); setIsRevealed(false); } }, [isOpen]);
 
   const handleSelectSystemPrompt = () => {
-    const promptElement = systemPromptRef.current;
-    if (!promptElement) return;
-
+    const el = systemPromptRef.current;
+    if (!el) return;
     const selection = window.getSelection();
     if (!selection) return;
-
     const range = document.createRange();
-    range.selectNodeContents(promptElement);
+    range.selectNodeContents(el);
     selection.removeAllRanges();
     selection.addRange(range);
   };
 
   const handleAnswerSelect = (answer: string) => {
     if (isAnswerSubmitted || !model.renderedCard) return;
-
-    if (model.isSingleChoice) {
-      setSelectedAnswers([answer]);
-      return;
-    }
-
+    if (model.isSingleChoice) { setSelectedAnswers([answer]); return; }
     if (model.isMultiChoice) {
-      setSelectedAnswers((previous) => {
-        if (previous.includes(answer)) {
-          return previous.filter((a) => a !== answer);
-        }
-        return [...previous, answer];
-      });
+      setSelectedAnswers((prev) => prev.includes(answer) ? prev.filter((a) => a !== answer) : [...prev, answer]);
     }
+  };
+
+  const resolveSubmitCardKey = (): string | null => {
+    if (currentSession?.currentCardId) return currentSession.currentCardId;
+    if (currentCardId) return currentCardId;
+    const subjectId = currentSubjectId ?? currentSession?.subjectId ?? null;
+    const topicId = currentTopicId ?? currentSession?.topicId ?? null;
+    const rawId = model.activeCard?.id;
+    if (subjectId && topicId && rawId) return cardRefKey({ subjectId, topicId, cardId: rawId });
+    return null;
+  };
+
+  const submitResultWithFeedback = (cardKey: string, rating?: Rating, ic?: boolean) => {
+    if (typeof rating === 'number') triggerForRating(rating);
+    else if (typeof ic === 'boolean') triggerForChoice(ic);
+    onSubmitResult(cardKey, ic, rating);
   };
 
   const handleChoiceSubmit = () => {
     const activeCard = model.activeCard;
     if (!activeCard) return;
-
     const nextIsCorrect = evaluateChoiceAnswer(activeCard, selectedAnswers);
     const cardKey = resolveSubmitCardKey();
     if (!cardKey) return;
-
     setIsCorrect(nextIsCorrect);
     setIsAnswerSubmitted(true);
     submitResultWithFeedback(cardKey, undefined, nextIsCorrect);
     setIsRevealed(true);
   };
 
-  /** Must match `progressionStore` queue keys — composite `cardRefKey`, not raw deck `Card.id`. */
-  const resolveSubmitCardKey = (): string | null => {
-    if (currentSession?.currentCardId) {
-      return currentSession.currentCardId;
-    }
-    if (currentCardId) {
-      return currentCardId;
-    }
-    const subjectId = currentSubjectId ?? currentSession?.subjectId ?? null;
-    const topicId = currentTopicId ?? currentSession?.topicId ?? null;
-    const rawId = model.activeCard?.id;
-    if (subjectId && topicId && rawId) {
-      return cardRefKey({ subjectId, topicId, cardId: rawId });
-    }
-    return null;
-  };
-
-  const submitResultWithFeedback = (cardKey: string, rating?: Rating, isCorrect?: boolean) => {
-    if (typeof rating === 'number') {
-      triggerForRating(rating);
-    } else if (typeof isCorrect === 'boolean') {
-      triggerForChoice(isCorrect);
-    }
-
-    onSubmitResult(cardKey, isCorrect, rating);
-  };
-
   const handleChoiceContinue = () => {
-    setSelectedAnswers([]);
-    setIsAnswerSubmitted(false);
-    setIsCorrect(false);
-    setIsRevealed(false);
+    setSelectedAnswers([]); setIsAnswerSubmitted(false); setIsCorrect(false); setIsRevealed(false);
     onAdvance();
   };
 
   const handleRating = (rating: Rating) => {
     const cardKey = resolveSubmitCardKey();
     if (!cardKey) return;
-
     submitResultWithFeedback(cardKey, rating);
     setIsAnswerSubmitted(true);
     setIsRevealed(true);
   };
 
-  const handleMiniGameComplete = (miniGameIsCorrect: boolean) => {
-    setIsCorrect(miniGameIsCorrect);
+  const handleMiniGameComplete = (ic: boolean) => {
+    setIsCorrect(ic);
     const cardKey = resolveSubmitCardKey();
     if (!cardKey) return;
-
-    submitResultWithFeedback(cardKey, undefined, miniGameIsCorrect);
+    submitResultWithFeedback(cardKey, undefined, ic);
     setIsRevealed(true);
   };
-
-  const handleMiniGameContinue = () => {
-    setIsRevealed(false);
-    setIsCorrect(false);
-    onAdvance();
-  };
+  const handleMiniGameContinue = () => { setIsRevealed(false); setIsCorrect(false); onAdvance(); };
 
   if (!isOpen) return null;
 
@@ -306,45 +224,40 @@ export function StudyPanelModal({
     <Dialog
       modal={false}
       open={isOpen}
-      onOpenChange={(open) => {
-        if (!open) {
-          onClose();
-        }
-      }}
+      onOpenChange={(open) => { if (!open) onClose(); }}
     >
-      <DialogContent
-        className="max-h-[95vh] flex flex-col"
-      >
-      <DialogHeader>
-        <DialogTitle className="sr-only" data-testid="study-session-title">
-          📚 Study Session
-        </DialogTitle>
-        <DialogDescription className="sr-only">
-          Review cards, answer prompts, and track your study session progress.
-        </DialogDescription>
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StudyPanelTab)}>
-            <TabsList className="mx-auto">
-              <TabsTrigger value="study" data-testid="study-tab-study">
-                📖 Study
-              </TabsTrigger>
-              {model.hasTheory && (
-                <TabsTrigger value="theory" data-testid="study-tab-theory">
-                  💡 Theory
-                </TabsTrigger>
-              )}
-              <TabsTrigger
-                value="system_prompt"
-                disabled={!model.resolvedTopicId}
-                data-testid="study-tab-system-prompt"
-              >
-                🧠
-              </TabsTrigger>
-              <TabsTrigger value="settings" data-testid="study-tab-settings">
-                ⚙️
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-      </DialogHeader>
+      <DialogContent className="max-h-[95vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="sr-only" data-testid="study-session-title">📚 Study Session</DialogTitle>
+          <DialogDescription className="sr-only">
+            Review cards, answer prompts, and track your study session progress.
+          </DialogDescription>
+          <div className="flex items-center justify-center gap-2">
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StudyPanelTab)}>
+              <TabsList className="mx-auto">
+                <TabsTrigger value="study" data-testid="study-tab-study">📖 Study</TabsTrigger>
+                {model.hasTheory && (
+                  <TabsTrigger value="theory" data-testid="study-tab-theory">💡 Theory</TabsTrigger>
+                )}
+                <TabsTrigger
+                  value="system_prompt"
+                  disabled={!model.resolvedTopicId}
+                  data-testid="study-tab-system-prompt"
+                >🧠</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={() => uiStore.getState().openGlobalSettings()}
+              aria-label="Open global settings"
+              data-testid="study-tab-settings"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </DialogHeader>
         <div data-testid="study-panel-modal-content" className="-mx-4 px-4 overflow-y-auto">
           <StudyPanelStateViews
             activeTab={activeTab}
@@ -357,20 +270,7 @@ export function StudyPanelModal({
             resolvedTopicTheory={model.resolvedTopicTheory}
             resolvedTopic={model.resolvedTopic}
             topicSystemPrompt={model.topicSystemPrompt}
-            targetAudience={targetAudience}
-            targetAudienceOptions={TARGET_AUDIENCE_OPTIONS}
-            agentPersonality={agentPersonality}
-            agentPersonalityOptions={AGENT_PERSONALITY_OPTIONS}
             onClose={onClose}
-            onSetTargetAudience={setTargetAudience}
-            onSetAgentPersonality={setAgentPersonality}
-            openAiCompatibleModelId={openAiCompatibleModelId}
-            openAiCompatibleModelOptions={OPENAI_COMPATIBLE_MODEL_OPTIONS}
-            onSetOpenAiCompatibleModelId={setOpenAiCompatibleModelId}
-            openAiCompatibleChatUrl={openAiCompatibleChatUrl}
-            onSetOpenAiCompatibleChatUrl={setOpenAiCompatibleChatUrl}
-            openAiCompatibleApiKey={openAiCompatibleApiKey}
-            onSetOpenAiCompatibleApiKey={setOpenAiCompatibleApiKey}
             onSystemPromptSelect={handleSelectSystemPrompt}
             systemPromptRef={systemPromptRef}
           />
@@ -430,7 +330,7 @@ export function StudyPanelModal({
               )}
             </div>
           )}
-      </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

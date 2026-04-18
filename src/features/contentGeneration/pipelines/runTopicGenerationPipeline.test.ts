@@ -1,5 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { celebrationApi } = vi.hoisted(() => ({
+  celebrationApi: {
+    markPendingFromFullTopicUnlock: vi.fn(),
+    dismissPending: vi.fn(),
+  },
+}));
+
+vi.mock('@/store/crystalContentCelebrationStore', () => ({
+  useCrystalContentCelebrationStore: {
+    getState: () => celebrationApi,
+  },
+}));
+
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import type { Card, SubjectGraph, TopicDetails } from '@/types/core';
@@ -22,6 +35,7 @@ vi.mock('@/infrastructure/repositories/contentGenerationLogRepository', () => ({
 
 vi.mock('@/infrastructure/llmInferenceSurfaceProviders', () => ({
   resolveModelForSurface: () => 'test-model',
+  resolveEnableStreamingForSurface: () => true,
 }));
 
 function resetStore(): void {
@@ -94,6 +108,44 @@ describe('runTopicGenerationPipeline', () => {
   beforeEach(() => {
     resetStore();
     runContentGenerationJob.mockReset();
+    celebrationApi.markPendingFromFullTopicUnlock.mockReset();
+    celebrationApi.dismissPending.mockReset();
+  });
+
+  it('marks celebration pending when full pipeline completes successfully', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: true });
+
+    const result = await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableThinking: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(celebrationApi.markPendingFromFullTopicUnlock).toHaveBeenCalledWith('sub-1::t-a');
+  });
+
+  it('does not mark celebration pending for standalone mini-games stage success', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: true });
+
+    const result = await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableThinking: false,
+      stage: 'mini-games',
+      forceRegenerate: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(celebrationApi.markPendingFromFullTopicUnlock).not.toHaveBeenCalled();
   });
 
   it('returns skipped without registering a pipeline or running jobs when study content is already ready', async () => {
@@ -109,6 +161,7 @@ describe('runTopicGenerationPipeline', () => {
 
     expect(result).toEqual({ ok: true, pipelineId: '', skipped: true });
     expect(runContentGenerationJob).not.toHaveBeenCalled();
+    expect(celebrationApi.markPendingFromFullTopicUnlock).not.toHaveBeenCalled();
   });
 
   it('runs theory stage when study-ready (auto-skip applies only to full pipeline)', async () => {

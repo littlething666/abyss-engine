@@ -18,37 +18,36 @@ export interface ChatStreamChunk {
   text: string;
 }
 
-/** Result of a non-streaming chat completion. */
 export interface ChatCompletionResult {
   content: string;
   reasoningContent: string | null;
 }
 
-/** Optional per-request overrides for OpenAI-compatible HTTP clients (ignored by other providers). */
-export interface ChatCompletionConnectionOverrides {
-  /** Full chat-completions URL; when omitted, uses the repository default. */
-  endpointUrl?: string;
-  /** Bearer token; when omitted, uses the repository default (e.g. env). */
-  apiKey?: string;
-}
+/** OpenAI-compatible `response_format` (used for OpenRouter structured JSON jobs). */
+export type ChatResponseFormatJsonObject = { type: 'json_object' };
 
-export interface ChatCompletionStreamInput extends ChatCompletionConnectionOverrides {
+export interface ChatCompletionStreamInput {
   model: string;
   messages: ChatMessage[];
-  /** When aborted, the stream stops and the iterator completes. */
   signal?: AbortSignal;
   /** Send `true` to enable model thinking; `false` to disable; omit for server default. */
   enableThinking?: boolean;
+  /** Send `false` to force non-streamed completion; defaults to `true`. */
+  enableStreaming?: boolean;
+  /** When set, included in the chat-completions JSON body (OpenRouter / compatible servers). */
+  responseFormat?: ChatResponseFormatJsonObject;
+  /** OpenRouter plugins array, e.g. `[{ id: 'response-healing' }]`. */
+  plugins?: Array<{ id: string }>;
 }
 
 export interface IChatCompletionsRepository {
-  completeChat(
-    input: {
-      model: string;
-      messages: ChatMessage[];
-      enableThinking?: boolean;
-    } & ChatCompletionConnectionOverrides,
-  ): Promise<ChatCompletionResult>;
-  /** SSE stream yielding tagged chunks (reasoning or content). */
+  completeChat(input: {
+    model: string;
+    messages: ChatMessage[];
+    enableThinking?: boolean;
+    signal?: AbortSignal;
+    responseFormat?: ChatResponseFormatJsonObject;
+    plugins?: Array<{ id: string }>;
+  }): Promise<ChatCompletionResult>;
   streamChat(input: ChatCompletionStreamInput): AsyncIterable<ChatStreamChunk>;
 }

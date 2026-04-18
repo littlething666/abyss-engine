@@ -1,9 +1,8 @@
-import { resolveDefaultOpenAiChatCompletionsUrl } from '../openAiCompatibleDefaults';
-import { resolveDefaultLlmModel } from '../llmDefaultModel';
 import type {
   ChatCompletionResult,
   ChatCompletionStreamInput,
   ChatMessage,
+  ChatResponseFormatJsonObject,
   ChatStreamChunk,
   IChatCompletionsRepository,
 } from '../../types/llm';
@@ -26,30 +25,22 @@ type StreamChunkBody = {
   } | null>;
 };
 
-/** Some OpenAI-compatible gateways reject requests with no `user` turn. */
 const USER_MESSAGE_FALLBACK: ChatMessage = {
   role: 'user',
   content: 'Follow the instructions above and respond.',
 };
 
 export function withUserMessageIfMissing(messages: ChatMessage[]): ChatMessage[] {
-  if (messages.some((m) => m.role === 'user')) {
-    return messages;
-  }
+  if (messages.some((m) => m.role === 'user')) return messages;
   return [...messages, USER_MESSAGE_FALLBACK];
 }
 
 export class HttpChatCompletionsRepository implements IChatCompletionsRepository {
-  /** Parses one SSE line (`data: ...`); yields a tagged chunk or null to skip. */
   static parseSseDataLine(rawLine: string): ChatStreamChunk | null {
     const line = rawLine.trim();
-    if (!line.startsWith('data:')) {
-      return null;
-    }
+    if (!line.startsWith('data:')) return null;
     const payload = line.slice(5).trim();
-    if (payload === '' || payload === '[DONE]') {
-      return null;
-    }
+    if (payload === '' || payload === '[DONE]') return null;
     let parsed: StreamChunkBody;
     try {
       parsed = JSON.parse(payload) as StreamChunkBody;
@@ -57,9 +48,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
       return null;
     }
     const delta = parsed.choices?.[0]?.delta;
-    if (!delta) {
-      return null;
-    }
+    if (!delta) return null;
     if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
       return { type: 'reasoning', text: delta.reasoning_content };
     }
@@ -75,14 +64,9 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     private readonly apiKey: string | null = null,
   ) {}
 
-  private buildHeaders(apiKeyOverride?: string): Record<string, string> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    const key = apiKeyOverride !== undefined ? apiKeyOverride : this.apiKey;
-    if (key) {
-      headers.Authorization = `Bearer ${key}`;
-    }
+  private buildHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
     return headers;
   }
 
@@ -90,8 +74,9 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     model: string;
     messages: ChatMessage[];
     enableThinking?: boolean;
-    endpointUrl?: string;
-    apiKey?: string;
+    signal?: AbortSignal;
+    responseFormat?: ChatResponseFormatJsonObject;
+    plugins?: Array<{ id: string }>;
   }): Promise<ChatCompletionResult> {
     const messages = withUserMessageIfMissing(input.messages);
     const body: Record<string, unknown> = {
@@ -99,14 +84,14 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
       messages,
       stream: false,
     };
-    if (input.enableThinking !== undefined) {
-      body.enable_thinking = input.enableThinking;
-    }
+    if (input.enableThinking !== undefined) body.enable_thinking = input.enableThinking;
+    if (input.responseFormat !== undefined) body.response_format = input.responseFormat;
+    if (input.plugins !== undefined && input.plugins.length > 0) body.plugins = input.plugins;
 
-    const url = input.endpointUrl ?? this.chatUrl;
-    const response = await fetch(url, {
+    const response = await fetch(this.chatUrl, {
       method: 'POST',
-      headers: this.buildHeaders(input.apiKey),
+      headers: this.buildHeaders(),
+      signal: input.signal,
       body: JSON.stringify(body),
     });
 
@@ -131,20 +116,37 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
   }
 
   async *streamChat(input: ChatCompletionStreamInput): AsyncGenerator<ChatStreamChunk, void, undefined> {
+    if (input.enableStreaming === false) {
+      const completed = await this.completeChat({
+        model: input.model,
+        messages: input.messages,
+        enableThinking: input.enableThinking,
+        signal: input.signal,
+        responseFormat: input.responseFormat,
+        plugins: input.plugins,
+      });
+      if (completed.reasoningContent && completed.reasoningContent.length > 0) {
+        yield { type: 'reasoning', text: completed.reasoningContent };
+      }
+      if (completed.content.length > 0) {
+        yield { type: 'content', text: completed.content };
+      }
+      return;
+    }
+
     const messages = withUserMessageIfMissing(input.messages);
     const body: Record<string, unknown> = {
       model: input.model || this.defaultModel,
       messages,
       stream: true,
     };
-    if (input.enableThinking !== undefined) {
-      body.enable_thinking = input.enableThinking;
-    }
+    if (input.enableThinking !== undefined) body.enable_thinking = input.enableThinking;
+    if (input.responseFormat !== undefined) body.response_format = input.responseFormat;
+    if (input.plugins !== undefined && input.plugins.length > 0) body.plugins = input.plugins;
 
-    const url = input.endpointUrl ?? this.chatUrl;
-    const response = await fetch(url, {
+    const response = await fetch(this.chatUrl, {
       method: 'POST',
-      headers: this.buildHeaders(input.apiKey),
+      headers: this.buildHeaders(),
       body: JSON.stringify(body),
       signal: input.signal,
     });
@@ -157,9 +159,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     }
 
     const respBody = response.body;
-    if (!respBody) {
-      throw new Error('Chat completion stream missing response body');
-    }
+    if (!respBody) throw new Error('Chat completion stream missing response body');
 
     const reader = respBody.getReader();
     const decoder = new TextDecoder();
@@ -169,9 +169,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
+        if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
@@ -192,15 +190,13 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
       reader.releaseLock();
     }
 
-    if (!sawAnyContent) {
-      throw new Error('Chat completion stream ended with no assistant content');
-    }
+    if (!sawAnyContent) throw new Error('Chat completion stream ended with no assistant content');
   }
 }
 
 export function createHttpChatCompletionsRepositoryFromEnv(): HttpChatCompletionsRepository {
-  const chatUrl = resolveDefaultOpenAiChatCompletionsUrl();
-  const defaultModel = resolveDefaultLlmModel();
+  const chatUrl = process.env.NEXT_PUBLIC_LLM_CHAT_URL ?? 'http://localhost:8080/v1/chat/completions';
+  const defaultModel = process.env.NEXT_PUBLIC_LLM_MODEL?.trim() ?? '';
   const apiKey = process.env.NEXT_PUBLIC_LLM_API_KEY?.trim() || null;
   return new HttpChatCompletionsRepository(chatUrl, defaultModel, apiKey);
 }

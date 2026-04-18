@@ -19,6 +19,12 @@ export const MAX_LABEL_DISTANCE = 18;
 export const MAX_VISIBLE_LABELS = 12;
 export const CRYSTAL_LABEL_OFFSET_Y = 1.25;
 
+/**
+ * Local Y (above the bobbing crystal anchor) for the unified crystal notification
+ * emoji billboard — kept close to the crystal mesh, below the topic name label.
+ */
+export const CRYSTAL_NOTIFICATION_LOCAL_Y = 0.44;
+
 export function getLabelOpacity(distance: number): number {
   if (distance < 6) {
     return 1;

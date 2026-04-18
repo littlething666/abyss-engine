@@ -2,6 +2,8 @@ import { v4 as uuid } from 'uuid';
 
 import type { ChatMessage, IChatCompletionsRepository } from '@/types/llm';
 import type { ContentGenerationJob, ContentGenerationJobKind } from '@/types/contentGeneration';
+import type { InferenceSurfaceId } from '@/types/llmInference';
+import { resolveOpenRouterStructuredJsonChatExtras } from '@/infrastructure/llmInferenceSurfaceProviders';
 
 import { useContentGenerationStore } from './contentGenerationStore';
 
@@ -11,11 +13,14 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
   pipelineId: string | null;
   subjectId: string | null;
   topicId: string | null;
+  /** Used to apply OpenRouter `json_object` / response-healing only when that surface uses OpenRouter. */
+  llmSurfaceId: InferenceSurfaceId;
 
   chat: IChatCompletionsRepository;
   model: string;
   messages: ChatMessage[];
   enableThinking: boolean;
+  enableStreaming?: boolean;
 
   parseOutput: (
     raw: string,
@@ -66,6 +71,7 @@ export async function runContentGenerationJob<TParsed>(
     parseError: null,
     retryOf: params.retryOf ?? null,
     metadata: {
+      model: params.model,
       enableThinking: params.enableThinking,
       ...(params.metadata ?? {}),
     },
@@ -81,11 +87,22 @@ export async function runContentGenerationJob<TParsed>(
     store.updateJobStatus(jobId, 'streaming');
     store.setJobStartedAt(jobId, t0);
 
+    const structured = resolveOpenRouterStructuredJsonChatExtras(params.llmSurfaceId);
+    const enableStreaming =
+      structured?.forceNonStreaming ? false : params.enableStreaming;
+
     for await (const chunk of params.chat.streamChat({
       model: params.model,
       messages: params.messages,
       enableThinking: params.enableThinking,
+      enableStreaming,
       signal: ac.signal,
+      ...(structured
+        ? {
+            responseFormat: structured.responseFormat,
+            ...(structured.plugins ? { plugins: structured.plugins } : {}),
+          }
+        : {}),
     })) {
       if (ac.signal.aborted) {
         throw new DOMException('Aborted', 'AbortError');

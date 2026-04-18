@@ -42,7 +42,7 @@ import { LlmThinkingToggle } from '@/components/LlmThinkingToggle';
 import { LlmTtsToggle } from '@/components/LlmTtsToggle';
 import { topicRefKey } from '@/lib/topicRef';
 import { useTopicCardQueriesForSubjectFilter } from '@/hooks/useTopicCardQueries';
-import { toast } from 'sonner';
+import { toast } from '@/infrastructure/toast';
 
 // Dynamic import for Scene to avoid SSR issues with Three.js.
 // Loading UI is a single parent overlay until Canvas reports ready (avoids loader ↔ scene swap blink).
@@ -60,7 +60,9 @@ const HomeContent: React.FC = () => {
   const searchParams = useSearchParams();
   initializeDebugMode(searchParams);
   const isDebugMode = isDebugModeEnabled();
-  /** E2E / Playwright: full-screen loader stays until WebGPU `onCreated`; skip it so UI is reachable even if GPU init stalls. */
+  /** E2E / Playwright: full-screen loader stays until WebGPU `onCreated`; skip it so UI is reachable even if GPU init stalls.
+   * issue is likely in <Canvas>/R3F/WebGPU renderer initialization
+  */
   const skipSceneLoadingOverlay =
     searchParams.get('e2e') === '1' || process.env.NEXT_PUBLIC_PLAYWRIGHT === '1';
   const [showStats, setShowStats] = useState(true);
@@ -145,7 +147,6 @@ const HomeContent: React.FC = () => {
 
     return { due, total };
   }, [getDueCardsCount, topicCardQueries, queriedTopicRefs]);
-  const dueCards = allTopicsCardCounts.due;
   const totalCards = allTopicsCardCounts.total;
 
   // Get store actions - stable references
@@ -390,8 +391,6 @@ const HomeContent: React.FC = () => {
       <DiscoveryModal
         isOpen={isDiscoveryModalOpen}
         unlockPoints={unlockPoints}
-        dueCards={dueCards}
-        totalCards={totalCards}
         onOpenRitual={handleOpenRitualModal}
         ritualCooldownRemainingMs={ritualCooldownRemainingMs}
         onClose={handleCloseDiscoveryModal}

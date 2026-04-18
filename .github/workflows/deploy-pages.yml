@@ -23,13 +23,13 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -40,6 +40,7 @@ jobs:
       - name: Build static site for GitHub Pages root
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ vars.NEXT_PUBLIC_BASE_PATH }}
+          NEXT_PUBLIC_LLM_WORKER_URL: ${{ vars.NEXT_PUBLIC_LLM_WORKER_URL }}
         run: pnpm run build
 
       - name: Configure GitHub Pages

@@ -1,8 +1,12 @@
 import { v4 as uuid } from 'uuid';
 
+import { topicRefKey } from '@/lib/topicRef';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
-import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProviders';
+import {
+  resolveEnableStreamingForSurface,
+  resolveModelForSurface,
+} from '@/infrastructure/llmInferenceSurfaceProviders';
 
 import { buildTopicMiniGameCardsMessages } from '../messages/buildTopicMiniGameCardsMessages';
 import { buildTopicStudyCardsMessages } from '../messages/buildTopicStudyCardsMessages';
@@ -12,6 +16,7 @@ import { parseTopicTheoryPayload, type ParsedTopicTheoryPayload } from '../parse
 import { runContentGenerationJob } from '../runContentGenerationJob';
 import { useContentGenerationStore } from '../contentGenerationStore';
 import { topicStudyContentReady } from '../topicStudyContentReady';
+import { useCrystalContentCelebrationStore } from '@/store/crystalContentCelebrationStore';
 import { loadTheoryPayloadFromTopicDetails } from './loadTheoryPayloadFromTopicDetails';
 import type { TopicGenerationStage } from './topicGenerationStage';
 
@@ -72,6 +77,7 @@ export async function runTopicGenerationPipeline(
     retryOf,
   } = params;
   const model = resolveModelForSurface('topicContent');
+  const enableStreaming = resolveEnableStreamingForSurface('topicContent');
   const store = useContentGenerationStore.getState();
 
   const pipelineId = uuid();
@@ -125,6 +131,7 @@ export async function runTopicGenerationPipeline(
       pipelineId,
       subjectId,
       topicId,
+      llmSurfaceId: 'topicContent',
       chat,
       model,
       messages: buildTopicTheoryMessages({
@@ -135,6 +142,7 @@ export async function runTopicGenerationPipeline(
         contentBrief,
       }),
       enableThinking,
+      enableStreaming,
       externalSignal: pipelineAc.signal,
       parseOutput: async (raw) => {
         const parsed = parseTopicTheoryPayload(raw);
@@ -174,6 +182,7 @@ export async function runTopicGenerationPipeline(
       pipelineId,
       subjectId,
       topicId,
+      llmSurfaceId: 'topicContent',
       chat,
       model,
       messages: buildTopicStudyCardsMessages({
@@ -184,6 +193,7 @@ export async function runTopicGenerationPipeline(
         contentBrief,
       }),
       enableThinking,
+      enableStreaming,
       externalSignal: pipelineAc.signal,
       parseOutput: async (raw) => {
         const parsed = parseTopicCardsPayload(raw);
@@ -214,6 +224,7 @@ export async function runTopicGenerationPipeline(
       pipelineId,
       subjectId,
       topicId,
+      llmSurfaceId: 'topicContent',
       chat,
       model,
       messages: buildTopicMiniGameCardsMessages({
@@ -224,6 +235,7 @@ export async function runTopicGenerationPipeline(
         contentBrief,
       }),
       enableThinking,
+      enableStreaming,
       externalSignal: pipelineAc.signal,
       parseOutput: async (raw) => {
         const parsed = parseTopicCardsPayload(raw);
@@ -319,6 +331,12 @@ export async function runTopicGenerationPipeline(
       if (!miniStep.ok) {
         return { ok: false, pipelineId, error: miniStep.error };
       }
+    }
+
+    if (stage === 'full') {
+      useCrystalContentCelebrationStore
+        .getState()
+        .markPendingFromFullTopicUnlock(topicRefKey({ subjectId, topicId }));
     }
 
     return { ok: true, pipelineId };

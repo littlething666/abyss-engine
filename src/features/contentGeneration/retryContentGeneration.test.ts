@@ -42,7 +42,7 @@ vi.mock('@/infrastructure/llmInferenceSurfaceProviders', () => ({
   resolveModelForSurface: () => 'test-model',
 }));
 
-vi.mock('sonner', () => ({
+vi.mock('@/infrastructure/toast', () => ({
   toast: Object.assign(vi.fn(), { error: vi.fn() }),
 }));
 
@@ -239,6 +239,60 @@ describe('retryFailedJob', () => {
     const [req, deps] = mockOrchExecute.mock.calls[0] ?? [];
     expect(req.subjectId).toBe('sub-1');
     expect(deps.retryOf).toBe('job-1');
+  });
+
+  it('prefers job metadata checklist for subject-graph jobs without manifest checklist', async () => {
+    mockGetManifest.mockResolvedValue({
+      subjects: [
+        {
+          id: 'sub-1',
+          name: 'S',
+          description: '',
+          color: '#000',
+          geometry: { gridTile: 'box' },
+        },
+      ],
+    });
+
+    const job = makeJob({
+      kind: 'subject-graph',
+      topicId: null,
+      metadata: {
+        enableThinking: false,
+        checklist: { topicName: 'Metadata topic' },
+      },
+    });
+    await retryFailedJob(job);
+
+    expect(mockOrchExecute).toHaveBeenCalledTimes(1);
+    const [req] = mockOrchExecute.mock.calls[0] ?? [];
+    expect(req).toEqual(
+      expect.objectContaining({
+        subjectId: 'sub-1',
+        checklist: { topicName: 'Metadata topic' },
+      }),
+    );
+  });
+
+  it('falls back to label topic for subject-graph jobs when checklist metadata is missing', async () => {
+    mockGetManifest.mockResolvedValue({ subjects: [] });
+
+    const job = makeJob({
+      kind: 'subject-graph',
+      topicId: null,
+      label: 'Curriculum — Label Topic',
+      metadata: { enableThinking: false },
+    });
+    await retryFailedJob(job);
+
+    expect(mockOrchExecute).toHaveBeenCalledTimes(1);
+    const [req] = mockOrchExecute.mock.calls[0] ?? [];
+    expect(req).toEqual(
+      expect.objectContaining({
+        subjectId: 'sub-1',
+        checklist: { topicName: 'Label Topic' },
+      }),
+    );
   });
 
   it('does not retry a completed job', async () => {

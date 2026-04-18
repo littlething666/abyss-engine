@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { Copy } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/infrastructure/toast';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';

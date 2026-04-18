@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   mockPlayPositiveSound: vi.fn(),
 }));
 
-vi.mock('sonner', () => ({
+vi.mock('@/infrastructure/toast', () => ({
   toast: {
     success: mocks.mockToastSuccess,
   },

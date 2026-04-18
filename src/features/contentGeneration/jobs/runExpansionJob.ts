@@ -1,6 +1,9 @@
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
-import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProviders';
+import {
+  resolveEnableStreamingForSurface,
+  resolveModelForSurface,
+} from '@/infrastructure/llmInferenceSurfaceProviders';
 
 import { buildTopicExpansionCardsMessages } from '../messages/buildTopicExpansionCardsMessages';
 import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
@@ -51,6 +54,7 @@ export async function runExpansionJob(
   const node = graph.nodes.find((n) => n.topicId === topicId);
   const topicTitle = node?.title ?? details.title;
   const model = resolveModelForSurface('topicContent');
+  const enableStreaming = resolveEnableStreamingForSurface('topicContent');
 
   const theoryExcerpt =
     details.theory.trim().length > 12000
@@ -65,6 +69,7 @@ export async function runExpansionJob(
     pipelineId: null,
     subjectId,
     topicId,
+    llmSurfaceId: 'topicContent',
     chat,
     model,
     messages: buildTopicExpansionCardsMessages({
@@ -76,6 +81,7 @@ export async function runExpansionJob(
       contentBrief,
     }),
     enableThinking,
+    enableStreaming,
     externalSignal: signal,
     retryOf,
     metadata: { nextLevel },

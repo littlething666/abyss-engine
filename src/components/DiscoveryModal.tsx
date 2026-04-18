@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SubjectGraph, TopicRef } from '@/types/core';
+import { DEFAULT_CRYSTAL_BASE_SHAPE } from '@/types/core';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useAllGraphs, useSubjects } from '../features/content';
 import type { TieredTopic, TopicUnlockStatus } from '../features/progression/progressionUtils';
@@ -13,18 +14,164 @@ import {
 import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from './ui/particles-animation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { KeyRound } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
 import { topicRefKey } from '@/lib/topicRef';
 import { triggerTopicGenerationPipeline } from '@/features/contentGeneration';
+import { useContentGenerationStore } from '@/features/contentGeneration/contentGenerationStore';
+import type { ContentGenerationJobKind } from '@/types/contentGeneration';
 import { TopicDetailsPopup } from './TopicDetailsPopup';
 import { IncrementalSubjectModal } from './IncrementalSubjectModal';
+import { useShallow } from 'zustand/react/shallow';
+
+const DISCOVERY_MODAL_SUBJECT_STORAGE_KEY = 'abyss:discoveryModalSubjectId';
+
+const TOPIC_TIER_SORT_KINDS = new Set<ContentGenerationJobKind>([
+  'topic-theory',
+  'topic-study-cards',
+  'topic-mini-games',
+  'topic-expansion-cards',
+]);
+
+type TopicListFilter = 'all' | 'locked' | 'unlocked';
+
+function matchesTopicListFilter(topic: TieredTopic, filter: TopicListFilter): boolean {
+  if (!topic.isCurriculumVisible) {
+    return false;
+  }
+  if (filter === 'locked') {
+    return topic.isLocked;
+  }
+  if (filter === 'unlocked') {
+    return topic.isUnlocked && topic.contentStatus === 'ready';
+  }
+  return true;
+}
+
+function sortTierTopics(
+  topics: TieredTopic[],
+  maxFinishedAtByTopicKey: Record<string, number>,
+): TieredTopic[] {
+  return [...topics].sort((a, b) => {
+    const genA = a.contentStatus === 'generating' ? 1 : 0;
+    const genB = b.contentStatus === 'generating' ? 1 : 0;
+    if (genA !== genB) {
+      return genB - genA;
+    }
+    const ka = topicRefKey({ subjectId: a.subjectId, topicId: a.id });
+    const kb = topicRefKey({ subjectId: b.subjectId, topicId: b.id });
+    const fa = maxFinishedAtByTopicKey[ka] ?? 0;
+    const fb = maxFinishedAtByTopicKey[kb] ?? 0;
+    if (fa !== fb) {
+      return fb - fa;
+    }
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  });
+}
+
+/** Preserves tier-wide topic order while bucketing by subject (first-seen subject order). */
+function groupTopicsBySubjectInTierOrder(
+  topics: TieredTopic[],
+): { subjectId: string; subjectName: string; topics: TieredTopic[] }[] {
+  const byId = new Map<string, { subjectId: string; subjectName: string; topics: TieredTopic[] }>();
+  const order: string[] = [];
+  for (const topic of topics) {
+    let group = byId.get(topic.subjectId);
+    if (!group) {
+      group = { subjectId: topic.subjectId, subjectName: topic.subjectName, topics: [] };
+      byId.set(topic.subjectId, group);
+      order.push(topic.subjectId);
+    }
+    group.topics.push(topic);
+  }
+  return order.map((id) => byId.get(id)!);
+}
+
+function readStoredModalSubjectId(): string {
+  if (typeof window === 'undefined') {
+    return '__all_floors__';
+  }
+  try {
+    const raw = window.sessionStorage.getItem(DISCOVERY_MODAL_SUBJECT_STORAGE_KEY);
+    return raw && raw.length > 0 ? raw : '__all_floors__';
+  } catch {
+    return '__all_floors__';
+  }
+}
+
+function writeStoredModalSubjectId(subjectId: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(DISCOVERY_MODAL_SUBJECT_STORAGE_KEY, subjectId);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function DiscoveryTopicTile({
+  topic,
+  onSelect,
+}: {
+  topic: TieredTopic;
+  onSelect: (topic: TieredTopic) => void;
+}) {
+  return (
+    <Button
+      type="button"
+      onClick={() => onSelect(topic)}
+      multiline
+      variant="ghost"
+      className={`rounded-lg border p-4 text-left transition-all ${
+        topic.isLocked
+          ? 'border-border bg-muted/60 hover:border-muted-foreground/60'
+          : 'border-border/70 bg-secondary/30 hover:border-secondary'
+      }`}
+    >
+      <div className="flex w-full items-start justify-between">
+        <div className="min-w-0 flex-1">
+          <h4
+            className={`truncate text-sm font-semibold ${
+              topic.isLocked ? 'text-muted-foreground' : 'text-primary'
+            }`}
+          >
+            {topic.name}
+          </h4>
+          <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">{topic.description}</p>
+          {topic.contentStatus === 'generating' && (
+            <p className="text-primary mt-2 text-xs">⏳ Generating…</p>
+          )}
+          {topic.contentStatus === 'unavailable' && (
+            <p className="text-accent-foreground mt-2 text-xs">📦 Content not available yet</p>
+          )}
+        </div>
+        {topic.isLocked && <span className="text-muted-foreground ml-2 text-lg">🔒</span>}
+        {topic.isUnlocked && <span className="text-accent-foreground ml-2 text-lg">✅</span>}
+      </div>
+    </Button>
+  );
+}
 
 interface DiscoveryModalProps {
   isOpen: boolean;
   unlockPoints: number;
-  /** Deck due/total for active subject scope; shown inline with locked-topic summary. */
-  dueCards?: number;
-  totalCards?: number;
   getTopicUnlockStatus?: (ref: TopicRef, allGraphs?: SubjectGraph[]) => TopicUnlockStatus;
   onOpenRitual?: () => void;
   ritualCooldownRemainingMs?: number;
@@ -34,22 +181,24 @@ interface DiscoveryModalProps {
 export function DiscoveryModal({
   isOpen,
   unlockPoints,
-  dueCards,
-  totalCards,
   getTopicUnlockStatus,
   onOpenRitual,
   ritualCooldownRemainingMs = 0,
   onClose,
 }: DiscoveryModalProps) {
-  /** Stable selection key; tier list + availability are derived fresh via `topicsByTier`. */
   const [selectedTopicKey, setSelectedTopicKey] = useState<{ subjectId: string; topicId: string } | null>(null);
   const [isNewSubjectOpen, setIsNewSubjectOpen] = useState(false);
+  const [topicListFilter, setTopicListFilter] = useState<TopicListFilter>('locked');
+  const [modalSubjectId, setModalSubjectId] = useState<string>(readStoredModalSubjectId);
   const isRitualSubmissionAvailable = ritualCooldownRemainingMs <= 0;
+
+  const modalSubjectScopeForGraphs = modalSubjectId === '__all_floors__' ? null : modalSubjectId;
 
   useEffect(() => {
     if (!isOpen) {
       setSelectedTopicKey(null);
       setIsNewSubjectOpen(false);
+      setTopicListFilter('locked');
     }
   }, [isOpen]);
 
@@ -58,6 +207,8 @@ export function DiscoveryModal({
   const storeGetTopicUnlockStatus = useStudyStore((state) => state.getTopicUnlockStatus);
   const allGraphs = useAllGraphs();
   const { data: subjects = [] } = useSubjects();
+  const jobs = useContentGenerationStore(useShallow((state) => state.jobs));
+
   const topicUnlockStatusGetter = useMemo(() => {
     return (ref: TopicRef) =>
       getTopicUnlockStatus
@@ -70,13 +221,58 @@ export function DiscoveryModal({
   const contentStatusMap = useTopicContentStatusMap();
 
   const topicsByTier = useMemo(() => {
-    return getTopicsByTier(allGraphs, subjectList, undefined, contentStatusMap);
-  }, [getTopicsByTier, allGraphs, subjectList, contentStatusMap]);
+    return getTopicsByTier(allGraphs, subjectList, modalSubjectScopeForGraphs, contentStatusMap);
+  }, [getTopicsByTier, allGraphs, subjectList, modalSubjectScopeForGraphs, contentStatusMap]);
 
-  const tiersWithVisibleTopics = useMemo(
-    () => topicsByTier.filter((tierData) => tierData.topics.some((t) => t.isCurriculumVisible)),
-    [topicsByTier],
-  );
+  useEffect(() => {
+    if (modalSubjectId === '__all_floors__') {
+      return;
+    }
+    const exists = subjects.some((s) => s.id === modalSubjectId);
+    if (!exists) {
+      setModalSubjectId('__all_floors__');
+      writeStoredModalSubjectId('__all_floors__');
+    }
+  }, [subjects, modalSubjectId]);
+
+  const topicFilterCounts = useMemo(() => {
+    const visible = topicsByTier.flatMap((t) => t.topics).filter((topic) => topic.isCurriculumVisible);
+    return {
+      locked: visible.filter((t) => t.isLocked).length,
+      unlocked: visible.filter((t) => t.isUnlocked && t.contentStatus === 'ready').length,
+      all: visible.length,
+    };
+  }, [topicsByTier]);
+
+  const maxFinishedAtByTopicKey = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const job of Object.values(jobs)) {
+      if (!job.subjectId || !job.topicId) {
+        continue;
+      }
+      if (!TOPIC_TIER_SORT_KINDS.has(job.kind)) {
+        continue;
+      }
+      if (job.status !== 'completed' || job.finishedAt == null) {
+        continue;
+      }
+      const k = topicRefKey({ subjectId: job.subjectId, topicId: job.topicId });
+      map[k] = Math.max(map[k] ?? 0, job.finishedAt);
+    }
+    return map;
+  }, [jobs]);
+
+  const displayTiers = useMemo(() => {
+    const out: { tier: number; topics: TieredTopic[] }[] = [];
+    for (const tierData of topicsByTier) {
+      const filtered = tierData.topics.filter((t) => matchesTopicListFilter(t, topicListFilter));
+      const sorted = sortTierTopics(filtered, maxFinishedAtByTopicKey);
+      if (sorted.length > 0) {
+        out.push({ tier: tierData.tier, topics: sorted });
+      }
+    }
+    return out;
+  }, [topicsByTier, topicListFilter, maxFinishedAtByTopicKey]);
 
   const selectedTopic = useMemo((): TieredTopic | null => {
     if (!selectedTopicKey) {
@@ -99,21 +295,59 @@ export function DiscoveryModal({
     }
   }, [selectedTopicKey, selectedTopic]);
 
-  const lockedTopicsCount = useMemo(() => {
-    return topicsByTier.reduce((count, tierData) => {
-      return (
-        count +
-        tierData.topics.filter((topic) => topic.isCurriculumVisible && topic.isLocked).length
-      );
-    }, 0);
-  }, [topicsByTier]);
-
   const selectedTopicStatus = useMemo(() => {
     if (!selectedTopic) {
       return null;
     }
     return topicUnlockStatusGetter({ subjectId: selectedTopic.subjectId, topicId: selectedTopic.id });
   }, [selectedTopic, topicUnlockStatusGetter]);
+
+  const subjectSelectItems = useMemo(
+    () => [
+      {
+        value: '__all_floors__',
+        label: (
+          <span className="flex w-full items-center gap-2">
+            <span className="size-2 shrink-0 rounded-sm bg-muted" aria-hidden />
+            <span>All subjects</span>
+          </span>
+        ),
+      },
+      ...subjects.map((subject) => ({
+        value: subject.id,
+        label: (
+          <span className="flex w-full min-w-0 items-center gap-2">
+            <span
+              className="size-2 shrink-0 rounded-sm border border-border/60"
+              style={{ backgroundColor: subject.color }}
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate">{subject.name}</span>
+            <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+              {subject.geometry.gridTile}/{subject.crystalBaseShape ?? DEFAULT_CRYSTAL_BASE_SHAPE}
+            </span>
+          </span>
+        ),
+      })),
+    ],
+    [subjects],
+  );
+
+  const handleSelectSubject = useCallback((subjectId: string | null) => {
+    const next = subjectId === null || subjectId === '__all_floors__' ? '__all_floors__' : subjectId;
+    setModalSubjectId(next);
+    writeStoredModalSubjectId(next);
+  }, []);
+
+  const handleResetFilters = useCallback(() => {
+    setTopicListFilter('all');
+    setModalSubjectId('__all_floors__');
+    writeStoredModalSubjectId('__all_floors__');
+  }, []);
+
+  const handlePickTopic = useCallback((topic: TieredTopic) => {
+    setSelectedTopicKey({ subjectId: topic.subjectId, topicId: topic.id });
+  }, []);
 
   const handleUnlock = () => {
     if (!selectedTopic || !selectedTopicStatus?.canUnlock) {
@@ -123,7 +357,6 @@ export function DiscoveryModal({
     const ref = { subjectId: selectedTopic.subjectId, topicId: selectedTopic.id };
     unlockTopic(ref, allGraphs);
 
-    // Auto-trigger generation pipeline when content is not ready.
     const tKey = topicRefKey(ref);
     const status = contentStatusMap[tKey];
     if (status !== 'ready') {
@@ -133,6 +366,8 @@ export function DiscoveryModal({
     setSelectedTopicKey(null);
     onClose();
   };
+
+  const showSubjectGroups = modalSubjectId === '__all_floors__';
 
   if (!isOpen) {
     return null;
@@ -149,139 +384,174 @@ export function DiscoveryModal({
           }
         }}
       >
-        <DialogContent className="flex max-h-[95vh] flex-col">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[95vh] min-h-0 flex-col">
+          <DialogHeader className="shrink-0 space-y-3 pb-0">
             <DialogTitle>🏛️ Wisdom Altar</DialogTitle>
-            <DialogDescription>Unlock topic crystals to expand your knowledge</DialogDescription>
-            <p className="text-muted-foreground mt-1 text-xs">
-              {lockedTopicsCount} locked topic{lockedTopicsCount !== 1 ? 's' : ''}
-              {typeof dueCards === 'number' && typeof totalCards === 'number' ? (
-                <>
-                  {' '}
-                  · {dueCards}/{totalCards} cards due
-                </>
-              ) : null}
-            </p>
-            <div className="mb-6 text-center">
-              <div className="inline-flex flex-wrap items-center justify-center gap-3">
-                <div className="inline-block rounded-full border border-border bg-secondary/40 px-6 py-2">
-                  <span>
-                    ✨ {unlockPoints} Unlock Point{unlockPoints !== 1 ? 's' : ''}
-                  </span>
-                </div>
+            <DialogDescription>
+              Unlock topic crystals to expand your knowledge
+              <Badge
+                variant="ghost"
+                className="h-7 shrink-0 gap-1.5 rounded-full border border-border/80 mx-1 px-2 py-0 text-xs tabular-nums shadow-none"
+                title="Unlock points"
+              >
+                <KeyRound className="size-3.5 opacity-80" aria-hidden />
+                {unlockPoints}
+              </Badge>
+            </DialogDescription>
+            <div className="flex min-h-9 min-w-0 items-center justify-between gap-3 overflow-x-auto pt-1 [scrollbar-width:thin]">
+              <div className="flex shrink-0 items-center gap-2">
                 <Button
                   type="button"
+                  variant="default"
+                  size="sm"
                   onClick={() => setIsNewSubjectOpen(true)}
-                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-full bg-accent transition-colors"
+                  className="h-9 gap-1.5 px-3"
                   aria-label="Generate new subject"
-                  title="Generate new subject"
                 >
-                  <span className="relative z-10 text-lg leading-none text-foreground" aria-hidden="true">
+                  <span className="text-base leading-none" aria-hidden>
                     🌱
                   </span>
+                  <span className="text-sm font-medium">New subject</span>
                 </Button>
                 <Button
                   type="button"
+                  size="sm"
+                  variant={isRitualSubmissionAvailable ? 'outline' : 'secondary'}
                   onClick={() => onOpenRitual?.()}
-                  className={`relative inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-                    isRitualSubmissionAvailable ? 'bg-accent' : 'bg-muted'
-                  }`}
+                  className="relative h-9 gap-1.5 overflow-hidden px-3"
                   aria-label="Open attunement ritual"
-                  title="Open attunement ritual"
                 >
                   <span
-                    className={`relative z-10 text-lg leading-none text-foreground ${
+                    className={`relative z-10 text-base leading-none ${
                       isRitualSubmissionAvailable ? 'animate-pulse' : ''
                     }`}
-                    aria-hidden="true"
+                    aria-hidden
                   >
                     🧪
                   </span>
-                  <ParticlesAnimation
+                  <span className="text-sm font-medium">Ritual</span>
+                  {/* <ParticlesAnimation
                     isActive={isRitualSubmissionAvailable}
                     particles={RITUAL_PARTICLE_ANIMATION}
-                  />
+                  /> */}
                 </Button>
               </div>
             </div>
           </DialogHeader>
-          <div className="-mx-4 overflow-y-auto px-4">
-            <div className="space-y-6">
-              {tiersWithVisibleTopics.map((tierData) => (
-                <div key={tierData.tier}>
-                  <div className="mb-3 flex items-center">
-                    <div className="h-px flex-1 bg-border" />
-                    <span className="text-muted-foreground px-4 text-sm font-semibold">
-                      Tier {tierData.tier}
-                    </span>
-                    <div className="h-px flex-1 bg-border" />
-                  </div>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-                    {tierData.topics
-                      .filter((topic) => topic.isCurriculumVisible)
-                      .map((topic) => (
-                        <Button
-                          key={`${topic.subjectId}:${topic.id}`}
-                          type="button"
-                          onClick={() =>
-                            setSelectedTopicKey({ subjectId: topic.subjectId, topicId: topic.id })
-                          }
-                          multiline
-                          variant="ghost"
-                          className={`rounded-lg border p-4 text-left transition-all ${
-                            topic.isLocked
-                              ? 'border-border bg-muted/60 hover:border-muted-foreground/60'
-                              : 'border-border/70 bg-secondary/30 hover:border-secondary'
-                          }`}
-                        >
-                          <div className="flex w-full items-start justify-between">
-                            <div className="min-w-0 flex-1">
-                              <h4
-                                className={`truncate text-sm font-semibold ${
-                                  topic.isLocked ? 'text-muted-foreground' : 'text-primary'
-                                }`}
-                              >
-                                {topic.name}
-                              </h4>
-                              <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">
-                                {topic.description}
-                              </p>
-                              <Badge
-                                variant="outline"
-                                className="mt-1.5 max-w-full truncate border-border/80 text-[0.6875rem] leading-tight font-normal text-muted-foreground"
-                                title={topic.subjectName}
-                              >
-                                {topic.subjectName}
-                              </Badge>
-                              {topic.contentStatus === 'generating' && (
-                                <p className="text-primary mt-2 text-xs">
-                                  ⏳ Generating…
-                                </p>
-                              )}
-                              {topic.contentStatus === 'unavailable' && (
-                                <p className="text-accent-foreground mt-2 text-xs">
-                                  📦 Content not available yet
-                                </p>
-                              )}
-                            </div>
-                            {topic.isLocked && (
-                              <span className="text-muted-foreground ml-2 text-lg">🔒</span>
-                            )}
-                            {topic.isUnlocked && (
-                              <span className="text-accent-foreground ml-2 text-lg">✅</span>
-                            )}
-                          </div>
-                        </Button>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="mt-3 flex shrink-0 flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <Select
+              modal={false}
+              items={subjectSelectItems}
+              value={modalSubjectId}
+              onValueChange={handleSelectSubject}
+            >
+              <SelectTrigger size="sm" className="h-9 w-full min-w-0 sm:max-w-xs" aria-label="Subject">
+                <SelectValue placeholder="All subjects" />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {subjectSelectItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
 
-            {tiersWithVisibleTopics.length === 0 && (
-              <div className="py-8 text-center">
-                <p className="text-muted-foreground">No topics available</p>
+            <ToggleGroup
+              value={[topicListFilter]}
+              onValueChange={(values) => {
+                const next = values[0] as TopicListFilter | undefined;
+                if (next) {
+                  setTopicListFilter(next);
+                }
+              }}
+              variant="outline"
+              size="sm"
+              spacing={0}
+              className="w-full shrink-0 sm:w-auto"
+            >
+              <ToggleGroupItem value="locked" className="min-h-9 flex-1 px-2.5 text-xs sm:flex-none">
+                Locked ({topicFilterCounts.locked})
+              </ToggleGroupItem>
+              <ToggleGroupItem value="unlocked" className="min-h-9 flex-1 px-2.5 text-xs sm:flex-none">
+                Unlocked ({topicFilterCounts.unlocked})
+              </ToggleGroupItem>
+              <ToggleGroupItem value="all" className="min-h-9 flex-1 px-2.5 text-xs sm:flex-none">
+                All ({topicFilterCounts.all})
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+
+          <div className="-mx-4 mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-4">
+            {displayTiers.length === 0 ? (
+              <Empty className="my-6 min-h-[12rem] border border-dashed">
+                <EmptyHeader>
+                  <EmptyTitle>No topics match</EmptyTitle>
+                  <EmptyDescription>Try widening your filters to see topics again.</EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button type="button" variant="secondary" size="sm" onClick={handleResetFilters}>
+                    Reset filters
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            ) : (
+              <div className="space-y-6 pb-2">
+                {displayTiers.map((tierData) => (
+                  <div key={tierData.tier}>
+                    <div className="mb-3 flex items-center">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="text-muted-foreground px-4 text-sm font-semibold">
+                        Tier {tierData.tier}
+                      </span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+
+                    {showSubjectGroups ? (
+                      <div className="space-y-5">
+                        {groupTopicsBySubjectInTierOrder(tierData.topics).map((subjectGroup) => {
+                          const headingId = `tier-${tierData.tier}-subject-${subjectGroup.subjectId}`;
+                          return (
+                            <section
+                              key={`${tierData.tier}:${subjectGroup.subjectId}`}
+                              aria-labelledby={headingId}
+                              className="space-y-2"
+                            >
+                              <h3
+                                id={headingId}
+                                className="text-muted-foreground truncate border-b border-border pb-1.5 text-xs font-semibold tracking-wide uppercase"
+                              >
+                                {subjectGroup.subjectName}
+                              </h3>
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+                                {subjectGroup.topics.map((topic) => (
+                                  <DiscoveryTopicTile
+                                    key={`${topic.subjectId}:${topic.id}`}
+                                    topic={topic}
+                                    onSelect={handlePickTopic}
+                                  />
+                                ))}
+                              </div>
+                            </section>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+                        {tierData.topics.map((topic) => (
+                          <DiscoveryTopicTile
+                            key={`${topic.subjectId}:${topic.id}`}
+                            topic={topic}
+                            onSelect={handlePickTopic}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
