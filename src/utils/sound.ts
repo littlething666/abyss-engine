@@ -1,14 +1,17 @@
 /**
- * Sound utility for playing audio feedback using Web Audio API
- * Only plays sounds for positive feedback (rating >= 3)
+ * Sound utility for playing audio feedback using Web Audio API.
+ *
+ * Every exported `play*` function is globally gated by
+ * `getSfxEnabled()` from the feature-flags store. When the flag is OFF (the default), each
+ * call is a silent no-op — no AudioContext is created, no oscillators
+ * scheduled. This is the single authoritative SFX gate; do not short-circuit
+ * it in individual call sites.
  */
+
+import { getSfxEnabled } from '../store/featureFlagsStore';
 
 let audioContext: AudioContext | null = null;
 
-/**
- * Get or create AudioContext singleton
- * Creates on first call, reuses existing context
- */
 function getAudioContext(): AudioContext {
   if (!audioContext) {
     audioContext = new AudioContext();
@@ -17,71 +20,53 @@ function getAudioContext(): AudioContext {
 }
 
 /**
- * Play a pleasant chime sound for positive feedback
- * Uses Web Audio API to generate a soft, ascending tone
+ * Play a pleasant chime sound for positive feedback.
+ * Uses Web Audio API to generate a soft, ascending tone.
  */
 export function playPositiveSound(): void {
+  if (!getSfxEnabled()) return;
   try {
     const ctx = getAudioContext();
-
-    // Resume context if suspended (browser autoplay policy)
     if (ctx.state === 'suspended') {
       ctx.resume();
     }
-
     const currentTime = ctx.currentTime;
 
-    // Create oscillator for the main tone
     const oscillator = ctx.createOscillator();
     const gainNode = ctx.createGain();
-
-    // Configure oscillator - pleasant sine wave
     oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(523.25, currentTime); // C5 note
-    oscillator.frequency.setValueAtTime(659.25, currentTime + 0.1); // E5 note
-    oscillator.frequency.setValueAtTime(783.99, currentTime + 0.2); // G5 note
-
-    // Configure gain for soft fade-in and fade-out
+    oscillator.frequency.setValueAtTime(523.25, currentTime);
+    oscillator.frequency.setValueAtTime(659.25, currentTime + 0.1);
+    oscillator.frequency.setValueAtTime(783.99, currentTime + 0.2);
     gainNode.gain.setValueAtTime(0, currentTime);
     gainNode.gain.linearRampToValueAtTime(0.3, currentTime + 0.05);
     gainNode.gain.linearRampToValueAtTime(0, currentTime + 0.4);
-
-    // Connect nodes
     oscillator.connect(gainNode);
     gainNode.connect(ctx.destination);
-
-    // Play
     oscillator.start(currentTime);
     oscillator.stop(currentTime + 0.4);
 
-    // Add a second harmonic for richer sound
     const oscillator2 = ctx.createOscillator();
     const gainNode2 = ctx.createGain();
-
     oscillator2.type = 'sine';
-    oscillator2.frequency.setValueAtTime(1046.5, currentTime + 0.1); // C6 note (octave up)
-
+    oscillator2.frequency.setValueAtTime(1046.5, currentTime + 0.1);
     gainNode2.gain.setValueAtTime(0, currentTime + 0.1);
     gainNode2.gain.linearRampToValueAtTime(0.15, currentTime + 0.15);
     gainNode2.gain.linearRampToValueAtTime(0, currentTime + 0.35);
-
     oscillator2.connect(gainNode2);
     gainNode2.connect(ctx.destination);
-
     oscillator2.start(currentTime + 0.1);
     oscillator2.stop(currentTime + 0.35);
   } catch (error) {
-    // Silently fail if audio is not supported
     console.warn('Audio playback failed:', error);
   }
 }
 
 // Mario-style coin pickup sound
 export function playCoinPickupSound(): void {
+  if (!getSfxEnabled()) return;
   try {
     const ctx = getAudioContext();
-
-    // Resume context if suspended (browser autoplay policy)
     if (ctx.state === 'suspended') {
       ctx.resume();
     }
@@ -101,11 +86,11 @@ export function playCoinPickupSound(): void {
     gainNode.gain.linearRampToValueAtTime(0, currentTime + duration);
 
     const tones = [
-      { frequency: 587.33, time: 0 }, // D5
-      { frequency: 698.46, time: 0.06 }, // F5
-      { frequency: 783.99, time: 0.12 }, // G5
-      { frequency: 1046.5, time: 0.18 }, // C6
-      { frequency: 1318.51, time: 0.24 }, // E6
+      { frequency: 587.33, time: 0 },
+      { frequency: 698.46, time: 0.06 },
+      { frequency: 783.99, time: 0.12 },
+      { frequency: 1046.5, time: 0.18 },
+      { frequency: 1318.51, time: 0.24 },
     ];
 
     const oscillator = ctx.createOscillator();
@@ -138,28 +123,18 @@ export function playCoinPickupSound(): void {
   }
 }
 
-/**
- * Play a rapid Mario-style sprout power-up chirp.
- */
 export interface SproutOptions {
-  /** The shape of the wave: 'square', 'sawtooth', 'triangle', or 'sine' */
-  type?: OscillatorType
-  /** The starting frequency in Hz */
-  baseFreqStart?: number
-  /** The ratio between the alternating notes (1.5 = perfect fifth) */
-  freqMultiplier?: number
-  /** How many Hz the base pitch shifts upward per frame */
-  freqStep?: number
-  /** Duration of each note in seconds */
-  speed?: number
-  /** Total number of notes to play before stopping */
-  totalNotes?: number
-  /** Output gain (0..1) */
-  volume?: number
+  type?: OscillatorType;
+  baseFreqStart?: number;
+  freqMultiplier?: number;
+  freqStep?: number;
+  speed?: number;
+  totalNotes?: number;
+  volume?: number;
 }
 
 export function playSproutSound(options: SproutOptions = {}): void {
-  // Set default values that recreate the classic Mario square wave sprout
+  if (!getSfxEnabled()) return;
   const {
     type = 'square',
     baseFreqStart = 200,
@@ -167,63 +142,62 @@ export function playSproutSound(options: SproutOptions = {}): void {
     freqStep = 3,
     speed = 0.036,
     totalNotes = 30,
-    volume = 0.07
-  } = options
+    volume = 0.07,
+  } = options;
 
   try {
-    // Assuming getAudioContext is defined elsewhere in your app
-    const ctx = getAudioContext()
-
+    const ctx = getAudioContext();
     if (ctx.state === 'suspended') {
-      ctx.resume()
+      ctx.resume();
     }
 
-    const currentTime = ctx.currentTime
-    const stopTime = currentTime + (totalNotes * speed)
+    const currentTime = ctx.currentTime;
+    const stopTime = currentTime + totalNotes * speed;
 
-    const osc = ctx.createOscillator()
-    const gainNode = ctx.createGain()
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    osc.type = type;
 
-    // Dynamically set the waveform based on our parameters
-    osc.type = type
-
-    let baseFreq = baseFreqStart
-
+    let baseFreq = baseFreqStart;
     for (let i = 0; i < totalNotes; i += 1) {
-      const time = currentTime + i * speed
-
-      // Alternate between the base frequency and the multiplied interval
-      const freq = i % 2 === 0 ? baseFreq : baseFreq * freqMultiplier
-      osc.frequency.setValueAtTime(freq, time)
-
-      // Shift the pitch up for the next loop
-      baseFreq += freqStep
+      const time = currentTime + i * speed;
+      const freq = i % 2 === 0 ? baseFreq : baseFreq * freqMultiplier;
+      osc.frequency.setValueAtTime(freq, time);
+      baseFreq += freqStep;
     }
 
-    // Volume envelope
-    gainNode.gain.setValueAtTime(volume, currentTime)
-    gainNode.gain.setValueAtTime(volume, stopTime - 0.05)
-    gainNode.gain.linearRampToValueAtTime(0, stopTime)
+    gainNode.gain.setValueAtTime(volume, currentTime);
+    gainNode.gain.setValueAtTime(volume, stopTime - 0.05);
+    gainNode.gain.linearRampToValueAtTime(0, stopTime);
 
-    osc.connect(gainNode)
-    gainNode.connect(ctx.destination)
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
 
-    osc.start(currentTime)
-    osc.stop(stopTime)
+    osc.start(currentTime);
+    osc.stop(stopTime);
   } catch (error) {
-    console.warn('Audio playback failed:', error)
+    console.warn('Audio playback failed:', error);
   }
 }
 
-export const playLevelUpSound = () => playSproutSound({ freqMultiplier: 1.25, baseFreqStart: 150, freqStep: 3.5, totalNotes: 30, speed: 0.033, volume: 0.04 })
+const LEVEL_UP_OPTIONS: SproutOptions = {
+  freqMultiplier: 1.25,
+  baseFreqStart: 150,
+  freqStep: 3.5,
+  totalNotes: 30,
+  speed: 0.033,
+  volume: 0.04,
+};
 
-/**
- * Play a retro victory fanfare motif.
- */
+export const playLevelUpSound = (): void => {
+  // Gate is enforced inside playSproutSound; no double check needed.
+  playSproutSound(LEVEL_UP_OPTIONS);
+};
+
 const fanfareMelody: Array<[number, number, number]> = [
-  [523.25, 0.00, 0.10],
-  [523.25, 0.15, 0.10],
-  [523.25, 0.30, 0.10],
+  [523.25, 0.0, 0.1],
+  [523.25, 0.15, 0.1],
+  [523.25, 0.3, 0.1],
   [523.25, 0.45, 0.35],
   [415.3, 0.85, 0.35],
   [466.16, 1.25, 0.35],
@@ -233,6 +207,7 @@ const fanfareMelody: Array<[number, number, number]> = [
 ];
 
 export function playVictoryFanfare(): void {
+  if (!getSfxEnabled()) return;
   try {
     const ctx = getAudioContext();
     if (ctx.state === 'suspended') {
@@ -245,7 +220,6 @@ export function playVictoryFanfare(): void {
     melody.forEach(([frequency, delay, duration]) => {
       const osc = ctx.createOscillator();
       const gainNode = ctx.createGain();
-
       osc.type = 'square';
       osc.frequency.value = frequency;
 
@@ -267,6 +241,7 @@ export function playVictoryFanfare(): void {
 }
 
 export function playTuturuSound(): void {
+  if (!getSfxEnabled()) return;
   try {
     const ctx = getAudioContext();
     if (ctx.state === 'suspended') {
@@ -276,11 +251,10 @@ export function playTuturuSound(): void {
     const startTime = ctx.currentTime;
     const melody = fanfareMelody.slice(-3);
 
-    melody.forEach(([frequency, delay, duration]) => {
-      delay -= 1.5;
+    melody.forEach(([frequency, delayValue, duration]) => {
+      const delay = delayValue - 1.5;
       const osc = ctx.createOscillator();
       const gainNode = ctx.createGain();
-
       osc.type = 'square';
       osc.frequency.value = frequency;
 
@@ -302,9 +276,9 @@ export function playTuturuSound(): void {
 }
 
 export function playTimerFinishedSound(): void {
+  if (!getSfxEnabled()) return;
   try {
     const ctx = getAudioContext();
-
     if (ctx.state === 'suspended') {
       ctx.resume();
     }

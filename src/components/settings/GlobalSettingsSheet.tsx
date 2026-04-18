@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { useUIStore } from '@/store/uiStore';
+import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import {
   AGENT_PERSONALITY_OPTIONS,
   TARGET_AUDIENCE_OPTIONS,
@@ -194,6 +195,62 @@ function OpenRouterConfigList() {
   );
 }
 
+function PreferencesSection() {
+  const pomodoroVisible = useFeatureFlagsStore((s) => s.pomodoroVisible);
+  const ritualVisible = useFeatureFlagsStore((s) => s.ritualVisible);
+  const sfxEnabled = useFeatureFlagsStore((s) => s.sfxEnabled);
+  const setPomodoroVisible = useFeatureFlagsStore((s) => s.setPomodoroVisible);
+  const setRitualVisible = useFeatureFlagsStore((s) => s.setRitualVisible);
+  const setSfxEnabled = useFeatureFlagsStore((s) => s.setSfxEnabled);
+
+  return (
+    <section className={SECTION_SPACING}>
+      <Badge variant="outline">⚙️ Preferences</Badge>
+      <div className="pt-3 space-y-3">
+        <div className={ROW_CLASSNAME}>
+          <div className="min-w-0">
+            <span className="text-sm text-foreground">Pomodoro timer</span>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              Show the focus timer in the scene HUD.
+            </p>
+          </div>
+          <Switch
+            checked={pomodoroVisible}
+            onCheckedChange={setPomodoroVisible}
+            aria-label="Show Pomodoro timer"
+          />
+        </div>
+        <div className={ROW_CLASSNAME}>
+          <div className="min-w-0">
+            <span className="text-sm text-foreground">Attunement ritual</span>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              Expose the Ritual entry point inside the Wisdom Altar.
+            </p>
+          </div>
+          <Switch
+            checked={ritualVisible}
+            onCheckedChange={setRitualVisible}
+            aria-label="Show Ritual button"
+          />
+        </div>
+        <div className={ROW_CLASSNAME}>
+          <div className="min-w-0">
+            <span className="text-sm text-foreground">Sound effects</span>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              Global master for feedback chimes, coin pickups, and level-up cues. TTS voice playback is controlled separately on each surface.
+            </p>
+          </div>
+          <Switch
+            checked={sfxEnabled}
+            onCheckedChange={setSfxEnabled}
+            aria-label="Enable sound effects"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function GlobalSettingsSheet() {
   const open = useUIStore((s) => s.isGlobalSettingsOpen);
   const close = useUIStore((s) => s.closeGlobalSettings);
@@ -221,7 +278,9 @@ export function GlobalSettingsSheet() {
         </SheetHeader>
 
         <div className="px-4 pb-6 space-y-4">
-          <section>
+          <PreferencesSection />
+
+          <section className={SECTION_SPACING}>
             <Badge variant="outline">✨ Study defaults</Badge>
             <div className="space-y-2 pt-3">
               <label className="text-sm text-muted-foreground">Target Audience</label>
