@@ -3,6 +3,7 @@ import type { SubjectGraph, TopicRef } from '@/types/core';
 import { DEFAULT_CRYSTAL_BASE_SHAPE } from '@/types/core';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useAllGraphs, useSubjects } from '../features/content';
+import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import type { TieredTopic, TopicUnlockStatus } from '../features/progression/progressionUtils';
 import {
   Dialog,
@@ -11,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from './ui/particles-animation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { KeyRound } from 'lucide-react';
@@ -37,7 +37,6 @@ import { triggerTopicGenerationPipeline } from '@/features/contentGeneration';
 import { useContentGenerationStore } from '@/features/contentGeneration/contentGenerationStore';
 import type { ContentGenerationJobKind } from '@/types/contentGeneration';
 import { TopicDetailsPopup } from './TopicDetailsPopup';
-import { IncrementalSubjectModal } from './IncrementalSubjectModal';
 import { useShallow } from 'zustand/react/shallow';
 
 const DISCOVERY_MODAL_SUBJECT_STORAGE_KEY = 'abyss:discoveryModalSubjectId';
@@ -51,16 +50,14 @@ const TOPIC_TIER_SORT_KINDS = new Set<ContentGenerationJobKind>([
 
 type TopicListFilter = 'all' | 'locked' | 'unlocked';
 
+function makeSubjectSwatchStyle(color: string | undefined): React.CSSProperties {
+  return { backgroundColor: color ?? 'transparent' };
+}
+
 function matchesTopicListFilter(topic: TieredTopic, filter: TopicListFilter): boolean {
-  if (!topic.isCurriculumVisible) {
-    return false;
-  }
-  if (filter === 'locked') {
-    return topic.isLocked;
-  }
-  if (filter === 'unlocked') {
-    return topic.isUnlocked && topic.contentStatus === 'ready';
-  }
+  if (!topic.isCurriculumVisible) return false;
+  if (filter === 'locked') return topic.isLocked;
+  if (filter === 'unlocked') return topic.isUnlocked && topic.contentStatus === 'ready';
   return true;
 }
 
@@ -71,16 +68,12 @@ function sortTierTopics(
   return [...topics].sort((a, b) => {
     const genA = a.contentStatus === 'generating' ? 1 : 0;
     const genB = b.contentStatus === 'generating' ? 1 : 0;
-    if (genA !== genB) {
-      return genB - genA;
-    }
+    if (genA !== genB) return genB - genA;
     const ka = topicRefKey({ subjectId: a.subjectId, topicId: a.id });
     const kb = topicRefKey({ subjectId: b.subjectId, topicId: b.id });
     const fa = maxFinishedAtByTopicKey[ka] ?? 0;
     const fb = maxFinishedAtByTopicKey[kb] ?? 0;
-    if (fa !== fb) {
-      return fb - fa;
-    }
+    if (fa !== fb) return fb - fa;
     return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   });
 }
@@ -104,9 +97,7 @@ function groupTopicsBySubjectInTierOrder(
 }
 
 function readStoredModalSubjectId(): string {
-  if (typeof window === 'undefined') {
-    return '__all_floors__';
-  }
+  if (typeof window === 'undefined') return '__all_floors__';
   try {
     const raw = window.sessionStorage.getItem(DISCOVERY_MODAL_SUBJECT_STORAGE_KEY);
     return raw && raw.length > 0 ? raw : '__all_floors__';
@@ -116,9 +107,7 @@ function readStoredModalSubjectId(): string {
 }
 
 function writeStoredModalSubjectId(subjectId: string) {
-  if (typeof window === 'undefined') {
-    return;
-  }
+  if (typeof window === 'undefined') return;
   try {
     window.sessionStorage.setItem(DISCOVERY_MODAL_SUBJECT_STORAGE_KEY, subjectId);
   } catch {
@@ -187,17 +176,16 @@ export function DiscoveryModal({
   onClose,
 }: DiscoveryModalProps) {
   const [selectedTopicKey, setSelectedTopicKey] = useState<{ subjectId: string; topicId: string } | null>(null);
-  const [isNewSubjectOpen, setIsNewSubjectOpen] = useState(false);
   const [topicListFilter, setTopicListFilter] = useState<TopicListFilter>('locked');
   const [modalSubjectId, setModalSubjectId] = useState<string>(readStoredModalSubjectId);
   const isRitualSubmissionAvailable = ritualCooldownRemainingMs <= 0;
+  const ritualVisible = useFeatureFlagsStore((s) => s.ritualVisible);
 
   const modalSubjectScopeForGraphs = modalSubjectId === '__all_floors__' ? null : modalSubjectId;
 
   useEffect(() => {
     if (!isOpen) {
       setSelectedTopicKey(null);
-      setIsNewSubjectOpen(false);
       setTopicListFilter('locked');
     }
   }, [isOpen]);
@@ -225,9 +213,7 @@ export function DiscoveryModal({
   }, [getTopicsByTier, allGraphs, subjectList, modalSubjectScopeForGraphs, contentStatusMap]);
 
   useEffect(() => {
-    if (modalSubjectId === '__all_floors__') {
-      return;
-    }
+    if (modalSubjectId === '__all_floors__') return;
     const exists = subjects.some((s) => s.id === modalSubjectId);
     if (!exists) {
       setModalSubjectId('__all_floors__');
@@ -247,15 +233,9 @@ export function DiscoveryModal({
   const maxFinishedAtByTopicKey = useMemo(() => {
     const map: Record<string, number> = {};
     for (const job of Object.values(jobs)) {
-      if (!job.subjectId || !job.topicId) {
-        continue;
-      }
-      if (!TOPIC_TIER_SORT_KINDS.has(job.kind)) {
-        continue;
-      }
-      if (job.status !== 'completed' || job.finishedAt == null) {
-        continue;
-      }
+      if (!job.subjectId || !job.topicId) continue;
+      if (!TOPIC_TIER_SORT_KINDS.has(job.kind)) continue;
+      if (job.status !== 'completed' || job.finishedAt == null) continue;
       const k = topicRefKey({ subjectId: job.subjectId, topicId: job.topicId });
       map[k] = Math.max(map[k] ?? 0, job.finishedAt);
     }
@@ -275,16 +255,12 @@ export function DiscoveryModal({
   }, [topicsByTier, topicListFilter, maxFinishedAtByTopicKey]);
 
   const selectedTopic = useMemo((): TieredTopic | null => {
-    if (!selectedTopicKey) {
-      return null;
-    }
+    if (!selectedTopicKey) return null;
     for (const tier of topicsByTier) {
       const found = tier.topics.find(
         (t) => t.id === selectedTopicKey.topicId && t.subjectId === selectedTopicKey.subjectId,
       );
-      if (found) {
-        return found;
-      }
+      if (found) return found;
     }
     return null;
   }, [topicsByTier, selectedTopicKey]);
@@ -296,30 +272,29 @@ export function DiscoveryModal({
   }, [selectedTopicKey, selectedTopic]);
 
   const selectedTopicStatus = useMemo(() => {
-    if (!selectedTopic) {
-      return null;
-    }
+    if (!selectedTopic) return null;
     return topicUnlockStatusGetter({ subjectId: selectedTopic.subjectId, topicId: selectedTopic.id });
   }, [selectedTopic, topicUnlockStatusGetter]);
 
-  const subjectSelectItems = useMemo(
-    () => [
-      {
-        value: '__all_floors__',
-        label: (
-          <span className="flex w-full items-center gap-2">
-            <span className="size-2 shrink-0 rounded-sm bg-muted" aria-hidden />
-            <span>All subjects</span>
-          </span>
-        ),
-      },
-      ...subjects.map((subject) => ({
+  const subjectSelectItems = useMemo(() => {
+    const allItem = {
+      value: '__all_floors__',
+      label: (
+        <span className="flex w-full items-center gap-2">
+          <span className="size-2 shrink-0 rounded-sm bg-muted" aria-hidden />
+          <span>All subjects</span>
+        </span>
+      ),
+    };
+    const subjectItems = subjects.map((subject) => {
+      const swatchStyle = makeSubjectSwatchStyle(subject.color);
+      return {
         value: subject.id,
         label: (
           <span className="flex w-full min-w-0 items-center gap-2">
             <span
               className="size-2 shrink-0 rounded-sm border border-border/60"
-              style={{ backgroundColor: subject.color }}
+              style={swatchStyle}
               aria-hidden
             />
             <span className="min-w-0 flex-1 truncate">{subject.name}</span>
@@ -328,10 +303,10 @@ export function DiscoveryModal({
             </span>
           </span>
         ),
-      })),
-    ],
-    [subjects],
-  );
+      };
+    });
+    return [allItem, ...subjectItems];
+  }, [subjects]);
 
   const handleSelectSubject = useCallback((subjectId: string | null) => {
     const next = subjectId === null || subjectId === '__all_floors__' ? '__all_floors__' : subjectId;
@@ -350,40 +325,32 @@ export function DiscoveryModal({
   }, []);
 
   const handleUnlock = () => {
-    if (!selectedTopic || !selectedTopicStatus?.canUnlock) {
-      return;
-    }
-
+    if (!selectedTopic || !selectedTopicStatus?.canUnlock) return;
     const ref = { subjectId: selectedTopic.subjectId, topicId: selectedTopic.id };
     unlockTopic(ref, allGraphs);
-
     const tKey = topicRefKey(ref);
     const status = contentStatusMap[tKey];
     if (status !== 'ready') {
       triggerTopicGenerationPipeline(ref.subjectId, ref.topicId, { stage: 'full' });
     }
-
     setSelectedTopicKey(null);
     onClose();
   };
 
   const showSubjectGroups = modalSubjectId === '__all_floors__';
 
-  if (!isOpen) {
-    return null;
-  }
+  if (!isOpen) return null;
+
+  const handleDialogOpenChange = (open: boolean) => {
+    if (!open) {
+      setSelectedTopicKey(null);
+      onClose();
+    }
+  };
 
   return (
     <>
-      <Dialog
-        open={isOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedTopicKey(null);
-            onClose();
-          }
-        }}
-      >
+      <Dialog open={isOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="flex max-h-[95vh] min-h-0 flex-col">
           <DialogHeader className="shrink-0 space-y-3 pb-0">
             <DialogTitle>🏛️ Wisdom Altar</DialogTitle>
@@ -398,45 +365,30 @@ export function DiscoveryModal({
                 {unlockPoints}
               </Badge>
             </DialogDescription>
-            <div className="flex min-h-9 min-w-0 items-center justify-between gap-3 overflow-x-auto pt-1 [scrollbar-width:thin]">
-              <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  type="button"
-                  variant="default"
-                  size="sm"
-                  onClick={() => setIsNewSubjectOpen(true)}
-                  className="h-9 gap-1.5 px-3"
-                  aria-label="Generate new subject"
-                >
-                  <span className="text-base leading-none" aria-hidden>
-                    🌱
-                  </span>
-                  <span className="text-sm font-medium">New subject</span>
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={isRitualSubmissionAvailable ? 'outline' : 'secondary'}
-                  onClick={() => onOpenRitual?.()}
-                  className="relative h-9 gap-1.5 overflow-hidden px-3"
-                  aria-label="Open attunement ritual"
-                >
-                  <span
-                    className={`relative z-10 text-base leading-none ${
-                      isRitualSubmissionAvailable ? 'animate-pulse' : ''
-                    }`}
-                    aria-hidden
+            {ritualVisible ? (
+              <div className="flex min-h-9 min-w-0 items-center justify-between gap-3 overflow-x-auto pt-1 [scrollbar-width:thin]">
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={isRitualSubmissionAvailable ? 'outline' : 'secondary'}
+                    onClick={() => onOpenRitual?.()}
+                    className="relative h-9 gap-1.5 overflow-hidden px-3"
+                    aria-label="Open attunement ritual"
                   >
-                    🧪
-                  </span>
-                  <span className="text-sm font-medium">Ritual</span>
-                  {/* <ParticlesAnimation
-                    isActive={isRitualSubmissionAvailable}
-                    particles={RITUAL_PARTICLE_ANIMATION}
-                  /> */}
-                </Button>
+                    <span
+                      className={`relative z-10 text-base leading-none ${
+                        isRitualSubmissionAvailable ? 'animate-pulse' : ''
+                      }`}
+                      aria-hidden
+                    >
+                      🧪
+                    </span>
+                    <span className="text-sm font-medium">Ritual</span>
+                  </Button>
+                </div>
               </div>
-            </div>
+            ) : null}
           </DialogHeader>
 
           <div className="mt-3 flex shrink-0 flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
@@ -464,9 +416,7 @@ export function DiscoveryModal({
               value={[topicListFilter]}
               onValueChange={(values) => {
                 const next = values[0] as TopicListFilter | undefined;
-                if (next) {
-                  setTopicListFilter(next);
-                }
+                if (next) setTopicListFilter(next);
               }}
               variant="outline"
               size="sm"
@@ -567,15 +517,6 @@ export function DiscoveryModal({
           onUnlock={handleUnlock}
         />
       )}
-
-      <IncrementalSubjectModal
-        isOpen={isNewSubjectOpen}
-        onClose={() => setIsNewSubjectOpen(false)}
-        onEnqueued={() => {
-          setIsNewSubjectOpen(false);
-          onClose();
-        }}
-      />
     </>
   );
 }
