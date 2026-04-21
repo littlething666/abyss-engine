@@ -82,6 +82,13 @@ test.describe('Boot Test', () => {
   });
 });
 
+// NOTE: The former `isKnownWebGPUBufferAllocationError` branch was removed on
+// purpose. Per CLAUDE.md "Root Cause over Symptom", those errors only occurred
+// when Dawn bound to a degenerate fallback adapter with tiny buffer limits
+// (the CI runner had no Vulkan ICD installed). The fix lives upstream in
+// `.github/workflows/e2e-headless-ci.yml` — installing Mesa lavapipe so
+// WebGPU has a real software Vulkan backend. If this filter reappears, the
+// underlying adapter has regressed and the boot smoke must fail loudly.
 const isKnownNonCriticalError = (error: string): boolean =>
   error.includes('Warning:') ||
   error.includes('ReactDOM.render') ||
@@ -89,10 +96,4 @@ const isKnownNonCriticalError = (error: string): boolean =>
   error.includes('404') ||
   error.includes('Failed to load resource') ||
   error.includes('ResizeObserver loop limit exceeded') ||
-  error.includes('ResizeObserver loop completed with undelivered notifications') ||
-  isKnownWebGPUBufferAllocationError(error);
-
-const isKnownWebGPUBufferAllocationError = (error: string): boolean =>
-  error.includes('THREE.TSL: RangeError: Failed to execute \'createBuffer\' on \'GPUDevice\'') &&
-  error.includes('mappedAtCreation') &&
-  error.includes('implementation');
+  error.includes('ResizeObserver loop completed with undelivered notifications');

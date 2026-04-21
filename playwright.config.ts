@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const CI_MODE = !!process.env.CI;
 const LOCAL_BROWSER_CACHE = process.env.PW_CI_LOCAL_BINARY;
+const USE_BUILT_SERVER = process.env.PW_CI_BUILT_SERVER === '1';
 
 if (LOCAL_BROWSER_CACHE) {
   process.env.PLAYWRIGHT_BROWSERS_PATH = LOCAL_BROWSER_CACHE;
@@ -59,6 +60,16 @@ const chromiumHeadlessProject = {
   },
 };
 
+/**
+ * In CI we prefer a production build served via `next start` so the first
+ * navigation is not blocked by a 15–20s Turbopack cold compile (which was
+ * consuming most of the 30s test timeout). Dev mode remains the default for
+ * local runs where HMR is desirable.
+ */
+const webServerCommand = USE_BUILT_SERVER
+  ? 'npm run start -- --hostname 0.0.0.0 --port 3000'
+  : 'npm run dev -- --hostname 0.0.0.0 --port 3000';
+
 export default defineConfig({
   // Test directory - relative to this config file
   testDir: './tests',
@@ -96,10 +107,10 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'npm run dev -- --hostname 0.0.0.0 --port 3000',
+    command: webServerCommand,
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
+    timeout: 180 * 1000,
     stdout: 'pipe',
     stderr: 'pipe',
     env: {

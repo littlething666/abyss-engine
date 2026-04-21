@@ -17,16 +17,32 @@ on:
 jobs:
   smoke:
     name: Chromium Headless Smoke
-    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       CI: true
       PW_ENABLE_NO_SANDBOX: 1
-      PW_WEBGPU_FLAGS: --enable-unsafe-webgpu,--use-angle=swiftshader
+      # WebGPU via Dawn → Vulkan ICD provided by Mesa lavapipe (installed below).
+      # `--use-angle=swiftshader` is intentionally dropped: it only affects
+      # WebGL (ANGLE), not WebGPU (Dawn), and masked the missing ICD for weeks.
+      PW_WEBGPU_FLAGS: --enable-unsafe-webgpu,--enable-features=Vulkan
+      PW_CI_BUILT_SERVER: '1'
+      NEXT_PUBLIC_PLAYWRIGHT: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Vulkan + Mesa lavapipe (software WebGPU backend)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mesa-vulkan-drivers \
+            libvulkan1 \
+            vulkan-tools
+          echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+
+      - name: Verify Vulkan adapter
+        run: vulkaninfo --summary | head -n 40
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -42,6 +58,9 @@ jobs:
 
       - name: Install Playwright browsers
         run: pnpm run test:e2e:install
+
+      - name: Build app (production)
+        run: pnpm run build
 
       - name: Run smoke E2E spec
         run: pnpm run test:e2e:smoke
@@ -66,10 +85,24 @@ jobs:
     env:
       CI: true
       PW_ENABLE_NO_SANDBOX: 1
-      PW_WEBGPU_FLAGS: --enable-unsafe-webgpu,--use-angle=swiftshader
+      PW_WEBGPU_FLAGS: --enable-unsafe-webgpu,--enable-features=Vulkan
+      PW_CI_BUILT_SERVER: '1'
+      NEXT_PUBLIC_PLAYWRIGHT: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Vulkan + Mesa lavapipe (software WebGPU backend)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mesa-vulkan-drivers \
+            libvulkan1 \
+            vulkan-tools
+          echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+
+      - name: Verify Vulkan adapter
+        run: vulkaninfo --summary | head -n 40
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -85,6 +118,9 @@ jobs:
 
       - name: Install Playwright browsers
         run: pnpm run test:e2e:install
+
+      - name: Build app (production)
+        run: pnpm run build
 
       - name: Run full E2E suite
         run: pnpm run test:e2e:ci
