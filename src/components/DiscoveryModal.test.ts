@@ -140,7 +140,7 @@ describe('DiscoveryModal', () => {
       onClose: vi.fn(),
     });
 
-    expect(document.body.textContent).toContain('Unlock topic crystals to expand your knowledge');
+    expect(document.body.textContent).toContain('Spend keys to unlock topic crystals, tier by tier.');
     const badge = document.body.querySelector('[title="Unlock points"]');
     expect(badge?.textContent?.trim()).toBe('5');
     root.unmount();

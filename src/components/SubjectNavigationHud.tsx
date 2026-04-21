@@ -13,10 +13,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+const NAV_CONTAINER_STYLE: React.CSSProperties = {
+  bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+  left: 'calc(0.75rem + env(safe-area-inset-left))',
+};
+
 /**
- * SubjectNavigation — floor/subject select fixed at bottom-left (safe areas).
+ * SubjectNavigationHud — floor/subject select fixed at bottom-left (safe areas).
+ *
+ * Part of the scene HUD cluster; consumes the shared `--surface-hud` tokens so
+ * light/dark chrome matches the bottom-right quick-actions and top-right
+ * generation-progress surfaces.
  */
-export const SubjectNavigation: React.FC = () => {
+export const SubjectNavigationHud: React.FC = () => {
   const { data: subjects = [] } = useSubjects();
   const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
   const setCurrentSubject = useStudyStore((state) => state.setCurrentSubject);
@@ -40,34 +49,34 @@ export const SubjectNavigation: React.FC = () => {
           </span>
         ),
       },
-      ...subjects.map((subject) => ({
-        value: subject.id,
-        label: (
-          <span className="flex w-full min-w-0 items-center gap-2">
-            <span
-              className="size-2 shrink-0 rounded-sm border border-border/60"
-              style={{ backgroundColor: subject.color }}
-              aria-hidden
-            />
-            <span className="min-w-0 flex-1 truncate">{subject.name}</span>
-            <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
-              {subject.geometry.gridTile}/{subject.crystalBaseShape ?? DEFAULT_CRYSTAL_BASE_SHAPE}
+      ...subjects.map((subject) => {
+        const swatchStyle: React.CSSProperties = { backgroundColor: subject.color };
+        return {
+          value: subject.id,
+          label: (
+            <span className="flex w-full min-w-0 items-center gap-2">
+              <span
+                className="size-2 shrink-0 rounded-sm border border-border/60"
+                style={swatchStyle}
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1 truncate">{subject.name}</span>
+              <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                {subject.geometry.gridTile}/{subject.crystalBaseShape ?? DEFAULT_CRYSTAL_BASE_SHAPE}
+              </span>
             </span>
-          </span>
-        ),
-      })),
+          ),
+        };
+      }),
     ],
     [subjects],
   );
 
   return (
     <div
-      data-slot="subject-navigation"
-      className="fixed z-20"
-      style={{
-        bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
-        left: 'calc(0.75rem + env(safe-area-inset-left))',
-      }}
+      data-slot="subject-navigation-hud"
+      className="fixed z-20 rounded-lg border border-surface-hud-border bg-surface-hud p-0.5 backdrop-blur-sm"
+      style={NAV_CONTAINER_STYLE}
     >
       <Select
         items={subjectSelectItems}
@@ -96,4 +105,4 @@ export const SubjectNavigation: React.FC = () => {
   );
 };
 
-export default SubjectNavigation;
+export default SubjectNavigationHud;

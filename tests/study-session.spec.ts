@@ -235,7 +235,7 @@ test.describe('Study Session', () => {
     await page.getByText('Open Wisdom Altar (Discovery)').click({ force: true });
     const discoveryDialog = page.getByRole('dialog').filter({ hasText: 'Wisdom Altar' });
     await expect(discoveryDialog).toBeVisible({ timeout: 5000 });
-    await expect(discoveryDialog.getByText(/Unlock topic crystals/i)).toBeVisible();
+    await expect(discoveryDialog.getByText(/Spend keys to unlock topic crystals/i)).toBeVisible();
     await page.keyboard.press('Escape');
     if (await discoveryDialog.isVisible()) {
       await page.keyboard.press('Escape');

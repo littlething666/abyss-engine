@@ -31,6 +31,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from '@/components/ui/empty';
+import { InfoPopover } from '@/components/InfoPopover';
 import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
 import { topicRefKey } from '@/lib/topicRef';
 import { triggerTopicGenerationPipeline } from '@/features/contentGeneration';
@@ -384,16 +385,22 @@ export function DiscoveryModal({
         <DialogContent className="flex max-h-[95vh] min-h-0 flex-col">
           <DialogHeader className="shrink-0 space-y-3 pb-0">
             <DialogTitle>🏛️ Wisdom Altar</DialogTitle>
-            <DialogDescription>
-              Unlock topic crystals to expand your knowledge
+            <DialogDescription className="flex flex-wrap items-center gap-1">
+              <span className="min-w-0">Spend keys to unlock topic crystals, tier by tier.</span>
               <Badge
                 variant="ghost"
-                className="h-7 shrink-0 gap-1.5 rounded-full border border-border/80 mx-1 px-2 py-0 text-xs tabular-nums shadow-none"
+                className="mx-1 h-7 shrink-0 gap-1.5 rounded-full border border-border/80 px-2 py-0 text-xs tabular-nums shadow-none"
                 title="Unlock points"
               >
                 <KeyRound className="size-3.5 opacity-80" aria-hidden />
                 {unlockPoints}
               </Badge>
+              <InfoPopover label="About unlocking topics">
+                <p>
+                  Unlocking a topic costs keys (earned by reviewing cards and completing rituals) and triggers
+                  content generation; higher tiers unlock after their prerequisites.
+                </p>
+              </InfoPopover>
             </DialogDescription>
             {ritualVisible ? (
               <div className="flex min-h-9 min-w-0 items-center justify-between gap-3 overflow-x-auto pt-1 [scrollbar-width:thin]">

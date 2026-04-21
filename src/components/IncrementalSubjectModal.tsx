@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { toast } from '@/infrastructure/toast';
 
 import { Button } from '@/components/ui/button';
+import { InfoPopover } from '@/components/InfoPopover';
 import {
   Dialog,
   DialogClose,
@@ -106,9 +107,14 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
       <DialogContent className="flex max-h-[95vh] flex-col gap-4 overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New subject</DialogTitle>
-          <DialogDescription>
-            The assistant builds a three-tier topic graph and saves it to your local deck (stub topics; content
-            generates when you unlock a topic).
+          <DialogDescription className="flex items-center gap-1">
+            <span className="min-w-0">Create a new subject from a prompt.</span>
+            <InfoPopover label="About subject generation">
+              <p>
+                The assistant drafts a three-tier topic outline and plants it as locked crystals; full study content
+                only generates when you unlock a topic.
+              </p>
+            </InfoPopover>
           </DialogDescription>
         </DialogHeader>
 
