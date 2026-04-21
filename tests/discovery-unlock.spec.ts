@@ -45,9 +45,8 @@ test.describe('Discovery/Unlock Journey', () => {
     const tierLabel = page.locator('text=Tier').first();
     await expect(tierLabel).toBeVisible();
 
-    // Check for unlock points display (multiple elements, use first())
-    const unlockPointsText = page.locator('text=Unlock Point').first();
-    await expect(unlockPointsText).toBeVisible();
+    // Unlock points are shown as a badge with a tooltip (no literal "Unlock Point" copy in the DOM)
+    await expect(page.getByTitle('Unlock points').first()).toBeVisible();
 
     // Check for lock icons
     const lockIcon = page.locator('text=🔒');

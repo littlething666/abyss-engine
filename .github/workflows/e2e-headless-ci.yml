@@ -3,6 +3,9 @@ name: E2E WebGPU
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
   # workflow_run:
   #   workflows:
   #     - 'Deploy to GitHub Pages'
@@ -14,7 +17,7 @@ on:
 jobs:
   smoke:
     name: Chromium Headless Smoke
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -43,7 +46,7 @@ jobs:
       - name: Run smoke E2E spec
         run: pnpm run test:e2e:smoke
 
-      - name: Upload Playwright artifacts
+      - name: Upload Playwright smoke artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -51,6 +54,9 @@ jobs:
           path: |
             playwright-report
             playwright-results
+            tests/**/__snapshots__
+          if-no-files-found: ignore
+          retention-days: 14
 
   full:
     name: Chromium Headless Full E2E
@@ -83,7 +89,7 @@ jobs:
       - name: Run full E2E suite
         run: pnpm run test:e2e:ci
 
-      - name: Upload Playwright artifacts
+      - name: Upload Playwright full artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -91,3 +97,15 @@ jobs:
           path: |
             playwright-report
             playwright-results
+            tests/**/__snapshots__
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: playwright-results/**/trace.zip
+          if-no-files-found: ignore
+          retention-days: 14

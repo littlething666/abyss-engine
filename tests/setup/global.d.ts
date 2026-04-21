@@ -1,4 +1,5 @@
 import '@playwright/test';
+import type { AbyssSceneSnapshot } from '../../src/utils/abyssSceneProbe';
 
 declare global {
   namespace PlaywrightTest {
@@ -14,25 +15,50 @@ declare global {
   interface Window {
     __FRAME_COUNT__?: number;
     __LAST_FRAME_TIME__?: number;
+    __abyssScene?: {
+      snapshot: AbyssSceneSnapshot | null;
+      frameCount: number;
+      ready: boolean;
+      sceneRef: unknown;
+    };
+    __progressionEvents?: Array<{ type: string; detail: unknown; at: number }>;
+    __progressionEventProbeInstalled?: boolean;
     abyssDev?: {
       spawnCrystal: (topicId: string) => Promise<void>;
       makeAllCardsDue: () => void;
       setCurrentCard: (cardId: string) => Promise<void>;
-      setCurrentCardByType: (cardType: 'FLASHCARD' | 'SINGLE_CHOICE' | 'MULTI_CHOICE') => Promise<{
-        topicId: string;
-        cardId: string;
-      } | null>;
-      getCardByType: (cardType: 'FLASHCARD' | 'SINGLE_CHOICE' | 'MULTI_CHOICE') => Promise<{
-        topicId: string;
-        cardId: string;
-      } | null>;
+      setCurrentCardByType: (
+        cardType: string,
+      ) => Promise<{ topicId: string; cardId: string } | null>;
+      getCardByType: (
+        cardType: string,
+      ) => Promise<{ topicId: string; cardId: string } | null>;
       openStudyPanel: () => void;
       getState: () => {
         activeCards: number;
         activeCrystals: number;
         unlockPoints: number;
         queuedCards: number;
+        currentCardId: string | null;
       };
+      getSM2: (cardId: string) => {
+        cardId: string;
+        interval: number;
+        easeFactor: number;
+        repetitions: number;
+        nextReview: number;
+      } | null;
+      getXpTotal: () => number;
+      getCrystalLevel: (topicId: string) => number | null;
+      rateCurrentCard: (rating: 0 | 1 | 2 | 3) => void;
+      getMiniGameContent: () => unknown | null;
+      getMiniGameState: () => unknown | null;
+      forceLevelUp: (topicId: string) => Promise<boolean>;
+      triggerTrial: (topicId: string) => Promise<boolean>;
+      submitTrialCorrect: (topicId: string) => Promise<unknown>;
+      submitTrialWrong: (topicId: string) => Promise<unknown>;
+      getTrialStatus: (topicId: string) => string | null;
+      skipTrialCooldown: (topicId: string) => void;
     };
   }
 }

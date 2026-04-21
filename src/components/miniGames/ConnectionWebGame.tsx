@@ -259,6 +259,7 @@ export function ConnectionWebGame({ content, interaction }: ConnectionWebGamePro
                     >
                       <MiniGameItemChip
                         layoutId={`cw-left-${node.id}`}
+                        itemId={node.id}
                         label={node.label}
                         state={leftState}
                         className={chipClass}
@@ -283,6 +284,7 @@ export function ConnectionWebGame({ content, interaction }: ConnectionWebGamePro
                     >
                       <MiniGameItemChip
                         layoutId={`cw-right-${rightId}`}
+                        itemId={rightId}
                         label={label}
                         state={rightState}
                         className={chipClass}

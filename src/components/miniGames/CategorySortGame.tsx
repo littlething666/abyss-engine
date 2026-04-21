@@ -81,6 +81,7 @@ export function CategorySortGame({ content, interaction }: CategorySortGameProps
                       <MiniGameItemChip
                         key={itemId}
                         layoutId={`mini-game-item-${itemId}`}
+                        itemId={itemId}
                         label={item.label}
                         state={state}
                         onTap={() => {
@@ -129,6 +130,7 @@ export function CategorySortGame({ content, interaction }: CategorySortGameProps
                 <MiniGameItemChip
                   key={itemId}
                   layoutId={`mini-game-item-${itemId}`}
+                  itemId={itemId}
                   label={item.label}
                   state={state}
                   onTap={() => selectItem(itemId)}

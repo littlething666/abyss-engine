@@ -74,8 +74,11 @@ export default defineConfig({
   ],
 
   retries: process.env.CI ? 2 : 0,
-  globalTimeout: 120 * 1000,
-  timeout: 15 * 1000,
+  globalTimeout: 240 * 1000,
+  // WebGPU + React hydration + deck load + test work routinely exceed the
+  // Playwright default of 15s (boot alone measures ~15.8s). 30s aligns with
+  // Playwright's own default for graphics-heavy suites.
+  timeout: 30 * 1000,
 
   use: {
     baseURL: 'http://localhost:3000',

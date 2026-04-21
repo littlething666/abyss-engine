@@ -4,6 +4,7 @@ import {
   getCanvas,
   startConsoleErrorCapture,
   expectWebGPUAvailable,
+  openCommandPaletteFromQuickActions,
   E2E_HOME_PATH,
 } from './utils/test-helpers';
 
@@ -49,8 +50,11 @@ test.describe('Boot Test', () => {
     });
     expect(hasDimensions).toBe(true);
 
-    // 6. HUD: command palette and floor select
-    await expect(page.getByTestId('command-palette-trigger')).toBeVisible();
+    // 6. HUD: quick actions (command palette lives here) and floor select
+    await expect(page.getByTestId('quick-actions-trigger')).toBeVisible();
+    await openCommandPaletteFromQuickActions(page);
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 });
+    await page.keyboard.press('Escape');
     await expect(page.getByLabel('Select floor')).toBeVisible();
 
     // 7. Check the main container

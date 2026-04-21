@@ -1,14 +1,20 @@
 /**
- * Developer tools for local debugging and manual game state control.
+ * Developer tools for local debugging, manual game state control, and E2E tests.
+ *
+ * Extended in feat/e2e-3d-scene-and-flows with SM-2 / XP / crystal / trial
+ * helpers used by Playwright specs under `tests/`. Additions are guarded to
+ * no-op gracefully when the underlying store shape changes.
  */
 
-import { cardRefKey } from '@/lib/topicRef';
+import { cardRefKey, topicRefKey } from '@/lib/topicRef';
 import { uiStore } from '../store/uiStore';
 import { SM2Data } from '../features/progression';
 import { triggerTopicGenerationPipeline } from '../features/contentGeneration';
 import { deckRepository } from '../infrastructure/di';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { SubjectGraph, Card } from '../types/core';
+import { appEventBus, type AppEventMap } from '../infrastructure/eventBus';
+import { useCrystalTrialStore } from '../features/crystalTrial/crystalTrialStore';
 import {
   playLevelUpSound,
   playPositiveSound,
@@ -31,6 +37,8 @@ interface StoreStateLike {
   currentSession: {
     queueCardIds: string[];
     currentCardId: string | null;
+    subjectId?: string;
+    topicId?: string;
   } | null;
 }
 
@@ -44,6 +52,15 @@ export interface AbyssDevState {
   activeCrystals: number;
   unlockPoints: number;
   queuedCards: number;
+  currentCardId: string | null;
+}
+
+export interface AbyssDevSm2Snapshot {
+  cardId: string;
+  interval: number;
+  easeFactor: number;
+  repetitions: number;
+  nextReview: number;
 }
 
 export interface AbyssDev {
@@ -54,6 +71,19 @@ export interface AbyssDev {
   getCardByType: (cardType: Card['type']) => Promise<TopicCardSelection | null>;
   openStudyPanel: () => void;
   getState: () => AbyssDevState;
+  /** E2E helpers — safe in prod, no-ops if the underlying hook is unavailable. */
+  getSM2: (cardId: string) => AbyssDevSm2Snapshot | null;
+  getXpTotal: () => number;
+  getCrystalLevel: (topicId: string) => number | null;
+  rateCurrentCard: (rating: 0 | 1 | 2 | 3) => void;
+  getMiniGameContent: () => unknown | null;
+  getMiniGameState: () => unknown | null;
+  forceLevelUp: (topicId: string) => Promise<boolean>;
+  triggerTrial: (topicId: string) => Promise<boolean>;
+  submitTrialCorrect: (topicId: string) => Promise<unknown>;
+  submitTrialWrong: (topicId: string) => Promise<unknown>;
+  getTrialStatus: (topicId: string) => string | null;
+  skipTrialCooldown: (topicId: string) => void;
   sounds: {
     playPositiveSound: () => void;
     playLevelUpSound: () => void;
@@ -142,6 +172,14 @@ async function getCardByType(cardType: Card['type']): Promise<TopicCardSelection
   return null;
 }
 
+function subjectIdForTopic(topicId: string, activeOnly = true): string | null {
+  const { activeCrystals } = getStore();
+  const active = activeCrystals.find((c) => c.topicId === topicId);
+  if (active) return active.subjectId;
+  if (activeOnly) return null;
+  return null;
+}
+
 const abyssDev: AbyssDev = {
   spawnCrystal: async (topicId: string) => {
     const allGraphs = await getAllSubjectGraphs();
@@ -159,13 +197,12 @@ const abyssDev: AbyssDev = {
 
     const position = useStudyStore.getState().unlockTopic({ subjectId, topicId }, allGraphs);
     if (!position) {
-      console.warn(`[AbyssDev] Could not spawn crystal for "${topicId}" (locked, missing graph data, or no slots available).`);
+      console.warn(`[AbyssDev] Could not spawn crystal for "${topicId}".`);
       return;
     }
 
     void triggerTopicGenerationPipeline(subjectId, topicId);
-
-    console.log(`[AbyssDev] Spawned crystal for "${topicId}" at position [${position[0]}, ${position[1]}]`);
+    console.log(`[AbyssDev] Spawned crystal for "${topicId}" at [${position[0]}, ${position[1]}]`);
   },
 
   makeAllCardsDue: () => {
@@ -225,7 +262,6 @@ const abyssDev: AbyssDev = {
       console.warn(`[AbyssDev] No card found for type: ${cardType}`);
       return null;
     }
-
     await abyssDev.setCurrentCard(selection.cardId);
     return selection;
   },
@@ -241,16 +277,161 @@ const abyssDev: AbyssDev = {
 
   getState: (): AbyssDevState => {
     const { sm2Data, activeCrystals, unlockPoints, currentSession } = getStore();
-
-    const state: AbyssDevState = {
+    return {
       activeCards: Object.keys(sm2Data).length,
       activeCrystals: activeCrystals.length,
       unlockPoints,
       queuedCards: currentSession?.queueCardIds.length ?? 0,
+      currentCardId: currentSession?.currentCardId ?? null,
     };
+  },
 
-    console.log('[AbyssDev] Current state:', state);
-    return state;
+  getSM2: (cardId: string) => {
+    const entry = getStore().sm2Data[cardId];
+    if (!entry) return null;
+    return {
+      cardId,
+      interval: entry.interval ?? 0,
+      easeFactor: entry.easeFactor ?? 2.5,
+      repetitions: entry.repetitions ?? 0,
+      nextReview: entry.nextReview ?? 0,
+    };
+  },
+
+  getXpTotal: () => {
+    const store = useStudyStore.getState() as unknown as { totalXp?: number };
+    return typeof store.totalXp === 'number' ? store.totalXp : 0;
+  },
+
+  getCrystalLevel: (topicId: string) => {
+    const crystal = getStore().activeCrystals.find((c) => c.topicId === topicId);
+    if (!crystal) return null;
+    const store = useStudyStore.getState() as unknown as {
+      getCrystalLevel?: (ref: { subjectId: string; topicId: string }) => number;
+    };
+    if (typeof store.getCrystalLevel === 'function') {
+      return store.getCrystalLevel({ subjectId: crystal.subjectId, topicId });
+    }
+    return Math.max(0, Math.floor((crystal.xp ?? 0) / 100));
+  },
+
+  rateCurrentCard: (rating) => {
+    const store = useStudyStore.getState() as unknown as {
+      submitStudyResult?: (cardId: string, rating: number) => void;
+    };
+    const cardId = getStore().currentSession?.currentCardId;
+    if (!cardId || !store.submitStudyResult) return;
+    store.submitStudyResult(cardId, rating);
+  },
+
+  getMiniGameContent: () => {
+    const session = getStore().currentSession;
+    if (!session?.currentCardId) return null;
+    const store = useStudyStore.getState() as unknown as {
+      currentCardContent?: unknown;
+      getCurrentCardContent?: () => unknown;
+    };
+    return store.getCurrentCardContent?.() ?? store.currentCardContent ?? null;
+  },
+
+  getMiniGameState: () => {
+    const store = uiStore.getState() as unknown as {
+      miniGameInteraction?: unknown;
+      getMiniGameState?: () => unknown;
+    };
+    return store.getMiniGameState?.() ?? store.miniGameInteraction ?? null;
+  },
+
+  forceLevelUp: async (topicId: string) => {
+    const subjectId = subjectIdForTopic(topicId);
+    if (!subjectId) return false;
+    const store = useStudyStore.getState() as unknown as {
+      forceCrystalLevelUp?: (ref: { subjectId: string; topicId: string }) => boolean | Promise<boolean>;
+    };
+    if (typeof store.forceCrystalLevelUp !== 'function') {
+      console.warn('[AbyssDev] forceCrystalLevelUp not available on progression store.');
+      return false;
+    }
+    return Boolean(await store.forceCrystalLevelUp({ subjectId, topicId }));
+  },
+
+  triggerTrial: async (topicId: string) => {
+    const subjectId = subjectIdForTopic(topicId);
+    if (!subjectId) return false;
+    const ref = { subjectId, topicId };
+    const trialStore = useCrystalTrialStore.getState();
+    const level = abyssDev.getCrystalLevel(topicId) ?? 0;
+    trialStore.startPregeneration({ subjectId, topicId, targetLevel: level + 1 });
+    appEventBus.emit('crystal:trial-pregenerate', {
+      subjectId,
+      topicId,
+      currentLevel: level,
+      targetLevel: level + 1,
+    });
+    trialStore.setTrialQuestions(ref, [
+      {
+        id: 'q1',
+        category: 'troubleshooting',
+        scenario: 'E2E placeholder scenario',
+        question: 'Pick the stable option.',
+        options: ['correct', 'wrong', 'maybe', 'skip'],
+        correctAnswer: 'correct',
+        explanation: 'Generated by abyssDev.triggerTrial for E2E testing.',
+        sourceCardSummaries: ['E2E concept'],
+      },
+    ]);
+    trialStore.startTrial(ref);
+    return true;
+  },
+
+  submitTrialCorrect: async (topicId: string) => {
+    const subjectId = subjectIdForTopic(topicId);
+    if (!subjectId) return null;
+    const ref = { subjectId, topicId };
+    return useCrystalTrialStore.getState().forceCompleteWithCorrectAnswers(ref);
+  },
+
+  submitTrialWrong: async (topicId: string) => {
+    const subjectId = subjectIdForTopic(topicId);
+    if (!subjectId) return null;
+    const ref = { subjectId, topicId };
+    const trialStore = useCrystalTrialStore.getState();
+    const trial = trialStore.getCurrentTrial(ref);
+    if (!trial) return null;
+    for (const q of trial.questions) {
+      trialStore.answerQuestion(ref, q.id, q.correctAnswer === 'correct' ? 'wrong' : 'correct');
+    }
+    const result = trialStore.submitTrial(ref);
+    if (result) {
+      const payload: AppEventMap['crystal:trial-completed'] = {
+        subjectId,
+        topicId,
+        targetLevel: trial.targetLevel,
+        passed: false,
+        score: result.score,
+        trialId: trial.trialId,
+      };
+      appEventBus.emit('crystal:trial-completed', payload);
+    }
+    return result;
+  },
+
+  getTrialStatus: (topicId: string) => {
+    const subjectId = subjectIdForTopic(topicId);
+    if (!subjectId) return null;
+    return useCrystalTrialStore.getState().getTrialStatus({ subjectId, topicId });
+  },
+
+  skipTrialCooldown: (topicId: string) => {
+    const subjectId = subjectIdForTopic(topicId);
+    if (!subjectId) return;
+    const ref = { subjectId, topicId };
+    const key = topicRefKey(ref);
+    useCrystalTrialStore.setState((state) => {
+      const { [key]: _cd, ...restCd } = state.cooldownStartedAt;
+      const { [key]: _cr, ...restCr } = state.cooldownCardsReviewed;
+      return { cooldownStartedAt: restCd, cooldownCardsReviewed: restCr };
+    });
   },
 
   sounds: {
