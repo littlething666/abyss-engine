@@ -28,17 +28,11 @@ import { SceneSky, SunSyncedAmbientFill, SunSyncedDirectionalLight } from './Sce
 import { FLOOR_SURFACE_Y } from '../constants/sceneFloor'
 import { CUBE_REFLECTION_EXCLUDED_LAYER } from '../constants/sceneLayers'
 
-/**
- * Scene component - Main 3D visualization for Abyss Engine
- * Uses a perspective camera with locked polar angle for isometric-like framing
- */
 interface SceneProps {
   showStats?: boolean
   isCameraAngleUnlocked?: boolean
   dynamicReflections?: boolean
-  /** Fires once the WebGPU renderer is initialized (R3F `onCreated`). */
   onCanvasReady?: () => void
-  /** Fires when the scene unmounts (e.g. Strict Mode remount); clear any "ready" UI state. */
   onCanvasReleased?: () => void
 }
 
@@ -101,7 +95,6 @@ const CAMERA_FAR = 2_000_000
 const CANVAS_BACKDROP = '#1a1f33'
 const CANVAS_WRAPPER_STYLE: React.CSSProperties = { position: 'relative', width: '100%', height: '100%', background: CANVAS_BACKDROP }
 
-/** Sun is near horizon — floor needs fill; keep renderer exposure low so SkyMesh stays balanced. */
 const LIGHT_AMBIENT_INTENSITY = 2.12
 const LIGHT_HEMISPHERE_INTENSITY = 1.48
 const LIGHT_SUN_INTENSITY = 2.5
@@ -161,7 +154,6 @@ const SceneRenderInvalidator: React.FC<SceneRenderInvalidatorProps> = ({
   return null
 }
 
-/** Enables {@link CUBE_REFLECTION_EXCLUDED_LAYER} on the active camera so altar sparkles stay visible while CubeCamera (floor) skips them. */
 const DefaultCameraReflectionExcludedLayer: React.FC = () => {
   const camera = useThree((state) => state.camera)
   useLayoutEffect(() => {
@@ -196,7 +188,6 @@ const OrbitCameraControls: React.FC<OrbitCameraControlsProps> = ({ isCameraAngle
   )
 }
 
-/** Ceremony camera dolly — mounts inside Canvas to access R3F hooks. */
 const CeremonyCameraDollyMount: React.FC<{
   controlsRef: React.RefObject<{ target: THREE.Vector3; update: () => void } | null>
 }> = ({ controlsRef }) => {
@@ -263,22 +254,16 @@ export const Scene: React.FC<SceneProps> = ({
     startTopicStudySessionFromCards(ref, cards)
   }
 
-  // Filter crystals based on current subject selection
-  // If a subject is selected, only show crystals belonging to that subject
   const filteredCrystals = useMemo(() => {
     if (!currentSubjectId) {
       return activeCrystals
     }
-
-    // Get topic-subject mapping from deck
     return activeCrystals.filter((crystal) => {
       const topicMeta = allTopicMetadata[topicRefKey(crystal)]
       return topicMeta?.subjectId === currentSubjectId
     })
   }, [activeCrystals, currentSubjectId, allTopicMetadata])
 
-  // Track selected crystal's 3D position for positioning the topic selection bar
-  // Computed in a dedicated hook to keep scene structure focused
   const {
     spotlightPosition,
     spotlightTarget,
@@ -288,8 +273,6 @@ export const Scene: React.FC<SceneProps> = ({
     crystals: filteredCrystals,
   })
 
-  // Note: Removed handleSelectedCrystalPositionChange callback
-  // The position is now computed synchronously in useMemo above
   const renderQuality = useMemo(() => getRenderQuality(), [])
   const [statsText, setStatsText] = useState(showStats ? 'Initializing...' : '')
 
@@ -322,7 +305,6 @@ export const Scene: React.FC<SceneProps> = ({
           selectedTopicCardsCount={selectedTopicCards.length}
         />
 
-        {/* Orthographic camera with isometric view */}
         <SceneProbeMount />
 
         <PerspectiveCamera
@@ -342,7 +324,6 @@ export const Scene: React.FC<SceneProps> = ({
 
         <SceneSky sunDirectionRef={sunDirectionRef} />
 
-        {/* Fill lights scale with sun elevation (inverse of key light); sky is unlit (not affected by these) */}
         <SunSyncedAmbientFill
           sunDirectionRef={sunDirectionRef}
           ambientBaseIntensity={LIGHT_AMBIENT_INTENSITY}
@@ -357,7 +338,6 @@ export const Scene: React.FC<SceneProps> = ({
 
 
         <group position={[0, FLOOR_SURFACE_Y, 0]}>
-          {/* Reflective floor */}
           <Suspense fallback={null}>
             <ReflectiveFloor
               size={GRID_SIZE}
@@ -367,18 +347,10 @@ export const Scene: React.FC<SceneProps> = ({
             />
           </Suspense>
 
-          {/* Grid floor */}
           <Grid />
 
-          {/* Wisdom Altar at center [0,0] */}
           <WisdomAltar />
 
-          {/* Recursive mesh box-tree near grid edge */}
-          {/* <MeshTree
-          position={[3.75, 0, 0]}
-        /> */}
-
-          {/* Crystals from props (data from parent/store) */}
           <Suspense fallback={null}>
             <Crystals
               crystals={filteredCrystals}
@@ -389,13 +361,11 @@ export const Scene: React.FC<SceneProps> = ({
 
           <GlowPostProcessing />
 
-          {/* Invisible floor plane to detect clicks outside crystals */}
           <mesh
             position={[0, -0.01, 0]}
             rotation={[-Math.PI / 2, 0, 0]}
             receiveShadow={false}
             onClick={() => {
-              // Clear selection when clicking on empty space
               const { selectTopic } = useUIStore.getState()
               selectTopic(null)
             }}
@@ -412,7 +382,7 @@ export const Scene: React.FC<SceneProps> = ({
         selectedXp={selectedTopicXp}
       />
       {showStats && (
-        <div className="pointer-events-none absolute left-2 top-2 z-20 max-w-[min(calc(100%-1rem),22rem)] whitespace-pre rounded-md border border-border/40 bg-card/70 px-2 py-1 font-mono text-[10px] leading-tight text-muted-foreground shadow-sm backdrop-blur-sm">
+        <div className="pointer-events-none absolute left-2 top-2 z-20 max-w-[min(calc(100%-1rem),22rem)] whitespace-pre rounded-md border border-surface-hud-border bg-surface-hud px-2 py-1 font-mono text-[10px] leading-tight text-muted-foreground shadow-sm backdrop-blur-sm">
           {statsText}
         </div>
       )}

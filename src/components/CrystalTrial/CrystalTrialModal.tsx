@@ -22,6 +22,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { InfoPopover } from '@/components/InfoPopover';
 import { TrialQuestionCard } from './TrialQuestionCard';
 import { TrialResultsView } from './TrialResultsView';
 
@@ -161,7 +162,20 @@ export function CrystalTrialModal() {
       <DialogContent className="max-h-[85vh] overflow-hidden flex flex-col sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>⚔️ Crystal Trial — Level {trial?.targetLevel}</DialogTitle>
-          <DialogDescription>{trial?.topicId}</DialogDescription>
+          {trial?.topicId ? (
+            <p className="text-xs text-muted-foreground tabular-nums">{trial.topicId}</p>
+          ) : null}
+          <DialogDescription className="flex items-center gap-1">
+            <span className="min-w-0">
+              Prove mastery to advance the crystal to level {trial?.targetLevel}.
+            </span>
+            <InfoPopover label="About crystal trials">
+              <p>
+                Trials unlock at milestone levels; pass to advance the crystal, fail to keep the current level
+                and try again next review cycle.
+              </p>
+            </InfoPopover>
+          </DialogDescription>
         </DialogHeader>
 
         <div className="-mx-4 max-h-full overflow-y-auto px-4">

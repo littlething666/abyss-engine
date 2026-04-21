@@ -21,6 +21,7 @@ import {
 } from '../features/progression';
 import { useProgressionStore } from '../features/progression';
 import { Button } from '@/components/ui/button';
+import { InfoPopover } from '@/components/InfoPopover';
 import { Switch } from './ui/switch';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import { Badge } from '@/components/ui/badge';
@@ -249,8 +250,16 @@ export function AttunementRitualModal({
       >
         <DialogHeader>
           <DialogTitle>🧪 Attunement Ritual</DialogTitle>
-          <DialogDescription>
-            Filling out the ritual will unlock focused growth effects.
+          <DialogDescription className="flex items-center gap-1">
+            <span className="min-w-0">
+              {"Log today's focus conditions to charge your next review with buffs."}
+            </span>
+            <InfoPopover label="About the attunement ritual">
+              <p>
+                Each completed section (biology, mind, quest) grants a tiered buff that multiplies XP on your next
+                review; partial fills are fine and only completed sections contribute.
+              </p>
+            </InfoPopover>
           </DialogDescription>
         </DialogHeader>
         <div className="-mx-4 max-h-full overflow-y-auto px-4">

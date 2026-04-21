@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { InfoPopover } from '@/components/InfoPopover';
 import {
   Popover,
   PopoverContent,
@@ -461,6 +462,10 @@ export function StudyTimelineModal({
 
   const mainContent = drilledBucket ? detailContent : summaryContent;
 
+  const studyTimelineDialogDescriptionClassName = drilledBucket
+    ? 'text-left'
+    : 'text-left flex flex-wrap items-center gap-1';
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[95vh] flex flex-col">
@@ -484,16 +489,26 @@ export function StudyTimelineModal({
                   ? `Reviews · ${formatBucketDateLabel(drilledBucket.dayStartMs)}`
                   : 'Study journey'}
               </DialogTitle>
-              <DialogDescription className="text-left">
-                {drilledBucket
-                  ? 'Sessions are listed in chronological order; block width reflects time on each card. Tap for details.'
-                  : 'See how your garden grew—sessions, rituals, and reviews over time.'}
+              <DialogDescription className={studyTimelineDialogDescriptionClassName}>
+                {drilledBucket ? (
+                  <span className="min-w-0">
+                    Sessions are listed in chronological order; block width reflects time on each card. Tap for
+                    details.
+                  </span>
+                ) : (
+                  <>
+                    <span className="min-w-0">
+                      Your review activity over time — tap a day for card-level detail.
+                    </span>
+                    <InfoPopover label="About the study timeline" align="start">
+                      <p>
+                        Bars summarize reviews, sessions, and rituals per day; drill into a day to see each card
+                        and how long you spent on it.
+                      </p>
+                    </InfoPopover>
+                  </>
+                )}
               </DialogDescription>
-              {!drilledBucket && summaryBuckets.length > 0 ? (
-                <p className="text-xs text-muted-foreground mt-1 text-left">
-                  Tap a day for card-level detail.
-                </p>
-              ) : null}
             </div>
           </div>
         </DialogHeader>

@@ -48,7 +48,7 @@ export const PomodoroTimerOverlay: React.FC = () => {
 
   return (
     <div
-      className="h-7 flex items-center gap-1 rounded-lg border border-border bg-card/10 px-2 py-1"
+      className="h-7 flex items-center gap-1 rounded-lg border border-surface-hud-border bg-surface-hud px-2 py-1"
       aria-live="polite"
     >
       <Button

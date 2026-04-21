@@ -4,6 +4,7 @@ import React, { useCallback } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { InfoPopover } from '@/components/InfoPopover';
 import {
   Dialog,
   DialogContent,
@@ -98,10 +99,15 @@ export function TopicDetailsPopup({
         <div className="min-h-0 overflow-y-auto">
           <p className="text-muted-foreground mb-4 text-sm">{topic.description}</p>
 
-          <p className="text-muted-foreground mb-3 text-sm">
-            Run one generation step, or the full sequence. Each step replaces existing generated content for
-            that part of the deck.
-          </p>
+          <div className="text-muted-foreground mb-3 flex items-center gap-1 text-sm">
+            <span className="min-w-0">Generate study content for this topic.</span>
+            <InfoPopover label="About generation steps">
+              <p>
+                Run the full pipeline or a single stage; each stage replaces any existing generated content for that
+                part of the deck.
+              </p>
+            </InfoPopover>
+          </div>
 
           <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {GENERATION_STEPS.map((stage) => (

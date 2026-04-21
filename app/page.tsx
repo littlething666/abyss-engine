@@ -25,7 +25,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sparkles } from 'lucide-react';
 
-// Components
 import StatsOverlay from '@/components/StatsOverlay';
 import { GenerationProgressHud } from '@/components/GenerationProgressHud';
 import { IncrementalSubjectModal } from '@/components/IncrementalSubjectModal';
@@ -35,7 +34,7 @@ import StudyPanelModal from '@/components/StudyPanelModal';
 import StudyTimelineModal from '@/components/StudyTimelineModal';
 import { AbyssCommandPalette } from '@/components/AbyssCommandPalette';
 import { ScreenCaptureLlmSummarySurface } from '@/components/ScreenCaptureLlmSummarySurface';
-import SubjectNavigation from '@/components/SubjectNavigation';
+import SubjectNavigationHud from '@/components/SubjectNavigationHud';
 import PomodoroTimerOverlay from '@/components/PomodoroTimer3D';
 import { CrystalTrialModal } from '@/components/CrystalTrial';
 import { useMediaQuery } from '@/hooks/use-media-query';
@@ -51,23 +50,15 @@ import { topicRefKey } from '@/lib/topicRef';
 import { useTopicCardQueriesForSubjectFilter } from '@/hooks/useTopicCardQueries';
 import { toast } from '@/infrastructure/toast';
 
-// Dynamic import for Scene to avoid SSR issues with Three.js.
-// Loading UI is a single parent overlay until Canvas reports ready (avoids loader ↔ scene swap blink).
 const Scene = dynamic(() => import('@/components/Scene'), {
   ssr: false,
   loading: () => null,
 });
 
-/**
- * Main App Component for Abyss Engine Phase 2
- * Features: Full screen 3D crystal grid, click altar to study
- * Coordinates between the 3D scene and UI modals
- */
 const HomeContent: React.FC = () => {
   const searchParams = useSearchParams();
   initializeDebugMode(searchParams);
   const isDebugMode = isDebugModeEnabled();
-  /** E2E / Playwright: full-screen loader stays until WebGPU `onCreated`; skip it so UI is reachable even if GPU init stalls. */
   const skipSceneLoadingOverlay =
     searchParams.get('e2e') === '1' || process.env.NEXT_PUBLIC_PLAYWRIGHT === '1';
   const [showStats, setShowStats] = useState(true);
@@ -109,10 +100,8 @@ const HomeContent: React.FC = () => {
     setSceneOverlayMounted(false);
   }, []);
 
-  // Feature flags
   const pomodoroVisible = useFeatureFlagsStore((s) => s.pomodoroVisible);
 
-  // Deck counts for Discovery modal and study panel
   const currentSession = useStudyStore((state) => state.currentSession);
   const activeCrystals = useStudyStore((s) => s.activeCrystals);
   const currentSubjectId = useStudyStore((s) => s.currentSubjectId);
@@ -148,7 +137,6 @@ const HomeContent: React.FC = () => {
   }, [getDueCardsCount, topicCardQueries, queriedTopicRefs]);
   const totalCards = allTopicsCardCounts.total;
 
-  // Get store actions - stable references
   const initialize = useStudyStore((s) => s.initialize);
   const submitStudyResult = useStudyStore((s) => s.submitStudyResult);
   const advanceStudyAfterReveal = useStudyStore((state) => state.advanceStudyAfterReveal);
@@ -157,7 +145,6 @@ const HomeContent: React.FC = () => {
   const submitAttunementRitual = useStudyStore((s) => s.submitAttunementRitual);
   const clearPendingRitual = useStudyStore((s) => s.clearPendingRitual);
 
-  // UI store - modal state - stable selectors
   const isDiscoveryModalOpen = useUIStore((s) => s.isDiscoveryModalOpen);
   const isStudyPanelOpen = useUIStore((s) => s.isStudyPanelOpen);
   const isRitualModalOpen = useUIStore((s) => s.isRitualModalOpen);
@@ -245,7 +232,6 @@ const HomeContent: React.FC = () => {
     [topicCardsByKey, selectTopic, startTopicStudySession, openStudyPanel],
   );
 
-  // Quick-actions dropdown handlers (each closes by virtue of Base-UI menu close-on-select)
   const handleQuickActionNewSubject = useCallback(() => { setIsIncrementalSubjectOpen(true); }, []);
   const handleQuickActionWisdomAltar = useCallback(() => { openDiscoveryModal(); }, [openDiscoveryModal]);
   const handleQuickActionCommandPalette = useCallback(() => { setIsCommandPaletteOpen(true); }, []);
@@ -279,7 +265,7 @@ const HomeContent: React.FC = () => {
         </div>
       )}
 
-      <SubjectNavigation />
+      <SubjectNavigationHud />
 
       <div className="absolute inset-0">
         <Scene
@@ -402,14 +388,6 @@ const HomeContent: React.FC = () => {
       />
 
       <CrystalTrialModal />
-
-      {/* {isDebugMode && (
-        <DebugControls
-          onShowStatsChange={setShowStats}
-          onCameraAngleUnlockChange={setIsCameraAngleUnlocked}
-          defaultCameraAngleUnlocked
-        />
-      )} */}
     </div>
   );
 }

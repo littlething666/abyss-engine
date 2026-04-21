@@ -266,9 +266,7 @@ export function StudyPanelStateViews({
               <DialogHeader>
                 <DialogTitle>Diagram Prompt</DialogTitle>
                 <DialogDescription>
-                  Paste text that includes a section starting with
-                  <span className="font-semibold"> 6. Examples </span>
-                  to generate a diagram prompt.
+                  Paste source text containing a &apos;6. Examples&apos; section to generate a diagram prompt.
                 </DialogDescription>
               </DialogHeader>
               <textarea

@@ -12,7 +12,7 @@ export interface InfoPopoverProps {
   children: React.ReactNode;
   /** Accessible label for the trigger button. */
   label?: string;
-  /** Additional classes on the trigger button. */
+  /** Merges with the default trigger layout (`shrink-0`, size, variant). */
   className?: string;
   /** Additional classes on the popover body. */
   contentClassName?: string;
@@ -23,9 +23,9 @@ export interface InfoPopoverProps {
 const DEFAULT_LABEL = 'Show more info';
 
 /**
- * Compact info-popover trigger: a small icon-button that opens a Popover
- * containing arbitrary instructional content. Use this to collapse lengthy
- * helper copy on mobile-dense surfaces without deleting it.
+ * Compact info-popover trigger: an outline icon-button (`icon-sm`) that opens a
+ * Popover with instructional content — visible and tappable without hover.
+ * Override styling via `className` when a surface needs a different treatment.
  *
  * Lives outside `src/components/ui/*` because it is a composition over the
  * existing Popover primitive, not a new primitive itself.
@@ -41,8 +41,8 @@ export function InfoPopover({
   const triggerButton = (
     <Button
       type="button"
-      variant="ghost"
-      size="icon-xs"
+      variant="outline"
+      size="icon-sm"
       aria-label={label}
       title={label}
       className={cn('shrink-0', className)}

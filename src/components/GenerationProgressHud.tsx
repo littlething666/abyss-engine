@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { CopyableLlmTextBlock } from '@/components/CopyableLlmTextBlock';
+import { InfoPopover } from '@/components/InfoPopover';
 import {
   Dialog,
   DialogContent,
@@ -214,7 +215,7 @@ export function GenerationProgressHud() {
   return (
     <>
       <div
-        className="text-foreground flex h-7 items-center gap-1 self-end rounded-lg border border-border bg-card/10 px-2 py-1"
+        className="text-foreground flex h-7 items-center gap-1 self-end rounded-lg border border-surface-hud-border bg-surface-hud px-2 py-1"
         aria-live="polite"
       >
         <span className="sr-only">{statusLabel}</span>
@@ -241,8 +242,16 @@ export function GenerationProgressHud() {
         <DialogContent className="flex max-h-[85vh] w-[min(100%,28rem)] max-w-[28rem] flex-col gap-3">
           <DialogHeader>
             <DialogTitle>Background LLM content generation</DialogTitle>
-            <DialogDescription>
-              Active jobs with live output and up to {MAX_PERSISTED_LOGS} terminal runs in memory and on this device.
+            <DialogDescription className="flex items-center gap-1">
+              <span className="min-w-0">
+                Active generation jobs, plus your last {MAX_PERSISTED_LOGS} runs.
+              </span>
+              <InfoPopover label="About background generation">
+                <p>
+                  Stream output from running content-generation jobs and retry failed pipelines from the failed stage
+                  — no need to re-unlock the topic.
+                </p>
+              </InfoPopover>
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
