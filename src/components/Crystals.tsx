@@ -659,6 +659,11 @@ export const Crystals: React.FC<CrystalsProps> = ({
             ref={(el: THREE.Group | null) => {
               labelAnchorRefs.current[index] = el;
             }}
+            userData={{
+              topicId: crystal.topicId,
+              subjectId: crystal.subjectId,
+              level: calculateLevelFromXP(crystal.xp),
+            }}
           >
             {topicMeta?.topicName && (
               <CrystalLabelBillboard

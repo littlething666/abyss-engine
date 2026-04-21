@@ -121,6 +121,7 @@ export function SequenceBuildGame({ content, interaction }: SequenceBuildGamePro
                         return (
                           <MiniGameItemChip
                             layoutId={`mini-game-item-${placedId}`}
+                            itemId={placedId}
                             label={item.label}
                             state={state}
                             multilineLabel
@@ -178,6 +179,7 @@ export function SequenceBuildGame({ content, interaction }: SequenceBuildGamePro
                   <MiniGameItemChip
                     key={itemId}
                     layoutId={`mini-game-item-${itemId}`}
+                    itemId={itemId}
                     label={item.label}
                     state={state}
                     multilineLabel

@@ -12,6 +12,7 @@ import { MeshTree } from './MeshTree'
 import { SelectedCrystalSpotlight } from './SelectedCrystalSpotlight'
 import { GlowPostProcessing } from '../graphics/glowPostProcessing'
 import { SceneDebugStats } from './debug/SceneDebugStats'
+import { SceneProbeMount } from './debug/SceneProbeMount'
 import TopicSelectionBar from './TopicSelectionBar'
 import { useProgressionStore as useStudyStore } from '../features/progression'
 import { useUIStore } from '../store/uiStore'
@@ -322,6 +323,8 @@ export const Scene: React.FC<SceneProps> = ({
         />
 
         {/* Orthographic camera with isometric view */}
+        <SceneProbeMount />
+
         <PerspectiveCamera
           ref={cameraRef}
           makeDefault

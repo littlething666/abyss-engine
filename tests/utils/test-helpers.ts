@@ -10,6 +10,12 @@ export const E2E_HOME_PATH = '/?e2e=1';
 /**
  * Wait for the page to be fully loaded with client-side hydration.
  */
+/** Opens the command palette via the bottom-right Quick actions menu (no standalone trigger). */
+export async function openCommandPaletteFromQuickActions(page: Page): Promise<void> {
+  await page.getByTestId('quick-actions-trigger').click();
+  await page.getByRole('menuitem', { name: /Command palette/ }).click();
+}
+
 export async function waitForPageHydrated(page: Page): Promise<void> {
   await page.waitForFunction(() => {
     return document.readyState === 'complete';
@@ -23,6 +29,24 @@ export async function waitForPageHydrated(page: Page): Promise<void> {
     .catch(() => {
       // Ignore if loading overlay was never present or already gone.
     });
+}
+
+export async function waitForAbyssDev(page: Page, timeout = 10000): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const dev = (window as unknown as {
+            abyssDev?: { makeAllCardsDue?: () => void; getState?: () => unknown };
+          }).abyssDev;
+          return typeof dev?.makeAllCardsDue === 'function' || typeof dev?.getState === 'function';
+        }),
+      {
+        timeout,
+        message: 'window.abyssDev was not initialized before test action',
+      },
+    )
+    .toBe(true);
 }
 
 /**
@@ -106,7 +130,8 @@ export function startConsoleErrorCapture(page: Page): BrowserConsoleErrors {
  */
 export async function waitForStudyPanelReady(page: Page): Promise<void> {
   await page.locator('[data-testid="study-panel-modal-content"]').waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('[data-testid="study-session-title"]').waitFor({ state: 'visible', timeout: 5000 });
+  // DialogTitle uses `sr-only` — it is attached but not "visible" to Playwright.
+  await page.getByTestId('study-tab-study').waitFor({ state: 'visible', timeout: 5000 });
   await page.locator('[data-testid="study-panel-card-root"]').waitFor({ state: 'visible', timeout: 5000 });
 }
 
