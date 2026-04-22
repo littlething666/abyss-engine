@@ -7,6 +7,7 @@ export type StudyPanelLlmExplainProps = {
   reasoningText: string | null;
   requestExplain: () => void;
   cancelInflight: () => void;
+  clearSessionCache: () => void;
 };
 
 export type StudyPanelFormulaExplainProps = {
@@ -16,6 +17,7 @@ export type StudyPanelFormulaExplainProps = {
   reasoningText: string | null;
   requestExplain: (latex: string, context: StudyFormulaExplainContext) => void;
   cancelInflight: () => void;
+  clearSessionCache: () => void;
 };
 
 export type StudyPanelMermaidDiagramProps = {
@@ -25,4 +27,5 @@ export type StudyPanelMermaidDiagramProps = {
   reasoningText: string | null;
   requestDiagram: () => void;
   cancelInflight: () => void;
+  clearSessionCache: () => void;
 };

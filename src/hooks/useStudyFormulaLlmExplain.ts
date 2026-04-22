@@ -7,18 +7,30 @@ import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInf
 import {
   resolveEnableStreamingForSurface,
   resolveModelForSurface,
+  resolveOpenRouterReasoningChatOptions,
 } from '../infrastructure/llmInferenceSurfaceProviders';
 
 const chat = getChatCompletionsRepositoryForSurface('studyFormulaExplain');
 export type { StudyFormulaExplainContext };
 
 export interface UseStudyFormulaLlmExplainParams {
-  topicLabel: string; cardQuestionText: string; cardId: string | null; enableThinking: boolean;
+  topicLabel: string;
+  cardQuestionText: string;
+  cardId: string | null;
+  reasoningFromUserToggle: boolean;
 }
 
 type CachedResponse = { content: string; reasoning: string | null };
 const sessionFormulaExplainCache = new Map<string, CachedResponse>();
 export function clearStudyFormulaLlmExplainSessionCacheForTests(): void { sessionFormulaExplainCache.clear(); }
+export function clearStudyFormulaLlmExplainSessionCacheForCard(cardId: string): void {
+  const prefix = `${cardId}\0`;
+  for (const key of sessionFormulaExplainCache.keys()) {
+    if (key.startsWith(prefix)) {
+      sessionFormulaExplainCache.delete(key);
+    }
+  }
+}
 
 function cacheKey(cardId: string, context: StudyFormulaExplainContext, latex: string, topicLabel: string, q: string): string {
   return `${cardId}\0${context}\0${latex}\0${topicLabel}\0${q}`;
@@ -27,7 +39,12 @@ function isAbortError(e: unknown): boolean {
   return (e instanceof DOMException && e.name === 'AbortError') || (e instanceof Error && e.name === 'AbortError');
 }
 
-export function useStudyFormulaLlmExplain({ topicLabel, cardQuestionText, cardId, enableThinking }: UseStudyFormulaLlmExplainParams) {
+export function useStudyFormulaLlmExplain({
+  topicLabel,
+  cardQuestionText,
+  cardId,
+  reasoningFromUserToggle,
+}: UseStudyFormulaLlmExplainParams) {
   const [assistantText, setAssistantText] = useState<string | null>(null);
   const [reasoningText, setReasoningText] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
@@ -41,8 +58,18 @@ export function useStudyFormulaLlmExplain({ topicLabel, cardQuestionText, cardId
     abortRef.current?.abort(); abortRef.current = null; generationRef.current += 1;
     setAssistantText(null); setReasoningText(null); setError(null); setPending(false);
   }, [setPending]);
-  useEffect(() => { reset(); }, [cardId, reset]);
+  useEffect(() => {
+    if (!cardId) {
+      reset();
+      return;
+    }
+    reset();
+  }, [cardId, reset]);
   useEffect(() => () => { abortRef.current?.abort(); }, []);
+  const clearSessionCache = useCallback(() => {
+    if (!cardId) return;
+    clearStudyFormulaLlmExplainSessionCacheForCard(cardId);
+  }, [cardId]);
 
   const cancelInflight = useCallback(() => {
     abortRef.current?.abort(); abortRef.current = null;
@@ -67,6 +94,7 @@ export function useStudyFormulaLlmExplain({ topicLabel, cardQuestionText, cardId
     const messages = buildFormulaExplainMessages(topicLabel, cardQuestionText, latex, context);
     const model = resolveModelForSurface('studyFormulaExplain');
     const enableStreaming = resolveEnableStreamingForSurface('studyFormulaExplain');
+    const reasoningOpts = resolveOpenRouterReasoningChatOptions('studyFormulaExplain', reasoningFromUserToggle);
 
     void (async () => {
       try {
@@ -75,7 +103,8 @@ export function useStudyFormulaLlmExplain({ topicLabel, cardQuestionText, cardId
           model,
           messages,
           signal: ac.signal,
-          enableThinking,
+          includeOpenRouterReasoning: reasoningOpts.includeOpenRouterReasoning,
+          enableReasoning: reasoningOpts.enableReasoning,
           enableStreaming,
         })) {
           if (generationRef.current !== myGeneration) return;
@@ -91,11 +120,11 @@ export function useStudyFormulaLlmExplain({ topicLabel, cardQuestionText, cardId
         setError(e); setPending(false); setAssistantText(null); setReasoningText(null);
       }
     })();
-  }, [cardId, topicLabel, cardQuestionText, enableThinking, setPending]);
+  }, [cardId, topicLabel, cardQuestionText, reasoningFromUserToggle, setPending]);
 
   return {
     requestExplain, isPending,
     errorMessage: error instanceof Error ? error.message : error ? String(error) : null,
-    assistantText, reasoningText, reset, cancelInflight,
+    assistantText, reasoningText, reset, cancelInflight, clearSessionCache,
   };
 }

@@ -6,7 +6,7 @@ import {
   extractMermaidFromAssistantText,
   type StudyPanelMermaidDiagramProps,
 } from '../../features/studyPanel';
-import { LlmThinkingBlock } from '../LlmThinkingBlock';
+import { LlmReasoningBlock } from '../LlmReasoningBlock';
 import { Button } from '@/components/ui/button';
 import { Card as UiCard, CardContent } from '@/components/ui/card';
 import {
@@ -65,7 +65,7 @@ export function StudyQuestionMermaidLlmBody(llmMermaidDiagram: StudyPanelMermaid
       className="max-h-[min(60vh,36rem)] overflow-y-auto text-sm"
       data-testid="study-card-llm-mermaid-content"
     >
-      <LlmThinkingBlock reasoningText={llmMermaidDiagram.reasoningText} isPending={llmMermaidDiagram.isPending} />
+      <LlmReasoningBlock reasoningText={llmMermaidDiagram.reasoningText} isPending={llmMermaidDiagram.isPending} />
       {llmMermaidDiagram.errorMessage && !llmMermaidDiagram.isPending && (
         <p className="text-destructive" data-testid="study-card-llm-mermaid-error">
           {llmMermaidDiagram.errorMessage}

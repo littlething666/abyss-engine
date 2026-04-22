@@ -28,7 +28,7 @@ export interface RunTopicGenerationPipelineParams {
   writer: IDeckContentWriter;
   subjectId: string;
   topicId: string;
-  enableThinking: boolean;
+  enableReasoning: boolean;
   signal?: AbortSignal;
   /** When false (default), a full pipeline skips if study-ready content already exists. */
   forceRegenerate?: boolean;
@@ -69,7 +69,7 @@ export async function runTopicGenerationPipeline(
     writer,
     subjectId,
     topicId,
-    enableThinking,
+    enableReasoning,
     signal,
     forceRegenerate = false,
     stage = 'full',
@@ -141,7 +141,7 @@ export async function runTopicGenerationPipeline(
         learningObjective: node.learningObjective,
         contentBrief,
       }),
-      enableThinking,
+      enableReasoning,
       enableStreaming,
       externalSignal: pipelineAc.signal,
       parseOutput: async (raw) => {
@@ -192,7 +192,7 @@ export async function runTopicGenerationPipeline(
         difficulty1Questions,
         contentBrief,
       }),
-      enableThinking,
+      enableReasoning,
       enableStreaming,
       externalSignal: pipelineAc.signal,
       parseOutput: async (raw) => {
@@ -234,7 +234,7 @@ export async function runTopicGenerationPipeline(
         difficulty1Questions,
         contentBrief,
       }),
-      enableThinking,
+      enableReasoning,
       enableStreaming,
       externalSignal: pipelineAc.signal,
       parseOutput: async (raw) => {

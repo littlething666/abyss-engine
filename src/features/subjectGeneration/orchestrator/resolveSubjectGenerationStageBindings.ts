@@ -1,7 +1,7 @@
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
 import {
+  resolveEnableReasoningForSurface,
   resolveEnableStreamingForSurface,
-  resolveEnableThinkingForSurface,
   resolveModelForSurface,
 } from '@/infrastructure/llmInferenceSurfaceProviders';
 import type { IChatCompletionsRepository } from '@/types/llm';
@@ -10,7 +10,7 @@ export interface SubjectGenerationStageBinding {
   chat: IChatCompletionsRepository;
   model: string;
   enableStreaming: boolean;
-  enableThinking: boolean;
+  enableReasoning: boolean;
 }
 
 export interface SubjectGenerationStageBindings {
@@ -23,13 +23,13 @@ export function resolveSubjectGenerationStageBindings(): SubjectGenerationStageB
     chat: getChatCompletionsRepositoryForSurface('subjectGenerationTopics'),
     model: resolveModelForSurface('subjectGenerationTopics'),
     enableStreaming: resolveEnableStreamingForSurface('subjectGenerationTopics'),
-    enableThinking: resolveEnableThinkingForSurface('subjectGenerationTopics'),
+    enableReasoning: resolveEnableReasoningForSurface('subjectGenerationTopics'),
   };
   const edges: SubjectGenerationStageBinding = {
     chat: getChatCompletionsRepositoryForSurface('subjectGenerationEdges'),
     model: resolveModelForSurface('subjectGenerationEdges'),
     enableStreaming: false,
-    enableThinking: resolveEnableThinkingForSurface('subjectGenerationEdges'),
+    enableReasoning: resolveEnableReasoningForSurface('subjectGenerationEdges'),
   };
   return { topics, edges };
 }

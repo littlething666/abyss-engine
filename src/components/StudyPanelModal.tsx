@@ -23,7 +23,7 @@ import { useStudyFormulaLlmExplain } from '../hooks/useStudyFormulaLlmExplain';
 import { useStudyQuestionMermaidDiagram } from '../hooks/useStudyQuestionMermaidDiagram';
 import { useStudyQuestionLlmExplain } from '../hooks/useStudyQuestionLlmExplain';
 import { useInferenceTtsToggle } from '../hooks/useInferenceTtsToggle';
-import { useThinkingToggle } from '../hooks/useThinkingToggle';
+import { useReasoningToggle } from '../hooks/useReasoningToggle';
 import { StudyPanelTab } from './studyPanel/types';
 import { MiniGameView } from './miniGames/MiniGameView';
 import type { MiniGameContent } from '../types/core';
@@ -31,7 +31,9 @@ import { cardRefKey } from '@/lib/topicRef';
 import { RatingFeedbackCanvas, type RatingFeedbackCanvasHandle } from './studyPanel/RatingFeedbackCanvas';
 import { useRatingFeedback } from '@/hooks/useRatingFeedback';
 import { uiStore } from '@/store/uiStore';
+import { makeOpenRouterReasoningSupportedSelector } from '../infrastructure/llmInferenceSurfaceProviders';
 import { Settings } from 'lucide-react';
+import { useStudySettingsStore } from '@/store/studySettingsStore';
 
 interface StudyPanelModalProps {
   isOpen: boolean;
@@ -62,27 +64,36 @@ export function StudyPanelModal({
   const currentSession = useStudyStore((state) => state.currentSession);
 
   const model = useStudyPanelModel({ currentCardId, currentTopicId, currentSubjectId, totalCards });
-  const explainThinking = useThinkingToggle('studyQuestionExplain');
-  const formulaThinking = useThinkingToggle('studyFormulaExplain');
-  const mermaidThinking = useThinkingToggle('studyQuestionMermaid');
+  const explainReasoning = useReasoningToggle('studyQuestionExplain');
+  const formulaReasoning = useReasoningToggle('studyFormulaExplain');
+  const mermaidReasoning = useReasoningToggle('studyQuestionMermaid');
+  const explainReasoningSupported = useStudySettingsStore(
+    makeOpenRouterReasoningSupportedSelector('studyQuestionExplain'),
+  );
+  const formulaReasoningSupported = useStudySettingsStore(
+    makeOpenRouterReasoningSupportedSelector('studyFormulaExplain'),
+  );
+  const mermaidReasoningSupported = useStudySettingsStore(
+    makeOpenRouterReasoningSupportedSelector('studyQuestionMermaid'),
+  );
   const ttsEnabled = useInferenceTtsToggle();
   const llmExplain = useStudyQuestionLlmExplain({
     topicLabel: model.resolvedTopic,
     questionText: model.currentQuestion,
     cardId: model.activeCard?.id ?? null,
-    enableThinking: explainThinking.enableThinking,
+    reasoningFromUserToggle: explainReasoning.enableReasoning,
   });
   const llmFormulaExplain = useStudyFormulaLlmExplain({
     topicLabel: model.resolvedTopic,
     cardQuestionText: model.currentQuestion,
     cardId: model.activeCard?.id ?? null,
-    enableThinking: formulaThinking.enableThinking,
+    reasoningFromUserToggle: formulaReasoning.enableReasoning,
   });
   const llmMermaidDiagram = useStudyQuestionMermaidDiagram({
     topicLabel: model.resolvedTopic,
     questionText: model.currentQuestion,
     cardId: model.activeCard?.id ?? null,
-    enableThinking: mermaidThinking.enableThinking,
+    reasoningFromUserToggle: mermaidReasoning.enableReasoning,
   });
 
   useEffect(() => {
@@ -312,12 +323,15 @@ export function StudyPanelModal({
                   llmExplain={llmExplain}
                   llmFormulaExplain={llmFormulaExplain}
                   llmMermaidDiagram={llmMermaidDiagram}
-                  explainThinkingEnabled={explainThinking.enableThinking}
-                  formulaThinkingEnabled={formulaThinking.enableThinking}
-                  mermaidThinkingEnabled={mermaidThinking.enableThinking}
-                  onToggleExplainThinking={explainThinking.toggleThinking}
-                  onToggleFormulaThinking={formulaThinking.toggleThinking}
-                  onToggleMermaidThinking={mermaidThinking.toggleThinking}
+                  explainReasoningEnabled={explainReasoning.enableReasoning}
+                  explainReasoningToggleDisabled={!explainReasoningSupported}
+                  formulaReasoningEnabled={formulaReasoning.enableReasoning}
+                  formulaReasoningToggleDisabled={!formulaReasoningSupported}
+                  mermaidReasoningEnabled={mermaidReasoning.enableReasoning}
+                  mermaidReasoningToggleDisabled={!mermaidReasoningSupported}
+                  onToggleExplainReasoning={explainReasoning.toggleReasoning}
+                  onToggleFormulaReasoning={formulaReasoning.toggleReasoning}
+                  onToggleMermaidReasoning={mermaidReasoning.toggleReasoning}
                   explainTtsEnabled={ttsEnabled.enableTts}
                   formulaTtsEnabled={ttsEnabled.enableTts}
                   mermaidTtsEnabled={ttsEnabled.enableTts}

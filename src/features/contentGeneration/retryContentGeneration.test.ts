@@ -32,13 +32,13 @@ vi.mock('@/features/subjectGeneration', () => ({
       chat: {},
       model: 'topics-model',
       enableStreaming: true,
-      enableThinking: false,
+      enableReasoning: false,
     },
     edges: {
       chat: {},
       model: 'edges-model',
       enableStreaming: false,
-      enableThinking: false,
+      enableReasoning: false,
     },
   }),
 }));
@@ -95,7 +95,7 @@ function makeJob(overrides: Partial<ContentGenerationJob>): ContentGenerationJob
     error: 'some error',
     parseError: null,
     retryOf: null,
-    metadata: { enableThinking: false },
+    metadata: { enableReasoning: false },
     ...overrides,
   };
 }
@@ -145,13 +145,13 @@ describe('retryFailedJob', () => {
   });
 
   it('calls runTopicGenerationPipeline for topic-theory jobs', async () => {
-    const job = makeJob({ kind: 'topic-theory', metadata: { enableThinking: true } });
+    const job = makeJob({ kind: 'topic-theory', metadata: { enableReasoning: true } });
     await retryFailedJob(job);
 
     expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
     const params = mockRunTopicPipeline.mock.calls[0]?.[0];
     expect(params.stage).toBe('theory');
-    expect(params.enableThinking).toBe(true);
+    expect(params.enableReasoning).toBe(true);
     expect(params.retryOf).toBe('job-1');
     expect(params.forceRegenerate).toBe(true);
   });
@@ -176,7 +176,7 @@ describe('retryFailedJob', () => {
     const job = makeJob({
       kind: 'crystal-trial',
       label: 'Crystal Trial L3 — Topic A',
-      metadata: { enableThinking: true, currentLevel: 2 },
+      metadata: { enableReasoning: true, currentLevel: 2 },
     });
 
     await retryFailedJob(job);
@@ -199,7 +199,7 @@ describe('retryFailedJob', () => {
     const job = makeJob({
       kind: 'crystal-trial',
       label: 'Crystal Trial L4 — Topic A',
-      metadata: { enableThinking: true },
+      metadata: { enableReasoning: true },
     });
 
     await retryFailedJob(job);
@@ -212,7 +212,7 @@ describe('retryFailedJob', () => {
     const job = makeJob({
       kind: 'topic-expansion-cards',
       label: 'Expansion L2 — Topic A',
-      metadata: { enableThinking: false, nextLevel: 2 },
+      metadata: { enableReasoning: false, nextLevel: 2 },
     });
     await retryFailedJob(job);
 
@@ -226,7 +226,7 @@ describe('retryFailedJob', () => {
     const job = makeJob({
       kind: 'topic-expansion-cards',
       label: 'Expansion L3 — Topic B',
-      metadata: { enableThinking: false },
+      metadata: { enableReasoning: false },
     });
     await retryFailedJob(job);
 
@@ -282,7 +282,7 @@ describe('retryFailedJob', () => {
       kind: 'subject-graph-topics',
       topicId: null,
       metadata: {
-        enableThinking: false,
+        enableReasoning: false,
         checklist: { topicName: 'Metadata topic' },
       },
     });
@@ -305,7 +305,7 @@ describe('retryFailedJob', () => {
       kind: 'subject-graph-edges',
       topicId: null,
       label: '[Edges] Curriculum — Label Topic',
-      metadata: { enableThinking: false },
+      metadata: { enableReasoning: false },
     });
     await retryFailedJob(job);
 
@@ -326,7 +326,7 @@ describe('retryFailedJob', () => {
       kind: 'subject-graph-topics',
       topicId: null,
       label: '[Topics] Curriculum — Quantum Foo',
-      metadata: { enableThinking: false },
+      metadata: { enableReasoning: false },
     });
     await retryFailedJob(job);
 
@@ -374,7 +374,7 @@ describe('retryFailedPipeline', () => {
       kind: 'topic-study-cards',
       status: 'failed',
       createdAt: 2,
-      metadata: { enableThinking: true },
+      metadata: { enableReasoning: true },
     });
 
     useContentGenerationStore.setState({
@@ -389,7 +389,7 @@ describe('retryFailedPipeline', () => {
     expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
     const params = mockRunTopicPipeline.mock.calls[0]?.[0];
     expect(params.resumeFromStage).toBe('study-cards');
-    expect(params.enableThinking).toBe(true);
+    expect(params.enableReasoning).toBe(true);
     expect(params.retryOf).toBe('p1');
   });
 

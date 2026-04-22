@@ -93,7 +93,7 @@ export async function generateTrialQuestions(
       questionCount: TRIAL_QUESTION_COUNT,
       contentBrief,
     }),
-    enableThinking: false,
+    enableReasoning: false,
     enableStreaming,
     parseOutput: async (raw) => {
       const parsed = parseCrystalTrialPayload(raw);

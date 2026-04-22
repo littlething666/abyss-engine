@@ -1,5 +1,10 @@
-import type { InferenceSurfaceId, LlmInferenceProviderId } from '../types/llmInference';
+import type {
+  InferenceSurfaceId,
+  LlmInferenceProviderId,
+  OpenRouterModelConfig,
+} from '../types/llmInference';
 import type { ChatResponseFormatJsonObject } from '../types/llm';
+import type { StudySettingsState } from '../store/studySettingsStore';
 import {
   getLocalModelId,
   getOpenRouterConfigById,
@@ -9,6 +14,51 @@ import {
 
 export function inferenceProviderForSurface(surfaceId: InferenceSurfaceId): LlmInferenceProviderId {
   return getSurfaceBinding(surfaceId).provider;
+}
+
+function openRouterConfigForSurface(surfaceId: InferenceSurfaceId): OpenRouterModelConfig | undefined {
+  const binding = getSurfaceBinding(surfaceId);
+  if (binding.provider !== 'openrouter' || !binding.openRouterConfigId) return undefined;
+  return getOpenRouterConfigById(binding.openRouterConfigId);
+}
+
+export function openRouterConfigSupportsReasoning(config: OpenRouterModelConfig | undefined): boolean {
+  return config?.supportedParameters?.includes('reasoning') === true;
+}
+
+/** Selector factory for Zustand stores with StudySettings state. */
+export function makeOpenRouterReasoningSupportedSelector(surfaceId: InferenceSurfaceId) {
+  return (state: StudySettingsState) => {
+    const binding = state.surfaceProviders[surfaceId];
+    if (binding.provider !== 'openrouter' || !binding.openRouterConfigId) return false;
+    const config = state.openRouterConfigs.find((c) => c.id === binding.openRouterConfigId);
+    return openRouterConfigSupportsReasoning(config);
+  };
+}
+
+/** True when this surface uses OpenRouter and the bound model supports the `reasoning` request field. */
+export function resolveIncludeOpenRouterReasoningParam(surfaceId: InferenceSurfaceId): boolean {
+  if (inferenceProviderForSurface(surfaceId) !== 'openrouter') return false;
+  return openRouterConfigSupportsReasoning(openRouterConfigForSurface(surfaceId));
+}
+
+/** OpenRouter config flag; false when local or model does not support `reasoning`. */
+export function resolveEnableReasoningForSurface(surfaceId: InferenceSurfaceId): boolean {
+  if (!resolveIncludeOpenRouterReasoningParam(surfaceId)) return false;
+  const config = openRouterConfigForSurface(surfaceId);
+  return config?.enableReasoning === true;
+}
+
+/** Maps per-surface OpenRouter capability + user toggle into chat-completions body fields. */
+export function resolveOpenRouterReasoningChatOptions(
+  surfaceId: InferenceSurfaceId,
+  userWantsReasoningEnabled: boolean,
+): { includeOpenRouterReasoning: boolean; enableReasoning: boolean } {
+  const include = resolveIncludeOpenRouterReasoningParam(surfaceId);
+  return {
+    includeOpenRouterReasoning: include,
+    enableReasoning: include && userWantsReasoningEnabled,
+  };
 }
 
 /**
@@ -57,14 +107,6 @@ export function resolveModelForSurface(surfaceId: InferenceSurfaceId): string {
     );
   }
   return config.model;
-}
-
-/** Resolves enableThinking for a surface via its bound OpenRouter config (false for local). */
-export function resolveEnableThinkingForSurface(surfaceId: InferenceSurfaceId): boolean {
-  const binding = getSurfaceBinding(surfaceId);
-  if (binding.provider === 'local' || !binding.openRouterConfigId) return false;
-  const config = getOpenRouterConfigById(binding.openRouterConfigId);
-  return config?.enableThinking ?? false;
 }
 
 /** Resolves streaming preference for a surface via its bound OpenRouter config (true for local by default). */

@@ -3,7 +3,10 @@ import { v4 as uuid } from 'uuid';
 import type { ChatMessage, IChatCompletionsRepository } from '@/types/llm';
 import type { ContentGenerationJob, ContentGenerationJobKind } from '@/types/contentGeneration';
 import type { InferenceSurfaceId } from '@/types/llmInference';
-import { resolveOpenRouterStructuredJsonChatExtras } from '@/infrastructure/llmInferenceSurfaceProviders';
+import {
+  resolveIncludeOpenRouterReasoningParam,
+  resolveOpenRouterStructuredJsonChatExtras,
+} from '@/infrastructure/llmInferenceSurfaceProviders';
 
 import { useContentGenerationStore } from './contentGenerationStore';
 
@@ -19,7 +22,7 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
   chat: IChatCompletionsRepository;
   model: string;
   messages: ChatMessage[];
-  enableThinking: boolean;
+  enableReasoning: boolean;
   enableStreaming?: boolean;
   /** Forwarded to the chat-completions request when set (e.g. low temperature for structured edges). */
   temperature?: number;
@@ -74,7 +77,7 @@ export async function runContentGenerationJob<TParsed>(
     retryOf: params.retryOf ?? null,
     metadata: {
       model: params.model,
-      enableThinking: params.enableThinking,
+      enableReasoning: params.enableReasoning,
       ...(params.metadata ?? {}),
     },
   };
@@ -96,7 +99,8 @@ export async function runContentGenerationJob<TParsed>(
     for await (const chunk of params.chat.streamChat({
       model: params.model,
       messages: params.messages,
-      enableThinking: params.enableThinking,
+      includeOpenRouterReasoning: resolveIncludeOpenRouterReasoningParam(params.llmSurfaceId),
+      enableReasoning: params.enableReasoning,
       enableStreaming,
       signal: ac.signal,
       ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),

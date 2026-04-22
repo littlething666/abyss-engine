@@ -30,6 +30,8 @@ import {
 } from '@/types/llmInference';
 import type { InferenceSurfaceId, LlmInferenceProviderId } from '@/types/llmInference';
 import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
+import { openRouterConfigSupportsReasoning } from '@/infrastructure/llmInferenceSurfaceProviders';
+import { inferOpenRouterSupportedParameters } from '@/lib/openRouterReasoning';
 
 const CURRICULUM_SURFACE_IDS = [
   'subjectGenerationTopics',
@@ -100,7 +102,7 @@ function OpenRouterConfigList() {
   const deleteConfig = useStudySettingsStore((s) => s.deleteOpenRouterConfig);
   const [draftLabel, setDraftLabel] = useState('');
   const [draftModel, setDraftModel] = useState('');
-  const [draftThinking, setDraftThinking] = useState(false);
+  const [draftReasoning, setDraftReasoning] = useState(false);
   const [draftStreaming, setDraftStreaming] = useState(true);
 
   const handleAdd = () => {
@@ -109,12 +111,12 @@ function OpenRouterConfigList() {
     addConfig({
       label: draftLabel.trim() || model,
       model,
-      enableThinking: draftThinking,
+      enableReasoning: draftReasoning,
       enableStreaming: draftStreaming,
     });
     setDraftLabel('');
     setDraftModel('');
-    setDraftThinking(false);
+    setDraftReasoning(false);
     setDraftStreaming(true);
   };
 
@@ -134,12 +136,13 @@ function OpenRouterConfigList() {
             aria-label={`Model id for ${c.label}`}
             className="flex-1 font-mono text-xs"
           />
-          <div className="flex items-center gap-1" title="Thinking">
-            <span className="text-xs text-muted-foreground">Thinking</span>
+          <div className="flex items-center gap-1" title="Reasoning">
+            <span className="text-xs text-muted-foreground">Reasoning</span>
             <Switch
-              checked={c.enableThinking}
-              onCheckedChange={(v) => updateConfig(c.id, { enableThinking: v })}
-              aria-label={`Enable thinking for ${c.label}`}
+              checked={c.enableReasoning}
+              disabled={!openRouterConfigSupportsReasoning(c)}
+              onCheckedChange={(v) => updateConfig(c.id, { enableReasoning: v })}
+              aria-label={`Enable reasoning for ${c.label}`}
             />
           </div>
           <div className="flex items-center gap-1" title="Streaming">
@@ -178,11 +181,12 @@ function OpenRouterConfigList() {
           aria-label="New config model id"
         />
         <div className="flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">Thinking</span>
+          <span className="text-xs text-muted-foreground">Reasoning</span>
           <Switch
-            checked={draftThinking}
-            onCheckedChange={setDraftThinking}
-            aria-label="Enable thinking for new config"
+            checked={draftReasoning}
+            disabled={inferOpenRouterSupportedParameters(draftModel.trim()) === undefined}
+            onCheckedChange={setDraftReasoning}
+            aria-label="Enable reasoning for new config"
           />
         </div>
         <div className="flex items-center gap-1">

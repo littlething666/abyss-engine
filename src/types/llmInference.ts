@@ -43,6 +43,9 @@ export const SURFACE_DISPLAY_LABELS: Record<InferenceSurfaceId, string> = {
   crystalTrial: 'Crystal Trial',
 };
 
+/** Declared OpenRouter chat parameters this app knows how to use for a config. */
+export type OpenRouterSupportedParameter = 'reasoning';
+
 /**
  * One user-defined OpenRouter model configuration. A surface bound to the
  * 'openrouter' provider references one of these by `id`.
@@ -51,8 +54,11 @@ export interface OpenRouterModelConfig {
   id: string;
   label: string;
   model: string;
-  enableThinking: boolean;
+  /** When the model supports OpenRouter `reasoning`, persisted user preference. */
+  enableReasoning: boolean;
   enableStreaming: boolean;
+  /** If omitted or empty, inferred from `model` when loading or after model edits. */
+  supportedParameters?: readonly OpenRouterSupportedParameter[];
 }
 
 export interface SurfaceProviderBinding {

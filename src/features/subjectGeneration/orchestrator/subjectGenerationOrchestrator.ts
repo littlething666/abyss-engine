@@ -100,7 +100,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       chat: stageBindings.topics.chat,
       model: stageBindings.topics.model,
       messages: buildTopicLatticeMessages(request.subjectId, strategy.graph),
-      enableThinking: stageBindings.topics.enableThinking,
+      enableReasoning: stageBindings.topics.enableReasoning,
       enableStreaming: stageBindings.topics.enableStreaming,
       externalSignal: pipelineAc.signal,
       metadata: {
@@ -166,7 +166,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       chat: stageBindings.edges.chat,
       model: stageBindings.edges.model,
       messages: buildPrereqWiringMessages(request.subjectId, topicName, strategy.graph, resolvedLattice),
-      enableThinking: stageBindings.edges.enableThinking,
+      enableReasoning: stageBindings.edges.enableReasoning,
       enableStreaming: stageBindings.edges.enableStreaming,
       temperature: STAGE_B_FIRST_TEMPERATURE,
       externalSignal: pipelineAc.signal,

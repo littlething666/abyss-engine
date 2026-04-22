@@ -17,8 +17,8 @@ import {
   ResponsiveLlmInferenceSurface,
   type ResponsiveLlmInferenceDescription,
 } from '../ResponsiveLlmInferenceSurface';
-import { LlmThinkingBlock } from '../LlmThinkingBlock';
-import { LlmThinkingToggle } from '../LlmThinkingToggle';
+import { LlmReasoningBlock } from '../LlmReasoningBlock';
+import { LlmReasoningToggle } from '../LlmReasoningToggle';
 import { LlmTtsToggle } from '../LlmTtsToggle';
 import { Network, Redo2, Sparkles, Undo2 } from 'lucide-react';
 import { StudyKatexInteractive } from './StudyKatexInteractive';
@@ -53,7 +53,7 @@ function LlmStreamBlock({
       className="max-h-80 overflow-y-auto text-sm"
       data-testid={contentTestId}
     >
-      <LlmThinkingBlock reasoningText={reasoningText} isPending={isPending} />
+        <LlmReasoningBlock reasoningText={reasoningText} isPending={isPending} />
       {errorMessage && !isPending && (
         <p className="text-destructive" data-testid={errorTestId}>
           {errorMessage}
@@ -168,12 +168,15 @@ interface StudyPanelStudyViewProps {
   llmExplain: StudyPanelLlmExplainProps;
   llmFormulaExplain: StudyPanelFormulaExplainProps;
   llmMermaidDiagram: StudyPanelMermaidDiagramProps;
-  explainThinkingEnabled: boolean;
-  formulaThinkingEnabled: boolean;
-  mermaidThinkingEnabled: boolean;
-  onToggleExplainThinking: () => void;
-  onToggleFormulaThinking: () => void;
-  onToggleMermaidThinking: () => void;
+  explainReasoningEnabled: boolean;
+  explainReasoningToggleDisabled: boolean;
+  formulaReasoningEnabled: boolean;
+  formulaReasoningToggleDisabled: boolean;
+  mermaidReasoningEnabled: boolean;
+  mermaidReasoningToggleDisabled: boolean;
+  onToggleExplainReasoning: () => void;
+  onToggleFormulaReasoning: () => void;
+  onToggleMermaidReasoning: () => void;
   explainTtsEnabled: boolean;
   formulaTtsEnabled: boolean;
   mermaidTtsEnabled: boolean;
@@ -223,12 +226,15 @@ export function StudyPanelStudyView({
   llmExplain,
   llmFormulaExplain,
   llmMermaidDiagram,
-  explainThinkingEnabled,
-  formulaThinkingEnabled,
-  mermaidThinkingEnabled,
-  onToggleExplainThinking,
-  onToggleFormulaThinking,
-  onToggleMermaidThinking,
+  explainReasoningEnabled,
+  explainReasoningToggleDisabled,
+  formulaReasoningEnabled,
+  formulaReasoningToggleDisabled,
+  mermaidReasoningEnabled,
+  mermaidReasoningToggleDisabled,
+  onToggleExplainReasoning,
+  onToggleFormulaReasoning,
+  onToggleMermaidReasoning,
   explainTtsEnabled,
   formulaTtsEnabled,
   mermaidTtsEnabled,
@@ -249,7 +255,14 @@ export function StudyPanelStudyView({
     dismissExplainInference,
     dismissFormulaInference,
     dismissMermaidInference,
-  } = useStudyPanelLlmSurfaces({ llmExplain, llmFormulaExplain, llmMermaidDiagram });
+  } = useStudyPanelLlmSurfaces({
+    llmExplain,
+    llmFormulaExplain,
+    llmMermaidDiagram,
+    explainReasoningEnabled,
+    formulaReasoningEnabled,
+    mermaidReasoningEnabled,
+  });
 
   const explainAssistantSpeech = useLlmAssistantSpeech({
     isSurfaceOpen: explainOpen,
@@ -505,9 +518,10 @@ export function StudyPanelStudyView({
         sheetBodyScrollClassName="max-h-[min(40vh,32rem)]"
         headerAction={
           <div className="flex items-center gap-1">
-            <LlmThinkingToggle
-              enabled={explainThinkingEnabled}
-              onToggle={onToggleExplainThinking}
+            <LlmReasoningToggle
+              enabled={explainReasoningEnabled}
+              disabled={explainReasoningToggleDisabled}
+              onToggle={onToggleExplainReasoning}
             />
             <LlmTtsToggle
               enabled={explainTtsEnabled}
@@ -532,9 +546,10 @@ export function StudyPanelStudyView({
         sheetBodyScrollClassName="max-h-[min(55vh,36rem)]"
         headerAction={
           <div className="flex items-center gap-1">
-            <LlmThinkingToggle
-              enabled={mermaidThinkingEnabled}
-              onToggle={onToggleMermaidThinking}
+            <LlmReasoningToggle
+              enabled={mermaidReasoningEnabled}
+              disabled={mermaidReasoningToggleDisabled}
+              onToggle={onToggleMermaidReasoning}
             />
             <LlmTtsToggle
               enabled={mermaidTtsEnabled}
@@ -559,9 +574,10 @@ export function StudyPanelStudyView({
         sheetBodyScrollClassName="max-h-[min(40vh,32rem)]"
         headerAction={
           <div className="flex items-center gap-1">
-            <LlmThinkingToggle
-              enabled={formulaThinkingEnabled}
-              onToggle={onToggleFormulaThinking}
+            <LlmReasoningToggle
+              enabled={formulaReasoningEnabled}
+              disabled={formulaReasoningToggleDisabled}
+              onToggle={onToggleFormulaReasoning}
             />
             <LlmTtsToggle
               enabled={formulaTtsEnabled}

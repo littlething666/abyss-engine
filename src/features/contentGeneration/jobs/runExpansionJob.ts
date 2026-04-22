@@ -16,7 +16,7 @@ export interface RunExpansionJobParams {
   subjectId: string;
   topicId: string;
   nextLevel: number;
-  enableThinking: boolean;
+  enableReasoning: boolean;
   signal?: AbortSignal;
   /** If this job is a retry, the ID of the original job. */
   retryOf?: string;
@@ -25,7 +25,7 @@ export interface RunExpansionJobParams {
 export async function runExpansionJob(
   params: RunExpansionJobParams,
 ): Promise<{ ok: boolean; jobId?: string; error?: string; skipped?: boolean }> {
-  const { chat, deckRepository, writer, subjectId, topicId, nextLevel, enableThinking, signal, retryOf } = params;
+  const { chat, deckRepository, writer, subjectId, topicId, nextLevel, enableReasoning, signal, retryOf } = params;
 
   // UPDATED: was (nextLevel < 2 || nextLevel > 3), now L1 through L3.
   // L1 level-up creates difficulty 2, L2 creates diff 3, L3 creates diff 4.
@@ -80,7 +80,7 @@ export async function runExpansionJob(
       difficulty,
       contentBrief,
     }),
-    enableThinking,
+    enableReasoning,
     enableStreaming,
     externalSignal: signal,
     retryOf,

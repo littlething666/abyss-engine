@@ -7,24 +7,41 @@ import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInf
 import {
   resolveEnableStreamingForSurface,
   resolveModelForSurface,
+  resolveOpenRouterReasoningChatOptions,
 } from '../infrastructure/llmInferenceSurfaceProviders';
 
 const chat = getChatCompletionsRepositoryForSurface('studyQuestionMermaid');
 
 export interface UseStudyQuestionMermaidDiagramParams {
-  topicLabel: string; questionText: string; cardId: string | null; enableThinking: boolean;
+  topicLabel: string;
+  questionText: string;
+  cardId: string | null;
+  reasoningFromUserToggle: boolean;
 }
 
 type CachedResponse = { content: string; reasoning: string | null };
 const sessionMermaidCache = new Map<string, CachedResponse>();
 export function clearStudyQuestionMermaidDiagramSessionCacheForTests(): void { sessionMermaidCache.clear(); }
+export function clearStudyQuestionMermaidDiagramSessionCacheForCard(cardId: string): void {
+  const prefix = `${cardId}\0`;
+  for (const key of sessionMermaidCache.keys()) {
+    if (key.startsWith(prefix)) {
+      sessionMermaidCache.delete(key);
+    }
+  }
+}
 
 function cacheKey(cardId: string, topicLabel: string, q: string): string { return `${cardId}\0${topicLabel}\0${q}`; }
 function isAbortError(e: unknown): boolean {
   return (e instanceof DOMException && e.name === 'AbortError') || (e instanceof Error && e.name === 'AbortError');
 }
 
-export function useStudyQuestionMermaidDiagram({ topicLabel, questionText, cardId, enableThinking }: UseStudyQuestionMermaidDiagramParams) {
+export function useStudyQuestionMermaidDiagram({
+  topicLabel,
+  questionText,
+  cardId,
+  reasoningFromUserToggle,
+}: UseStudyQuestionMermaidDiagramParams) {
   const [assistantText, setAssistantText] = useState<string | null>(null);
   const [reasoningText, setReasoningText] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
@@ -38,8 +55,18 @@ export function useStudyQuestionMermaidDiagram({ topicLabel, questionText, cardI
     abortRef.current?.abort(); abortRef.current = null; generationRef.current += 1;
     setAssistantText(null); setReasoningText(null); setError(null); setPending(false);
   }, [setPending]);
-  useEffect(() => { reset(); }, [cardId, reset]);
+  useEffect(() => {
+    if (!cardId) {
+      reset();
+      return;
+    }
+    reset();
+  }, [cardId, reset]);
   useEffect(() => () => { abortRef.current?.abort(); }, []);
+  const clearSessionCache = useCallback(() => {
+    if (!cardId) return;
+    clearStudyQuestionMermaidDiagramSessionCacheForCard(cardId);
+  }, [cardId]);
 
   const cancelInflight = useCallback(() => {
     abortRef.current?.abort(); abortRef.current = null;
@@ -63,6 +90,7 @@ export function useStudyQuestionMermaidDiagram({ topicLabel, questionText, cardI
     const messages = buildStudyQuestionMermaidMessages(topicLabel, questionText);
     const model = resolveModelForSurface('studyQuestionMermaid');
     const enableStreaming = resolveEnableStreamingForSurface('studyQuestionMermaid');
+    const reasoningOpts = resolveOpenRouterReasoningChatOptions('studyQuestionMermaid', reasoningFromUserToggle);
 
     void (async () => {
       try {
@@ -71,7 +99,8 @@ export function useStudyQuestionMermaidDiagram({ topicLabel, questionText, cardI
           model,
           messages,
           signal: ac.signal,
-          enableThinking,
+          includeOpenRouterReasoning: reasoningOpts.includeOpenRouterReasoning,
+          enableReasoning: reasoningOpts.enableReasoning,
           enableStreaming,
         })) {
           if (generationRef.current !== myGeneration) return;
@@ -87,11 +116,11 @@ export function useStudyQuestionMermaidDiagram({ topicLabel, questionText, cardI
         setError(e); setPending(false); setAssistantText(null); setReasoningText(null);
       }
     })();
-  }, [cardId, topicLabel, questionText, enableThinking, setPending]);
+  }, [cardId, topicLabel, questionText, reasoningFromUserToggle, setPending]);
 
   return {
     requestDiagram, isPending,
     errorMessage: error instanceof Error ? error.message : error ? String(error) : null,
-    assistantText, reasoningText, reset, cancelInflight,
+    assistantText, reasoningText, reset, cancelInflight, clearSessionCache,
   };
 }

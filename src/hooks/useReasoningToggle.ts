@@ -5,7 +5,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 import type { InferenceSurfaceId } from '../types/llmInference';
 
 function storageKey(surfaceId: InferenceSurfaceId): string {
-  return `abyss:thinking-toggle:${surfaceId}`;
+  return `abyss:reasoning-toggle:${surfaceId}`;
 }
 
 const listeners = new Set<() => void>();
@@ -28,17 +28,17 @@ function readSnapshot(surfaceId: InferenceSurfaceId): boolean {
 }
 
 /**
- * Per-surface thinking toggle persisted in localStorage.
+ * Per-surface reasoning toggle persisted in localStorage.
  * Returns the current state and a toggle callback.
  */
-export function useThinkingToggle(surfaceId: InferenceSurfaceId) {
-  const enableThinking = useSyncExternalStore(
+export function useReasoningToggle(surfaceId: InferenceSurfaceId) {
+  const enableReasoning = useSyncExternalStore(
     subscribe,
     () => readSnapshot(surfaceId),
     () => false,
   );
 
-  const toggleThinking = useCallback(() => {
+  const toggleReasoning = useCallback(() => {
     try {
       const key = storageKey(surfaceId);
       const next = localStorage.getItem(key) !== '1';
@@ -53,5 +53,5 @@ export function useThinkingToggle(surfaceId: InferenceSurfaceId) {
     notifyAll();
   }, [surfaceId]);
 
-  return { enableThinking, toggleThinking } as const;
+  return { enableReasoning, toggleReasoning } as const;
 }

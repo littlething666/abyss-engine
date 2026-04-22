@@ -126,7 +126,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
       writer: deckWriter,
       subjectId: e.subjectId,
       topicId: e.topicId,
-      enableThinking: e.enableThinking ?? false,
+      enableReasoning: e.enableReasoning ?? false,
       forceRegenerate: e.forceRegenerate,
       stage: e.stage,
     });
@@ -227,7 +227,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
         subjectId: e.subjectId,
         topicId: e.topicId,
         nextLevel: e.to,
-        enableThinking: false,
+        enableReasoning: false,
         signal: ac.signal,
       }).finally(() => {
         activeExpansionJobs.delete(expansionKey);

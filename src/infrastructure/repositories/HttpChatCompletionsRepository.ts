@@ -6,6 +6,10 @@ import type {
   ChatStreamChunk,
   IChatCompletionsRepository,
 } from '../../types/llm';
+import {
+  mergeAssistantReasoningDetails,
+  reasoningTextFromOpenRouterDelta,
+} from '../../lib/openRouterReasoning';
 
 /**
  * Bounded transient-gateway retry for OpenRouter Worker proxy failures.
@@ -36,7 +40,7 @@ type ChatCompletionResponseBody = {
   choices?: Array<{
     message?: {
       content?: string | null;
-      reasoning_content?: string | null;
+      reasoning_details?: unknown;
     } | null;
   } | null>;
 };
@@ -45,7 +49,7 @@ type StreamChunkBody = {
   choices?: Array<{
     delta?: {
       content?: string | null;
-      reasoning_content?: string | null;
+      reasoning_details?: unknown;
     } | null;
   } | null>;
 };
@@ -60,27 +64,36 @@ export function withUserMessageIfMissing(messages: ChatMessage[]): ChatMessage[]
   return [...messages, USER_MESSAGE_FALLBACK];
 }
 
+function appendOpenRouterReasoningToBody(
+  body: Record<string, unknown>,
+  input: { includeOpenRouterReasoning?: boolean; enableReasoning?: boolean },
+): void {
+  if (input.includeOpenRouterReasoning === true) {
+    body.reasoning = { enabled: input.enableReasoning === true };
+  }
+}
+
 export class HttpChatCompletionsRepository implements IChatCompletionsRepository {
-  static parseSseDataLine(rawLine: string): ChatStreamChunk | null {
+  static parseSseDataLine(rawLine: string): ChatStreamChunk[] {
     const line = rawLine.trim();
-    if (!line.startsWith('data:')) return null;
+    if (!line.startsWith('data:')) return [];
     const payload = line.slice(5).trim();
-    if (payload === '' || payload === '[DONE]') return null;
+    if (payload === '' || payload === '[DONE]') return [];
     let parsed: StreamChunkBody;
     try {
       parsed = JSON.parse(payload) as StreamChunkBody;
     } catch {
-      return null;
+      return [];
     }
-    const delta = parsed.choices?.[0]?.delta;
-    if (!delta) return null;
-    if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
-      return { type: 'reasoning', text: delta.reasoning_content };
-    }
+    const delta = parsed.choices?.[0]?.delta as Record<string, unknown> | undefined;
+    if (!delta) return [];
+    const out: ChatStreamChunk[] = [];
+    const reasoningText = reasoningTextFromOpenRouterDelta(delta);
+    if (reasoningText) out.push({ type: 'reasoning', text: reasoningText });
     if (typeof delta.content === 'string' && delta.content.length > 0) {
-      return { type: 'content', text: delta.content };
+      out.push({ type: 'content', text: delta.content });
     }
-    return null;
+    return out;
   }
 
   constructor(
@@ -126,7 +139,8 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
   async completeChat(input: {
     model: string;
     messages: ChatMessage[];
-    enableThinking?: boolean;
+    includeOpenRouterReasoning?: boolean;
+    enableReasoning?: boolean;
     signal?: AbortSignal;
     temperature?: number;
     responseFormat?: ChatResponseFormatJsonObject;
@@ -138,7 +152,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
       messages,
       stream: false,
     };
-    if (input.enableThinking !== undefined) body.enable_thinking = input.enableThinking;
+    appendOpenRouterReasoningToBody(body, input);
     if (input.temperature !== undefined) body.temperature = input.temperature;
     if (input.responseFormat !== undefined) body.response_format = input.responseFormat;
     if (input.plugins !== undefined && input.plugins.length > 0) body.plugins = input.plugins;
@@ -163,11 +177,8 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     if (typeof content !== 'string' || !content.trim()) {
       throw new Error('Chat completion response missing assistant message content');
     }
-    const reasoningContent =
-      typeof message?.reasoning_content === 'string' && message.reasoning_content.length > 0
-        ? message.reasoning_content
-        : null;
-    return { content, reasoningContent };
+    const reasoningDetails = message ? mergeAssistantReasoningDetails(message) : null;
+    return { content, reasoningDetails };
   }
 
   async *streamChat(input: ChatCompletionStreamInput): AsyncGenerator<ChatStreamChunk, void, undefined> {
@@ -175,14 +186,15 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
       const completed = await this.completeChat({
         model: input.model,
         messages: input.messages,
-        enableThinking: input.enableThinking,
+        includeOpenRouterReasoning: input.includeOpenRouterReasoning,
+        enableReasoning: input.enableReasoning,
         signal: input.signal,
         temperature: input.temperature,
         responseFormat: input.responseFormat,
         plugins: input.plugins,
       });
-      if (completed.reasoningContent && completed.reasoningContent.length > 0) {
-        yield { type: 'reasoning', text: completed.reasoningContent };
+      if (completed.reasoningDetails && completed.reasoningDetails.length > 0) {
+        yield { type: 'reasoning', text: completed.reasoningDetails };
       }
       if (completed.content.length > 0) {
         yield { type: 'content', text: completed.content };
@@ -196,7 +208,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
       messages,
       stream: true,
     };
-    if (input.enableThinking !== undefined) body.enable_thinking = input.enableThinking;
+    appendOpenRouterReasoningToBody(body, input);
     if (input.temperature !== undefined) body.temperature = input.temperature;
     if (input.responseFormat !== undefined) body.response_format = input.responseFormat;
     if (input.plugins !== undefined && input.plugins.length > 0) body.plugins = input.plugins;
@@ -231,17 +243,15 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
         for (const rawLine of lines) {
-          const piece = HttpChatCompletionsRepository.parseSseDataLine(rawLine);
-          if (piece !== null) {
+          for (const piece of HttpChatCompletionsRepository.parseSseDataLine(rawLine)) {
             sawAnyContent = true;
             yield piece;
           }
         }
       }
-      const tailPiece = HttpChatCompletionsRepository.parseSseDataLine(buffer);
-      if (tailPiece !== null) {
+      for (const piece of HttpChatCompletionsRepository.parseSseDataLine(buffer)) {
         sawAnyContent = true;
-        yield tailPiece;
+        yield piece;
       }
     } finally {
       reader.releaseLock();

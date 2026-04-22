@@ -44,17 +44,68 @@ describe('HttpChatCompletionsRepository', () => {
     const repo = new HttpChatCompletionsRepository('https://example.com/chat/completions', 'm1');
     const result = await repo.completeChat({ model: 'm1', messages: [{ role: 'user', content: 'Hi' }] });
     expect(result.content).toBe('Hello learner');
-    expect(result.reasoningContent).toBeNull();
+    expect(result.reasoningDetails).toBeNull();
   });
 
-  it('returns reasoning_content when present', async () => {
+  it('returns reasoning_details text when present', async () => {
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: 'The answer', reasoning_content: 'Thinking...' } }] }),
+      json: async () => ({
+        choices: [{ message: { content: 'The answer', reasoning_details: [{ type: 'reasoning.text', text: 'Thinking...' }] } }],
+      }),
     })) as unknown as typeof fetch;
     const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
     const result = await repo.completeChat({ model: 'm', messages: [{ role: 'user', content: 'x' }] });
-    expect(result.reasoningContent).toBe('Thinking...');
+    expect(result.reasoningDetails).toBe('Thinking...');
+  });
+
+  it('returns raw reasoning_details item when item type is unrecognized', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: 'Final',
+              reasoning_details: [
+                {
+                  type: 'reasoning.unknown',
+                  marker: 'untrusted',
+                  sequence: 1,
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    })) as unknown as typeof fetch;
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    const result = await repo.completeChat({ model: 'm', messages: [{ role: 'user', content: 'x' }] });
+    expect(result.reasoningDetails).toBe(
+      JSON.stringify({
+        type: 'reasoning.unknown',
+        marker: 'untrusted',
+        sequence: 1,
+      }),
+    );
+  });
+
+  it('sends reasoning enabled when includeOpenRouterReasoning is true', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    await repo.completeChat({
+      model: 'm',
+      messages: [{ role: 'user', content: 'a' }],
+      includeOpenRouterReasoning: true,
+      enableReasoning: true,
+    });
+    const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!;
+    const body = JSON.parse(init.body as string);
+    expect(body.reasoning).toEqual({ enabled: true });
   });
 
   it('sends Authorization when api key is set', async () => {
@@ -148,7 +199,9 @@ describe('HttpChatCompletionsRepository', () => {
   it('falls back to completeChat when streaming disabled', async () => {
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: 'Direct', reasoning_content: 'Think' } }] }),
+      json: async () => ({
+        choices: [{ message: { content: 'Direct', reasoning_details: [{ type: 'reasoning.text', text: 'Think' }] } }],
+      }),
     })) as unknown as typeof fetch;
 
     const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');

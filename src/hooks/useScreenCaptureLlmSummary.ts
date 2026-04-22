@@ -7,6 +7,7 @@ import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInf
 import {
   resolveEnableStreamingForSurface,
   resolveModelForSurface,
+  resolveOpenRouterReasoningChatOptions,
 } from '../infrastructure/llmInferenceSurfaceProviders';
 import { captureDisplayMediaAsPngDataUrl } from '../lib/captureDisplayMediaFrame';
 
@@ -16,9 +17,11 @@ function isAbortError(e: unknown): boolean {
   return (e instanceof DOMException && e.name === 'AbortError') || (e instanceof Error && e.name === 'AbortError');
 }
 
-export interface UseScreenCaptureLlmSummaryParams { enableThinking: boolean; }
+export interface UseScreenCaptureLlmSummaryParams {
+  reasoningFromUserToggle: boolean;
+}
 
-export function useScreenCaptureLlmSummary({ enableThinking }: UseScreenCaptureLlmSummaryParams) {
+export function useScreenCaptureLlmSummary({ reasoningFromUserToggle }: UseScreenCaptureLlmSummaryParams) {
   const [surfaceOpen, setSurfaceOpen] = useState(false);
   const [assistantText, setAssistantText] = useState<string | null>(null);
   const [reasoningText, setReasoningText] = useState<string | null>(null);
@@ -61,6 +64,10 @@ export function useScreenCaptureLlmSummary({ enableThinking }: UseScreenCaptureL
         const messages = buildScreenCaptureSummaryMessages(dataUrl);
         const model = resolveModelForSurface('screenCaptureSummary');
         const enableStreaming = resolveEnableStreamingForSurface('screenCaptureSummary');
+        const reasoningOpts = resolveOpenRouterReasoningChatOptions(
+          'screenCaptureSummary',
+          reasoningFromUserToggle,
+        );
         setAssistantText('');
         void (async () => {
           try {
@@ -69,7 +76,8 @@ export function useScreenCaptureLlmSummary({ enableThinking }: UseScreenCaptureL
               model,
               messages,
               signal: ac.signal,
-              enableThinking,
+              includeOpenRouterReasoning: reasoningOpts.includeOpenRouterReasoning,
+              enableReasoning: reasoningOpts.enableReasoning,
               enableStreaming,
             })) {
               if (generationRef.current !== myGeneration) return;
@@ -86,7 +94,7 @@ export function useScreenCaptureLlmSummary({ enableThinking }: UseScreenCaptureL
         })();
       })
       .catch((e) => { if (generationRef.current !== myGeneration) return; setError(e); setPending(false); });
-  }, [enableThinking, setPending]);
+  }, [reasoningFromUserToggle, setPending]);
 
   return {
     surfaceOpen, handleSurfaceOpenChange, dismissSurface, startSummarize,

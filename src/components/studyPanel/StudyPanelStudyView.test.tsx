@@ -44,6 +44,7 @@ const baseProps: StudyPanelStudyViewProps = {
     reasoningText: null,
     requestExplain: vi.fn(),
     cancelInflight: vi.fn(),
+    clearSessionCache: vi.fn(),
   },
   llmFormulaExplain: {
     isPending: false,
@@ -52,6 +53,7 @@ const baseProps: StudyPanelStudyViewProps = {
     reasoningText: null,
     requestExplain: vi.fn(),
     cancelInflight: vi.fn(),
+    clearSessionCache: vi.fn(),
   },
   llmMermaidDiagram: {
     isPending: false,
@@ -60,13 +62,17 @@ const baseProps: StudyPanelStudyViewProps = {
     reasoningText: null,
     requestDiagram: vi.fn(),
     cancelInflight: vi.fn(),
+    clearSessionCache: vi.fn(),
   },
-  explainThinkingEnabled: false,
-  formulaThinkingEnabled: false,
-  mermaidThinkingEnabled: false,
-  onToggleExplainThinking: vi.fn(),
-  onToggleFormulaThinking: vi.fn(),
-  onToggleMermaidThinking: vi.fn(),
+  explainReasoningEnabled: false,
+  explainReasoningToggleDisabled: false,
+  formulaReasoningEnabled: false,
+  formulaReasoningToggleDisabled: false,
+  mermaidReasoningEnabled: false,
+  mermaidReasoningToggleDisabled: false,
+  onToggleExplainReasoning: vi.fn(),
+  onToggleFormulaReasoning: vi.fn(),
+  onToggleMermaidReasoning: vi.fn(),
   explainTtsEnabled: true,
   formulaTtsEnabled: true,
   mermaidTtsEnabled: true,
@@ -130,6 +136,7 @@ describe('StudyPanelStudyView', () => {
         reasoningText: null,
         requestExplain,
         cancelInflight: vi.fn(),
+        clearSessionCache: vi.fn(),
       },
     });
     document.body.append(container);
@@ -151,6 +158,7 @@ describe('StudyPanelStudyView', () => {
         reasoningText: null,
         requestExplain,
         cancelInflight: vi.fn(),
+        clearSessionCache: vi.fn(),
       },
     });
     document.body.append(container);
@@ -170,6 +178,7 @@ describe('StudyPanelStudyView', () => {
         reasoningText: null,
         requestDiagram,
         cancelInflight: vi.fn(),
+        clearSessionCache: vi.fn(),
       },
     });
     document.body.append(container);
@@ -190,6 +199,7 @@ describe('StudyPanelStudyView', () => {
         reasoningText: null,
         requestDiagram,
         cancelInflight,
+        clearSessionCache: vi.fn(),
       },
     });
     document.body.append(container);
@@ -202,6 +212,7 @@ describe('StudyPanelStudyView', () => {
         reasoningText: null,
         requestDiagram,
         cancelInflight,
+        clearSessionCache: vi.fn(),
       },
     });
     expect(
@@ -237,6 +248,7 @@ describe('StudyPanelStudyView', () => {
         reasoningText: null,
         requestDiagram,
         cancelInflight,
+        clearSessionCache: vi.fn(),
       },
     });
     document.body.append(container);
@@ -269,6 +281,7 @@ describe('StudyPanelStudyView', () => {
         reasoningText: null,
         requestExplain,
         cancelInflight,
+        clearSessionCache: vi.fn(),
       },
     });
     document.body.append(container);
@@ -283,6 +296,7 @@ describe('StudyPanelStudyView', () => {
         reasoningText: null,
         requestExplain,
         cancelInflight,
+        clearSessionCache: vi.fn(),
       },
     });
     const loading = document.body.querySelector('[data-testid="study-card-llm-explain-loading"]');

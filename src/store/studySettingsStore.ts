@@ -8,8 +8,10 @@ import type {
   InferenceSurfaceId,
   LlmInferenceProviderId,
   OpenRouterModelConfig,
+  OpenRouterSupportedParameter,
   SurfaceProviderBinding,
 } from '../types/llmInference';
+import { inferOpenRouterSupportedParameters } from '../lib/openRouterReasoning';
 import { ALL_SURFACE_IDS } from '../types/llmInference';
 import {
   buildSeedOpenRouterConfigs,
@@ -111,6 +113,12 @@ function isStringRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
 
+function parseStoredSupportedParameters(raw: unknown): readonly OpenRouterSupportedParameter[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out = raw.filter((x): x is OpenRouterSupportedParameter => x === 'reasoning');
+  return out.length > 0 ? out : undefined;
+}
+
 function parseConfigs(raw: unknown): OpenRouterModelConfig[] | null {
   if (!Array.isArray(raw)) return null;
   const out: OpenRouterModelConfig[] = [];
@@ -119,10 +127,19 @@ function parseConfigs(raw: unknown): OpenRouterModelConfig[] | null {
     const id = typeof item.id === 'string' ? item.id : '';
     const label = typeof item.label === 'string' ? item.label : '';
     const model = typeof item.model === 'string' ? item.model : '';
-    const enableThinking = item.enableThinking === true;
+    const enableReasoning = item.enableReasoning === true;
     const enableStreaming = item.enableStreaming !== false;
     if (!id || !model) continue;
-    out.push({ id, label: label || model, model, enableThinking, enableStreaming });
+    const supportedParameters =
+      inferOpenRouterSupportedParameters(model) ?? parseStoredSupportedParameters(item.supportedParameters);
+    out.push({
+      id,
+      label: label || model,
+      model,
+      enableReasoning,
+      enableStreaming,
+      ...(supportedParameters ? { supportedParameters } : {}),
+    });
   }
   return out;
 }
@@ -267,12 +284,15 @@ export const createStudySettingsStore = () =>
 
       addOpenRouterConfig: (partial) => {
         const id = partial.id ?? randomId();
+        const model = partial.model.trim();
+        const supportedParameters = inferOpenRouterSupportedParameters(model);
         const config: OpenRouterModelConfig = {
           id,
-          label: partial.label || partial.model,
-          model: partial.model,
-          enableThinking: partial.enableThinking === true,
+          label: partial.label || model,
+          model,
+          enableReasoning: partial.enableReasoning === true,
           enableStreaming: partial.enableStreaming === true,
+          ...(supportedParameters ? { supportedParameters } : {}),
         };
         const next = [...get().openRouterConfigs, config];
         persist({ openRouterConfigs: next });
@@ -285,9 +305,17 @@ export const createStudySettingsStore = () =>
             ? {
                 ...c,
                 ...(patch.label !== undefined ? { label: patch.label } : {}),
-                ...(patch.model !== undefined ? { model: patch.model } : {}),
-                ...(patch.enableThinking !== undefined ? { enableThinking: patch.enableThinking } : {}),
+                ...(patch.model !== undefined
+                  ? {
+                      model: patch.model,
+                      supportedParameters: inferOpenRouterSupportedParameters(patch.model),
+                    }
+                  : {}),
+                ...(patch.enableReasoning !== undefined ? { enableReasoning: patch.enableReasoning } : {}),
                 ...(patch.enableStreaming !== undefined ? { enableStreaming: patch.enableStreaming } : {}),
+                ...(patch.supportedParameters !== undefined
+                  ? { supportedParameters: patch.supportedParameters }
+                  : {}),
               }
             : c,
         );

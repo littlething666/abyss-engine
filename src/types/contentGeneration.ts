@@ -48,7 +48,7 @@ export interface ContentGenerationJob {
   inputMessages: string | null;
   /** Accumulated raw LLM output (grows during streaming). */
   rawOutput: string;
-  /** Reasoning/thinking text if model supports it. */
+  /** Reasoning text if model supports it. */
   reasoningText: string | null;
 
   /** Terminal error message. */
@@ -64,8 +64,8 @@ export interface ContentGenerationJob {
    * Stored in Dexie automatically (not indexed).
    *
    * Known keys:
- * - `model` (string) — exact model identifier used for this job.
-   * - `enableThinking` (boolean) — whether thinking/reasoning was enabled for this job.
+   * - `model` (string) — exact model identifier used for this job.
+   * - `enableReasoning` (boolean) — whether OpenRouter `reasoning` was enabled for this job.
    * - `nextLevel` (number) — for expansion jobs, the crystal level that triggered expansion.
    * - `prereqEdgesCorrection` (object) — when edges output was deterministically repaired
    *   (`removed` / `added` entries); see `correctPrereqEdges`.

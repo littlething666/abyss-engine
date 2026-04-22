@@ -11,16 +11,20 @@ import {
 import MathMarkdownRenderer from './MathMarkdownRenderer';
 import { cn } from '@/lib/utils';
 
-export type LlmThinkingBlockProps = {
+/**
+ * Collapsible block that displays model reasoning tokens.
+ * Auto-opens when reasoning text arrives; auto-collapses when streaming completes.
+ */
+export type LlmReasoningBlockProps = {
   reasoningText: string | null;
   isPending: boolean;
 };
 
 /**
- * Collapsible block that displays model reasoning/thinking tokens.
+ * Collapsible block that displays model reasoning tokens.
  * Auto-opens when reasoning text arrives; auto-collapses when streaming completes.
  */
-export function LlmThinkingBlock({ reasoningText, isPending }: LlmThinkingBlockProps) {
+export function LlmReasoningBlock({ reasoningText, isPending }: LlmReasoningBlockProps) {
   const [open, setOpen] = useState(false);
   const wasStreamingRef = useRef(false);
 
@@ -53,7 +57,7 @@ export function LlmThinkingBlock({ reasoningText, isPending }: LlmThinkingBlockP
           )}
           aria-hidden
         />
-        <span className="font-medium">Thinking</span>
+        <span className="font-medium">Reasoning</span>
         {isPending && (
           <span
             className="ml-0.5 inline-block h-2 w-0.5 animate-pulse bg-muted-foreground/50 align-middle"
