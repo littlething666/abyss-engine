@@ -3,7 +3,7 @@
  *
  * Re-derives all LLM params (messages, model, chat repo) from current DB state
  * rather than replaying snapshots. This ensures retries use the latest data.
- * enableThinking is replayed from the original job's metadata.
+ * `enableReasoning` is replayed from the original job's metadata.
  */
 
 import type { ContentGenerationJob, ContentGenerationJobKind, ContentGenerationPipeline } from '@/types/contentGeneration';
@@ -33,8 +33,10 @@ const JOB_KIND_TO_STAGE: Partial<Record<ContentGenerationJobKind, Exclude<TopicG
   'topic-mini-games': 'mini-games',
 };
 
-function getEnableThinking(job: ContentGenerationJob): boolean {
-  return (job.metadata?.enableThinking as boolean) ?? false;
+function getEnableReasoningFromJobMetadata(job: ContentGenerationJob): boolean {
+  const m = job.metadata;
+  if (m && typeof m.enableReasoning === 'boolean') return m.enableReasoning;
+  return false;
 }
 
 function getNextLevel(job: ContentGenerationJob): number | null {
@@ -104,7 +106,7 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
 
   const subjectId = job.subjectId!;
   const topicId = job.topicId;
-  const enableThinking = getEnableThinking(job);
+  const enableReasoning = getEnableReasoningFromJobMetadata(job);
 
   try {
     // ── Topic pipeline stage ──────────────────────────────────────────
@@ -117,7 +119,7 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         writer: deckWriter,
         subjectId,
         topicId,
-        enableThinking,
+        enableReasoning,
         forceRegenerate: true,
         stage,
         retryOf: job.id,
@@ -159,7 +161,7 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         subjectId,
         topicId,
         nextLevel,
-        enableThinking,
+        enableReasoning,
         retryOf: job.id,
       });
       return;
@@ -216,7 +218,7 @@ export async function retryFailedPipeline(pipelineId: string): Promise<void> {
   const topicId = failedJob.topicId;
   if (!subjectId) return;
 
-  const enableThinking = getEnableThinking(failedJob);
+  const enableReasoning = getEnableReasoningFromJobMetadata(failedJob);
 
   try {
     // ── Topic content pipeline ────────────────────────────────────────
@@ -229,7 +231,7 @@ export async function retryFailedPipeline(pipelineId: string): Promise<void> {
         writer: deckWriter,
         subjectId,
         topicId,
-        enableThinking,
+        enableReasoning,
         forceRegenerate: true,
         resumeFromStage: resumeStage,
         retryOf: pipelineId,

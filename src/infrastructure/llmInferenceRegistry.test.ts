@@ -8,7 +8,7 @@ vi.mock('../store/studySettingsStore', () => {
       id: 'cfg-1',
       label: 'x',
       model: 'x/y',
-      enableThinking: false,
+      enableReasoning: false,
       enableStreaming: false,
     }),
     getLocalModelId: () => '',

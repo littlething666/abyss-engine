@@ -63,7 +63,7 @@ export type AppEventMap = {
   'topic:generation-pipeline': {
     subjectId: string;
     topicId: string;
-    enableThinking?: boolean;
+    enableReasoning?: boolean;
     /** When true, never skip generation because `topicStudyContentReady` is satisfied. */
     forceRegenerate?: boolean;
     /** Defaults to `full` in the runner when omitted. */

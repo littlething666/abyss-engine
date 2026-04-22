@@ -1,13 +1,14 @@
 import type { OpenRouterModelConfig } from '../types/llmInference';
+import { inferOpenRouterSupportedParameters } from '../lib/openRouterReasoning';
 
 export const OPENROUTER_MODEL_OPTIONS = [
   'google/gemma-4-26b-a4b-it:free',
   'google/gemma-4-31b-it:free',
-  'nvidia/nemotron-3-super-120b-a12b:free:thinking',
   'nvidia/nemotron-3-super-120b-a12b:free',
   'openrouter/elephant-alpha',
-  'minimax/minimax-m2.5:free:thinking',
+  'minimax/minimax-m2.5:free',
   'qwen/qwen3.5-flash-02-23',
+  'mistralai/mistral-small-2603',
 ] as const;
 
 export const STUDY_SURFACE_DEFAULT_MODEL = 'google/gemma-4-26b-a4b-it:free' as const;
@@ -18,24 +19,28 @@ export const GENERATION_SURFACE_DEFAULT_MODEL = 'google/gemma-4-31b-it:free' as 
  * every device for the same model string.
  */
 const SEEDED_CONFIG_IDS: Record<(typeof OPENROUTER_MODEL_OPTIONS)[number], string> = {
-  'nvidia/nemotron-3-super-120b-a12b:free:thinking': '00000000-0000-4000-8000-000000000001',
   'nvidia/nemotron-3-super-120b-a12b:free': '00000000-0000-4000-8000-000000000002',
   'openrouter/elephant-alpha': '00000000-0000-4000-8000-000000000003',
-  'minimax/minimax-m2.5:free:thinking': '00000000-0000-4000-8000-000000000004',
+  'minimax/minimax-m2.5:free': '00000000-0000-4000-8000-000000000004',
   'qwen/qwen3.5-flash-02-23': '00000000-0000-4000-8000-000000000005',
   'google/gemma-4-31b-it:free': '00000000-0000-4000-8000-000000000006',
   'google/gemma-4-26b-a4b-it:free': '00000000-0000-4000-8000-000000000007',
-
+  'mistralai/mistral-small-2603': '00000000-0000-4000-8000-000000000008',
 };
 
 export function buildSeedOpenRouterConfigs(): OpenRouterModelConfig[] {
-  return OPENROUTER_MODEL_OPTIONS.map((model) => ({
-    id: SEEDED_CONFIG_IDS[model],
-    label: model,
-    model,
-    enableThinking: model.endsWith(':thinking'),
-    enableStreaming: true,
-  }));
+  return OPENROUTER_MODEL_OPTIONS.map((model) => {
+    const supportedParameters = inferOpenRouterSupportedParameters(model);
+    const supportsReasoning = supportedParameters !== undefined && supportedParameters.length > 0;
+    return {
+      id: SEEDED_CONFIG_IDS[model],
+      label: model,
+      model,
+      supportedParameters,
+      enableReasoning: supportsReasoning,
+      enableStreaming: true,
+    };
+  });
 }
 
 export function seededConfigIdForModel(

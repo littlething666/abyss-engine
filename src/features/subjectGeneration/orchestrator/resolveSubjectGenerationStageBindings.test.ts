@@ -15,7 +15,7 @@ vi.mock('@/infrastructure/llmInferenceSurfaceProviders', () => ({
     surfaceId === 'subjectGenerationTopics' ? 'topics/model' : 'edges/model',
   resolveEnableStreamingForSurface: (surfaceId: string) =>
     surfaceId === 'subjectGenerationTopics',
-  resolveEnableThinkingForSurface: (surfaceId: string) =>
+  resolveEnableReasoningForSurface: (surfaceId: string) =>
     surfaceId === 'subjectGenerationEdges',
 }));
 
@@ -36,8 +36,8 @@ describe('resolveSubjectGenerationStageBindings', () => {
     expect(b.topics.model).toBe('topics/model');
     expect(b.edges.model).toBe('edges/model');
     expect(b.topics.enableStreaming).toBe(true);
-    expect(b.topics.enableThinking).toBe(false);
-    expect(b.edges.enableThinking).toBe(true);
+    expect(b.topics.enableReasoning).toBe(false);
+    expect(b.edges.enableReasoning).toBe(true);
   });
 
   it('forces enableStreaming false for edges', () => {

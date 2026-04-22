@@ -41,10 +41,12 @@ import { useMediaQuery } from '@/hooks/use-media-query';
 import { useScreenCaptureLlmSummary } from '@/hooks/useScreenCaptureLlmSummary';
 import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
 import { useLlmAssistantSpeech } from '@/hooks/useLlmAssistantSpeech';
+import { useStudySettingsStore } from '@/store/studySettingsStore';
 import { useContentGenerationHydration } from '@/hooks/useContentGenerationHydration';
 import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifecycle';
-import { useThinkingToggle } from '@/hooks/useThinkingToggle';
-import { LlmThinkingToggle } from '@/components/LlmThinkingToggle';
+import { useReasoningToggle } from '@/hooks/useReasoningToggle';
+import { makeOpenRouterReasoningSupportedSelector } from '@/infrastructure/llmInferenceSurfaceProviders';
+import { LlmReasoningToggle } from '@/components/LlmReasoningToggle';
 import { LlmTtsToggle } from '@/components/LlmTtsToggle';
 import { topicRefKey } from '@/lib/topicRef';
 import { useTopicCardQueriesForSubjectFilter } from '@/hooks/useTopicCardQueries';
@@ -66,11 +68,14 @@ const HomeContent: React.FC = () => {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isIncrementalSubjectOpen, setIsIncrementalSubjectOpen] = useState(false);
   const isDesktop = useMediaQuery('(min-width: 768px)');
-  const screenCaptureThinking = useThinkingToggle('screenCaptureSummary');
+  const screenCaptureReasoning = useReasoningToggle('screenCaptureSummary');
   const screenCaptureTts = useInferenceTtsToggle();
   const screenCaptureLlm = useScreenCaptureLlmSummary({
-    enableThinking: screenCaptureThinking.enableThinking,
+    reasoningFromUserToggle: screenCaptureReasoning.enableReasoning,
   });
+  const screenCaptureReasoningSupported = useStudySettingsStore(
+    makeOpenRouterReasoningSupportedSelector('screenCaptureSummary'),
+  );
   const screenCaptureAssistantSpeech = useLlmAssistantSpeech({
     isSurfaceOpen: screenCaptureLlm.surfaceOpen,
     ttsEnabled: screenCaptureTts.enableTts,
@@ -339,9 +344,10 @@ const HomeContent: React.FC = () => {
         errorMessage={screenCaptureLlm.errorMessage}
         headerAction={
           <div className="flex items-center gap-1">
-            <LlmThinkingToggle
-              enabled={screenCaptureThinking.enableThinking}
-              onToggle={screenCaptureThinking.toggleThinking}
+              <LlmReasoningToggle
+                enabled={screenCaptureReasoning.enableReasoning}
+              disabled={!screenCaptureReasoningSupported}
+                onToggle={screenCaptureReasoning.toggleReasoning}
             />
             <LlmTtsToggle
               enabled={screenCaptureTts.enableTts}

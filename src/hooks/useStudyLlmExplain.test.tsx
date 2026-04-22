@@ -42,6 +42,7 @@ type QuestionHarnessProps = {
   topicLabel: string;
   questionText: string;
   cardId: string | null;
+  reasoningFromUserToggle?: boolean;
 };
 
 type QuestionApi = ReturnType<typeof useStudyQuestionLlmExplain>;
@@ -50,21 +51,35 @@ type MermaidHarnessProps = {
   topicLabel: string;
   questionText: string;
   cardId: string | null;
+  reasoningFromUserToggle?: boolean;
 };
 
 type MermaidApi = ReturnType<typeof useStudyQuestionMermaidDiagram>;
 
 const MermaidHarness = forwardRef<MermaidApi | null, MermaidHarnessProps>(
-  function MermaidHarness({ topicLabel, questionText, cardId }, ref) {
-    const api = useStudyQuestionMermaidDiagram({ topicLabel, questionText, cardId, enableThinking: false });
+  function MermaidHarness({ topicLabel, questionText, cardId, reasoningFromUserToggle }, ref) {
+    const api = useStudyQuestionMermaidDiagram({
+      topicLabel,
+      questionText,
+      cardId,
+      reasoningFromUserToggle: reasoningFromUserToggle ?? false,
+    });
     useImperativeHandle(ref, () => api, [api]);
     return null;
   },
 );
 
 const QuestionHarness = forwardRef<QuestionApi | null, QuestionHarnessProps>(
-  function QuestionHarness({ topicLabel, questionText, cardId }, ref) {
-    const api = useStudyQuestionLlmExplain({ topicLabel, questionText, cardId, enableThinking: false });
+  function QuestionHarness(
+    { topicLabel, questionText, cardId, reasoningFromUserToggle },
+    ref,
+  ) {
+    const api = useStudyQuestionLlmExplain({
+      topicLabel,
+      questionText,
+      cardId,
+      reasoningFromUserToggle: reasoningFromUserToggle ?? false,
+    });
     useImperativeHandle(ref, () => api, [api]);
     return null;
   },
@@ -74,13 +89,19 @@ type FormulaHarnessProps = {
   topicLabel: string;
   cardQuestionText: string;
   cardId: string | null;
+  reasoningFromUserToggle?: boolean;
 };
 
 type FormulaApi = ReturnType<typeof useStudyFormulaLlmExplain>;
 
 const FormulaHarness = forwardRef<FormulaApi | null, FormulaHarnessProps>(
-  function FormulaHarness({ topicLabel, cardQuestionText, cardId }, ref) {
-    const api = useStudyFormulaLlmExplain({ topicLabel, cardQuestionText, cardId, enableThinking: false });
+  function FormulaHarness({ topicLabel, cardQuestionText, cardId, reasoningFromUserToggle }, ref) {
+    const api = useStudyFormulaLlmExplain({
+      topicLabel,
+      cardQuestionText,
+      cardId,
+      reasoningFromUserToggle: reasoningFromUserToggle ?? false,
+    });
     useImperativeHandle(ref, () => api, [api]);
     return null;
   },
@@ -414,4 +435,5 @@ describe('useStudyFormulaLlmExplain', () => {
     await flushStreamUpdates();
     unmount();
   });
+
 });

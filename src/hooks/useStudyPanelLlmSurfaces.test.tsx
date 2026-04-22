@@ -20,6 +20,9 @@ function makeLlmProps() {
   const cancelFormula = vi.fn();
   const requestDiagram = vi.fn();
   const cancelMermaid = vi.fn();
+  const clearExplain = vi.fn();
+  const clearFormula = vi.fn();
+  const clearMermaid = vi.fn();
 
   const llmExplain = {
     isPending: false,
@@ -28,6 +31,7 @@ function makeLlmProps() {
     reasoningText: null as string | null,
     requestExplain,
     cancelInflight: cancelExplain,
+    clearSessionCache: clearExplain,
   };
   const llmFormulaExplain = {
     isPending: false,
@@ -36,6 +40,7 @@ function makeLlmProps() {
     reasoningText: null as string | null,
     requestExplain: requestFormula,
     cancelInflight: cancelFormula,
+    clearSessionCache: clearFormula,
   };
   const llmMermaidDiagram = {
     isPending: false,
@@ -44,18 +49,25 @@ function makeLlmProps() {
     reasoningText: null as string | null,
     requestDiagram,
     cancelInflight: cancelMermaid,
+    clearSessionCache: clearMermaid,
   };
 
   return {
     llmExplain,
     llmFormulaExplain,
     llmMermaidDiagram,
+    clearExplain,
+    clearFormula,
+    clearMermaid,
     requestExplain,
     cancelExplain,
     requestFormula,
     cancelFormula,
     requestDiagram,
     cancelMermaid,
+    explainReasoningEnabled: false,
+    formulaReasoningEnabled: false,
+    mermaidReasoningEnabled: false,
   };
 }
 
@@ -157,6 +169,74 @@ describe('useStudyPanelLlmSurfaces', () => {
     });
     expect(p.cancelExplain).toHaveBeenCalledTimes(1);
     expect(p.cancelMermaid).toHaveBeenCalledTimes(1);
+    expect(p.requestFormula).toHaveBeenCalledWith('x^2', 'question');
+    unmount();
+  });
+
+  it('clears and restarts explain request when explain reasoning toggle changes while explain is open', () => {
+    const p = makeLlmProps();
+    const { getApi, rerender, unmount } = renderHarness(p);
+    act(() => {
+      getApi()?.handleExplainOpenChange(true);
+    });
+    p.clearExplain.mockClear();
+    p.requestExplain.mockClear();
+
+    rerender({
+      ...p,
+      explainReasoningEnabled: true,
+      formulaReasoningEnabled: false,
+      mermaidReasoningEnabled: false,
+    });
+
+    expect(p.cancelExplain).toHaveBeenCalledTimes(1);
+    expect(p.clearExplain).toHaveBeenCalledTimes(1);
+    expect(p.requestExplain).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('clears and restarts mermaid request when mermaid reasoning toggle changes while mermaid is open', () => {
+    const p = makeLlmProps();
+    const { getApi, rerender, unmount } = renderHarness(p);
+    act(() => {
+      getApi()?.handleMermaidOpenChange(true);
+    });
+    p.clearMermaid.mockClear();
+    p.requestDiagram.mockClear();
+
+    rerender({
+      ...p,
+      explainReasoningEnabled: false,
+      formulaReasoningEnabled: false,
+      mermaidReasoningEnabled: true,
+    });
+
+    expect(p.cancelMermaid).toHaveBeenCalledTimes(1);
+    expect(p.clearMermaid).toHaveBeenCalledTimes(1);
+    expect(p.requestDiagram).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('clears and restarts formula request when formula reasoning toggle changes while formula is open', () => {
+    const p = makeLlmProps();
+    const anchor = document.createElement('span');
+    const { getApi, rerender, unmount } = renderHarness(p);
+    act(() => {
+      getApi()?.openFormulaExplain('x^2', 'question', anchor);
+    });
+    p.clearFormula.mockClear();
+    p.requestFormula.mockClear();
+
+    rerender({
+      ...p,
+      explainReasoningEnabled: false,
+      formulaReasoningEnabled: true,
+      mermaidReasoningEnabled: false,
+    });
+
+    expect(p.cancelFormula).toHaveBeenCalledTimes(1);
+    expect(p.clearFormula).toHaveBeenCalledTimes(1);
+    expect(p.requestFormula).toHaveBeenCalledTimes(1);
     expect(p.requestFormula).toHaveBeenCalledWith('x^2', 'question');
     unmount();
   });

@@ -44,7 +44,7 @@ describe('runContentGenerationJob', () => {
       chat: chat as IChatCompletionsRepository,
       model: 'm',
       messages: [{ role: 'user', content: 'hi' }],
-      enableThinking: false,
+      enableReasoning: false,
       parseOutput: async () => ({ ok: true, data: 42 }),
       persistOutput,
     });
@@ -75,7 +75,7 @@ describe('runContentGenerationJob', () => {
       chat: chat as IChatCompletionsRepository,
       model: 'm',
       messages: [{ role: 'user', content: 'hi' }],
-      enableThinking: false,
+      enableReasoning: false,
       parseOutput: async () => ({ ok: false, error: 'parse failed', parseError: 'parse failed' }),
       persistOutput: vi.fn(),
     });
@@ -105,7 +105,7 @@ describe('runContentGenerationJob', () => {
       chat: chat as IChatCompletionsRepository,
       model: 'm',
       messages: [{ role: 'user', content: 'hi' }],
-      enableThinking: false,
+      enableReasoning: false,
       externalSignal: ac.signal,
       parseOutput: async () => ({ ok: true, data: null }),
       persistOutput: vi.fn(),

@@ -7,25 +7,43 @@ import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInf
 import {
   resolveEnableStreamingForSurface,
   resolveModelForSurface,
+  resolveOpenRouterReasoningChatOptions,
 } from '../infrastructure/llmInferenceSurfaceProviders';
 import { useStudySettingsStore } from '../store/studySettingsStore';
 
 const chat = getChatCompletionsRepositoryForSurface('studyQuestionExplain');
 
 export interface UseStudyQuestionLlmExplainParams {
-  topicLabel: string; questionText: string; cardId: string | null; enableThinking: boolean;
+  topicLabel: string;
+  questionText: string;
+  cardId: string | null;
+  /** User toggle (localStorage); API omits `reasoning` when the bound model does not support it. */
+  reasoningFromUserToggle: boolean;
 }
 
 type CachedResponse = { content: string; reasoning: string | null };
 const sessionQuestionExplainCache = new Map<string, CachedResponse>();
 export function clearStudyQuestionLlmExplainSessionCacheForTests(): void { sessionQuestionExplainCache.clear(); }
+export function clearStudyQuestionLlmExplainSessionCacheForCard(cardId: string): void {
+  const prefix = `${cardId}\0`;
+  for (const key of sessionQuestionExplainCache.keys()) {
+    if (key.startsWith(prefix)) {
+      sessionQuestionExplainCache.delete(key);
+    }
+  }
+}
 
 function cacheKey(cardId: string, topicLabel: string, q: string): string { return `${cardId}\0${topicLabel}\0${q}`; }
 function isAbortError(e: unknown): boolean {
   return (e instanceof DOMException && e.name === 'AbortError') || (e instanceof Error && e.name === 'AbortError');
 }
 
-export function useStudyQuestionLlmExplain({ topicLabel, questionText, cardId, enableThinking }: UseStudyQuestionLlmExplainParams) {
+export function useStudyQuestionLlmExplain({
+  topicLabel,
+  questionText,
+  cardId,
+  reasoningFromUserToggle,
+}: UseStudyQuestionLlmExplainParams) {
   const agentPersonality = useStudySettingsStore((s) => s.agentPersonality);
   const [assistantText, setAssistantText] = useState<string | null>(null);
   const [reasoningText, setReasoningText] = useState<string | null>(null);
@@ -40,8 +58,18 @@ export function useStudyQuestionLlmExplain({ topicLabel, questionText, cardId, e
     abortRef.current?.abort(); abortRef.current = null; generationRef.current += 1;
     setAssistantText(null); setReasoningText(null); setError(null); setPending(false);
   }, [setPending]);
-  useEffect(() => { reset(); }, [cardId, reset]);
+  useEffect(() => {
+    if (!cardId) {
+      reset();
+      return;
+    }
+    reset();
+  }, [cardId, reset]);
   useEffect(() => () => { abortRef.current?.abort(); }, []);
+  const clearSessionCache = useCallback(() => {
+    if (!cardId) return;
+    clearStudyQuestionLlmExplainSessionCacheForCard(cardId);
+  }, [cardId]);
 
   const cancelInflight = useCallback(() => {
     abortRef.current?.abort(); abortRef.current = null;
@@ -65,6 +93,7 @@ export function useStudyQuestionLlmExplain({ topicLabel, questionText, cardId, e
     const messages = buildMinimalStudyQuestionMessages(topicLabel, questionText, agentPersonality);
     const model = resolveModelForSurface('studyQuestionExplain');
     const enableStreaming = resolveEnableStreamingForSurface('studyQuestionExplain');
+    const reasoningOpts = resolveOpenRouterReasoningChatOptions('studyQuestionExplain', reasoningFromUserToggle);
 
     void (async () => {
       try {
@@ -73,7 +102,8 @@ export function useStudyQuestionLlmExplain({ topicLabel, questionText, cardId, e
           model,
           messages,
           signal: ac.signal,
-          enableThinking,
+          includeOpenRouterReasoning: reasoningOpts.includeOpenRouterReasoning,
+          enableReasoning: reasoningOpts.enableReasoning,
           enableStreaming,
         })) {
           if (generationRef.current !== myGeneration) return;
@@ -89,11 +119,11 @@ export function useStudyQuestionLlmExplain({ topicLabel, questionText, cardId, e
         setError(e); setPending(false); setAssistantText(null); setReasoningText(null);
       }
     })();
-  }, [cardId, topicLabel, questionText, agentPersonality, enableThinking, setPending]);
+  }, [cardId, topicLabel, questionText, agentPersonality, reasoningFromUserToggle, setPending]);
 
   return {
     requestExplain, isPending,
     errorMessage: error instanceof Error ? error.message : error ? String(error) : null,
-    assistantText, reasoningText, reset, cancelInflight,
+    assistantText, reasoningText, reset, cancelInflight, clearSessionCache,
   };
 }

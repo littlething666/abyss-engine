@@ -20,7 +20,7 @@ export interface ChatStreamChunk {
 
 export interface ChatCompletionResult {
   content: string;
-  reasoningContent: string | null;
+  reasoningDetails: string | null;
 }
 
 /** OpenAI-compatible `response_format` (used for OpenRouter structured JSON jobs). */
@@ -30,8 +30,13 @@ export interface ChatCompletionStreamInput {
   model: string;
   messages: ChatMessage[];
   signal?: AbortSignal;
-  /** Send `true` to enable model thinking; `false` to disable; omit for server default. */
-  enableThinking?: boolean;
+  /**
+   * When true with OpenRouter, sends `reasoning: { enabled: enableReasoning }`.
+   * Omit or false for non-OpenRouter or models without the reasoning parameter.
+   */
+  includeOpenRouterReasoning?: boolean;
+  /** Meaningful only when `includeOpenRouterReasoning` is true. */
+  enableReasoning?: boolean;
   /** Send `false` to force non-streamed completion; defaults to `true`. */
   enableStreaming?: boolean;
   /** When set, forwarded as `temperature` in the chat-completions JSON body. Omit for provider default. */
@@ -46,7 +51,8 @@ export interface IChatCompletionsRepository {
   completeChat(input: {
     model: string;
     messages: ChatMessage[];
-    enableThinking?: boolean;
+    includeOpenRouterReasoning?: boolean;
+    enableReasoning?: boolean;
     signal?: AbortSignal;
     /** When set, forwarded as `temperature` in the chat-completions JSON body. Omit for provider default. */
     temperature?: number;

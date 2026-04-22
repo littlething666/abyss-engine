@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import MathMarkdownRenderer from './MathMarkdownRenderer';
-import { LlmThinkingBlock } from './LlmThinkingBlock';
+import { LlmReasoningBlock } from './LlmReasoningBlock';
 import { ResponsiveLlmInferenceSurface } from './ResponsiveLlmInferenceSurface';
 
 const SCREEN_SUMMARY_DESCRIPTION =
@@ -45,7 +45,7 @@ export function ScreenCaptureLlmSummarySurface({
       headerAction={headerAction}
     >
       <div className="max-h-[min(50vh,36rem)] overflow-y-auto pb-2 text-sm">
-        <LlmThinkingBlock reasoningText={reasoningText} isPending={isPending} />
+        <LlmReasoningBlock reasoningText={reasoningText} isPending={isPending} />
         {errorMessage && !isPending && (
           <p className="text-destructive" data-testid="screen-capture-llm-error">
             {errorMessage}

@@ -25,7 +25,7 @@ const captureMock = vi.mocked(captureDisplayMediaAsPngDataUrl);
 type Api = ReturnType<typeof useScreenCaptureLlmSummary>;
 
 const Harness = forwardRef<Api | null>(function Harness(_props, ref) {
-  const api = useScreenCaptureLlmSummary({ enableThinking: false });
+  const api = useScreenCaptureLlmSummary({ reasoningFromUserToggle: false });
   useImperativeHandle(ref, () => api, [api]);
   return null;
 });

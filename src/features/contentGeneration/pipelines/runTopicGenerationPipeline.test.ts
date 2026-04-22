@@ -121,7 +121,7 @@ describe('runTopicGenerationPipeline', () => {
       writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
-      enableThinking: false,
+      enableReasoning: false,
       stage: 'full',
       forceRegenerate: true,
     });
@@ -139,7 +139,7 @@ describe('runTopicGenerationPipeline', () => {
       writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
-      enableThinking: false,
+      enableReasoning: false,
       stage: 'mini-games',
       forceRegenerate: true,
     });
@@ -155,7 +155,7 @@ describe('runTopicGenerationPipeline', () => {
       writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
-      enableThinking: false,
+      enableReasoning: false,
       stage: 'full',
     });
 
@@ -173,7 +173,7 @@ describe('runTopicGenerationPipeline', () => {
       writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
-      enableThinking: false,
+      enableReasoning: false,
       stage: 'theory',
     });
 
@@ -188,7 +188,7 @@ describe('runTopicGenerationPipeline', () => {
       writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 'missing-topic',
-      enableThinking: false,
+      enableReasoning: false,
     });
 
     expect(result.ok).toBe(false);
@@ -207,7 +207,7 @@ describe('runTopicGenerationPipeline', () => {
       writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
-      enableThinking: false,
+      enableReasoning: false,
       stage: 'full',
       resumeFromStage: 'study-cards',
       forceRegenerate: true,
@@ -230,7 +230,7 @@ describe('runTopicGenerationPipeline', () => {
       writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
-      enableThinking: false,
+      enableReasoning: false,
       stage: 'full',
       resumeFromStage: 'mini-games',
       forceRegenerate: true,
@@ -250,7 +250,7 @@ describe('runTopicGenerationPipeline', () => {
       writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
-      enableThinking: false,
+      enableReasoning: false,
       stage: 'full',
       resumeFromStage: 'theory',
       forceRegenerate: true,
@@ -271,7 +271,7 @@ describe('runTopicGenerationPipeline', () => {
       writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
-      enableThinking: false,
+      enableReasoning: false,
       stage: 'full',
       resumeFromStage: 'study-cards',
       forceRegenerate: true,
@@ -301,7 +301,7 @@ describe('runTopicGenerationPipeline', () => {
       writer: makeWriter(),
       subjectId: 'sub-1',
       topicId: 't-a',
-      enableThinking: false,
+      enableReasoning: false,
       stage: 'full',
       resumeFromStage: 'study-cards',
       forceRegenerate: true,

@@ -6,7 +6,7 @@ export function triggerTopicGenerationPipeline(
   subjectId: string,
   topicId: string,
   options?: {
-    enableThinking?: boolean;
+    enableReasoning?: boolean;
     signal?: AbortSignal;
     forceRegenerate?: boolean;
     stage?: TopicGenerationStage;
@@ -15,7 +15,7 @@ export function triggerTopicGenerationPipeline(
   appEventBus.emit('topic:generation-pipeline', {
     subjectId,
     topicId,
-    enableThinking: options?.enableThinking ?? false,
+    enableReasoning: options?.enableReasoning ?? false,
     forceRegenerate: options?.forceRegenerate,
     stage: options?.stage,
   });

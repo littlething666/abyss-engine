@@ -111,7 +111,7 @@ describe('studySettingsStore', () => {
     const id = store.getState().addOpenRouterConfig({
       label: 'Claude',
       model: 'anthropic/claude-sonnet-4',
-      enableThinking: false,
+      enableReasoning: false,
       enableStreaming: false,
     });
     const configs = store.getState().openRouterConfigs;
@@ -125,6 +125,15 @@ describe('studySettingsStore', () => {
     const id = store.getState().openRouterConfigs[0].id;
     store.getState().updateOpenRouterConfig(id, { model: 'new/model' });
     expect(store.getState().openRouterConfigs[0].model).toBe('new/model');
+  });
+
+  it('updateOpenRouterConfig clears supportedParameters when model is unknown', () => {
+    const store = createStudySettingsStore();
+    const id = store.getState().openRouterConfigs[0].id;
+    const before = store.getState().openRouterConfigs[0];
+    expect(before.supportedParameters).toEqual(['reasoning']);
+    store.getState().updateOpenRouterConfig(id, { model: 'openrouter/elephant-alpha' });
+    expect(store.getState().openRouterConfigs[0].supportedParameters).toBeUndefined();
   });
 
   it('deleteOpenRouterConfig cascades bindings to fallback', () => {

@@ -42,7 +42,7 @@ export type ResponsiveLlmInferenceSurfaceProps = {
   desktopContentClassName: string;
   sheetMaxHeightClassName: string;
   sheetBodyScrollClassName: string;
-  /** Optional action element rendered inline after the title (e.g. thinking toggle). */
+  /** Optional action element rendered inline after the title (e.g. reasoning toggle). */
   headerAction?: ReactNode;
   children: ReactNode;
 };
