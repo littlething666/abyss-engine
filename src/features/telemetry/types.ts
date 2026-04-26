@@ -31,6 +31,9 @@ export const StudyCardReviewedPayloadSchema = z.object({
   difficulty: z.number().min(1).max(4),
   timeTakenMs: z.number().nonnegative(),
   buffMultiplier: z.number().positive(),
+  coarseChoice: z.enum(['forgot', 'recalled']).optional(),
+  hintUsed: z.boolean().optional(),
+  appliedBucket: z.enum(['fast', 'normal', 'slow', 'forgot']).optional(),
 });
 export type StudyCardReviewedPayload = z.infer<typeof StudyCardReviewedPayloadSchema>;
 

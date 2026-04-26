@@ -2,8 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 
-import { Rating } from '../types';
-import { getRatingColor, getRatingLabel, useProgressionStore as useStudyStore } from '../features/progression';
+import { CoarseChoice, Rating, type CoarseRatingResult } from '../types';
+import { useProgressionStore as useStudyStore } from '../features/progression';
 import { evaluateAnswer as evaluateChoiceAnswer } from '../features/content';
 import { telemetry } from '../features/telemetry';
 import {
@@ -43,6 +43,7 @@ interface StudyPanelModalProps {
   totalCards: number;
   onClose: () => void;
   onSubmitResult: (cardId: string, isCorrect?: boolean, rating?: Rating) => void;
+  onSubmitCoarseResult: (cardId: string, coarseChoice: CoarseChoice) => CoarseRatingResult | null;
   onAdvance: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -56,6 +57,7 @@ export function StudyPanelModal({
   totalCards,
   onClose,
   onSubmitResult,
+  onSubmitCoarseResult,
   onAdvance,
   onUndo,
   onRedo,
@@ -193,6 +195,12 @@ export function StudyPanelModal({
     onSubmitResult(cardKey, ic, rating);
   };
 
+  const handleHintUsed = () => {
+    const cardKey = resolveSubmitCardKey();
+    if (!cardKey) return;
+    useStudyStore.getState().markHintUsed(cardKey);
+  };
+
   const handleChoiceSubmit = () => {
     const activeCard = model.activeCard;
     if (!activeCard) return;
@@ -210,10 +218,13 @@ export function StudyPanelModal({
     onAdvance();
   };
 
-  const handleRating = (rating: Rating) => {
+  const handleCoarseRate = (coarseChoice: CoarseChoice) => {
     const cardKey = resolveSubmitCardKey();
     if (!cardKey) return;
-    submitResultWithFeedback(cardKey, rating);
+    const result = onSubmitCoarseResult(cardKey, coarseChoice);
+    if (!result) return;
+    submitResultWithFeedback(cardKey, result.rating);
+    setIsCorrect(result.rating >= 3);
     setIsAnswerSubmitted(true);
     setIsRevealed(true);
   };
@@ -311,9 +322,8 @@ export function StudyPanelModal({
                   onSelectAnswer={handleAnswerSelect}
                   onChoiceSubmit={handleChoiceSubmit}
                   onChoiceContinue={handleChoiceContinue}
-                  onRate={handleRating}
-                  getRatingLabel={getRatingLabel}
-                  getRatingColor={getRatingColor}
+                  onCoarseRate={handleCoarseRate}
+                  onHintUsed={handleHintUsed}
                   onUndo={handleUndo}
                   onRedo={handleRedo}
                   canUndo={model.canUndo}

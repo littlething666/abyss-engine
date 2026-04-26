@@ -21,6 +21,9 @@ import {
   AttunementRitualPayload,
   StudySessionAttempt,
   INITIAL_UNLOCK_POINTS,
+  CoarseChoice,
+  CoarseRatingResult,
+  CoarseReviewMeta,
   ProgressionActions,
   ProgressionState,
   Rating,
@@ -46,6 +49,7 @@ import {
   capXpBelowThreshold,
 } from '../crystalTrial/progressionIntegration';
 import { crystalCeremonyStore } from './crystalCeremonyStore';
+import { resolveCoarseRating } from './coarseRating';
 
 type ProgressionStore = ProgressionState & ProgressionActions;
 const PROGRESSION_STORAGE_KEY = 'abyss-progression-v3';
@@ -88,7 +92,194 @@ function attachSm2(ref: TopicRef, cards: Card[], sm2Map: Record<string, SM2Data>
 
 export const useProgressionStore = create<ProgressionStore>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+      const submitResolvedStudyResult = (
+        cardRefKeyStr: string,
+        rating: Rating,
+        meta?: CoarseReviewMeta,
+      ) => {
+        const state = get();
+        const session = state.currentSession;
+        if (!session || session.currentCardId !== cardRefKeyStr) {
+          return;
+        }
+
+        const crystal = state.activeCrystals.find(
+          (item) => item.subjectId === session.subjectId && item.topicId === session.topicId,
+        );
+        if (!crystal) {
+          return;
+        }
+
+        const now = Date.now();
+        const timeTakenMs = Math.max(0, now - (session.lastCardStart ?? now));
+
+        const { cardId: rawCardId } = parseCardRefKey(cardRefKeyStr);
+        const previousSM2 = state.sm2Data[cardRefKeyStr] || defaultSM2;
+        const updatedSM2 = sm2.calculateNextReview(previousSM2, rating);
+        const cardFormatType = session.cardTypeById?.[rawCardId];
+        const reward = calculateXPReward(cardFormatType, rating);
+        const activeBuffs = state.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
+        const buffMultiplier = BuffEngine.get().getModifierTotal('xp_multiplier', activeBuffs);
+        const buffedReward = Math.max(0, Math.round(reward * buffMultiplier));
+
+        // --- Crystal Trial: XP gating ---
+        const ref: TopicRef = { subjectId: session.subjectId, topicId: session.topicId };
+        const previousXp = crystal.xp;
+        const currentLevel = calculateLevelFromXP(previousXp);
+        const trialStore = useCrystalTrialStore.getState();
+        const trialStatus = trialStore.getTrialStatus(ref);
+
+        let effectiveReward = buffedReward;
+        let hasBoundaryPregeneration = false;
+
+        if (currentLevel < MAX_CRYSTAL_LEVEL) {
+          const { crosses } = wouldCrossLevelBoundary(previousXp, buffedReward);
+
+          if (crosses && trialStatusRequiresXpCapAtLevelBoundary(trialStatus)) {
+            const { maxReward } = capXpBelowThreshold(previousXp, currentLevel);
+            effectiveReward = maxReward;
+            if (trialStatus === 'idle') {
+              emitCrystalTrialPregenerateForTopic(ref, state.activeCrystals);
+              hasBoundaryPregeneration = true;
+            }
+          }
+        }
+
+        const applied = applyCrystalXpDelta(state.activeCrystals, ref, effectiveReward);
+        if (!applied) {
+          return;
+        }
+
+        undoManager.capture(state);
+
+        const difficulty = session.cardDifficultyById?.[rawCardId] ?? 1;
+        const isCorrect = rating >= 3;
+        const nextResonance = isCorrect ? state.resonancePoints + 1 : state.resonancePoints;
+        const sessionId = session.sessionId ?? makeStudySessionId(ref);
+        const attempt: StudySessionAttempt = {
+          cardId: cardRefKeyStr,
+          rating,
+          difficulty,
+          timestamp: now,
+          isCorrect,
+          coarseChoice: meta?.coarseChoice,
+          hintUsed: meta?.hintUsed,
+          appliedBucket: meta?.appliedBucket,
+          timeTakenMs: meta?.timeTakenMs,
+        };
+        const nextAttempts = [...(session.attempts ?? []), attempt];
+        const buffsAfterUsage = BuffEngine.get().consumeForEvent(activeBuffs, 'card_reviewed');
+        const nextAttemptsCount = nextAttempts.length;
+        // Compare against totalCards (original queue size set at session start)
+        // instead of the shrinking queueCardIds to avoid premature completion.
+        const isSessionComplete = nextAttemptsCount >= session.totalCards;
+        const nextBuffs = isSessionComplete
+          ? BuffEngine.get().consumeForEvent(buffsAfterUsage, 'session_ended')
+          : buffsAfterUsage;
+        const sessionMetrics = isSessionComplete
+          ? buildStudySessionMetrics(sessionId, session.topicId, nextAttempts, session.startedAt ?? now)
+          : null;
+
+        set({
+          resonancePoints: nextResonance,
+          unlockPoints: applied.levelsGained > 0 ? state.unlockPoints + applied.levelsGained : state.unlockPoints,
+          sm2Data: {
+            ...state.sm2Data,
+            [cardRefKeyStr]: updatedSM2,
+          },
+          activeCrystals: applied.nextActiveCrystals,
+          currentSession: {
+            ...session,
+            attempts: nextAttempts,
+            lastCardStart: now,
+          },
+          activeBuffs: nextBuffs,
+        });
+
+        appEventBus.emit('card:reviewed', {
+          cardId: cardRefKeyStr,
+          rating,
+          subjectId: session.subjectId,
+          topicId: session.topicId,
+          sessionId,
+          timeTakenMs,
+          buffedReward: effectiveReward,
+          buffMultiplier,
+          difficulty,
+          isCorrect,
+          coarseChoice: meta?.coarseChoice,
+          hintUsed: meta?.hintUsed,
+          appliedBucket: meta?.appliedBucket,
+        });
+
+        if (applied.levelsGained > 0) {
+          appEventBus.emit('crystal:leveled', {
+            subjectId: session.subjectId,
+            topicId: session.topicId,
+            from: applied.previousLevel,
+            to: applied.nextLevel,
+            levelsGained: applied.levelsGained,
+            sessionId,
+            isDialogOpen: selectIsAnyModalOpen(useUIStore.getState()),
+          });
+        }
+
+        // --- Crystal Trial: XP pregeneration trigger ---
+        if (currentLevel < MAX_CRYSTAL_LEVEL && effectiveReward > 0) {
+          const newXp = previousXp + effectiveReward;
+          const trialStatusAfter = useCrystalTrialStore.getState().getTrialStatus(ref);
+          if (!hasBoundaryPregeneration && hasAddedAnyXp(previousXp, newXp) && trialStatusAfter === 'idle') {
+            // Use level from pre-reward XP (currentLevel); post-set crystal XP can differ
+            appEventBus.emit('crystal:trial-pregenerate', {
+              subjectId: ref.subjectId,
+              topicId: ref.topicId,
+              currentLevel,
+              targetLevel: currentLevel + 1,
+            });
+          }
+        }
+
+        if (isSessionComplete && sessionMetrics) {
+          appEventBus.emit('session:completed', {
+            subjectId: session.subjectId,
+            topicId: session.topicId,
+            sessionId,
+            correctRate: sessionMetrics.correctRate,
+            sessionDurationMs: sessionMetrics.sessionDurationMs,
+            totalAttempts: sessionMetrics.cardsCompleted,
+          });
+        }
+      };
+
+      const submitCoarseRating = (
+        cardRefKeyStr: string,
+        coarseChoice: CoarseChoice,
+      ): CoarseRatingResult | null => {
+        const state = get();
+        const session = state.currentSession;
+        if (!session || session.currentCardId !== cardRefKeyStr) {
+          return null;
+        }
+
+        const now = Date.now();
+        const timeTakenMs = Math.max(0, now - (session.lastCardStart ?? now));
+        const { cardId } = parseCardRefKey(cardRefKeyStr);
+        const hintUsed = Boolean(session.hintUsedByCardId?.[cardId]);
+        const difficulty = session.cardDifficultyById?.[cardId] ?? 1;
+        const resolved = resolveCoarseRating({ coarse: coarseChoice, timeTakenMs, hintUsed, difficulty });
+
+        submitResolvedStudyResult(cardRefKeyStr, resolved.rating, {
+          coarseChoice,
+          hintUsed,
+          appliedBucket: resolved.appliedBucket,
+          timeTakenMs,
+        });
+
+        return resolved;
+      };
+
+      return {
       activeCrystals: [],
       sm2Data: {},
       unlockPoints: INITIAL_UNLOCK_POINTS,
@@ -248,6 +439,7 @@ export const useProgressionStore = create<ProgressionStore>()(
             attempts: [],
             cardDifficultyById,
             cardTypeById,
+            hintUsedByCardId: {},
           },
           pendingRitual: null,
         });
@@ -303,159 +495,39 @@ export const useProgressionStore = create<ProgressionStore>()(
       },
 
       submitStudyResult: (cardRefKeyStr, rating) => {
+        submitResolvedStudyResult(cardRefKeyStr, rating);
+      },
+
+      markHintUsed: (cardRefKeyStr) => {
         const state = get();
         const session = state.currentSession;
         if (!session || session.currentCardId !== cardRefKeyStr) {
           return;
         }
 
-        const crystal = state.activeCrystals.find(
-          (item) => item.subjectId === session.subjectId && item.topicId === session.topicId,
-        );
-        if (!crystal) {
-          return;
-        }
-        const now = Date.now();
-        const timeTakenMs = Math.max(0, now - (session.lastCardStart ?? now));
-
-        const { cardId: rawCardId } = parseCardRefKey(cardRefKeyStr);
-        const previousSM2 = state.sm2Data[cardRefKeyStr] || defaultSM2;
-        const updatedSM2 = sm2.calculateNextReview(previousSM2, rating);
-        const cardFormatType = session.cardTypeById?.[rawCardId];
-        const reward = calculateXPReward(cardFormatType, rating);
-        const activeBuffs = state.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
-        const buffMultiplier = BuffEngine.get().getModifierTotal('xp_multiplier', activeBuffs);
-        const buffedReward = Math.max(0, Math.round(reward * buffMultiplier));
-
-        // --- Crystal Trial: XP gating ---
-        const ref: TopicRef = { subjectId: session.subjectId, topicId: session.topicId };
-        const previousXp = crystal.xp;
-        const currentLevel = calculateLevelFromXP(previousXp);
-        const trialStore = useCrystalTrialStore.getState();
-        const trialStatus = trialStore.getTrialStatus(ref);
-
-        let effectiveReward = buffedReward;
-        let hasBoundaryPregeneration = false;
-
-        if (currentLevel < MAX_CRYSTAL_LEVEL) {
-          const { crosses } = wouldCrossLevelBoundary(previousXp, buffedReward);
-
-          if (crosses && trialStatusRequiresXpCapAtLevelBoundary(trialStatus)) {
-            const { maxReward } = capXpBelowThreshold(previousXp, currentLevel);
-            effectiveReward = maxReward;
-            if (trialStatus === 'idle') {
-              emitCrystalTrialPregenerateForTopic(ref, state.activeCrystals);
-              hasBoundaryPregeneration = true;
-            }
-          }
-        }
-
-        const applied = applyCrystalXpDelta(
-          state.activeCrystals,
-          ref,
-          effectiveReward,
-        );
-        if (!applied) {
+        const alreadySubmitted = (session.attempts ?? []).some((attempt) => attempt.cardId === cardRefKeyStr);
+        if (alreadySubmitted) {
           return;
         }
 
-        undoManager.capture(state);
-
-        const difficulty = session.cardDifficultyById?.[rawCardId] ?? 1;
-        const isCorrect = rating >= 3;
-        const nextResonance = isCorrect ? state.resonancePoints + 1 : state.resonancePoints;
-        const sessionId = session.sessionId ?? makeStudySessionId(ref);
-        const attempt: StudySessionAttempt = {
-          cardId: cardRefKeyStr,
-          rating,
-          difficulty,
-          timestamp: now,
-          isCorrect,
-        };
-        const nextAttempts = [...(session.attempts ?? []), attempt];
-        const buffsAfterUsage = BuffEngine.get().consumeForEvent(activeBuffs, 'card_reviewed');
-        const nextAttemptsCount = nextAttempts.length;
-        // Compare against totalCards (original queue size set at session start)
-        // instead of the shrinking queueCardIds to avoid premature completion.
-        const isSessionComplete = nextAttemptsCount >= session.totalCards;
-        const nextBuffs = isSessionComplete
-          ? BuffEngine.get().consumeForEvent(buffsAfterUsage, 'session_ended')
-          : buffsAfterUsage;
-        const sessionMetrics = isSessionComplete
-          ? buildStudySessionMetrics(
-              sessionId,
-              session.topicId,
-              nextAttempts,
-              session.startedAt ?? now,
-            )
-          : null;
+        const { cardId } = parseCardRefKey(cardRefKeyStr);
+        if (session.hintUsedByCardId?.[cardId]) {
+          return;
+        }
 
         set({
-          resonancePoints: nextResonance,
-          unlockPoints: applied.levelsGained > 0 ? state.unlockPoints + applied.levelsGained : state.unlockPoints,
-          sm2Data: {
-            ...state.sm2Data,
-            [cardRefKeyStr]: updatedSM2,
-          },
-          activeCrystals: applied.nextActiveCrystals,
           currentSession: {
             ...session,
-            attempts: nextAttempts,
-            lastCardStart: now,
+            hintUsedByCardId: {
+              ...(session.hintUsedByCardId ?? {}),
+              [cardId]: true,
+            },
           },
-          activeBuffs: nextBuffs,
         });
+      },
 
-        appEventBus.emit('card:reviewed', {
-          cardId: cardRefKeyStr,
-          rating,
-          subjectId: session.subjectId,
-          topicId: session.topicId,
-          sessionId,
-          timeTakenMs,
-          buffedReward: effectiveReward,
-          buffMultiplier,
-          difficulty,
-          isCorrect,
-        });
-
-        if (applied.levelsGained > 0) {
-          appEventBus.emit('crystal:leveled', {
-            subjectId: session.subjectId,
-            topicId: session.topicId,
-            from: applied.previousLevel,
-            to: applied.nextLevel,
-            levelsGained: applied.levelsGained,
-            sessionId,
-            isDialogOpen: selectIsAnyModalOpen(useUIStore.getState()),
-          });
-        }
-
-        // --- Crystal Trial: XP pregeneration trigger ---
-        if (currentLevel < MAX_CRYSTAL_LEVEL && effectiveReward > 0) {
-          const newXp = previousXp + effectiveReward;
-          const trialStatusAfter = useCrystalTrialStore.getState().getTrialStatus(ref);
-          if (!hasBoundaryPregeneration && hasAddedAnyXp(previousXp, newXp) && trialStatusAfter === 'idle') {
-            // Use level from pre-reward XP (currentLevel); post-set crystal XP can differ
-            appEventBus.emit('crystal:trial-pregenerate', {
-              subjectId: ref.subjectId,
-              topicId: ref.topicId,
-              currentLevel,
-              targetLevel: currentLevel + 1,
-            });
-          }
-        }
-
-        if (isSessionComplete && sessionMetrics) {
-          appEventBus.emit('session:completed', {
-            subjectId: session.subjectId,
-            topicId: session.topicId,
-            sessionId,
-            correctRate: sessionMetrics.correctRate,
-            sessionDurationMs: sessionMetrics.sessionDurationMs,
-            totalAttempts: sessionMetrics.cardsCompleted,
-          });
-        }
+      submitCoarseStudyResult: (cardRefKeyStr, coarseChoice) => {
+        return submitCoarseRating(cardRefKeyStr, coarseChoice);
       },
 
       advanceStudyAfterReveal: () => {
@@ -678,7 +750,8 @@ export const useProgressionStore = create<ProgressionStore>()(
         const key = cardRefKey({ ...ref, cardId: rawCardId });
         return get().sm2Data[key];
       },
-    }),
+      };
+    },
     {
       name: PROGRESSION_STORAGE_KEY,
       version: 1,

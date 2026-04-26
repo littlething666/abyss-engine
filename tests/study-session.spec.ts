@@ -220,7 +220,7 @@ async function assertProgressionEventIncrease(page: any, priorEvents: number) {
 test.describe('Study Session', () => {
   /**
    * Happy Path: Complete Study Session
-   * Combines: Load deck -> Select crystal -> Open study -> Show answer -> Rate -> Verify stats
+   * Combines: Load deck -> Select crystal -> Open study -> Rate card -> Verify stability
    */
   test('complete study session happy path', async ({ page }) => {
     await setupTestWithDeck(page);
@@ -237,9 +237,6 @@ test.describe('Study Session', () => {
     await expect(discoveryDialog).toBeVisible({ timeout: 5000 });
     await expect(discoveryDialog.getByText(/Spend keys to unlock topic crystals/i)).toBeVisible();
     await page.keyboard.press('Escape');
-    if (await discoveryDialog.isVisible()) {
-      await page.keyboard.press('Escape');
-    }
     await expect(discoveryDialog).not.toBeVisible({ timeout: 3000 });
 
     // If there are due cards, try to study one
@@ -257,17 +254,17 @@ test.describe('Study Session', () => {
     );
     await page.waitForTimeout(1000);
 
-    // Click Show Answer if present (flashcard)
-    const showAnswerButton = page.getByTestId('study-card-show-answer');
-    if (await showAnswerButton.count() > 0) {
-      await showAnswerButton.click({ force: true });
-      await page.waitForTimeout(500);
-
-      // Click a rating button
-      const goodButton = page.locator('button:has-text("Good")');
-      if (await goodButton.count() > 0) {
-        await goodButton.click({ force: true });
-        await page.waitForTimeout(1000);
+    // If this is a flashcard, rate it immediately (coarse choice and reveal in one step).
+    const flashcardFormatBadge = page.getByTestId('study-card-format-flashcard');
+    const flashcardRecallButton = page.getByTestId('study-card-coarse-recalled');
+    if ((await flashcardFormatBadge.count()) > 0 && (await flashcardRecallButton.count()) > 0) {
+      const priorEvents = await getEventCount(page);
+      await flashcardRecallButton.click({ force: true });
+      await expect(page.getByTestId('study-card-answer-section')).toBeVisible({ timeout: 3000 });
+      await assertProgressionEventIncrease(page, priorEvents);
+      const continueButton = page.getByTestId('study-card-continue');
+      if (await continueButton.count() > 0) {
+        await continueButton.click({ force: true });
       }
     }
 
@@ -278,7 +275,7 @@ test.describe('Study Session', () => {
 
 test.describe('Challenge Format Types', () => {
   /**
-   * Flashcard: Renders, flips, and handles feedback
+   * Flashcard: Renders, reveals answer, and handles feedback
    */
   test('Flashcard format renders, flips, and handles feedback', async ({ page }) => {
     await setupTestWithDeck(page);
@@ -293,8 +290,8 @@ test.describe('Challenge Format Types', () => {
 
     // Submit a recall rating (flashcard answer reveal + rating happen together).
     const priorEvents = await getEventCount(page);
-    const ratingButton = page.getByTestId('study-card-rating-3');
-    await ratingButton.click({ force: true });
+    const recallButton = page.getByTestId('study-card-coarse-recalled');
+    await recallButton.click({ force: true });
     await page.waitForTimeout(300);
 
     // Verify answer is shown

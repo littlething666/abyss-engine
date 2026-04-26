@@ -17,6 +17,8 @@ export type UseStudyPanelLlmSurfacesParams = {
   explainReasoningEnabled: boolean;
   formulaReasoningEnabled: boolean;
   mermaidReasoningEnabled: boolean;
+  isAnswerSubmitted: boolean;
+  onHintUsed?: () => void;
 };
 
 export function useStudyPanelLlmSurfaces({
@@ -26,6 +28,8 @@ export function useStudyPanelLlmSurfaces({
   explainReasoningEnabled,
   formulaReasoningEnabled,
   mermaidReasoningEnabled,
+  isAnswerSubmitted,
+  onHintUsed,
 }: UseStudyPanelLlmSurfacesParams) {
   const [explainOpen, setExplainOpen] = useState(false);
   const [mermaidOpen, setMermaidOpen] = useState(false);
@@ -50,18 +54,26 @@ export function useStudyPanelLlmSurfaces({
     setActiveFormulaContext(null);
   }, [llmFormulaExplain]);
 
+  const fireHint = useCallback(() => {
+    if (isAnswerSubmitted) {
+      return;
+    }
+    onHintUsed?.();
+  }, [isAnswerSubmitted, onHintUsed]);
+
   const requestFormulaExplain = llmFormulaExplain.requestExplain;
   const openFormulaExplain = useCallback(
     (latex: string, context: StudyFormulaExplainContext, _anchorElement: HTMLElement) => {
       llmExplain.cancelInflight();
       setExplainOpen(false);
       closeMermaidDiagram();
+      fireHint();
       setActiveFormulaLatex(latex);
       setActiveFormulaContext(context);
       setFormulaOpen(true);
       requestFormulaExplain(latex, context);
     },
-    [llmExplain, requestFormulaExplain, closeMermaidDiagram],
+    [closeMermaidDiagram, fireHint, llmExplain, requestFormulaExplain],
   );
 
   const handleFormulaOpenChange = useCallback(
@@ -73,9 +85,10 @@ export function useStudyPanelLlmSurfaces({
         setActiveFormulaContext(null);
         return;
       }
+      fireHint();
       setFormulaOpen(true);
     },
-    [llmFormulaExplain],
+    [fireHint, llmFormulaExplain],
   );
 
   useEffect(() => {
@@ -126,6 +139,7 @@ export function useStudyPanelLlmSurfaces({
         llmExplain.cancelInflight();
         return;
       }
+      fireHint();
       closeFormulaExplain();
       closeMermaidDiagram();
       if (
@@ -138,7 +152,7 @@ export function useStudyPanelLlmSurfaces({
         llmExplain.requestExplain();
       }
     },
-    [llmExplain, closeFormulaExplain, closeMermaidDiagram],
+    [closeFormulaExplain, closeMermaidDiagram, fireHint, llmExplain],
   );
 
   const handleMermaidOpenChange = useCallback(
@@ -148,6 +162,7 @@ export function useStudyPanelLlmSurfaces({
         llmMermaidDiagram.cancelInflight();
         return;
       }
+      fireHint();
       llmExplain.cancelInflight();
       setExplainOpen(false);
       closeFormulaExplain();
@@ -161,7 +176,7 @@ export function useStudyPanelLlmSurfaces({
         llmMermaidDiagram.requestDiagram();
       }
     },
-    [llmExplain, llmMermaidDiagram, closeFormulaExplain],
+    [closeFormulaExplain, fireHint, llmExplain, llmMermaidDiagram],
   );
 
   const dismissExplainInference = useCallback(() => {

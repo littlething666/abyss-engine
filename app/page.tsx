@@ -7,7 +7,7 @@ import { useProgressionStore as useStudyStore } from '@/features/progression';
 import { undoManager } from '@/features/progression/undoManager';
 import { useUIStore } from '@/store/uiStore';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
-import { Rating } from '@/types';
+import { CoarseChoice, Rating } from '@/types';
 import type { Card } from '@/types/core';
 import DebugControls from '@/components/debug/DebugControls';
 
@@ -144,6 +144,7 @@ const HomeContent: React.FC = () => {
 
   const initialize = useStudyStore((s) => s.initialize);
   const submitStudyResult = useStudyStore((s) => s.submitStudyResult);
+  const submitCoarseStudyResult = useStudyStore((s) => s.submitCoarseStudyResult);
   const advanceStudyAfterReveal = useStudyStore((state) => state.advanceStudyAfterReveal);
   const undoLastStudyResult = useStudyStore((s) => s.undoLastStudyResult);
   const redoLastStudyResult = useStudyStore((s) => s.redoLastStudyResult);
@@ -181,6 +182,11 @@ const HomeContent: React.FC = () => {
     const reviewRating = selfRating ?? (isCorrect === undefined ? 3 : isCorrect ? 3 : 1);
     submitStudyResult(cardId || currentSession?.currentCardId || '', reviewRating);
   };
+
+  const handleCoarseRate = useCallback(
+    (cardId: string, coarseChoice: CoarseChoice) => submitCoarseStudyResult(cardId || currentSession?.currentCardId || '', coarseChoice),
+    [currentSession?.currentCardId, submitCoarseStudyResult],
+  );
 
   const handleCloseDiscoveryModal = () => { closeDiscoveryModal(); };
   const handleCloseStudyPanel = () => { closeStudyPanel(); };
@@ -381,6 +387,7 @@ const HomeContent: React.FC = () => {
         totalCards={currentSession?.totalCards ?? totalCards}
         onClose={handleCloseStudyPanel}
         onSubmitResult={handleRate}
+        onSubmitCoarseResult={handleCoarseRate}
         onAdvance={advanceStudyAfterReveal}
         onUndo={handleUndo}
         onRedo={handleRedo}

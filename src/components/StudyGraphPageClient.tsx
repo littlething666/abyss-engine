@@ -27,7 +27,7 @@ import {
 } from '@/lib/subjectGraphsForceGraphData';
 import { useUIStore } from '@/store/uiStore';
 import type { Card } from '@/types/core';
-import type { Rating } from '@/types';
+import { CoarseChoice, type Rating } from '@/types';
 
 export function StudyGraphPageClient() {
   const initializedRef = useRef(false);
@@ -35,6 +35,7 @@ export function StudyGraphPageClient() {
   const startTopicStudySession = useProgressionStore((s) => s.startTopicStudySession);
   const currentSession = useProgressionStore((s) => s.currentSession);
   const submitStudyResult = useProgressionStore((s) => s.submitStudyResult);
+  const submitCoarseStudyResult = useProgressionStore((s) => s.submitCoarseStudyResult);
   const advanceStudyAfterReveal = useProgressionStore((s) => s.advanceStudyAfterReveal);
   const undoLastStudyResult = useProgressionStore((s) => s.undoLastStudyResult);
   const redoLastStudyResult = useProgressionStore((s) => s.redoLastStudyResult);
@@ -157,6 +158,12 @@ export function StudyGraphPageClient() {
     [currentSession?.currentCardId, submitStudyResult],
   );
 
+  const handleCoarseRate = useCallback(
+    (cardId: string, coarseChoice: CoarseChoice) =>
+      submitCoarseStudyResult(cardId || currentSession?.currentCardId || '', coarseChoice),
+    [currentSession?.currentCardId, submitCoarseStudyResult],
+  );
+
   const handleUndo = useCallback(() => {
     if (!undoManager.canUndo) {
       return;
@@ -258,6 +265,7 @@ export function StudyGraphPageClient() {
         totalCards={currentSession?.totalCards ?? 0}
         onClose={handleCloseStudyPanel}
         onSubmitResult={handleRate}
+        onSubmitCoarseResult={handleCoarseRate}
         onAdvance={advanceStudyAfterReveal}
         onUndo={handleUndo}
         onRedo={handleRedo}

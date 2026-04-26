@@ -19,7 +19,7 @@
     "test:unit:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@base-ui/react": "^1.4.0",
+    "@base-ui/react": "^1.4.1",
     "@react-three/drei": "11.0.0-alpha.5",
     "@react-three/fiber": "10.0.0-alpha.2",
     "@tanstack/react-query": "^5.90.21",
@@ -34,7 +34,7 @@
     "dexie": "^4.3.0",
     "katex": "^0.16.33",
     "leva": "^0.10.1",
-    "lucide-react": "^1.8.0",
+    "lucide-react": "^1.11.0",
     "mermaid": "^10.9.5",
     "motion": "^12.35.0",
     "next": "^16.1.6",
@@ -44,7 +44,7 @@
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",
-    "shadcn": "^4.3.0",
+    "shadcn": "^4.5.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
     "three": "^0.183.2",
@@ -63,16 +63,16 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.183.1",
-    "autoprefixer": "^10.4.24",
+    "autoprefixer": "^10.5.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^26.0.0",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.10",
     "raw-loader": "^4.0.2",
-    "tailwindcss": "^4.2.1",
-    "typescript": "^6.0.2",
-    "vitest": "^4.1.4"
+    "tailwindcss": "^4.2.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
   },
-  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
+  "packageManager": "pnpm@10.33.0",
   "pnpm": {
     "patchedDependencies": {
       "@react-three/drei@11.0.0-alpha.5": "patches/@react-three__drei@11.0.0-alpha.5.patch",

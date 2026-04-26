@@ -28,9 +28,8 @@ const baseProps: StudyPanelStudyViewProps = {
   onSelectAnswer: vi.fn(),
   onChoiceSubmit: vi.fn(),
   onChoiceContinue: vi.fn(),
-  onRate: vi.fn(),
-  getRatingLabel: vi.fn(),
-  getRatingColor: vi.fn(),
+  onCoarseRate: vi.fn(),
+  onHintUsed: vi.fn(),
   onUndo: vi.fn(),
   onRedo: vi.fn(),
   canUndo: false,
@@ -426,7 +425,7 @@ describe('StudyPanelStudyView', () => {
   });
 
   it('shows flashcard rating on the first screen and answer/explanation on reveal', () => {
-    const onRate = vi.fn();
+    const onCoarseRate = vi.fn();
     const { container, rerender, unmount } = renderStudyPanelView({
       isFlashcard: true,
       isChoiceQuestion: false,
@@ -434,8 +433,7 @@ describe('StudyPanelStudyView', () => {
       isMultiChoice: false,
       isAnswerSubmitted: false,
       isRevealed: false,
-      onRate,
-      getRatingLabel: (rating) => `Rate ${rating}`,
+      onCoarseRate,
       renderedCard: {
         id: 'card-flash',
         type: 'flashcard',
@@ -444,14 +442,19 @@ describe('StudyPanelStudyView', () => {
       },
     });
 
-    expect(container.querySelector('[data-testid="study-card-rating-1"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="study-card-rating-4"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="study-card-coarse-forgot"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="study-card-coarse-recalled"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="study-card-answer-section"]')).toBeNull();
 
-    const ratingButton = container.querySelector('[data-testid="study-card-rating-3"]') as HTMLButtonElement;
-    ratingButton?.click();
-    expect(onRate).toHaveBeenCalledTimes(1);
-    expect(onRate).toHaveBeenCalledWith(3);
+    const forgotButton = container.querySelector('[data-testid="study-card-coarse-forgot"]') as HTMLButtonElement;
+    const recalledButton = container.querySelector('[data-testid="study-card-coarse-recalled"]') as HTMLButtonElement;
+    forgotButton?.click();
+    expect(onCoarseRate).toHaveBeenCalledTimes(1);
+    expect(onCoarseRate).toHaveBeenCalledWith('forgot');
+    onCoarseRate.mockClear();
+    recalledButton?.click();
+    expect(onCoarseRate).toHaveBeenCalledTimes(1);
+    expect(onCoarseRate).toHaveBeenCalledWith('recalled');
 
     rerender({
       isAnswerSubmitted: true,
