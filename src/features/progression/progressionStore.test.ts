@@ -237,6 +237,31 @@ describe('progressionStore card-only canonical API', () => {
     expect(useProgressionStore.getState().currentSession?.hintUsedByCardId).toEqual({ 'a-1': true });
   });
 
+  it('ignores duplicate review submissions for the same card', () => {
+    const cards = [createCard('a-1')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+    });
+
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+    useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
+    const cardRef = cr('topic-a', 'a-1');
+
+    const coarseResult = useProgressionStore.getState().submitCoarseStudyResult(cardRef, 'forgot');
+    expect(coarseResult).not.toBeNull();
+    expect(useProgressionStore.getState().currentSession?.attempts).toHaveLength(1);
+
+    if (coarseResult) {
+      useProgressionStore.getState().submitStudyResult(cardRef, coarseResult.rating);
+    }
+
+    expect(useProgressionStore.getState().currentSession?.attempts).toHaveLength(1);
+    const cardReviewedCalls = emitSpy.mock.calls.filter(([eventName]) => eventName === 'card:reviewed');
+    expect(cardReviewedCalls).toHaveLength(1);
+    emitSpy.mockRestore();
+  });
+
   it('ignores markHintUsed when the active card already has an attempt', () => {
     const cards = [createCard('a-1')];
     useProgressionStore.setState({

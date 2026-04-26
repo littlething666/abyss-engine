@@ -223,7 +223,7 @@ export function StudyPanelModal({
     if (!cardKey) return;
     const result = onSubmitCoarseResult(cardKey, coarseChoice);
     if (!result) return;
-    submitResultWithFeedback(cardKey, result.rating);
+    triggerForRating(result.rating);
     setIsCorrect(result.rating >= 3);
     setIsAnswerSubmitted(true);
     setIsRevealed(true);

@@ -103,6 +103,10 @@ export const useProgressionStore = create<ProgressionStore>()(
         if (!session || session.currentCardId !== cardRefKeyStr) {
           return;
         }
+        const hasAttemptedCurrentCard = (session.attempts ?? []).some((attempt) => attempt.cardId === cardRefKeyStr);
+        if (hasAttemptedCurrentCard) {
+          return;
+        }
 
         const crystal = state.activeCrystals.find(
           (item) => item.subjectId === session.subjectId && item.topicId === session.topicId,
