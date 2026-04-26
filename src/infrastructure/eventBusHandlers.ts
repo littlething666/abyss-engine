@@ -62,6 +62,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
         difficulty: e.difficulty,
         timeTakenMs: e.timeTakenMs,
         buffMultiplier: e.buffMultiplier,
+        ...(e.coarseChoice !== undefined ? { coarseChoice: e.coarseChoice } : {}),
+        ...(e.hintUsed !== undefined ? { hintUsed: e.hintUsed } : {}),
+        ...(e.appliedBucket !== undefined ? { appliedBucket: e.appliedBucket } : {}),
       },
       { subjectId: e.subjectId, topicId: e.topicId, sessionId: e.sessionId },
     );

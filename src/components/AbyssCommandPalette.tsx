@@ -214,6 +214,7 @@ export function AbyssCommandPalette({
   const handleCommandSelect = (commandId: PaletteCommandId, enabled: boolean, action: () => void) => {
     if (!enabled) return;
     rememberRecentCommand(commandId);
+    onOpenChange(false);
     action();
   };
 

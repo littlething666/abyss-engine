@@ -23,6 +23,7 @@ function makeLlmProps() {
   const clearExplain = vi.fn();
   const clearFormula = vi.fn();
   const clearMermaid = vi.fn();
+  const onHintUsed = vi.fn();
 
   const llmExplain = {
     isPending: false,
@@ -68,6 +69,8 @@ function makeLlmProps() {
     explainReasoningEnabled: false,
     formulaReasoningEnabled: false,
     mermaidReasoningEnabled: false,
+    isAnswerSubmitted: false,
+    onHintUsed,
   };
 }
 
@@ -98,6 +101,26 @@ afterEach(() => {
 });
 
 describe('useStudyPanelLlmSurfaces', () => {
+  it('fires onHintUsed when opening explanation before answer submitted', () => {
+    const p = makeLlmProps();
+    const { getApi, unmount } = renderHarness(p);
+    act(() => {
+      getApi()?.handleExplainOpenChange(true);
+    });
+    expect(p.onHintUsed).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('does not fire onHintUsed when answer already submitted', () => {
+    const p = makeLlmProps();
+    const { getApi, unmount } = renderHarness({ ...p, isAnswerSubmitted: true });
+    act(() => {
+      getApi()?.handleExplainOpenChange(true);
+    });
+    expect(p.onHintUsed).toHaveBeenCalledTimes(0);
+    unmount();
+  });
+
   it('requests question explain when opening explain and auto-request applies', () => {
     const p = makeLlmProps();
     const { getApi, unmount } = renderHarness(p);

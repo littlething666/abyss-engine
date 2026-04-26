@@ -1,4 +1,4 @@
-import type { Buff } from '@/types/progression';
+import type { Buff, CoarseAppliedBucket, CoarseChoice } from '@/types/progression';
 import type { StudyChecklist } from '@/types/studyChecklist';
 import type { TopicLattice } from '@/types/topicLattice';
 
@@ -16,6 +16,9 @@ export type AppEventMap = {
     buffMultiplier: number;
     difficulty: number;
     isCorrect: boolean;
+    coarseChoice?: CoarseChoice;
+    hintUsed?: boolean;
+    appliedBucket?: CoarseAppliedBucket;
   };
   'xp:gained': {
     subjectId: string;

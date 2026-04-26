@@ -8,7 +8,7 @@ import {
   type StudyPanelLlmExplainProps,
   type StudyPanelMermaidDiagramProps,
 } from '../../features/studyPanel/studyPanelLlmSurfaceProps';
-import { Rating } from '../../types';
+import { CoarseChoice } from '../../types';
 import { Card } from '../../types/core';
 import { SM2Data } from '../../features/progression/sm2';
 import { Button } from '@/components/ui/button';
@@ -156,9 +156,8 @@ interface StudyPanelStudyViewProps {
   onSelectAnswer: (answer: string) => void;
   onChoiceSubmit: () => void;
   onChoiceContinue: () => void;
-  onRate: (rating: Rating) => void;
-  getRatingLabel: (rating: Rating) => string;
-  getRatingColor: (rating: Rating) => string;
+  onCoarseRate: (choice: CoarseChoice) => void;
+  onHintUsed: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -214,9 +213,8 @@ export function StudyPanelStudyView({
   onSelectAnswer,
   onChoiceSubmit,
   onChoiceContinue,
-  onRate,
-  getRatingLabel,
-  getRatingColor,
+    onCoarseRate,
+    onHintUsed,
   onUndo,
   onRedo,
   canUndo,
@@ -262,6 +260,8 @@ export function StudyPanelStudyView({
     explainReasoningEnabled,
     formulaReasoningEnabled,
     mermaidReasoningEnabled,
+    isAnswerSubmitted,
+    onHintUsed,
   });
 
   const explainAssistantSpeech = useLlmAssistantSpeech({
@@ -595,28 +595,26 @@ export function StudyPanelStudyView({
 
         {/* Flashcard Actions */}
         {isFlashcard && !isAnswerSubmitted && (
-          <div className="grid grid-cols-4 gap-2">
-            <span className="col-span-4 text-muted-foreground text-sm mb-2">Rate your recall:</span>
-            {([1, 2, 3, 4] as Rating[]).map((rating) => {
-              const label = getRatingLabel(rating);
-              const color = getRatingColor(rating);
-              const BUTTON_STYLE: React.CSSProperties = {
-                backgroundColor: color,
-              };
-              return (
-                <Button
-                  key={rating}
-                  style={BUTTON_STYLE}
-                  onClick={() => {
-                    onRate(rating);
-                  }}
-                  className="flex-1 py-3 rounded-md text-sm font-bold cursor-pointer hover:opacity-90"
-                  data-testid={`study-card-rating-${rating}`}
-                >
-                  {label}
-                </Button>
-              );
-            })}
+          <div className="grid gap-2">
+            <p className="text-muted-foreground text-sm">Did you recall it?</p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => onCoarseRate('forgot')}
+                variant="destructive"
+                className="w-full py-3"
+                data-testid="study-card-coarse-forgot"
+              >
+                Forgot
+              </Button>
+              <Button
+                onClick={() => onCoarseRate('recalled')}
+                variant="default"
+                className="w-full py-3"
+                data-testid="study-card-coarse-recalled"
+              >
+                Recalled
+              </Button>
+            </div>
           </div>
         )}
 

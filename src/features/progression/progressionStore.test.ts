@@ -182,6 +182,143 @@ describe('progressionStore card-only canonical API', () => {
     expect(updated.interval).toBeGreaterThan(0);
   });
 
+  it('records hint usage for the active card and applies slow bucket on coarse recall', () => {
+    const cards = [createCard('a-1')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+    });
+
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+    useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
+    const cardRef = cr('topic-a', 'a-1');
+
+    useProgressionStore.getState().markHintUsed(cardRef);
+    const markedSession = useProgressionStore.getState().currentSession;
+    expect(markedSession?.hintUsedByCardId).toMatchObject({ 'a-1': true });
+
+    const resolved = useProgressionStore.getState().submitCoarseStudyResult(cardRef, 'recalled');
+    expect(resolved).toEqual({ rating: 2, appliedBucket: 'slow' });
+
+    const afterSubmit = useProgressionStore.getState().currentSession;
+    const attempt = afterSubmit?.attempts?.[afterSubmit.attempts.length - 1];
+    expect(attempt).toMatchObject({
+      cardId: cardRef,
+      coarseChoice: 'recalled',
+      hintUsed: true,
+      appliedBucket: 'slow',
+      rating: 2,
+    });
+
+    const cardReviewedEvent = emitSpy.mock.calls.find(
+      ([eventName]) => eventName === 'card:reviewed',
+    )?.[1] as { coarseChoice?: string; hintUsed?: boolean; appliedBucket?: string } | undefined;
+    expect(cardReviewedEvent).toMatchObject({
+      coarseChoice: 'recalled',
+      hintUsed: true,
+      appliedBucket: 'slow',
+      rating: 2,
+    });
+    emitSpy.mockRestore();
+  });
+
+  it('marks hint usage as idempotent for a single card', () => {
+    const cards = [createCard('a-1')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+    });
+
+    useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
+    const cardRef = cr('topic-a', 'a-1');
+
+    useProgressionStore.getState().markHintUsed(cardRef);
+    useProgressionStore.getState().markHintUsed(cardRef);
+    expect(useProgressionStore.getState().currentSession?.hintUsedByCardId).toEqual({ 'a-1': true });
+  });
+
+  it('ignores duplicate review submissions for the same card', () => {
+    const cards = [createCard('a-1')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+    });
+
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+    useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
+    const cardRef = cr('topic-a', 'a-1');
+
+    const coarseResult = useProgressionStore.getState().submitCoarseStudyResult(cardRef, 'forgot');
+    expect(coarseResult).not.toBeNull();
+    expect(useProgressionStore.getState().currentSession?.attempts).toHaveLength(1);
+
+    if (coarseResult) {
+      useProgressionStore.getState().submitStudyResult(cardRef, coarseResult.rating);
+    }
+
+    expect(useProgressionStore.getState().currentSession?.attempts).toHaveLength(1);
+    const cardReviewedCalls = emitSpy.mock.calls.filter(([eventName]) => eventName === 'card:reviewed');
+    expect(cardReviewedCalls).toHaveLength(1);
+    emitSpy.mockRestore();
+  });
+
+  it('ignores markHintUsed when the active card already has an attempt', () => {
+    const cards = [createCard('a-1')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+    });
+
+    useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
+    const cardRef = cr('topic-a', 'a-1');
+    useProgressionStore.getState().submitStudyResult(cardRef, 4);
+
+    useProgressionStore.getState().markHintUsed(cardRef);
+    expect(useProgressionStore.getState().currentSession?.hintUsedByCardId).toEqual({});
+    expect(useProgressionStore.getState().currentSession?.attempts).toHaveLength(1);
+  });
+
+  it('ignores coarse submissions for non-current cards', () => {
+    const cards = [createCard('a-1'), createCard('a-2')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+    });
+    useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
+
+    const current = useProgressionStore.getState().currentSession?.currentCardId;
+    expect(current).toBeTruthy();
+    const nonCurrentCard = current === cr('topic-a', 'a-1') ? cr('topic-a', 'a-2') : cr('topic-a', 'a-1');
+
+    const resolved = useProgressionStore.getState().submitCoarseStudyResult(nonCurrentCard, 'recalled');
+    expect(resolved).toBeNull();
+    expect(useProgressionStore.getState().currentSession?.attempts).toHaveLength(0);
+  });
+
+  it('submitStudyResult does not emit coarse metadata', () => {
+    const cards = [createCard('a-1')];
+    useProgressionStore.setState({
+      activeCrystals: [crystal('topic-a')],
+      unlockPoints: 3,
+    });
+
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+    useProgressionStore.getState().startTopicStudySession(topicRef('topic-a'), cards);
+    emitSpy.mockClear();
+
+    useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 3);
+    const cardReviewedEvent = emitSpy.mock.calls.find(
+      ([eventName]) => eventName === 'card:reviewed',
+    )?.[1] as
+      | { coarseChoice?: string; hintUsed?: boolean; appliedBucket?: string }
+      | undefined;
+
+    expect(cardReviewedEvent?.coarseChoice).toBeUndefined();
+    expect(cardReviewedEvent?.hintUsed).toBeUndefined();
+    expect(cardReviewedEvent?.appliedBucket).toBeUndefined();
+    emitSpy.mockRestore();
+  });
+
   it('focusStudyCard selects a different queued card without reordering the queue', () => {
     const cards = [createCard('a-1'), createCard('a-2')];
     useProgressionStore.setState({

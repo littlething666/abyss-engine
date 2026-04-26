@@ -33,6 +33,29 @@ export interface Buff {
 
 export type AttunementReadinessBucket = 'low' | 'medium' | 'high';
 
+export type Rating = 1 | 2 | 3 | 4;
+export type CoarseChoice = 'forgot' | 'recalled';
+export type CoarseAppliedBucket = 'fast' | 'normal' | 'slow' | 'forgot';
+
+export interface CoarseRatingInputs {
+  coarse: CoarseChoice;
+  timeTakenMs: number;
+  hintUsed: boolean;
+  difficulty: number;
+}
+
+export interface CoarseRatingResult {
+  rating: Rating;
+  appliedBucket: CoarseAppliedBucket;
+}
+
+export interface CoarseReviewMeta {
+  coarseChoice: CoarseChoice;
+  hintUsed: boolean;
+  appliedBucket: CoarseAppliedBucket;
+  timeTakenMs: number;
+}
+
 export interface AttunementRitualChecklist {
   sleepHours?: number;
   movementMinutes?: number;
@@ -61,10 +84,15 @@ export interface AttunementRitualResult {
 export interface StudySessionAttempt {
   /** Same as `cardRefKey` — composite card identity. */
   cardId: string;
-  rating: 1 | 2 | 3 | 4;
+  rating: Rating;
   difficulty: number;
   timestamp: number;
   isCorrect: boolean;
+  /** Raw coarse-review context for flashcards (optional analytics metadata). */
+  coarseChoice?: CoarseChoice;
+  hintUsed?: boolean;
+  appliedBucket?: CoarseAppliedBucket;
+  timeTakenMs?: number;
 }
 
 export interface PendingRitualState {
@@ -75,8 +103,6 @@ export interface PendingRitualState {
 }
 
 export interface PendingAttunementState extends PendingRitualState {}
-
-export type Rating = 1 | 2 | 3 | 4;
 
 export interface StudySession {
   subjectId: string;
@@ -94,6 +120,8 @@ export interface StudySession {
   /** Raw per-file card id → difficulty (session-local). */
   cardDifficultyById?: Record<string, number>;
   cardTypeById?: Record<string, string>;
+  /** Raw card id → whether any hint surface was opened before reveal. */
+  hintUsedByCardId?: Record<string, boolean>;
 }
 
 export interface StudySessionCore extends StudySession {}
@@ -144,6 +172,8 @@ export interface ProgressionActions {
   clearActiveBuffs: () => void;
   clearPendingRitual: () => void;
   submitStudyResult: (cardRefKey: string, rating: Rating) => void;
+  markHintUsed: (cardRefKey: string) => void;
+  submitCoarseStudyResult: (cardRefKey: string, coarseChoice: CoarseChoice) => CoarseRatingResult | null;
   advanceStudyAfterReveal: () => void;
   undoLastStudyResult: () => void;
   redoLastStudyResult: () => void;
