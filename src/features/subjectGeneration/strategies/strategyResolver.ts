@@ -18,6 +18,17 @@ function normalizeWeights(mix: ContentDefaults['cardMix']): ContentDefaults['car
   };
 }
 
+function normalizeModeWeights(
+  mix: ContentDefaults['cognitiveModeMix'],
+): ContentDefaults['cognitiveModeMix'] {
+  const entries = Object.entries(mix).filter(([, value]) => typeof value === 'number' && value > 0);
+  const sum = entries.reduce((acc, [, value]) => acc + value, 0);
+  if (sum <= 0) {
+    return { understand: 0.4, apply: 0.35, analyze: 0.25 };
+  }
+  return Object.fromEntries(entries.map(([mode, value]) => [mode, value / sum])) as ContentDefaults['cognitiveModeMix'];
+}
+
 function applyStyleToCardMix(
   style: LearningStyle,
   defaults: ContentDefaults['cardMix'],
@@ -59,6 +70,8 @@ export function resolveStrategy(checklist: StudyChecklist): GenerationStrategy {
       theoryDepth: defaults.theoryDepth,
       cardMix: applyStyleToCardMix(style, defaults.cardMix),
       difficultyBias: defaults.difficultyBias,
+      cognitiveModeMix: normalizeModeWeights(defaults.cognitiveModeMix),
+      forbiddenPatterns: defaults.forbiddenPatterns,
       contentBrief,
     },
   };

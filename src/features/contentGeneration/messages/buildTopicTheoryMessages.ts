@@ -24,6 +24,5 @@ export function buildTopicTheoryMessages(params: TopicTheoryPromptParams): ChatM
 
   return [
     { role: 'system', content: systemContent },
-    { role: 'user', content: 'Produce the JSON object now.' },
   ];
 }

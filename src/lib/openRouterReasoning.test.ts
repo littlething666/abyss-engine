@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatOpenRouterReasoningDetails,
+  inferOpenRouterSupportedParameters,
   mergeAssistantReasoningDetails,
   reasoningTextFromOpenRouterDelta,
 } from './openRouterReasoning';
@@ -28,5 +29,14 @@ describe('openRouterReasoning', () => {
       reasoning_details: [{ type: 'reasoning.text', text: '  Hello world  ' }],
     });
     expect(merged).toBe('  Hello world  ');
+  });
+
+  it('declares generation tool capabilities for Mistral Small', () => {
+    expect(inferOpenRouterSupportedParameters('mistralai/mistral-small-2603')).toEqual([
+      'reasoning',
+      'tools',
+      'response_format',
+      'structured_outputs',
+    ]);
   });
 });

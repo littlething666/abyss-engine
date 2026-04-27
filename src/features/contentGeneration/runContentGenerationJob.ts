@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid';
 
-import type { ChatMessage, IChatCompletionsRepository } from '@/types/llm';
+import type { ChatCompletionTool, ChatMessage, IChatCompletionsRepository } from '@/types/llm';
 import type { ContentGenerationJob, ContentGenerationJobKind } from '@/types/contentGeneration';
 import type { InferenceSurfaceId } from '@/types/llmInference';
 import {
@@ -26,6 +26,8 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
   enableStreaming?: boolean;
   /** Forwarded to the chat-completions request when set (e.g. low temperature for structured edges). */
   temperature?: number;
+  /** Forwarded to OpenRouter-compatible providers when set. */
+  tools?: ChatCompletionTool[];
 
   parseOutput: (
     raw: string,
@@ -110,6 +112,7 @@ export async function runContentGenerationJob<TParsed>(
             ...(structured.plugins ? { plugins: structured.plugins } : {}),
           }
         : {}),
+      ...(params.tools ? { tools: params.tools } : {}),
     })) {
       if (ac.signal.aborted) {
         throw new DOMException('Aborted', 'AbortError');
@@ -119,6 +122,9 @@ export async function runContentGenerationJob<TParsed>(
       }
       if (chunk.type === 'reasoning') {
         store.appendJobReasoning(jobId, chunk.text);
+      }
+      if (chunk.type === 'metadata' && chunk.metadata) {
+        store.mergeJobMetadata(jobId, { provider: chunk.metadata });
       }
     }
 

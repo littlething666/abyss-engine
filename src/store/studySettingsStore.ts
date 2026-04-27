@@ -16,6 +16,7 @@ import { ALL_SURFACE_IDS } from '../types/llmInference';
 import {
   buildSeedOpenRouterConfigs,
   GENERATION_SURFACE_DEFAULT_MODEL,
+  PREVIOUS_GENERATION_SURFACE_DEFAULT_MODEL,
   seededConfigIdForModel,
   STUDY_SURFACE_DEFAULT_MODEL,
 } from '../infrastructure/openRouterDefaults';
@@ -115,7 +116,13 @@ function isStringRecord(v: unknown): v is Record<string, unknown> {
 
 function parseStoredSupportedParameters(raw: unknown): readonly OpenRouterSupportedParameter[] | undefined {
   if (!Array.isArray(raw)) return undefined;
-  const out = raw.filter((x): x is OpenRouterSupportedParameter => x === 'reasoning');
+  const allowed = new Set<OpenRouterSupportedParameter>([
+    'reasoning',
+    'tools',
+    'response_format',
+    'structured_outputs',
+  ]);
+  const out = raw.filter((x): x is OpenRouterSupportedParameter => typeof x === 'string' && allowed.has(x as OpenRouterSupportedParameter));
   return out.length > 0 ? out : undefined;
 }
 
@@ -142,6 +149,40 @@ function parseConfigs(raw: unknown): OpenRouterModelConfig[] | null {
     });
   }
   return out;
+}
+
+function mergeSeedConfigs(configs: OpenRouterModelConfig[]): OpenRouterModelConfig[] {
+  const next = [...configs];
+  const existing = new Set(next.map((c) => c.id));
+  for (const seeded of buildSeedOpenRouterConfigs()) {
+    if (!existing.has(seeded.id)) {
+      next.push(seeded);
+      existing.add(seeded.id);
+    }
+  }
+  return next;
+}
+
+function migrateOldGenerationDefaultBindings(
+  bindings: Record<InferenceSurfaceId, SurfaceProviderBinding>,
+  configs: OpenRouterModelConfig[],
+): Record<InferenceSurfaceId, SurfaceProviderBinding> {
+  const oldId = seededConfigIdForModel(configs, PREVIOUS_GENERATION_SURFACE_DEFAULT_MODEL);
+  const newId = seededConfigIdForModel(configs, GENERATION_SURFACE_DEFAULT_MODEL);
+  const generationSurfaces: InferenceSurfaceId[] = [
+    'subjectGenerationTopics',
+    'subjectGenerationEdges',
+    'topicContent',
+    'crystalTrial',
+  ];
+  const next = { ...bindings };
+  for (const surfaceId of generationSurfaces) {
+    const binding = next[surfaceId];
+    if (binding.provider === 'openrouter' && binding.openRouterConfigId === oldId) {
+      next[surfaceId] = { provider: 'openrouter', openRouterConfigId: newId };
+    }
+  }
+  return next;
 }
 
 function parseBindings(
@@ -211,11 +252,14 @@ function readSnapshotFromStorage(): Snapshot {
   let configs = parseConfigs(parsed.openRouterConfigs);
   if (!configs || configs.length === 0) {
     configs = buildSeedOpenRouterConfigs();
+  } else {
+    configs = mergeSeedConfigs(configs);
   }
   const validConfigIds = new Set(configs.map((c) => c.id));
 
-  const bindings =
+  const parsedBindings =
     parseBindings(parsed.surfaceProviders, validConfigIds) ?? buildDefaultSurfaceBindings(configs);
+  const bindings = migrateOldGenerationDefaultBindings(parsedBindings, configs);
 
   return {
     targetAudience,

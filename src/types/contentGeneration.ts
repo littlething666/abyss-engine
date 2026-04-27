@@ -67,6 +67,10 @@ export interface ContentGenerationJob {
    * - `model` (string) — exact model identifier used for this job.
    * - `enableReasoning` (boolean) — whether OpenRouter `reasoning` was enabled for this job.
    * - `nextLevel` (number) — for expansion jobs, the crystal level that triggered expansion.
+ * - `provider` (object) — normalized provider metadata such as usage, citations, or annotations.
+ * - `grounding` (object) — accepted source counts and source snapshots for grounded topic theory.
+ * - `qualityReport` (object) — card validation counts, duplicate rates, and grounding coverage.
+ * - `validationFailures` (array) — detailed card-level validation failures surfaced in the HUD.
    * - `prereqEdgesCorrection` (object) — when edges output was deterministically repaired
    *   (`removed` / `added` entries); see `correctPrereqEdges`.
    */

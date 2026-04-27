@@ -1,4 +1,6 @@
+import type { MiniGameAffordanceSet } from './contentQuality';
 import type { GenerationStrategy } from './generationStrategy';
+import type { GroundingSource } from './grounding';
 import type { StudyChecklist } from './studyChecklist';
 
 export type GeometryType = 'box' | 'cylinder' | 'sphere' | 'octahedron' | 'plane';
@@ -53,11 +55,12 @@ export interface SubjectGraph {
   nodes: GraphNode[];
 }
 
-/** Syllabus buckets for difficulties 1–3; used for lookahead card generation. */
+/** Syllabus buckets for difficulties 1-4; used for lookahead card generation. */
 export type CoreQuestionsByDifficulty = {
   1: string[];
   2: string[];
   3: string[];
+  4: string[];
 };
 
 export interface TopicDetails {
@@ -69,6 +72,8 @@ export interface TopicDetails {
   keyTakeaways: string[];
   /** Populated after on-demand generation; drives background difficulty expansion. */
   coreQuestionsByDifficulty?: Partial<CoreQuestionsByDifficulty>;
+  groundingSources?: GroundingSource[];
+  miniGameAffordances?: MiniGameAffordanceSet;
 }
 
 export type CardType = 'FLASHCARD' | 'SINGLE_CHOICE' | 'MULTI_CHOICE' | 'MINI_GAME';
@@ -123,6 +128,7 @@ export interface Card {
   id: string;
   type: CardType;
   difficulty: number;
+  conceptTarget?: string;
   content: FlashcardContent | SingleChoiceContent | MultiChoiceContent | MiniGameContent;
 }
 

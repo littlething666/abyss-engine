@@ -16,12 +16,13 @@ export function loadTheoryPayloadFromTopicDetails(details: TopicDetails): Parsed
   const q1 = cq?.[1]?.filter((s) => s.trim().length > 0) ?? [];
   const q2 = cq?.[2]?.filter((s) => s.trim().length > 0) ?? [];
   const q3 = cq?.[3]?.filter((s) => s.trim().length > 0) ?? [];
+  const q4 = cq?.[4]?.filter((s) => s.trim().length > 0) ?? [];
 
   if (!q1.length) {
     throw new Error('Syllabus (difficulty 1) is missing. Run theory generation first.');
   }
-  if (!q2.length || !q3.length) {
-    throw new Error('Complete syllabus (difficulties 1–3) is required. Run theory generation first.');
+  if (!q2.length || !q3.length || !q4.length) {
+    throw new Error('Complete syllabus (difficulties 1-4) is required. Run theory generation first.');
   }
 
   const kt = details.keyTakeaways.filter((s) => s.trim().length > 0);
@@ -38,6 +39,13 @@ export function loadTheoryPayloadFromTopicDetails(details: TopicDetails): Parsed
       1: q1,
       2: q2,
       3: q3,
+      4: q4,
+    },
+    groundingSources: details.groundingSources ?? [],
+    miniGameAffordances: details.miniGameAffordances ?? {
+      categorySets: [],
+      orderedSequences: [],
+      connectionPairs: [],
     },
   };
 }

@@ -196,6 +196,32 @@ describe('HttpChatCompletionsRepository', () => {
     expect(body.plugins).toEqual([{ id: 'response-healing' }]);
   });
 
+  it('includes tools and exposes provider metadata on completeChat', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        usage: { server_tool_use: { web_search_requests: 1 } },
+        citations: ['https://example.edu/source'],
+        choices: [{ message: { content: '{}', annotations: [{ url: 'https://example.edu/source' }] } }],
+      }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    const result = await repo.completeChat({
+      model: 'm',
+      messages: [{ role: 'user', content: 'a' }],
+      tools: [{ type: 'openrouter:web_search', engine: 'firecrawl', max_results: 3, max_total_results: 5 }],
+    });
+    const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!;
+    const body = JSON.parse(init.body as string);
+    expect(body.tools).toEqual([
+      { type: 'openrouter:web_search', engine: 'firecrawl', max_results: 3, max_total_results: 5 },
+    ]);
+    expect(result.providerMetadata?.usage).toEqual({ server_tool_use: { web_search_requests: 1 } });
+    expect(result.providerMetadata?.annotations).toEqual([{ url: 'https://example.edu/source' }]);
+    expect(result.providerMetadata?.citations).toEqual(['https://example.edu/source']);
+  });
+
   it('falls back to completeChat when streaming disabled', async () => {
     globalThis.fetch = vi.fn(async () => ({
       ok: true,

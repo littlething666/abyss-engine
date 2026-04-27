@@ -1,3 +1,5 @@
+import type { CognitiveMode, ForbiddenContentPattern } from './contentQuality';
+
 export interface GraphStrategy {
   totalTiers: number;
   topicsPerTier: number;
@@ -14,6 +16,8 @@ export interface ContentStrategy {
     miniGameWeight: number;
   };
   difficultyBias: 'foundational' | 'balanced' | 'challenging';
+  cognitiveModeMix: Partial<Record<CognitiveMode, number>>;
+  forbiddenPatterns: ForbiddenContentPattern[];
   contentBrief: string;
 }
 

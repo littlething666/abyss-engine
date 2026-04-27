@@ -1,12 +1,44 @@
 import { extractJsonString, logJsonParseError } from '@/lib/llmResponseText';
 import type { Card } from '@/types/core';
+import type {
+  ExistingConceptRegistry,
+  GeneratedCardQualityReport,
+  GeneratedCardValidationFailure,
+} from '@/types/contentQuality';
+import type { GroundingSource } from '@/types/grounding';
 
+import { isDuplicateConceptTarget } from '../quality/compareConceptTargets';
+import { computeQualityReport } from '../quality/computeQualityReport';
+import { extractConceptTarget } from '../quality/extractConceptTarget';
 import { normalizeGeneratedCardItem } from './normalizeGeneratedCardItem';
-import { validateGeneratedCard } from './validateGeneratedCard';
+import { validateGeneratedCard, validateGeneratedCardDetailed } from './validateGeneratedCard';
 
-export type ParseTopicCardsResult = { ok: true; cards: Card[] } | { ok: false; error: string };
+export type ParseTopicCardsResult =
+  | { ok: true; cards: Card[]; qualityReport: GeneratedCardQualityReport }
+  | { ok: false; error: string; qualityReport?: GeneratedCardQualityReport };
 
-export function parseTopicCardsPayload(raw: string): ParseTopicCardsResult {
+export interface ParseTopicCardsOptions {
+  existingRegistry?: ExistingConceptRegistry;
+  groundingSources?: GroundingSource[];
+  invalidCardRatioThreshold?: number;
+  duplicateRatioThreshold?: number;
+}
+
+const DEFAULT_INVALID_RATIO_THRESHOLD = 0.2;
+const DEFAULT_DUPLICATE_RATIO_THRESHOLD = 0.1;
+
+function cardIdOf(raw: unknown): string | null {
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+    const id = (raw as { id?: unknown }).id;
+    return typeof id === 'string' ? id : null;
+  }
+  return null;
+}
+
+export function parseTopicCardsPayload(
+  raw: string,
+  options: ParseTopicCardsOptions = {},
+): ParseTopicCardsResult {
   const jsonStr = extractJsonString(raw);
   if (!jsonStr) {
     return { ok: false, error: 'No JSON found in assistant response' };
@@ -30,18 +62,74 @@ export function parseTopicCardsPayload(raw: string): ParseTopicCardsResult {
   }
 
   const cards: Card[] = [];
-  for (const item of list) {
+  const failures: GeneratedCardValidationFailure[] = [];
+  const seenIds = new Set<string>();
+  const conceptTargets: string[] = [];
+  let duplicateConceptCount = 0;
+
+  for (let index = 0; index < list.length; index++) {
+    const item = list[index];
     const normalized = normalizeGeneratedCardItem(item);
-    if (validateGeneratedCard(normalized)) {
-      cards.push(normalized as Card);
+    const validation = validateGeneratedCardDetailed(normalized, index);
+    if (!validation.ok) {
+      failures.push(...validation.failures);
+      continue;
     }
+
+    const id = validation.card.id;
+    if (seenIds.has(id) || options.existingRegistry?.cardIds.includes(id)) {
+      failures.push({
+        cardId: id,
+        index,
+        code: 'duplicate_card_id',
+        message: `Duplicate generated or existing card id: ${id}`,
+        severity: 'critical',
+      });
+      continue;
+    }
+    seenIds.add(id);
+
+    const conceptTarget = extractConceptTarget(validation.card);
+    const duplicatesWithinJob = conceptTargets.some((target) => isDuplicateConceptTarget(target, conceptTarget));
+    const duplicatesExisting = options.existingRegistry?.conceptTargets.some((target) => isDuplicateConceptTarget(target, conceptTarget)) ?? false;
+    if (duplicatesWithinJob || duplicatesExisting) {
+      duplicateConceptCount += 1;
+    }
+    conceptTargets.push(conceptTarget);
+    cards.push({ ...validation.card, conceptTarget });
   }
+
+  const qualityReport = computeQualityReport({
+    emittedCount: list.length,
+    validCount: cards.length,
+    duplicateConceptCount,
+    groundingSources: options.groundingSources,
+    failures,
+  });
+
+  const invalidThreshold = options.invalidCardRatioThreshold ?? DEFAULT_INVALID_RATIO_THRESHOLD;
+  const duplicateThreshold = options.duplicateRatioThreshold ?? DEFAULT_DUPLICATE_RATIO_THRESHOLD;
+  const criticalFailure = failures.some((item) => item.severity === 'critical');
 
   if (cards.length === 0) {
-    return { ok: false, error: 'No valid cards parsed from assistant response' };
+    return { ok: false, error: 'No valid cards parsed from assistant response', qualityReport };
+  }
+  if (qualityReport.invalidRatio > invalidThreshold || criticalFailure) {
+    return {
+      ok: false,
+      error: `Generated cards failed validation (${failures.length} issue${failures.length === 1 ? '' : 's'})`,
+      qualityReport,
+    };
+  }
+  if (cards.length >= 10 && qualityReport.duplicateConceptRatio > duplicateThreshold) {
+    return {
+      ok: false,
+      error: `Generated cards exceeded duplicate concept threshold (${qualityReport.duplicateConceptCount}/${cards.length})`,
+      qualityReport,
+    };
   }
 
-  return { ok: true, cards };
+  return { ok: true, cards, qualityReport };
 }
 
 /** Debug-only: why parsing/validation failed without changing `parseTopicCardsPayload` behavior. */
@@ -86,7 +174,7 @@ export function diagnoseTopicCardsPayload(raw: string): Record<string, unknown> 
     if (validateGeneratedCard(normalized)) {
       validatedCount++;
     } else if (invalidSamples.length < 4) {
-      invalidSamples.push(JSON.stringify(normalized).slice(0, 500));
+      invalidSamples.push(JSON.stringify({ id: cardIdOf(normalized), normalized }).slice(0, 500));
     }
   }
   return {

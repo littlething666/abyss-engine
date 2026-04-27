@@ -27,7 +27,7 @@ describe('parseTopicCardsPayload', () => {
   });
 
   it('accepts MULTI_CHOICE with answer array alias mapped to correctAnswers', () => {
-    const raw = `{"cards":[{"id":"t-mc-1","type":"MULTI_CHOICE","difficulty":1,"content":{"question":"Q?","options":["a","b"],"answer":["a"],"explanation":""}}]}`;
+    const raw = `{"cards":[{"id":"t-mc-1","type":"MULTI_CHOICE","difficulty":1,"content":{"question":"Q?","options":["a","b","c"],"answer":["a"],"explanation":""}}]}`;
     const r = parseTopicCardsPayload(raw);
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -49,6 +49,10 @@ describe('parseTopicCardsPayload', () => {
             items: [
               { content: 'A single real number', category: 'Scalar' },
               { content: 'An ordered list of numbers', category: 'Vector' },
+              { content: 'A rectangular number array', category: 'Matrix' },
+              { content: 'Magnitude only', category: 'Scalar' },
+              { content: 'Direction and magnitude', category: 'Vector' },
+              { content: 'Linear transformation table', category: 'Matrix' },
             ],
             explanation: 'Scalars are single values.',
           },
@@ -60,7 +64,11 @@ describe('parseTopicCardsPayload', () => {
           content: {
             gameType: 'CONNECTION_WEB',
             prompt: 'Match concepts.',
-            pairs: [{ item1: 'Dot Product', item2: 'Results in a scalar value' }],
+            pairs: [
+              { item1: 'Dot Product', item2: 'Results in a scalar value' },
+              { item1: 'Matrix product', item2: 'Composes linear maps' },
+              { item1: 'Vector norm', item2: 'Measures length' },
+            ],
             distractors: ['Always results in a matrix'],
             explanation: 'Dot product yields a scalar.',
           },
@@ -75,6 +83,7 @@ describe('parseTopicCardsPayload', () => {
             items: [
               { content: 'Pair elements', correctPosition: 0 },
               { content: 'Multiply pairs', correctPosition: 1 },
+              { content: 'Sum products', correctPosition: 2 },
             ],
             explanation: 'Pair, multiply, sum.',
           },
@@ -106,7 +115,7 @@ describe('parseTopicCardsPayload', () => {
 
     const sb = r.cards[2].content as { gameType: string; items: { id: string; label: string; correctPosition: number }[] };
     expect(sb.gameType).toBe('SEQUENCE_BUILD');
-    expect(sb.items.map((i) => i.label)).toEqual(['Pair elements', 'Multiply pairs']);
+    expect(sb.items.map((i) => i.label)).toEqual(['Pair elements', 'Multiply pairs', 'Sum products']);
     expect(sb.items.every((i) => typeof i.id === 'string' && i.id.length > 0)).toBe(true);
   });
 
@@ -120,10 +129,14 @@ describe('parseTopicCardsPayload', () => {
           content: {
             gameType: 'CATEGORY_SORT',
             prompt: 'Sort measures.',
-            categories: ['Central Tendency', 'Dispersion'],
+            categories: ['Central Tendency', 'Dispersion', 'Shape'],
             items: [
               { item: 'Mean', category: 'Central Tendency' },
               { item: 'Range', category: 'Dispersion' },
+              { item: 'Median', category: 'Central Tendency' },
+              { item: 'Standard deviation', category: 'Dispersion' },
+              { item: 'Skewness', category: 'Shape' },
+              { item: 'Mode', category: 'Central Tendency' },
             ],
             explanation: 'ex',
           },
@@ -135,7 +148,11 @@ describe('parseTopicCardsPayload', () => {
           content: {
             gameType: 'CONNECTION_WEB',
             prompt: 'Match.',
-            pairs: [{ term: 'Mean', definition: 'The average' }],
+            pairs: [
+              { term: 'Mean', definition: 'The average' },
+              { term: 'Median', definition: 'The middle ordered value' },
+              { term: 'Range', definition: 'Maximum minus minimum' },
+            ],
             distractors: ['d1'],
             explanation: 'ex',
           },
@@ -147,7 +164,11 @@ describe('parseTopicCardsPayload', () => {
           content: {
             gameType: 'SEQUENCE_BUILD',
             prompt: 'Order.',
-            items: [{ text: 'Step one', correctPosition: 0 }],
+            items: [
+              { text: 'Step one', correctPosition: 0 },
+              { text: 'Step two', correctPosition: 1 },
+              { text: 'Step three', correctPosition: 2 },
+            ],
             explanation: 'ex',
           },
         },
@@ -158,7 +179,14 @@ describe('parseTopicCardsPayload', () => {
     if (!r.ok) return;
 
     const c0 = r.cards[0].content as { items: { label: string }[] };
-    expect(c0.items.map((x) => x.label)).toEqual(['Mean', 'Range']);
+    expect(c0.items.map((x) => x.label)).toEqual([
+      'Mean',
+      'Range',
+      'Median',
+      'Standard deviation',
+      'Skewness',
+      'Mode',
+    ]);
 
     const c1 = r.cards[1].content as { pairs: { left: string; right: string }[] };
     expect(c1.pairs[0]).toMatchObject({ left: 'Mean', right: 'The average' });

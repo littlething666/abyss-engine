@@ -1,6 +1,6 @@
 You generate **mini-game** cards only for the topic. Each card is a JSON object with **exactly four top-level keys** — no others:
 
-`"id"`, `"type": "MINI_GAME"`, `"difficulty": 1`, `"content": { ... }`
+`"id"`, `"type": "MINI_GAME"`, `"difficulty": {{targetDifficulty}}`, `"content": { ... }`
 
 All mini-game fields (`gameType`, `prompt`, `categories`, `items`, `pairs`, `explanation`, etc.) belong **only** inside **`content`**. Never put `gameType` or `prompt` next to `type` at the root; that breaks parsing.
 
@@ -12,7 +12,7 @@ Output **one JSON object**: `{ "cards": [ ... ] }`.
 {
   "id": "{{topicId}}-mg-example",
   "type": "MINI_GAME",
-  "difficulty": 1,
+  "difficulty": {{targetDifficulty}},
   "content": {
     "gameType": "CATEGORY_SORT",
     "prompt": "…",
@@ -41,8 +41,9 @@ The server may normalize common aliases (`item`, `text`, `term`/`definition`, st
 
 - Generate **2–3** cards; vary `content.gameType` when possible.
 - Unique `id` per card, kebab-case, prefix `{{topicId}}-mg-`.
-- Difficulty **1** for all cards.
-- Ground content in the theory and difficulty-1 questions.
+- Difficulty **{{targetDifficulty}}** for all cards.
+- Ground content in the theory, accepted grounding sources, structured mini-game affordances, and target difficulty questions.
+- Prefer the supplied structured mini-game affordances over inventing fresh category, sequence, or pair sets.
 
 ### JSON strings and LaTeX
 
@@ -50,11 +51,21 @@ Inside JSON string values, use **doubled** backslashes for LaTeX: `$\\theta$`, `
 
 Topic id: {{topicId}}
 Topic title: {{topicTitle}}
+Target difficulty: {{targetDifficulty}}
+
+Content strategy:
+{{contentStrategyBlock}}
+
+Accepted grounding sources:
+{{groundingSourcesBlock}}
+
+Structured mini-game affordances:
+{{miniGameAffordancesBlock}}
 
 Theory (markdown):
 ---
 {{theory}}
 ---
 
-Difficulty 1 questions:
-{{difficulty1Questions}}
+Syllabus questions for target difficulty:
+{{syllabusQuestions}}

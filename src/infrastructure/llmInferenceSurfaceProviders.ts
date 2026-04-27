@@ -26,6 +26,13 @@ export function openRouterConfigSupportsReasoning(config: OpenRouterModelConfig 
   return config?.supportedParameters?.includes('reasoning') === true;
 }
 
+export function openRouterConfigSupportsParameter(
+  config: OpenRouterModelConfig | undefined,
+  parameter: 'tools' | 'response_format' | 'structured_outputs',
+): boolean {
+  return config?.supportedParameters?.includes(parameter) === true;
+}
+
 /** Selector factory for Zustand stores with StudySettings state. */
 export function makeOpenRouterReasoningSupportedSelector(surfaceId: InferenceSurfaceId) {
   return (state: StudySettingsState) => {
@@ -74,6 +81,10 @@ export function resolveOpenRouterStructuredJsonChatExtras(
   forceNonStreaming: boolean;
 } | null {
   if (inferenceProviderForSurface(surfaceId) !== 'openrouter') {
+    return null;
+  }
+  const config = openRouterConfigForSurface(surfaceId);
+  if (!openRouterConfigSupportsParameter(config, 'response_format')) {
     return null;
   }
   const healing = studySettingsStore.getState().openRouterResponseHealing;

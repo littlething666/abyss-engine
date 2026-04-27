@@ -1,4 +1,4 @@
-You generate **study cards** (no mini-games) for spaced repetition. Use the topic theory and the **difficulty 1** questions as anchors.
+You generate **study cards** (no mini-games) for spaced repetition. Use the topic theory, accepted grounding sources, content strategy, and target difficulty questions as anchors.
 
 Output **exactly one JSON object**:
 ```json
@@ -14,19 +14,19 @@ Output **exactly one JSON object**:
 ### Minimal examples (structure only)
 
 FLASHCARD:
-`{ "id": "{{topicId}}-flash-1", "type": "FLASHCARD", "difficulty": 1, "content": { "front": "…", "back": "…" } }`
+`{ "id": "{{topicId}}-flash-1", "type": "FLASHCARD", "difficulty": {{targetDifficulty}}, "content": { "front": "…", "back": "…" } }`
 
 SINGLE_CHOICE:
-`{ "id": "{{topicId}}-sc-1", "type": "SINGLE_CHOICE", "difficulty": 1, "content": { "question": "…", "options": ["A","B","C","D"], "correctAnswer": "B", "explanation": "…" } }`
+`{ "id": "{{topicId}}-sc-1", "type": "SINGLE_CHOICE", "difficulty": {{targetDifficulty}}, "content": { "question": "…", "options": ["A","B","C","D"], "correctAnswer": "B", "explanation": "…" } }`
 
 MULTI_CHOICE:
-`{ "id": "{{topicId}}-mc-1", "type": "MULTI_CHOICE", "difficulty": 1, "content": { "question": "…", "options": ["…","…"], "correctAnswers": ["…"], "explanation": "…" } }`
+`{ "id": "{{topicId}}-mc-1", "type": "MULTI_CHOICE", "difficulty": {{targetDifficulty}}, "content": { "question": "…", "options": ["…","…"], "correctAnswers": ["…"], "explanation": "…" } }`
 
 Requirements:
 - Generate **8–12** cards total, mixing types.
 - Every `id` must be unique, lowercase kebab-case, and prefixed with `{{topicId}}-` (e.g. `{{topicId}}-flash-1`).
-- Difficulty must be **1** for all cards in this response.
-- Content must align with the theory and difficulty-1 questions below.
+- Difficulty must be **{{targetDifficulty}}** for all cards in this response.
+- Content must align with the theory, grounding sources, content strategy, and target difficulty questions below.
 
 ### JSON strings and LaTeX (required)
 
@@ -40,11 +40,18 @@ Use LaTeX in `question`, `options`, `explanation`, `front`, `back`, etc. only wi
 
 Topic id: {{topicId}}
 Topic title: {{topicTitle}}
+Target difficulty: {{targetDifficulty}}
+
+Content strategy:
+{{contentStrategyBlock}}
+
+Accepted grounding sources:
+{{groundingSourcesBlock}}
 
 Theory (markdown):
 ---
 {{theory}}
 ---
 
-Difficulty 1 questions (cover these):
-{{difficulty1Questions}}
+Syllabus questions for target difficulty (cover these):
+{{syllabusQuestions}}

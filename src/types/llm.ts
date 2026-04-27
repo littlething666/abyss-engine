@@ -11,20 +11,37 @@ export interface ChatMessage {
 }
 
 /** Tagged streaming chunk: reasoning tokens or content tokens, never both in a single chunk. */
-export type ChatStreamChunkType = 'reasoning' | 'content';
+export type ChatStreamChunkType = 'reasoning' | 'content' | 'metadata';
 
 export interface ChatStreamChunk {
   type: ChatStreamChunkType;
   text: string;
+  metadata?: ChatCompletionProviderMetadata;
 }
 
 export interface ChatCompletionResult {
   content: string;
   reasoningDetails: string | null;
+  providerMetadata?: ChatCompletionProviderMetadata;
 }
 
 /** OpenAI-compatible `response_format` (used for OpenRouter structured JSON jobs). */
 export type ChatResponseFormatJsonObject = { type: 'json_object' };
+
+export type OpenRouterWebSearchTool = {
+  type: 'openrouter:web_search';
+  engine: string;
+  max_results: number;
+  max_total_results: number;
+};
+
+export type ChatCompletionTool = OpenRouterWebSearchTool;
+
+export interface ChatCompletionProviderMetadata {
+  usage?: unknown;
+  annotations?: unknown;
+  citations?: unknown;
+}
 
 export interface ChatCompletionStreamInput {
   model: string;
@@ -45,6 +62,8 @@ export interface ChatCompletionStreamInput {
   responseFormat?: ChatResponseFormatJsonObject;
   /** OpenRouter plugins array, e.g. `[{ id: 'response-healing' }]`. */
   plugins?: Array<{ id: string }>;
+  /** OpenRouter server tools, e.g. `openrouter:web_search`. */
+  tools?: ChatCompletionTool[];
 }
 
 export interface IChatCompletionsRepository {
@@ -58,6 +77,7 @@ export interface IChatCompletionsRepository {
     temperature?: number;
     responseFormat?: ChatResponseFormatJsonObject;
     plugins?: Array<{ id: string }>;
+    tools?: ChatCompletionTool[];
   }): Promise<ChatCompletionResult>;
   streamChat(input: ChatCompletionStreamInput): AsyncIterable<ChatStreamChunk>;
 }

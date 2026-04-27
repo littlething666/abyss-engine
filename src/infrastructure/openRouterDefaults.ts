@@ -12,7 +12,8 @@ export const OPENROUTER_MODEL_OPTIONS = [
 ] as const;
 
 export const STUDY_SURFACE_DEFAULT_MODEL = 'google/gemma-4-26b-a4b-it:free' as const;
-export const GENERATION_SURFACE_DEFAULT_MODEL = 'google/gemma-4-31b-it:free' as const;
+export const PREVIOUS_GENERATION_SURFACE_DEFAULT_MODEL = 'google/gemma-4-31b-it:free' as const;
+export const GENERATION_SURFACE_DEFAULT_MODEL = 'mistralai/mistral-small-2603' as const;
 
 /**
  * Deterministic UUIDs for seeded configs so migrations produce the same id on

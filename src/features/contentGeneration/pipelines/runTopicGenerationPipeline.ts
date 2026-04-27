@@ -13,6 +13,8 @@ import { buildTopicStudyCardsMessages } from '../messages/buildTopicStudyCardsMe
 import { buildTopicTheoryMessages } from '../messages/buildTopicTheoryMessages';
 import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
 import { parseTopicTheoryPayload, type ParsedTopicTheoryPayload } from '../parsers/parseTopicTheoryPayload';
+import { FIRECRAWL_TOPIC_GROUNDING_POLICY, buildOpenRouterWebSearchTools } from '../grounding/groundingPolicy';
+import { validateGroundingSources } from '../grounding/validateGroundingSources';
 import { runContentGenerationJob } from '../runContentGenerationJob';
 import { useContentGenerationStore } from '../contentGenerationStore';
 import { topicStudyContentReady } from '../topicStudyContentReady';
@@ -106,7 +108,8 @@ export async function runTopicGenerationPipeline(
   const manifest = await deckRepository.getManifest();
   const subject = manifest.subjects.find((s) => s.id === subjectId);
   const subjectTitle = subject?.name ?? graph.title;
-  const contentBrief = subject?.metadata?.strategy?.content?.contentBrief?.trim() || undefined;
+  const contentStrategy = subject?.metadata?.strategy?.content;
+  const contentBrief = contentStrategy?.contentBrief?.trim() || undefined;
 
   const pipelineLabel = resumeFromStage
     ? `Retry · ${pipelineShellLabel(stage, node.title)}`
@@ -143,12 +146,24 @@ export async function runTopicGenerationPipeline(
       }),
       enableReasoning,
       enableStreaming,
+      tools: buildOpenRouterWebSearchTools(FIRECRAWL_TOPIC_GROUNDING_POLICY),
       externalSignal: pipelineAc.signal,
-      parseOutput: async (raw) => {
-        const parsed = parseTopicTheoryPayload(raw);
+      parseOutput: async (raw, job) => {
+        const providerMetadata = job.metadata?.provider as Record<string, unknown> | undefined;
+        const parsed = parseTopicTheoryPayload(raw, {
+          groundingPolicy: FIRECRAWL_TOPIC_GROUNDING_POLICY,
+          providerMetadata,
+          validateGroundingSources,
+        });
         if (!parsed.ok) {
           return { ok: false, error: parsed.error, parseError: parsed.error };
         }
+        useContentGenerationStore.getState().mergeJobMetadata(job.id, {
+          grounding: {
+            sourceCount: parsed.data.groundingSources.length,
+            sources: parsed.data.groundingSources,
+          },
+        });
         return { ok: true, data: parsed.data };
       },
       persistOutput: async (data) => {
@@ -161,6 +176,8 @@ export async function runTopicGenerationPipeline(
           theory: data.theory,
           keyTakeaways: data.keyTakeaways,
           coreQuestionsByDifficulty: data.coreQuestionsByDifficulty,
+          groundingSources: data.groundingSources,
+          miniGameAffordances: data.miniGameAffordances,
         });
       },
     });
@@ -172,9 +189,7 @@ export async function runTopicGenerationPipeline(
   };
 
   const runStudyJob = async (theory: ParsedTopicTheoryPayload): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const difficulty1Questions = theory.coreQuestionsByDifficulty[1]
-      .map((q: string, i: number) => `${i + 1}. ${q}`)
-      .join('\n');
+    const targetDifficulty = 1;
 
     const studyResult = await runContentGenerationJob({
       kind: 'topic-study-cards',
@@ -189,14 +204,25 @@ export async function runTopicGenerationPipeline(
         topicId,
         topicTitle: node.title,
         theory: theory.theory,
-        difficulty1Questions,
+        targetDifficulty,
+        syllabusQuestions: theory.coreQuestionsByDifficulty[targetDifficulty],
+        contentStrategy,
+        groundingSources: theory.groundingSources,
         contentBrief,
       }),
       enableReasoning,
       enableStreaming,
       externalSignal: pipelineAc.signal,
-      parseOutput: async (raw) => {
-        const parsed = parseTopicCardsPayload(raw);
+      parseOutput: async (raw, job) => {
+        const parsed = parseTopicCardsPayload(raw, {
+          groundingSources: theory.groundingSources,
+        });
+        if (parsed.qualityReport) {
+          useContentGenerationStore.getState().mergeJobMetadata(job.id, {
+            qualityReport: parsed.qualityReport,
+            validationFailures: parsed.qualityReport.failures,
+          });
+        }
         if (!parsed.ok) {
           return { ok: false, error: parsed.error, parseError: parsed.error };
         }
@@ -214,9 +240,7 @@ export async function runTopicGenerationPipeline(
   };
 
   const runMiniJob = async (theory: ParsedTopicTheoryPayload): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const difficulty1Questions = theory.coreQuestionsByDifficulty[1]
-      .map((q: string, i: number) => `${i + 1}. ${q}`)
-      .join('\n');
+    const targetDifficulty = 1;
 
     const miniResult = await runContentGenerationJob({
       kind: 'topic-mini-games',
@@ -231,14 +255,26 @@ export async function runTopicGenerationPipeline(
         topicId,
         topicTitle: node.title,
         theory: theory.theory,
-        difficulty1Questions,
+        targetDifficulty,
+        syllabusQuestions: theory.coreQuestionsByDifficulty[targetDifficulty],
+        contentStrategy,
+        groundingSources: theory.groundingSources,
+        miniGameAffordances: theory.miniGameAffordances,
         contentBrief,
       }),
       enableReasoning,
       enableStreaming,
       externalSignal: pipelineAc.signal,
-      parseOutput: async (raw) => {
-        const parsed = parseTopicCardsPayload(raw);
+      parseOutput: async (raw, job) => {
+        const parsed = parseTopicCardsPayload(raw, {
+          groundingSources: theory.groundingSources,
+        });
+        if (parsed.qualityReport) {
+          useContentGenerationStore.getState().mergeJobMetadata(job.id, {
+            qualityReport: parsed.qualityReport,
+            validationFailures: parsed.qualityReport.failures,
+          });
+        }
         if (!parsed.ok) {
           return { ok: false, error: parsed.error, parseError: parsed.error };
         }

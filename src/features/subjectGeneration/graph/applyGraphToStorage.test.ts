@@ -44,6 +44,8 @@ describe('applyGraphToStorage', () => {
             theoryDepth: 'standard',
             cardMix: { flashcardWeight: 1, choiceWeight: 0, miniGameWeight: 0 },
             difficultyBias: 'balanced',
+            cognitiveModeMix: { understand: 1 },
+            forbiddenPatterns: ['trivia-only'],
             contentBrief: '',
           },
         },

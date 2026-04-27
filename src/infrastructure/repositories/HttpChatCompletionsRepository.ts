@@ -1,7 +1,9 @@
 import type {
   ChatCompletionResult,
   ChatCompletionStreamInput,
+  ChatCompletionTool,
   ChatMessage,
+  ChatCompletionProviderMetadata,
   ChatResponseFormatJsonObject,
   ChatStreamChunk,
   IChatCompletionsRepository,
@@ -37,10 +39,15 @@ async function sleepAbortable(ms: number, signal: AbortSignal | undefined): Prom
 }
 
 type ChatCompletionResponseBody = {
+  usage?: unknown;
+  citations?: unknown;
+  annotations?: unknown;
   choices?: Array<{
     message?: {
       content?: string | null;
       reasoning_details?: unknown;
+      annotations?: unknown;
+      citations?: unknown;
     } | null;
   } | null>;
 };
@@ -71,6 +78,17 @@ function appendOpenRouterReasoningToBody(
   if (input.includeOpenRouterReasoning === true) {
     body.reasoning = { enabled: input.enableReasoning === true };
   }
+}
+
+function extractProviderMetadata(respBody: ChatCompletionResponseBody): ChatCompletionProviderMetadata | undefined {
+  const message = respBody.choices?.[0]?.message;
+  const metadata: ChatCompletionProviderMetadata = {};
+  if (respBody.usage !== undefined) metadata.usage = respBody.usage;
+  if (respBody.annotations !== undefined) metadata.annotations = respBody.annotations;
+  if (respBody.citations !== undefined) metadata.citations = respBody.citations;
+  if (message?.annotations !== undefined) metadata.annotations = message.annotations;
+  if (message?.citations !== undefined) metadata.citations = message.citations;
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 export class HttpChatCompletionsRepository implements IChatCompletionsRepository {
@@ -145,6 +163,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     temperature?: number;
     responseFormat?: ChatResponseFormatJsonObject;
     plugins?: Array<{ id: string }>;
+    tools?: ChatCompletionTool[];
   }): Promise<ChatCompletionResult> {
     const messages = withUserMessageIfMissing(input.messages);
     const body: Record<string, unknown> = {
@@ -156,6 +175,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     if (input.temperature !== undefined) body.temperature = input.temperature;
     if (input.responseFormat !== undefined) body.response_format = input.responseFormat;
     if (input.plugins !== undefined && input.plugins.length > 0) body.plugins = input.plugins;
+    if (input.tools !== undefined && input.tools.length > 0) body.tools = input.tools;
 
     const response = await this.fetchWithTransientRetry(this.chatUrl, {
       method: 'POST',
@@ -178,7 +198,8 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
       throw new Error('Chat completion response missing assistant message content');
     }
     const reasoningDetails = message ? mergeAssistantReasoningDetails(message) : null;
-    return { content, reasoningDetails };
+    const providerMetadata = extractProviderMetadata(respBody);
+    return { content, reasoningDetails, ...(providerMetadata ? { providerMetadata } : {}) };
   }
 
   async *streamChat(input: ChatCompletionStreamInput): AsyncGenerator<ChatStreamChunk, void, undefined> {
@@ -192,7 +213,11 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
         temperature: input.temperature,
         responseFormat: input.responseFormat,
         plugins: input.plugins,
+        tools: input.tools,
       });
+      if (completed.providerMetadata) {
+        yield { type: 'metadata', text: '', metadata: completed.providerMetadata };
+      }
       if (completed.reasoningDetails && completed.reasoningDetails.length > 0) {
         yield { type: 'reasoning', text: completed.reasoningDetails };
       }
@@ -212,6 +237,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     if (input.temperature !== undefined) body.temperature = input.temperature;
     if (input.responseFormat !== undefined) body.response_format = input.responseFormat;
     if (input.plugins !== undefined && input.plugins.length > 0) body.plugins = input.plugins;
+    if (input.tools !== undefined && input.tools.length > 0) body.tools = input.tools;
 
     const response = await this.fetchWithTransientRetry(this.chatUrl, {
       method: 'POST',

@@ -8,6 +8,7 @@ import {
 import {
   GENERATION_SURFACE_DEFAULT_MODEL,
   OPENROUTER_MODEL_OPTIONS,
+  PREVIOUS_GENERATION_SURFACE_DEFAULT_MODEL,
   STUDY_SURFACE_DEFAULT_MODEL,
 } from '../infrastructure/openRouterDefaults';
 
@@ -60,7 +61,7 @@ describe('studySettingsStore', () => {
     }
   });
 
-  it('defaults generation surfaces to OpenRouter → gemma-4-31b', () => {
+  it('defaults generation surfaces to OpenRouter → Mistral Small', () => {
     const store = createStudySettingsStore();
     const configs = store.getState().openRouterConfigs;
     const genSurfaces = [
@@ -75,6 +76,38 @@ describe('studySettingsStore', () => {
       const model = configs.find((c) => c.id === binding.openRouterConfigId)?.model;
       expect(model).toBe(GENERATION_SURFACE_DEFAULT_MODEL);
     }
+  });
+
+  it('migrates only surfaces bound to the previous seeded generation default', () => {
+    const seededStore = createStudySettingsStore();
+    const configs = seededStore.getState().openRouterConfigs;
+    const oldConfig = configs.find((config) => config.model === PREVIOUS_GENERATION_SURFACE_DEFAULT_MODEL);
+    const customConfig = configs.find((config) => config.model === STUDY_SURFACE_DEFAULT_MODEL);
+    expect(oldConfig).toBeTruthy();
+    expect(customConfig).toBeTruthy();
+    localStorage.setItem(STUDY_SETTINGS_STORAGE_KEY, JSON.stringify({
+      targetAudience: TARGET_AUDIENCE_OPTIONS[0],
+      agentPersonality: AGENT_PERSONALITY_OPTIONS[0],
+      localModelId: '',
+      openRouterResponseHealing: true,
+      openRouterConfigs: configs,
+      surfaceProviders: {
+        subjectGenerationTopics: { provider: 'openrouter', openRouterConfigId: oldConfig!.id },
+        subjectGenerationEdges: { provider: 'openrouter', openRouterConfigId: oldConfig!.id },
+        topicContent: { provider: 'openrouter', openRouterConfigId: customConfig!.id },
+        crystalTrial: { provider: 'openrouter', openRouterConfigId: oldConfig!.id },
+      },
+    }));
+
+    const migrated = createStudySettingsStore().getState();
+    const topicContentModel = migrated.openRouterConfigs.find(
+      (config) => config.id === migrated.surfaceProviders.topicContent.openRouterConfigId,
+    )?.model;
+    const topicsModel = migrated.openRouterConfigs.find(
+      (config) => config.id === migrated.surfaceProviders.subjectGenerationTopics.openRouterConfigId,
+    )?.model;
+    expect(topicsModel).toBe(GENERATION_SURFACE_DEFAULT_MODEL);
+    expect(topicContentModel).toBe(STUDY_SURFACE_DEFAULT_MODEL);
   });
 
   it('defaults openRouterResponseHealing to true', () => {
@@ -148,7 +181,8 @@ describe('studySettingsStore', () => {
       expect(studyBinding.provider).toBe('openrouter');
       expect(studyBinding.openRouterConfigId).toBe(secondId);
       expect(topicBinding.provider).toBe('openrouter');
-      expect(topicBinding.openRouterConfigId).toBe(secondId);
+      const topicModel = store.getState().openRouterConfigs.find((c) => c.id === topicBinding.openRouterConfigId)?.model;
+      expect(topicModel).toBe(GENERATION_SURFACE_DEFAULT_MODEL);
     } else {
       expect(studyBinding.provider).toBe('local');
       expect(topicBinding.provider).toBe('local');

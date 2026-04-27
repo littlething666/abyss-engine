@@ -70,7 +70,20 @@ const readyDetails: TopicDetails = {
   coreConcept: 'c',
   theory: 'non-empty theory',
   keyTakeaways: ['a', 'b', 'c', 'd'],
-  coreQuestionsByDifficulty: { 1: ['q1'], 2: ['q2'], 3: ['q3'] },
+  coreQuestionsByDifficulty: { 1: ['q1'], 2: ['q2'], 3: ['q3'], 4: ['q4'] },
+  groundingSources: [
+    {
+      title: 'Source',
+      url: 'https://example.edu/source',
+      retrievedAt: '2026-04-26T00:00:00.000Z',
+      trustLevel: 'high',
+    },
+  ],
+  miniGameAffordances: {
+    categorySets: [],
+    orderedSequences: [],
+    connectionPairs: [],
+  },
 };
 
 const readyCards: Card[] = [
@@ -292,7 +305,7 @@ describe('runTopicGenerationPipeline', () => {
       coreConcept: '',
       theory: '',
       keyTakeaways: [],
-      coreQuestionsByDifficulty: { 1: [], 2: [], 3: [] },
+      coreQuestionsByDifficulty: { 1: [], 2: [], 3: [], 4: [] },
     };
 
     const result = await runTopicGenerationPipeline({

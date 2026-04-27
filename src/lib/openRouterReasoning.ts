@@ -12,6 +12,12 @@ export const OPENROUTER_MODEL_IDS_WITH_REASONING = [
 
 const REASONING_MODEL_SET = new Set<string>(OPENROUTER_MODEL_IDS_WITH_REASONING);
 
+const OPENROUTER_MODEL_IDS_WITH_GENERATION_TOOLS = [
+  'mistralai/mistral-small-2603',
+] as const;
+
+const GENERATION_TOOL_MODEL_SET = new Set<string>(OPENROUTER_MODEL_IDS_WITH_GENERATION_TOOLS);
+
 function hasNonWhitespaceText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -23,8 +29,15 @@ export function openRouterModelSupportsReasoningParameter(model: string): boolea
 export function inferOpenRouterSupportedParameters(
   model: string,
 ): readonly OpenRouterSupportedParameter[] | undefined {
-  if (!openRouterModelSupportsReasoningParameter(model)) return undefined;
-  return ['reasoning'];
+  const trimmed = model.trim();
+  const params: OpenRouterSupportedParameter[] = [];
+  if (openRouterModelSupportsReasoningParameter(trimmed)) {
+    params.push('reasoning');
+  }
+  if (GENERATION_TOOL_MODEL_SET.has(trimmed)) {
+    params.push('tools', 'response_format', 'structured_outputs');
+  }
+  return params.length > 0 ? params : undefined;
 }
 
 /**

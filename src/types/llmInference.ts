@@ -44,7 +44,11 @@ export const SURFACE_DISPLAY_LABELS: Record<InferenceSurfaceId, string> = {
 };
 
 /** Declared OpenRouter chat parameters this app knows how to use for a config. */
-export type OpenRouterSupportedParameter = 'reasoning';
+export type OpenRouterSupportedParameter =
+  | 'reasoning'
+  | 'tools'
+  | 'response_format'
+  | 'structured_outputs';
 
 /**
  * One user-defined OpenRouter model configuration. A surface bound to the

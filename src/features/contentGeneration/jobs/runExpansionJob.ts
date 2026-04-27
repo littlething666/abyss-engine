@@ -7,7 +7,9 @@ import {
 
 import { buildTopicExpansionCardsMessages } from '../messages/buildTopicExpansionCardsMessages';
 import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
+import { buildExistingConceptRegistry } from '../quality/buildExistingConceptRegistry';
 import { runContentGenerationJob } from '../runContentGenerationJob';
+import { useContentGenerationStore } from '../contentGenerationStore';
 
 export interface RunExpansionJobParams {
   chat: IChatCompletionsRepository;
@@ -37,18 +39,21 @@ export async function runExpansionJob(
   // (L1 -> diff 2, L2 -> diff 3, L3 -> diff 4)
   const difficulty = nextLevel + 1;
 
-  const details = await deckRepository.getTopicDetails(subjectId, topicId);
-  // For difficulty 4, coreQuestionsByDifficulty only has keys 1-3.
-  // Fall back to bucket 3 for difficulty 4.
-  const bucketKey = Math.min(difficulty, 3) as 1 | 2 | 3;
+  const [details, existingCards] = await Promise.all([
+    deckRepository.getTopicDetails(subjectId, topicId),
+    deckRepository.getTopicCards(subjectId, topicId),
+  ]);
+  const bucketKey = difficulty as 2 | 3 | 4;
   const bucket = details.coreQuestionsByDifficulty?.[bucketKey];
   if (!bucket?.length) {
     return { ok: false, error: `No syllabus questions for difficulty bucket ${bucketKey}` };
   }
+  const existingRegistry = buildExistingConceptRegistry(existingCards);
 
   const manifest = await deckRepository.getManifest();
   const subjectRow = manifest.subjects.find((s) => s.id === subjectId);
-  const contentBrief = subjectRow?.metadata?.strategy?.content?.contentBrief?.trim() || undefined;
+  const contentStrategy = subjectRow?.metadata?.strategy?.content;
+  const contentBrief = contentStrategy?.contentBrief?.trim() || undefined;
 
   const graph = await deckRepository.getSubjectGraph(subjectId);
   const node = graph.nodes.find((n) => n.topicId === topicId);
@@ -78,6 +83,10 @@ export async function runExpansionJob(
       theoryExcerpt,
       syllabusQuestions,
       difficulty,
+      contentStrategy,
+      groundingSources: details.groundingSources,
+      existingConceptStems: existingRegistry.conceptTargets.slice(0, 80),
+      existingMiniGameItemLabels: existingRegistry.miniGameItemLabels.slice(0, 120),
       contentBrief,
     }),
     enableReasoning,
@@ -85,8 +94,18 @@ export async function runExpansionJob(
     externalSignal: signal,
     retryOf,
     metadata: { nextLevel },
-    parseOutput: async (raw) => {
-      const parsed = parseTopicCardsPayload(raw);
+    parseOutput: async (raw, job) => {
+      const parsed = parseTopicCardsPayload(raw, {
+        existingRegistry,
+        groundingSources: details.groundingSources,
+        duplicateRatioThreshold: existingCards.length >= 10 ? 0.1 : undefined,
+      });
+      if (parsed.qualityReport) {
+        useContentGenerationStore.getState().mergeJobMetadata(job.id, {
+          qualityReport: parsed.qualityReport,
+          validationFailures: parsed.qualityReport.failures,
+        });
+      }
       if (!parsed.ok) {
         return { ok: false, error: parsed.error, parseError: parsed.error };
       }

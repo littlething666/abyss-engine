@@ -25,6 +25,7 @@ import {
   retryFailedPipeline,
 } from '@/features/contentGeneration';
 import type { ContentGenerationJob, ContentGenerationJobStatus } from '@/types/contentGeneration';
+import type { GeneratedCardQualityReport, GeneratedCardValidationFailure } from '@/types/contentQuality';
 
 function isJobActive(status: ContentGenerationJobStatus): boolean {
   return (
@@ -74,6 +75,24 @@ function terminalBadgeVariant(
   return 'default';
 }
 
+function isValidationFailureArray(value: unknown): value is GeneratedCardValidationFailure[] {
+  return Array.isArray(value) && value.every((item) => {
+    if (!item || typeof item !== 'object') return false;
+    const maybe = item as { code?: unknown; message?: unknown };
+    return typeof maybe.code === 'string' && typeof maybe.message === 'string';
+  });
+}
+
+function isQualityReport(value: unknown): value is GeneratedCardQualityReport {
+  if (!value || typeof value !== 'object') return false;
+  const maybe = value as { emittedCount?: unknown; invalidCount?: unknown; duplicateConceptCount?: unknown };
+  return (
+    typeof maybe.emittedCount === 'number' &&
+    typeof maybe.invalidCount === 'number' &&
+    typeof maybe.duplicateConceptCount === 'number'
+  );
+}
+
 function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
   const input = job.inputMessages ?? '';
   const raw = job.rawOutput;
@@ -84,6 +103,10 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
       : typeof job.metadata?.modelId === 'string'
         ? job.metadata.modelId
         : undefined;
+  const validationFailures = isValidationFailureArray(job.metadata?.validationFailures)
+    ? job.metadata.validationFailures
+    : [];
+  const qualityReport = isQualityReport(job.metadata?.qualityReport) ? job.metadata.qualityReport : null;
 
   return (
     <div className="border-border/60 mt-2 space-y-2 border-t pt-2">
@@ -103,6 +126,34 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
         </p>
       ) : null}
       {modelName ? <p className="text-muted-foreground text-xs">Model: {modelName}</p> : null}
+      {qualityReport ? (
+        <div className="rounded border border-border bg-muted/20 p-2 text-xs">
+          <p className="text-foreground font-medium">Quality summary</p>
+          <p className="text-muted-foreground">
+            {qualityReport.validCount}/{qualityReport.emittedCount} cards valid · {qualityReport.invalidCount} invalid · {qualityReport.duplicateConceptCount} duplicate concepts
+          </p>
+          {qualityReport.groundingSourceCount > 0 ? (
+            <p className="text-muted-foreground">
+              Grounding: {qualityReport.groundingSourceCount} source{qualityReport.groundingSourceCount === 1 ? '' : 's'}
+              {qualityReport.hasHighTrustGroundingSource ? ', includes high-trust source' : ''}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {validationFailures.length > 0 ? (
+        <details className="rounded border border-destructive/40 bg-destructive/5 p-2">
+          <summary className="text-destructive text-xs font-medium">
+            Validation issues ({validationFailures.length})
+          </summary>
+          <ul className="mt-2 space-y-1 text-xs">
+            {validationFailures.slice(0, 8).map((failure, index) => (
+              <li key={`${failure.code}-${failure.index}-${index}`} className="text-muted-foreground">
+                {failure.cardId ?? `card ${failure.index + 1}`}: {failure.message}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
       <p className="text-muted-foreground text-xs">Input (messages)</p>
       <CopyableLlmTextBlock
         copyText={input}
