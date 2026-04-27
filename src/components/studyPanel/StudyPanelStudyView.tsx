@@ -6,7 +6,6 @@ import { RenderableCard } from '../../features/studyPanel/cardPresenter';
 import {
   type StudyPanelFormulaExplainProps,
   type StudyPanelLlmExplainProps,
-  type StudyPanelMermaidDiagramProps,
 } from '../../features/studyPanel/studyPanelLlmSurfaceProps';
 import { CoarseChoice } from '../../types';
 import { Card } from '../../types/core';
@@ -20,14 +19,13 @@ import {
 import { LlmReasoningBlock } from '../LlmReasoningBlock';
 import { LlmReasoningToggle } from '../LlmReasoningToggle';
 import { LlmTtsToggle } from '../LlmTtsToggle';
-import { Network, Redo2, Sparkles, Undo2 } from 'lucide-react';
+import { Redo2, Sparkles, Undo2 } from 'lucide-react';
 import { StudyKatexInteractive } from './StudyKatexInteractive';
-import { StudyQuestionMermaidLlmBody } from './StudyQuestionMermaidLlmBody';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useLlmAssistantSpeech } from '@/hooks/useLlmAssistantSpeech';
 import { useStudyPanelLlmSurfaces } from '@/hooks/useStudyPanelLlmSurfaces';
 
-export type { StudyPanelFormulaExplainProps, StudyPanelLlmExplainProps, StudyPanelMermaidDiagramProps };
+export type { StudyPanelFormulaExplainProps, StudyPanelLlmExplainProps };
 
 type LlmStreamBlockProps = {
   isPending: boolean;
@@ -166,27 +164,19 @@ interface StudyPanelStudyViewProps {
   redoCount: number;
   llmExplain: StudyPanelLlmExplainProps;
   llmFormulaExplain: StudyPanelFormulaExplainProps;
-  llmMermaidDiagram: StudyPanelMermaidDiagramProps;
   explainReasoningEnabled: boolean;
   explainReasoningToggleDisabled: boolean;
   formulaReasoningEnabled: boolean;
   formulaReasoningToggleDisabled: boolean;
-  mermaidReasoningEnabled: boolean;
-  mermaidReasoningToggleDisabled: boolean;
   onToggleExplainReasoning: () => void;
   onToggleFormulaReasoning: () => void;
-  onToggleMermaidReasoning: () => void;
   explainTtsEnabled: boolean;
   formulaTtsEnabled: boolean;
-  mermaidTtsEnabled: boolean;
   onToggleExplainTts: () => void;
   onToggleFormulaTts: () => void;
-  onToggleMermaidTts: () => void;
 }
 
 const QUESTION_EXPLAIN_DESCRIPTION = 'AI explanation for the current card question.';
-
-const QUESTION_MERMAID_DESCRIPTION = 'AI-generated Mermaid diagram for the current card question.';
 
 /** Inline LaTeX as remark-math; escapes `$` inside the expression. */
 function formulaDescriptionMarkdown(latex: string | null): string {
@@ -223,43 +213,32 @@ export function StudyPanelStudyView({
   redoCount,
   llmExplain,
   llmFormulaExplain,
-  llmMermaidDiagram,
   explainReasoningEnabled,
   explainReasoningToggleDisabled,
   formulaReasoningEnabled,
   formulaReasoningToggleDisabled,
-  mermaidReasoningEnabled,
-  mermaidReasoningToggleDisabled,
   onToggleExplainReasoning,
   onToggleFormulaReasoning,
-  onToggleMermaidReasoning,
   explainTtsEnabled,
   formulaTtsEnabled,
-  mermaidTtsEnabled,
   onToggleExplainTts,
   onToggleFormulaTts,
-  onToggleMermaidTts,
 }: StudyPanelStudyViewProps) {
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const {
     explainOpen,
-    mermaidOpen,
     formulaOpen,
     activeFormulaLatex,
     openFormulaExplain,
     handleExplainOpenChange,
-    handleMermaidOpenChange,
     handleFormulaOpenChange,
     dismissExplainInference,
     dismissFormulaInference,
-    dismissMermaidInference,
   } = useStudyPanelLlmSurfaces({
     llmExplain,
     llmFormulaExplain,
-    llmMermaidDiagram,
     explainReasoningEnabled,
     formulaReasoningEnabled,
-    mermaidReasoningEnabled,
     isAnswerSubmitted,
     onHintUsed,
   });
@@ -275,12 +254,6 @@ export function StudyPanelStudyView({
     ttsEnabled: formulaTtsEnabled,
     assistantText: llmFormulaExplain.assistantText,
     isPending: llmFormulaExplain.isPending,
-  });
-  const mermaidAssistantSpeech = useLlmAssistantSpeech({
-    isSurfaceOpen: mermaidOpen,
-    ttsEnabled: mermaidTtsEnabled,
-    assistantText: llmMermaidDiagram.assistantText,
-    isPending: llmMermaidDiagram.isPending,
   });
 
   const formatTestId = isFlashcard
@@ -326,10 +299,6 @@ export function StudyPanelStudyView({
     kind: 'srOnly',
     text: QUESTION_EXPLAIN_DESCRIPTION,
   };
-  const questionMermaidDescription: ResponsiveLlmInferenceDescription = {
-    kind: 'srOnly',
-    text: QUESTION_MERMAID_DESCRIPTION,
-  };
   const formulaExplainDescription: ResponsiveLlmInferenceDescription = {
     kind: 'markdown',
     source: formulaDescSource,
@@ -362,19 +331,8 @@ export function StudyPanelStudyView({
               type="button"
               variant="outline"
               size="icon-xs"
-              aria-label="Draw diagram with AI"
-              title="Draw diagram with AI"
-              data-testid="study-card-llm-mermaid-trigger"
-              onClick={() => handleMermaidOpenChange(true)}
-            >
-              <Network className="h-3.5 w-3.5" aria-hidden />
-              <span className="sr-only">Draw diagram with AI</span>
-            </Button>
-            <Button
               onClick={onUndo}
               disabled={!canUndo}
-              variant="outline"
-              size="icon-xs"
               aria-label={`Undo (${undoCount})`}
               title={`Undo (${undoCount})`}
               data-testid="study-card-undo"
@@ -532,34 +490,6 @@ export function StudyPanelStudyView({
         }
       >
         {questionExplainBody}
-      </ResponsiveLlmInferenceSurface>
-
-      <ResponsiveLlmInferenceSurface
-        open={mermaidOpen}
-        onOpenChange={handleMermaidOpenChange}
-        isDesktop={isDesktop}
-        title="Question diagram"
-        description={questionMermaidDescription}
-        onDismissOutside={dismissMermaidInference}
-        desktopContentClassName="sm:max-w-xl"
-        sheetMaxHeightClassName="data-[side=bottom]:max-h-[80vh]"
-        sheetBodyScrollClassName="max-h-[min(55vh,36rem)]"
-        headerAction={
-          <div className="flex items-center gap-1">
-            <LlmReasoningToggle
-              enabled={mermaidReasoningEnabled}
-              disabled={mermaidReasoningToggleDisabled}
-              onToggle={onToggleMermaidReasoning}
-            />
-            <LlmTtsToggle
-              enabled={mermaidTtsEnabled}
-              onToggle={onToggleMermaidTts}
-              speaking={mermaidAssistantSpeech.isSpeaking}
-            />
-          </div>
-        }
-      >
-        <StudyQuestionMermaidLlmBody {...llmMermaidDiagram} />
       </ResponsiveLlmInferenceSurface>
 
       <ResponsiveLlmInferenceSurface

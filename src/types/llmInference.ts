@@ -2,7 +2,6 @@
 export type InferenceSurfaceId =
   | 'studyQuestionExplain'
   | 'studyFormulaExplain'
-  | 'studyQuestionMermaid'
   | 'subjectGenerationTopics'
   | 'subjectGenerationEdges'
   | 'topicContent'
@@ -11,7 +10,6 @@ export type InferenceSurfaceId =
 export const ALL_SURFACE_IDS: readonly InferenceSurfaceId[] = [
   'studyQuestionExplain',
   'studyFormulaExplain',
-  'studyQuestionMermaid',
   'subjectGenerationTopics',
   'subjectGenerationEdges',
   'topicContent',
@@ -33,7 +31,6 @@ export const PROVIDER_DISPLAY_LABELS: Record<LlmInferenceProviderId, string> = {
 export const SURFACE_DISPLAY_LABELS: Record<InferenceSurfaceId, string> = {
   studyQuestionExplain: 'Study Question Explain',
   studyFormulaExplain: 'Study Formula Explain',
-  studyQuestionMermaid: 'Study Mermaid Diagrams',
   subjectGenerationTopics: 'Curriculum — Topics',
   subjectGenerationEdges: 'Curriculum — Edges',
   topicContent: 'Topic Content',

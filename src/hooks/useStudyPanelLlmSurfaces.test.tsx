@@ -18,11 +18,8 @@ function makeLlmProps() {
   const cancelExplain = vi.fn();
   const requestFormula = vi.fn();
   const cancelFormula = vi.fn();
-  const requestDiagram = vi.fn();
-  const cancelMermaid = vi.fn();
   const clearExplain = vi.fn();
   const clearFormula = vi.fn();
-  const clearMermaid = vi.fn();
   const onHintUsed = vi.fn();
 
   const llmExplain = {
@@ -43,32 +40,18 @@ function makeLlmProps() {
     cancelInflight: cancelFormula,
     clearSessionCache: clearFormula,
   };
-  const llmMermaidDiagram = {
-    isPending: false,
-    errorMessage: null as string | null,
-    assistantText: null as string | null,
-    reasoningText: null as string | null,
-    requestDiagram,
-    cancelInflight: cancelMermaid,
-    clearSessionCache: clearMermaid,
-  };
 
   return {
     llmExplain,
     llmFormulaExplain,
-    llmMermaidDiagram,
     clearExplain,
     clearFormula,
-    clearMermaid,
     requestExplain,
     cancelExplain,
     requestFormula,
     cancelFormula,
-    requestDiagram,
-    cancelMermaid,
     explainReasoningEnabled: false,
     formulaReasoningEnabled: false,
-    mermaidReasoningEnabled: false,
     isAnswerSubmitted: false,
     onHintUsed,
   };
@@ -143,18 +126,6 @@ describe('useStudyPanelLlmSurfaces', () => {
     unmount();
   });
 
-  it('cancels explain and formula when opening mermaid; requests diagram when auto-request applies', () => {
-    const p = makeLlmProps();
-    const { getApi, unmount } = renderHarness(p);
-    act(() => {
-      getApi()?.handleMermaidOpenChange(true);
-    });
-    expect(p.cancelExplain).toHaveBeenCalledTimes(1);
-    expect(p.cancelFormula).toHaveBeenCalledTimes(1);
-    expect(p.requestDiagram).toHaveBeenCalledTimes(1);
-    unmount();
-  });
-
   it('cancels explain inflight when closing explain', () => {
     const p = makeLlmProps();
     const { getApi, unmount } = renderHarness(p);
@@ -169,20 +140,6 @@ describe('useStudyPanelLlmSurfaces', () => {
     unmount();
   });
 
-  it('cancels mermaid inflight when closing mermaid', () => {
-    const p = makeLlmProps();
-    const { getApi, unmount } = renderHarness(p);
-    act(() => {
-      getApi()?.handleMermaidOpenChange(true);
-    });
-    p.cancelMermaid.mockClear();
-    act(() => {
-      getApi()?.handleMermaidOpenChange(false);
-    });
-    expect(p.cancelMermaid).toHaveBeenCalledTimes(1);
-    unmount();
-  });
-
   it('openFormulaExplain closes other surfaces and invokes formula request', () => {
     const p = makeLlmProps();
     const { getApi, unmount } = renderHarness(p);
@@ -191,7 +148,6 @@ describe('useStudyPanelLlmSurfaces', () => {
       getApi()?.openFormulaExplain('x^2', 'question', anchor);
     });
     expect(p.cancelExplain).toHaveBeenCalledTimes(1);
-    expect(p.cancelMermaid).toHaveBeenCalledTimes(1);
     expect(p.requestFormula).toHaveBeenCalledWith('x^2', 'question');
     unmount();
   });
@@ -209,34 +165,11 @@ describe('useStudyPanelLlmSurfaces', () => {
       ...p,
       explainReasoningEnabled: true,
       formulaReasoningEnabled: false,
-      mermaidReasoningEnabled: false,
     });
 
     expect(p.cancelExplain).toHaveBeenCalledTimes(1);
     expect(p.clearExplain).toHaveBeenCalledTimes(1);
     expect(p.requestExplain).toHaveBeenCalledTimes(1);
-    unmount();
-  });
-
-  it('clears and restarts mermaid request when mermaid reasoning toggle changes while mermaid is open', () => {
-    const p = makeLlmProps();
-    const { getApi, rerender, unmount } = renderHarness(p);
-    act(() => {
-      getApi()?.handleMermaidOpenChange(true);
-    });
-    p.clearMermaid.mockClear();
-    p.requestDiagram.mockClear();
-
-    rerender({
-      ...p,
-      explainReasoningEnabled: false,
-      formulaReasoningEnabled: false,
-      mermaidReasoningEnabled: true,
-    });
-
-    expect(p.cancelMermaid).toHaveBeenCalledTimes(1);
-    expect(p.clearMermaid).toHaveBeenCalledTimes(1);
-    expect(p.requestDiagram).toHaveBeenCalledTimes(1);
     unmount();
   });
 
@@ -254,7 +187,6 @@ describe('useStudyPanelLlmSurfaces', () => {
       ...p,
       explainReasoningEnabled: false,
       formulaReasoningEnabled: true,
-      mermaidReasoningEnabled: false,
     });
 
     expect(p.cancelFormula).toHaveBeenCalledTimes(1);

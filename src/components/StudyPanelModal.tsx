@@ -20,7 +20,6 @@ import { StudyPanelStudyView } from './studyPanel/StudyPanelStudyView';
 import { useStudyPanelModel } from '../hooks/useStudyPanelModel';
 import { useStudyKeyboardShortcuts } from '../hooks/useStudyKeyboardShortcuts';
 import { useStudyFormulaLlmExplain } from '../hooks/useStudyFormulaLlmExplain';
-import { useStudyQuestionMermaidDiagram } from '../hooks/useStudyQuestionMermaidDiagram';
 import { useStudyQuestionLlmExplain } from '../hooks/useStudyQuestionLlmExplain';
 import { useInferenceTtsToggle } from '../hooks/useInferenceTtsToggle';
 import { useReasoningToggle } from '../hooks/useReasoningToggle';
@@ -68,15 +67,11 @@ export function StudyPanelModal({
   const model = useStudyPanelModel({ currentCardId, currentTopicId, currentSubjectId, totalCards });
   const explainReasoning = useReasoningToggle('studyQuestionExplain');
   const formulaReasoning = useReasoningToggle('studyFormulaExplain');
-  const mermaidReasoning = useReasoningToggle('studyQuestionMermaid');
   const explainReasoningSupported = useStudySettingsStore(
     makeOpenRouterProviderSelector('studyQuestionExplain'),
   );
   const formulaReasoningSupported = useStudySettingsStore(
     makeOpenRouterProviderSelector('studyFormulaExplain'),
-  );
-  const mermaidReasoningSupported = useStudySettingsStore(
-    makeOpenRouterProviderSelector('studyQuestionMermaid'),
   );
   const ttsEnabled = useInferenceTtsToggle();
   const llmExplain = useStudyQuestionLlmExplain({
@@ -91,20 +86,13 @@ export function StudyPanelModal({
     cardId: model.activeCard?.id ?? null,
     reasoningFromUserToggle: formulaReasoning.enableReasoning,
   });
-  const llmMermaidDiagram = useStudyQuestionMermaidDiagram({
-    topicLabel: model.resolvedTopic,
-    questionText: model.currentQuestion,
-    cardId: model.activeCard?.id ?? null,
-    reasoningFromUserToggle: mermaidReasoning.enableReasoning,
-  });
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'study' || !model.renderedCard) {
       llmExplain.cancelInflight();
       llmFormulaExplain.cancelInflight();
-      llmMermaidDiagram.cancelInflight();
     }
-  }, [isOpen, activeTab, model.renderedCard, llmExplain.cancelInflight, llmFormulaExplain.cancelInflight, llmMermaidDiagram.cancelInflight]);
+  }, [isOpen, activeTab, model.renderedCard, llmExplain.cancelInflight, llmFormulaExplain.cancelInflight]);
 
   const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]);
   const [isAnswerSubmitted, setIsAnswerSubmitted] = useState(false);
@@ -332,22 +320,16 @@ export function StudyPanelModal({
                   redoCount={model.redoCount}
                   llmExplain={llmExplain}
                   llmFormulaExplain={llmFormulaExplain}
-                  llmMermaidDiagram={llmMermaidDiagram}
                   explainReasoningEnabled={explainReasoning.enableReasoning}
                   explainReasoningToggleDisabled={!explainReasoningSupported}
                   formulaReasoningEnabled={formulaReasoning.enableReasoning}
                   formulaReasoningToggleDisabled={!formulaReasoningSupported}
-                  mermaidReasoningEnabled={mermaidReasoning.enableReasoning}
-                  mermaidReasoningToggleDisabled={!mermaidReasoningSupported}
                   onToggleExplainReasoning={explainReasoning.toggleReasoning}
                   onToggleFormulaReasoning={formulaReasoning.toggleReasoning}
-                  onToggleMermaidReasoning={mermaidReasoning.toggleReasoning}
                   explainTtsEnabled={ttsEnabled.enableTts}
                   formulaTtsEnabled={ttsEnabled.enableTts}
-                  mermaidTtsEnabled={ttsEnabled.enableTts}
                   onToggleExplainTts={ttsEnabled.toggleTts}
                   onToggleFormulaTts={ttsEnabled.toggleTts}
-                  onToggleMermaidTts={ttsEnabled.toggleTts}
                 />
               )}
             </div>

@@ -19,13 +19,3 @@ export type StudyPanelFormulaExplainProps = {
   cancelInflight: () => void;
   clearSessionCache: () => void;
 };
-
-export type StudyPanelMermaidDiagramProps = {
-  isPending: boolean;
-  errorMessage: string | null;
-  assistantText: string | null;
-  reasoningText: string | null;
-  requestDiagram: () => void;
-  cancelInflight: () => void;
-  clearSessionCache: () => void;
-};

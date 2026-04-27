@@ -54,30 +54,16 @@ const baseProps: StudyPanelStudyViewProps = {
     cancelInflight: vi.fn(),
     clearSessionCache: vi.fn(),
   },
-  llmMermaidDiagram: {
-    isPending: false,
-    errorMessage: null,
-    assistantText: null,
-    reasoningText: null,
-    requestDiagram: vi.fn(),
-    cancelInflight: vi.fn(),
-    clearSessionCache: vi.fn(),
-  },
   explainReasoningEnabled: false,
   explainReasoningToggleDisabled: false,
   formulaReasoningEnabled: false,
   formulaReasoningToggleDisabled: false,
-  mermaidReasoningEnabled: false,
-  mermaidReasoningToggleDisabled: false,
   onToggleExplainReasoning: vi.fn(),
   onToggleFormulaReasoning: vi.fn(),
-  onToggleMermaidReasoning: vi.fn(),
   explainTtsEnabled: true,
   formulaTtsEnabled: true,
-  mermaidTtsEnabled: true,
   onToggleExplainTts: vi.fn(),
   onToggleFormulaTts: vi.fn(),
-  onToggleMermaidTts: vi.fn(),
 };
 
 function renderStudyPanelView(override: Partial<StudyPanelStudyViewProps> = {}) {
@@ -110,14 +96,6 @@ describe('StudyPanelStudyView', () => {
     const trigger = container.querySelector('[data-testid="study-card-llm-explain-trigger"]');
     expect(trigger).not.toBeNull();
     expect(trigger?.getAttribute('aria-label')).toContain('Explain');
-    unmount();
-  });
-
-  it('renders Mermaid diagram control next to Explain', () => {
-    const { container, unmount } = renderStudyPanelView();
-    const trigger = container.querySelector('[data-testid="study-card-llm-mermaid-trigger"]');
-    expect(trigger).not.toBeNull();
-    expect(trigger?.getAttribute('aria-label')).toContain('diagram');
     unmount();
   });
 
@@ -164,108 +142,6 @@ describe('StudyPanelStudyView', () => {
     const trigger = container.querySelector('[data-testid="study-card-llm-explain-trigger"]') as HTMLButtonElement;
     trigger?.click();
     expect(requestExplain).toHaveBeenCalledTimes(1);
-    unmount();
-  });
-
-  it('requests Mermaid diagram when diagram inference surface opens', () => {
-    const requestDiagram = vi.fn();
-    const { container, unmount } = renderStudyPanelView({
-      llmMermaidDiagram: {
-        isPending: false,
-        errorMessage: null,
-        assistantText: null,
-        reasoningText: null,
-        requestDiagram,
-        cancelInflight: vi.fn(),
-        clearSessionCache: vi.fn(),
-      },
-    });
-    document.body.append(container);
-    const trigger = container.querySelector('[data-testid="study-card-llm-mermaid-trigger"]') as HTMLButtonElement;
-    trigger?.click();
-    expect(requestDiagram).toHaveBeenCalledTimes(1);
-    unmount();
-  });
-
-  it('shows collapsible raw output while Mermaid diagram is streaming', () => {
-    const requestDiagram = vi.fn();
-    const cancelInflight = vi.fn();
-    const { container, rerender, unmount } = renderStudyPanelView({
-      llmMermaidDiagram: {
-        isPending: false,
-        errorMessage: null,
-        assistantText: null,
-        reasoningText: null,
-        requestDiagram,
-        cancelInflight,
-        clearSessionCache: vi.fn(),
-      },
-    });
-    document.body.append(container);
-    (container.querySelector('[data-testid="study-card-llm-mermaid-trigger"]') as HTMLButtonElement)?.click();
-    rerender({
-      llmMermaidDiagram: {
-        isPending: true,
-        errorMessage: null,
-        assistantText: 'Streaming partial ``` not closed yet',
-        reasoningText: null,
-        requestDiagram,
-        cancelInflight,
-        clearSessionCache: vi.fn(),
-      },
-    });
-    expect(
-      document.body.querySelector('[data-testid="study-card-llm-mermaid-streaming"]'),
-    ).not.toBeNull();
-    const toggle = document.body.querySelector(
-      '[data-testid="study-card-llm-mermaid-streaming-output-toggle"]',
-    ) as HTMLButtonElement | null;
-    expect(toggle).not.toBeNull();
-    expect(
-      document.body.querySelector('[data-testid="study-card-llm-mermaid-streaming-output"]'),
-    ).toBeNull();
-    flushSync(() => {
-      toggle?.click();
-    });
-    const pre = document.body.querySelector(
-      '[data-testid="study-card-llm-mermaid-streaming-output"]',
-    );
-    expect(pre).not.toBeNull();
-    expect(pre?.textContent).toContain('Streaming partial');
-    unmount();
-  });
-
-  it('shows raw output collapsible under diagram after Mermaid generation completes', () => {
-    const requestDiagram = vi.fn();
-    const cancelInflight = vi.fn();
-    const assistantText = 'Intro\n```mermaid\ngraph TD\nA-->B\n```\n';
-    const { container, unmount } = renderStudyPanelView({
-      llmMermaidDiagram: {
-        isPending: false,
-        errorMessage: null,
-        assistantText,
-        reasoningText: null,
-        requestDiagram,
-        cancelInflight,
-        clearSessionCache: vi.fn(),
-      },
-    });
-    document.body.append(container);
-    flushSync(() => {
-      (container.querySelector('[data-testid="study-card-llm-mermaid-trigger"]') as HTMLButtonElement)?.click();
-    });
-    const toggle = document.body.querySelector(
-      '[data-testid="study-card-llm-mermaid-streaming-output-toggle"]',
-    ) as HTMLButtonElement | null;
-    expect(toggle).not.toBeNull();
-    flushSync(() => {
-      toggle?.click();
-    });
-    const pre = document.body.querySelector(
-      '[data-testid="study-card-llm-mermaid-streaming-output"]',
-    );
-    expect(pre?.textContent).toContain('graph TD');
-    expect(pre?.textContent).toContain('Intro');
     unmount();
   });
 

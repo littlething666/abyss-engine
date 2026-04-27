@@ -53,7 +53,6 @@ function buildDefaultSurfaceBindings(
   return {
     studyQuestionExplain: or(studyId),
     studyFormulaExplain: or(studyId),
-    studyQuestionMermaid: or(studyId),
     subjectGenerationTopics: or(genId),
     subjectGenerationEdges: or(genId),
     topicContent: or(genId),

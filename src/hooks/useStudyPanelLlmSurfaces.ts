@@ -7,16 +7,13 @@ import { shouldAutoRequestStudyLlmStream } from '../features/studyPanel/shouldAu
 import type {
   StudyPanelFormulaExplainProps,
   StudyPanelLlmExplainProps,
-  StudyPanelMermaidDiagramProps,
 } from '../features/studyPanel/studyPanelLlmSurfaceProps';
 
 export type UseStudyPanelLlmSurfacesParams = {
   llmExplain: StudyPanelLlmExplainProps;
   llmFormulaExplain: StudyPanelFormulaExplainProps;
-  llmMermaidDiagram: StudyPanelMermaidDiagramProps;
   explainReasoningEnabled: boolean;
   formulaReasoningEnabled: boolean;
-  mermaidReasoningEnabled: boolean;
   isAnswerSubmitted: boolean;
   onHintUsed?: () => void;
 };
@@ -24,28 +21,19 @@ export type UseStudyPanelLlmSurfacesParams = {
 export function useStudyPanelLlmSurfaces({
   llmExplain,
   llmFormulaExplain,
-  llmMermaidDiagram,
   explainReasoningEnabled,
   formulaReasoningEnabled,
-  mermaidReasoningEnabled,
   isAnswerSubmitted,
   onHintUsed,
 }: UseStudyPanelLlmSurfacesParams) {
   const [explainOpen, setExplainOpen] = useState(false);
-  const [mermaidOpen, setMermaidOpen] = useState(false);
   const [formulaOpen, setFormulaOpen] = useState(false);
   const [activeFormulaLatex, setActiveFormulaLatex] = useState<string | null>(null);
   const [activeFormulaContext, setActiveFormulaContext] = useState<StudyFormulaExplainContext | null>(null);
   const prevReasoningEnabled = useRef({
     explain: explainReasoningEnabled,
     formula: formulaReasoningEnabled,
-    mermaid: mermaidReasoningEnabled,
   });
-
-  const closeMermaidDiagram = useCallback(() => {
-    llmMermaidDiagram.cancelInflight();
-    setMermaidOpen(false);
-  }, [llmMermaidDiagram]);
 
   const closeFormulaExplain = useCallback(() => {
     llmFormulaExplain.cancelInflight();
@@ -66,14 +54,13 @@ export function useStudyPanelLlmSurfaces({
     (latex: string, context: StudyFormulaExplainContext, _anchorElement: HTMLElement) => {
       llmExplain.cancelInflight();
       setExplainOpen(false);
-      closeMermaidDiagram();
       fireHint();
       setActiveFormulaLatex(latex);
       setActiveFormulaContext(context);
       setFormulaOpen(true);
       requestFormulaExplain(latex, context);
     },
-    [closeMermaidDiagram, fireHint, llmExplain, requestFormulaExplain],
+    [fireHint, llmExplain, requestFormulaExplain],
   );
 
   const handleFormulaOpenChange = useCallback(
@@ -109,15 +96,6 @@ export function useStudyPanelLlmSurfaces({
       }
       prevReasoningEnabled.current.formula = formulaReasoningEnabled;
     }
-
-    if (prevReasoningEnabled.current.mermaid !== mermaidReasoningEnabled) {
-      llmMermaidDiagram.clearSessionCache();
-      if (mermaidOpen) {
-        llmMermaidDiagram.cancelInflight();
-        llmMermaidDiagram.requestDiagram();
-      }
-      prevReasoningEnabled.current.mermaid = mermaidReasoningEnabled;
-    }
   }, [
     activeFormulaContext,
     activeFormulaLatex,
@@ -127,9 +105,6 @@ export function useStudyPanelLlmSurfaces({
     formulaReasoningEnabled,
     llmExplain,
     llmFormulaExplain,
-    llmMermaidDiagram,
-    mermaidOpen,
-    mermaidReasoningEnabled,
   ]);
 
   const handleExplainOpenChange = useCallback(
@@ -141,7 +116,6 @@ export function useStudyPanelLlmSurfaces({
       }
       fireHint();
       closeFormulaExplain();
-      closeMermaidDiagram();
       if (
         shouldAutoRequestStudyLlmStream({
           isPending: llmExplain.isPending,
@@ -152,31 +126,7 @@ export function useStudyPanelLlmSurfaces({
         llmExplain.requestExplain();
       }
     },
-    [closeFormulaExplain, closeMermaidDiagram, fireHint, llmExplain],
-  );
-
-  const handleMermaidOpenChange = useCallback(
-    (open: boolean) => {
-      setMermaidOpen(open);
-      if (!open) {
-        llmMermaidDiagram.cancelInflight();
-        return;
-      }
-      fireHint();
-      llmExplain.cancelInflight();
-      setExplainOpen(false);
-      closeFormulaExplain();
-      if (
-        shouldAutoRequestStudyLlmStream({
-          isPending: llmMermaidDiagram.isPending,
-          assistantText: llmMermaidDiagram.assistantText,
-          errorMessage: llmMermaidDiagram.errorMessage,
-        })
-      ) {
-        llmMermaidDiagram.requestDiagram();
-      }
-    },
-    [closeFormulaExplain, fireHint, llmExplain, llmMermaidDiagram],
+    [closeFormulaExplain, fireHint, llmExplain],
   );
 
   const dismissExplainInference = useCallback(() => {
@@ -187,22 +137,15 @@ export function useStudyPanelLlmSurfaces({
     handleFormulaOpenChange(false);
   }, [handleFormulaOpenChange]);
 
-  const dismissMermaidInference = useCallback(() => {
-    handleMermaidOpenChange(false);
-  }, [handleMermaidOpenChange]);
-
   return {
     explainOpen,
-    mermaidOpen,
     formulaOpen,
     activeFormulaLatex,
     activeFormulaContext,
     openFormulaExplain,
     handleExplainOpenChange,
-    handleMermaidOpenChange,
     handleFormulaOpenChange,
     dismissExplainInference,
     dismissFormulaInference,
-    dismissMermaidInference,
   };
 }

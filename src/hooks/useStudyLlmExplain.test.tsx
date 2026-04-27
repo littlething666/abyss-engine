@@ -20,10 +20,6 @@ import {
   useStudyFormulaLlmExplain,
 } from './useStudyFormulaLlmExplain';
 import {
-  clearStudyQuestionMermaidDiagramSessionCacheForTests,
-  useStudyQuestionMermaidDiagram,
-} from './useStudyQuestionMermaidDiagram';
-import {
   clearStudyQuestionLlmExplainSessionCacheForTests,
   useStudyQuestionLlmExplain,
 } from './useStudyQuestionLlmExplain';
@@ -46,28 +42,6 @@ type QuestionHarnessProps = {
 };
 
 type QuestionApi = ReturnType<typeof useStudyQuestionLlmExplain>;
-
-type MermaidHarnessProps = {
-  topicLabel: string;
-  questionText: string;
-  cardId: string | null;
-  reasoningFromUserToggle?: boolean;
-};
-
-type MermaidApi = ReturnType<typeof useStudyQuestionMermaidDiagram>;
-
-const MermaidHarness = forwardRef<MermaidApi | null, MermaidHarnessProps>(
-  function MermaidHarness({ topicLabel, questionText, cardId, reasoningFromUserToggle }, ref) {
-    const api = useStudyQuestionMermaidDiagram({
-      topicLabel,
-      questionText,
-      cardId,
-      reasoningFromUserToggle: reasoningFromUserToggle ?? false,
-    });
-    useImperativeHandle(ref, () => api, [api]);
-    return null;
-  },
-);
 
 const QuestionHarness = forwardRef<QuestionApi | null, QuestionHarnessProps>(
   function QuestionHarness(
@@ -119,28 +93,6 @@ function renderQuestionHarness(props: QuestionHarnessProps) {
     rerender: (next: QuestionHarnessProps) => {
       act(() => {
         root.render(createElement(QuestionHarness, { ...next, ref }));
-      });
-    },
-    unmount: () => {
-      act(() => {
-        root.unmount();
-      });
-    },
-  };
-}
-
-function renderMermaidHarness(props: MermaidHarnessProps) {
-  const container = document.createElement('div');
-  const root = createRoot(container);
-  const ref = createRef<MermaidApi | null>();
-  act(() => {
-    root.render(createElement(MermaidHarness, { ...props, ref }));
-  });
-  return {
-    getApi: () => ref.current,
-    rerender: (next: MermaidHarnessProps) => {
-      act(() => {
-        root.render(createElement(MermaidHarness, { ...next, ref }));
       });
     },
     unmount: () => {
@@ -286,83 +238,6 @@ describe('useStudyQuestionLlmExplain', () => {
     unmount();
     release();
     await flushStreamUpdates();
-  });
-});
-
-describe('useStudyQuestionMermaidDiagram', () => {
-  beforeEach(() => {
-    streamChatMock.mockReset();
-    clearStudyQuestionMermaidDiagramSessionCacheForTests();
-  });
-
-  it('skips streamChat when session cache has a completed diagram', async () => {
-    streamChatMock.mockImplementation(async function* () {
-      yield { type: 'content', text: '```mermaid\nflowchart LR\n  A --> B\n```' };
-    });
-
-    const first = renderMermaidHarness({
-      cardId: 'c1',
-      topicLabel: 'Topic',
-      questionText: 'Why?',
-    });
-    await act(async () => {
-      first.getApi()?.requestDiagram();
-    });
-    await flushStreamUpdates();
-    expect(first.getApi()?.assistantText).toContain('flowchart');
-    expect(first.getApi()?.isPending).toBe(false);
-    expect(streamChatMock).toHaveBeenCalledTimes(1);
-
-    first.unmount();
-
-    const second = renderMermaidHarness({
-      cardId: 'c1',
-      topicLabel: 'Topic',
-      questionText: 'Why?',
-    });
-    await act(async () => {
-      second.getApi()?.requestDiagram();
-    });
-    await flushStreamUpdates();
-    expect(streamChatMock).toHaveBeenCalledTimes(1);
-    expect(second.getApi()?.assistantText).toContain('flowchart');
-    expect(second.getApi()?.isPending).toBe(false);
-    second.unmount();
-  });
-
-  it('cancelInflight aborts stream and leaves isPending false', async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((r) => {
-      release = r;
-    });
-
-    streamChatMock.mockImplementation(async function* () {
-      yield { type: 'content', text: 'a' };
-      await gate;
-      yield { type: 'content', text: 'b' };
-    });
-
-    const { getApi, unmount } = renderMermaidHarness({
-      cardId: 'c1',
-      topicLabel: 'T',
-      questionText: 'Q',
-    });
-    await act(async () => {
-      getApi()?.requestDiagram();
-    });
-    await flushStreamUpdates();
-    expect(getApi()?.isPending).toBe(true);
-
-    await act(async () => {
-      getApi()?.cancelInflight();
-    });
-    await flushStreamUpdates();
-    expect(getApi()?.isPending).toBe(false);
-    expect(getApi()?.assistantText).toBeNull();
-    release();
-    await flushStreamUpdates();
-    expect(getApi()?.assistantText).toBeNull();
-    unmount();
   });
 });
 

@@ -55,7 +55,6 @@ describe('studySettingsStore', () => {
     const studySurfaces = [
       'studyQuestionExplain',
       'studyFormulaExplain',
-      'studyQuestionMermaid',
     ] as const;
     for (const id of studySurfaces) {
       const binding = store.getState().surfaceProviders[id];
