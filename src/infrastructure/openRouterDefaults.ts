@@ -5,7 +5,6 @@ export const OPENROUTER_MODEL_OPTIONS = [
   'google/gemma-4-26b-a4b-it:free',
   'google/gemma-4-31b-it:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
-  'openrouter/elephant-alpha',
   'minimax/minimax-m2.5:free',
   'qwen/qwen3.5-flash-02-23',
   'mistralai/mistral-small-2603',
@@ -21,7 +20,6 @@ export const GENERATION_SURFACE_DEFAULT_MODEL = 'mistralai/mistral-small-2603' a
  */
 const SEEDED_CONFIG_IDS: Record<(typeof OPENROUTER_MODEL_OPTIONS)[number], string> = {
   'nvidia/nemotron-3-super-120b-a12b:free': '00000000-0000-4000-8000-000000000002',
-  'openrouter/elephant-alpha': '00000000-0000-4000-8000-000000000003',
   'minimax/minimax-m2.5:free': '00000000-0000-4000-8000-000000000004',
   'qwen/qwen3.5-flash-02-23': '00000000-0000-4000-8000-000000000005',
   'google/gemma-4-31b-it:free': '00000000-0000-4000-8000-000000000006',

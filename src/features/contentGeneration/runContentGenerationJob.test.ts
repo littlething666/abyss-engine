@@ -5,11 +5,23 @@ import type { IChatCompletionsRepository } from '@/types/llm';
 import { useContentGenerationStore } from './contentGenerationStore';
 import { runContentGenerationJob } from './runContentGenerationJob';
 
+const { surfaceProvidersApi } = vi.hoisted(() => ({
+  surfaceProvidersApi: {
+    resolveIncludeOpenRouterReasoningParam: vi.fn(),
+    resolveOpenRouterStructuredJsonChatExtras: vi.fn(),
+  },
+}));
+
 vi.mock('@/infrastructure/repositories/contentGenerationLogRepository', () => ({
   persistTerminalJob: vi.fn().mockResolvedValue(undefined),
   persistPipeline: vi.fn().mockResolvedValue(undefined),
   clearPersistedLogs: vi.fn().mockResolvedValue(undefined),
   loadPersistedLogs: vi.fn().mockResolvedValue({ jobs: [], pipelines: [] }),
+}));
+
+vi.mock('@/infrastructure/llmInferenceSurfaceProviders', () => ({
+  resolveIncludeOpenRouterReasoningParam: surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam,
+  resolveOpenRouterStructuredJsonChatExtras: surfaceProvidersApi.resolveOpenRouterStructuredJsonChatExtras,
 }));
 
 function resetStore(): void {
@@ -24,6 +36,10 @@ function resetStore(): void {
 describe('runContentGenerationJob', () => {
   beforeEach(() => {
     resetStore();
+    surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam.mockReset();
+    surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam.mockReturnValue(false);
+    surfaceProvidersApi.resolveOpenRouterStructuredJsonChatExtras.mockReset();
+    surfaceProvidersApi.resolveOpenRouterStructuredJsonChatExtras.mockReturnValue(null);
   });
 
   it('runs pending → streaming → parsing → saving → completed', async () => {
@@ -114,5 +130,71 @@ describe('runContentGenerationJob', () => {
     expect(result.ok).toBe(false);
     const j = Object.values(useContentGenerationStore.getState().jobs)[0];
     expect(j?.status).toBe('aborted');
+  });
+
+  it('forces reasoning off in structured OpenRouter requests', async () => {
+    surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam.mockReturnValue(true);
+    surfaceProvidersApi.resolveOpenRouterStructuredJsonChatExtras.mockReturnValue({
+      responseFormat: { type: 'json_object' },
+      plugins: [{ id: 'response-healing' }],
+      forceNonStreaming: true,
+    });
+
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: '{}' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    await runContentGenerationJob({
+      kind: 'topic-study-cards',
+      label: 'Study cards — T',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      llmSurfaceId: 'topicContent',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableReasoning: true,
+      parseOutput: async () => ({ ok: true, data: 42 }),
+      persistOutput: vi.fn(),
+    });
+
+    expect(streamChat).toHaveBeenCalledWith(expect.objectContaining({
+      includeOpenRouterReasoning: true,
+      enableReasoning: false,
+      enableStreaming: false,
+      responseFormat: { type: 'json_object' },
+      plugins: [{ id: 'response-healing' }],
+    }));
+  });
+
+  it('keeps reasoning enabled for non-structured requests when requested', async () => {
+    surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam.mockReturnValue(true);
+
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: 'ok' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'Theory — T',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      llmSurfaceId: 'topicContent',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableReasoning: true,
+      parseOutput: async () => ({ ok: true, data: 42 }),
+      persistOutput: vi.fn(),
+    });
+
+    expect(streamChat).toHaveBeenCalledWith(expect.objectContaining({
+      includeOpenRouterReasoning: true,
+      enableReasoning: true,
+    }));
   });
 });

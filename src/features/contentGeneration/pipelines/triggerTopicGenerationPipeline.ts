@@ -15,7 +15,7 @@ export function triggerTopicGenerationPipeline(
   appEventBus.emit('topic:generation-pipeline', {
     subjectId,
     topicId,
-    enableReasoning: options?.enableReasoning ?? false,
+    ...(options?.enableReasoning !== undefined ? { enableReasoning: options.enableReasoning } : {}),
     forceRegenerate: options?.forceRegenerate,
     stage: options?.stage,
   });

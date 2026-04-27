@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { surfaceProvidersApi } = vi.hoisted(() => ({
+  surfaceProvidersApi: {
+    resolveModelForSurface: vi.fn(() => 'test-model'),
+    resolveEnableStreamingForSurface: vi.fn(() => true),
+    resolveEnableReasoningForSurface: vi.fn(() => true),
+  },
+}));
+
 const { celebrationApi } = vi.hoisted(() => ({
   celebrationApi: {
     markPendingFromFullTopicUnlock: vi.fn(),
@@ -34,8 +42,9 @@ vi.mock('@/infrastructure/repositories/contentGenerationLogRepository', () => ({
 }));
 
 vi.mock('@/infrastructure/llmInferenceSurfaceProviders', () => ({
-  resolveModelForSurface: () => 'test-model',
-  resolveEnableStreamingForSurface: () => true,
+  resolveModelForSurface: surfaceProvidersApi.resolveModelForSurface,
+  resolveEnableStreamingForSurface: surfaceProvidersApi.resolveEnableStreamingForSurface,
+  resolveEnableReasoningForSurface: surfaceProvidersApi.resolveEnableReasoningForSurface,
 }));
 
 function resetStore(): void {
@@ -123,6 +132,8 @@ describe('runTopicGenerationPipeline', () => {
     runContentGenerationJob.mockReset();
     celebrationApi.markPendingFromFullTopicUnlock.mockReset();
     celebrationApi.dismissPending.mockReset();
+    surfaceProvidersApi.resolveEnableReasoningForSurface.mockReset();
+    surfaceProvidersApi.resolveEnableReasoningForSurface.mockReturnValue(true);
   });
 
   it('marks celebration pending when full pipeline completes successfully', async () => {
@@ -192,6 +203,23 @@ describe('runTopicGenerationPipeline', () => {
 
     expect(runContentGenerationJob).toHaveBeenCalledTimes(1);
     expect(runContentGenerationJob.mock.calls[0]?.[0]?.kind).toBe('topic-theory');
+  });
+
+  it('defaults topic generation reasoning from the surface config when omitted', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: true });
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      stage: 'theory',
+      forceRegenerate: true,
+    });
+
+    expect(surfaceProvidersApi.resolveEnableReasoningForSurface).toHaveBeenCalledWith('topicContent');
+    expect(runContentGenerationJob.mock.calls[0]?.[0]?.enableReasoning).toBe(true);
   });
 
   it('returns error when topic id is missing from graph without running jobs', async () => {

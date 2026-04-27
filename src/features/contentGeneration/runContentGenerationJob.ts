@@ -95,6 +95,7 @@ export async function runContentGenerationJob<TParsed>(
     store.setJobStartedAt(jobId, t0);
 
     const structured = resolveOpenRouterStructuredJsonChatExtras(params.llmSurfaceId);
+    const requestEnableReasoning = structured ? false : params.enableReasoning;
     const enableStreaming =
       structured?.forceNonStreaming ? false : params.enableStreaming;
 
@@ -102,7 +103,7 @@ export async function runContentGenerationJob<TParsed>(
       model: params.model,
       messages: params.messages,
       includeOpenRouterReasoning: resolveIncludeOpenRouterReasoningParam(params.llmSurfaceId),
-      enableReasoning: params.enableReasoning,
+      enableReasoning: requestEnableReasoning,
       enableStreaming,
       signal: ac.signal,
       ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),

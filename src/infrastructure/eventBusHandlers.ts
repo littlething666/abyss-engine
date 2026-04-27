@@ -12,6 +12,7 @@ import {
   createSubjectGenerationOrchestrator,
   resolveSubjectGenerationStageBindings,
 } from '@/features/subjectGeneration';
+import { resolveEnableReasoningForSurface } from './llmInferenceSurfaceProviders';
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
 import {
@@ -129,7 +130,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
       writer: deckWriter,
       subjectId: e.subjectId,
       topicId: e.topicId,
-      enableReasoning: e.enableReasoning ?? false,
+      enableReasoning: e.enableReasoning ?? resolveEnableReasoningForSurface('topicContent'),
       forceRegenerate: e.forceRegenerate,
       stage: e.stage,
     });
@@ -230,7 +231,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
         subjectId: e.subjectId,
         topicId: e.topicId,
         nextLevel: e.to,
-        enableReasoning: false,
+        enableReasoning: resolveEnableReasoningForSurface('topicContent'),
         signal: ac.signal,
       }).finally(() => {
         activeExpansionJobs.delete(expansionKey);

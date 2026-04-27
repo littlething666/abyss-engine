@@ -4,6 +4,7 @@ import { topicRefKey } from '@/lib/topicRef';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import {
+  resolveEnableReasoningForSurface,
   resolveEnableStreamingForSurface,
   resolveModelForSurface,
 } from '@/infrastructure/llmInferenceSurfaceProviders';
@@ -30,7 +31,7 @@ export interface RunTopicGenerationPipelineParams {
   writer: IDeckContentWriter;
   subjectId: string;
   topicId: string;
-  enableReasoning: boolean;
+  enableReasoning?: boolean;
   signal?: AbortSignal;
   /** When false (default), a full pipeline skips if study-ready content already exists. */
   forceRegenerate?: boolean;
@@ -71,7 +72,7 @@ export async function runTopicGenerationPipeline(
     writer,
     subjectId,
     topicId,
-    enableReasoning,
+    enableReasoning = resolveEnableReasoningForSurface('topicContent'),
     signal,
     forceRegenerate = false,
     stage = 'full',

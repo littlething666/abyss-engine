@@ -2,6 +2,7 @@ import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckRepository } from '@/types/repository';
 import type { TopicRef } from '@/types/core';
 import {
+  resolveEnableReasoningForSurface,
   resolveEnableStreamingForSurface,
   resolveModelForSurface,
 } from '@/infrastructure/llmInferenceSurfaceProviders';
@@ -74,6 +75,7 @@ export async function generateTrialQuestions(
 
   // 6. Run content generation job
   const model = resolveModelForSurface('crystalTrial');
+  const enableReasoning = resolveEnableReasoningForSurface('crystalTrial');
   const enableStreaming = resolveEnableStreamingForSurface('crystalTrial');
 
   const result = await runContentGenerationJob({
@@ -93,7 +95,7 @@ export async function generateTrialQuestions(
       questionCount: TRIAL_QUESTION_COUNT,
       contentBrief,
     }),
-    enableReasoning: false,
+    enableReasoning,
     enableStreaming,
     parseOutput: async (raw) => {
       const parsed = parseCrystalTrialPayload(raw);
