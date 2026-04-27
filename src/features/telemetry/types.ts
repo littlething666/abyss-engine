@@ -20,6 +20,12 @@ export const TelemetryEventTypeSchema = z.enum([
   'crystal_trial_completed',
   'subject_graph_generated',
   'subject_graph_validation_failed',
+  'mentor_dialog_shown',
+  'mentor_dialog_skipped',
+  'mentor_dialog_completed',
+  'mentor_choice_selected',
+  'mentor_onboarding_completed',
+  'mentor_first_subject_generation_enqueued',
 ]);
 
 export type TelemetryEventType = z.infer<typeof TelemetryEventTypeSchema>;
@@ -196,6 +202,60 @@ export const SubjectGraphValidationFailedPayloadSchema = z.object({
 });
 export type SubjectGraphValidationFailedPayload = z.infer<typeof SubjectGraphValidationFailedPayloadSchema>;
 
+// === Mentor v1 (canned-only) ===
+// Plan source of truth: "Witty Mentor — Wisdom Altar Dialog System".
+// Every mentor event carries source: 'canned' and voiceId: 'witty-sarcastic'.
+export const MentorTriggerIdSchema = z.enum([
+  'onboarding.welcome',
+  'onboarding.first_subject',
+  'session.completed',
+  'crystal.leveled',
+  'crystal.trial.awaiting',
+  'mentor.bubble.click',
+]);
+export type MentorTriggerIdLiteral = z.infer<typeof MentorTriggerIdSchema>;
+
+const MentorEventBaseSchema = z.object({
+  triggerId: MentorTriggerIdSchema,
+  source: z.literal('canned'),
+  voiceId: z.literal('witty-sarcastic'),
+});
+
+export const MentorDialogShownPayloadSchema = MentorEventBaseSchema.extend({
+  planId: z.string(),
+});
+export type MentorDialogShownPayload = z.infer<typeof MentorDialogShownPayloadSchema>;
+
+export const MentorDialogSkippedPayloadSchema = MentorEventBaseSchema.extend({
+  charsRevealed: z.number().int().nonnegative(),
+  totalChars: z.number().int().nonnegative(),
+});
+export type MentorDialogSkippedPayload = z.infer<typeof MentorDialogSkippedPayloadSchema>;
+
+export const MentorDialogCompletedPayloadSchema = MentorEventBaseSchema.extend({
+  planId: z.string(),
+  durationMs: z.number().nonnegative(),
+  outcome: z.enum(['auto-advance', 'choice', 'closed']),
+  choiceId: z.string().optional(),
+});
+export type MentorDialogCompletedPayload = z.infer<typeof MentorDialogCompletedPayloadSchema>;
+
+export const MentorChoiceSelectedPayloadSchema = MentorEventBaseSchema.extend({
+  planId: z.string(),
+  choiceId: z.string(),
+});
+export type MentorChoiceSelectedPayload = z.infer<typeof MentorChoiceSelectedPayloadSchema>;
+
+export const MentorOnboardingCompletedPayloadSchema = MentorEventBaseSchema.extend({
+  nameLength: z.number().int().nonnegative(),
+});
+export type MentorOnboardingCompletedPayload = z.infer<typeof MentorOnboardingCompletedPayloadSchema>;
+
+export const MentorFirstSubjectGenerationEnqueuedPayloadSchema = MentorEventBaseSchema;
+export type MentorFirstSubjectGenerationEnqueuedPayload = z.infer<
+  typeof MentorFirstSubjectGenerationEnqueuedPayloadSchema
+>;
+
 export const TelemetryEventPayloadSchema = z.object({
   id: z.string().uuid(),
   version: telemetryVersionSchema,
@@ -227,4 +287,10 @@ export const TelemetryEventMap: Record<TelemetryEventType, z.ZodSchema<unknown>>
   performance_frame_time: PerformanceFrameTimePayloadSchema,
   subject_graph_generated: SubjectGraphGeneratedPayloadSchema,
   subject_graph_validation_failed: SubjectGraphValidationFailedPayloadSchema,
+  mentor_dialog_shown: MentorDialogShownPayloadSchema,
+  mentor_dialog_skipped: MentorDialogSkippedPayloadSchema,
+  mentor_dialog_completed: MentorDialogCompletedPayloadSchema,
+  mentor_choice_selected: MentorChoiceSelectedPayloadSchema,
+  mentor_onboarding_completed: MentorOnboardingCompletedPayloadSchema,
+  mentor_first_subject_generation_enqueued: MentorFirstSubjectGenerationEnqueuedPayloadSchema,
 };

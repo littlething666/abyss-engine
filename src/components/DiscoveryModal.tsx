@@ -190,6 +190,12 @@ interface DiscoveryModalProps {
   onOpenRitual?: () => void;
   ritualCooldownRemainingMs?: number;
   onClose: () => void;
+  /**
+   * Called by the empty-state CTA when the user has no subjects yet and clicks
+   * "New subject". The handler should close Discovery before opening the
+   * incremental-subject creation modal so the two surfaces never stack.
+   */
+  onCreateSubject?: () => void;
 }
 
 export function DiscoveryModal({
@@ -199,6 +205,7 @@ export function DiscoveryModal({
   onOpenRitual,
   ritualCooldownRemainingMs = 0,
   onClose,
+  onCreateSubject,
 }: DiscoveryModalProps) {
   const [selectedTopicKey, setSelectedTopicKey] = useState<{ subjectId: string; topicId: string } | null>(null);
   const [topicListFilter, setTopicListFilter] = useState<TopicListFilter>('locked');
@@ -355,6 +362,10 @@ export function DiscoveryModal({
     setSelectedTopicKey({ subjectId: topic.subjectId, topicId: topic.id });
   }, []);
 
+  const handleCreateSubjectClick = useCallback(() => {
+    onCreateSubject?.();
+  }, [onCreateSubject]);
+
   const handleUnlock = () => {
     if (!selectedTopic || !selectedTopicStatus?.canUnlock) return;
     const ref = { subjectId: selectedTopic.subjectId, topicId: selectedTopic.id };
@@ -369,6 +380,7 @@ export function DiscoveryModal({
   };
 
   const showSubjectGroups = modalSubjectId === '__all_floors__';
+  const hasNoSubjects = subjects.length === 0;
 
   if (!isOpen) return null;
 
@@ -498,17 +510,45 @@ export function DiscoveryModal({
 
           <div className="-mx-4 mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-4">
             {displayTiers.length === 0 ? (
-              <Empty className="my-6 min-h-[12rem] border border-dashed">
-                <EmptyHeader>
-                  <EmptyTitle>No topics match</EmptyTitle>
-                  <EmptyDescription>Try widening your filters to see topics again.</EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent>
-                  <Button type="button" variant="secondary" size="sm" onClick={handleResetFilters}>
-                    Reset filters
-                  </Button>
-                </EmptyContent>
-              </Empty>
+              hasNoSubjects ? (
+                <Empty
+                  className="my-6 min-h-[12rem] border border-dashed"
+                  data-testid="discovery-empty-no-subjects"
+                >
+                  <EmptyHeader>
+                    <EmptyTitle>Create your first subject</EmptyTitle>
+                    <EmptyDescription>
+                      Pick something to learn — the curriculum grows here as crystals to unlock.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={handleCreateSubjectClick}
+                      disabled={!onCreateSubject}
+                    >
+                      New subject
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              ) : (
+                <Empty
+                  className="my-6 min-h-[12rem] border border-dashed"
+                  data-testid="discovery-empty-no-matches"
+                >
+                  <EmptyHeader>
+                    <EmptyTitle>No topics match</EmptyTitle>
+                    <EmptyDescription>Try widening your filters to see topics again.</EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button type="button" variant="secondary" size="sm" onClick={handleResetFilters}>
+                      Reset filters
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              )
             ) : (
               <div className="space-y-6 pb-2">
                 {displayTiers.map((tierData) => (
