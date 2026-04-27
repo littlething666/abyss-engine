@@ -30,3 +30,6 @@ export { getMentorLine, mentorLines } from './mentorLines';
 export type { LineCatalog } from './mentorLines';
 export { evaluateTrigger, interpolate, TRIGGER_SPECS } from './dialogRuleEngine';
 export type { EvaluateContext } from './dialogRuleEngine';
+export { useMentorSpeech } from './useMentorSpeech';
+export type { UseMentorSpeechResult } from './useMentorSpeech';
+export { bootstrapMentor, __resetMentorBootstrapForTests } from './mentorBootstrap';
