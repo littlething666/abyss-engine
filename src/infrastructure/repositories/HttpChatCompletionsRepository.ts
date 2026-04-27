@@ -11,7 +11,7 @@ import type {
 import {
   mergeAssistantReasoningDetails,
   reasoningTextFromOpenRouterDelta,
-} from '../../lib/openRouterReasoning';
+} from './openRouterReasoningDetails';
 
 /**
  * Bounded transient-gateway retry for OpenRouter Worker proxy failures.

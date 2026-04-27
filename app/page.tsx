@@ -8,8 +8,6 @@ import { undoManager } from '@/features/progression/undoManager';
 import { useUIStore } from '@/store/uiStore';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import { CoarseChoice, Rating } from '@/types';
-import type { Card } from '@/types/core';
-import DebugControls from '@/components/debug/DebugControls';
 
 import { initAbyssDev } from '@/utils/abyssDev';
 import { AttunementRitualPayload } from '@/types/progression';
@@ -33,21 +31,12 @@ import DiscoveryModal from '@/components/DiscoveryModal';
 import StudyPanelModal from '@/components/StudyPanelModal';
 import StudyTimelineModal from '@/components/StudyTimelineModal';
 import { AbyssCommandPalette } from '@/components/AbyssCommandPalette';
-import { ScreenCaptureLlmSummarySurface } from '@/components/ScreenCaptureLlmSummarySurface';
 import SubjectNavigationHud from '@/components/SubjectNavigationHud';
 import PomodoroTimerOverlay from '@/components/PomodoroTimer3D';
 import { CrystalTrialModal } from '@/components/CrystalTrial';
 import { useMediaQuery } from '@/hooks/use-media-query';
-import { useScreenCaptureLlmSummary } from '@/hooks/useScreenCaptureLlmSummary';
-import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
-import { useLlmAssistantSpeech } from '@/hooks/useLlmAssistantSpeech';
-import { useStudySettingsStore } from '@/store/studySettingsStore';
 import { useContentGenerationHydration } from '@/hooks/useContentGenerationHydration';
 import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifecycle';
-import { useReasoningToggle } from '@/hooks/useReasoningToggle';
-import { makeOpenRouterReasoningSupportedSelector } from '@/infrastructure/llmInferenceSurfaceProviders';
-import { LlmReasoningToggle } from '@/components/LlmReasoningToggle';
-import { LlmTtsToggle } from '@/components/LlmTtsToggle';
 import { topicRefKey } from '@/lib/topicRef';
 import { useTopicCardQueriesForSubjectFilter } from '@/hooks/useTopicCardQueries';
 import { toast } from '@/infrastructure/toast';
@@ -68,20 +57,6 @@ const HomeContent: React.FC = () => {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isIncrementalSubjectOpen, setIsIncrementalSubjectOpen] = useState(false);
   const isDesktop = useMediaQuery('(min-width: 768px)');
-  const screenCaptureReasoning = useReasoningToggle('screenCaptureSummary');
-  const screenCaptureTts = useInferenceTtsToggle();
-  const screenCaptureLlm = useScreenCaptureLlmSummary({
-    reasoningFromUserToggle: screenCaptureReasoning.enableReasoning,
-  });
-  const screenCaptureReasoningSupported = useStudySettingsStore(
-    makeOpenRouterReasoningSupportedSelector('screenCaptureSummary'),
-  );
-  const screenCaptureAssistantSpeech = useLlmAssistantSpeech({
-    isSurfaceOpen: screenCaptureLlm.surfaceOpen,
-    ttsEnabled: screenCaptureTts.enableTts,
-    assistantText: screenCaptureLlm.assistantText,
-    isPending: screenCaptureLlm.isPending,
-  });
 
   useContentGenerationHydration();
   useContentGenerationLifecycle();
@@ -329,37 +304,11 @@ const HomeContent: React.FC = () => {
         open={isCommandPaletteOpen}
         onOpenChange={setIsCommandPaletteOpen}
         isDebugMode={isDebugMode}
-        onSummarizeScreen={screenCaptureLlm.startSummarize}
         onOpenSubjectCurriculum={() => setIsIncrementalSubjectOpen(true)}
         onStartStudyWithCardTypes={handleStartStudyWithCardTypes}
       />
 
       <IncrementalSubjectModal isOpen={isIncrementalSubjectOpen} onClose={() => setIsIncrementalSubjectOpen(false)} />
-
-      <ScreenCaptureLlmSummarySurface
-        isDesktop={isDesktop}
-        surfaceOpen={screenCaptureLlm.surfaceOpen}
-        onSurfaceOpenChange={screenCaptureLlm.handleSurfaceOpenChange}
-        onDismissOutside={screenCaptureLlm.dismissSurface}
-        isPending={screenCaptureLlm.isPending}
-        assistantText={screenCaptureLlm.assistantText}
-        reasoningText={screenCaptureLlm.reasoningText}
-        errorMessage={screenCaptureLlm.errorMessage}
-        headerAction={
-          <div className="flex items-center gap-1">
-              <LlmReasoningToggle
-                enabled={screenCaptureReasoning.enableReasoning}
-              disabled={!screenCaptureReasoningSupported}
-                onToggle={screenCaptureReasoning.toggleReasoning}
-            />
-            <LlmTtsToggle
-              enabled={screenCaptureTts.enableTts}
-              onToggle={screenCaptureTts.toggleTts}
-              speaking={screenCaptureAssistantSpeech.isSpeaking}
-            />
-          </div>
-        }
-      />
 
       <AttunementRitualModal
         isOpen={isRitualModalOpen}

@@ -43,6 +43,12 @@ describe('studySettingsStore', () => {
     expect(configs[0].model).toBe(OPENROUTER_MODEL_OPTIONS[0]);
   });
 
+  it('seeds OpenRouter configs with reasoning enabled by default', () => {
+    const store = createStudySettingsStore();
+    const allEnabled = store.getState().openRouterConfigs.every((config) => config.enableReasoning);
+    expect(allEnabled).toBe(true);
+  });
+
   it('defaults study-hook surfaces to OpenRouter → gemma-4-26b with streaming', () => {
     const store = createStudySettingsStore();
     const configs = store.getState().openRouterConfigs;
@@ -50,7 +56,6 @@ describe('studySettingsStore', () => {
       'studyQuestionExplain',
       'studyFormulaExplain',
       'studyQuestionMermaid',
-      'screenCaptureSummary',
     ] as const;
     for (const id of studySurfaces) {
       const binding = store.getState().surfaceProviders[id];
@@ -143,14 +148,19 @@ describe('studySettingsStore', () => {
     const initialLength = store.getState().openRouterConfigs.length;
     const id = store.getState().addOpenRouterConfig({
       label: 'Claude',
-      model: 'anthropic/claude-sonnet-4',
+      model: 'mistralai/mistral-small-2603',
       enableReasoning: false,
       enableStreaming: false,
     });
     const configs = store.getState().openRouterConfigs;
     expect(configs.length).toBe(initialLength + 1);
     expect(configs[configs.length - 1].id).toBe(id);
-    expect(configs[configs.length - 1].model).toBe('anthropic/claude-sonnet-4');
+    expect(configs[configs.length - 1].model).toBe('mistralai/mistral-small-2603');
+    expect(configs[configs.length - 1].supportedParameters).toEqual([
+      'tools',
+      'response_format',
+      'structured_outputs',
+    ]);
   });
 
   it('updateOpenRouterConfig patches model only', () => {
@@ -160,13 +170,42 @@ describe('studySettingsStore', () => {
     expect(store.getState().openRouterConfigs[0].model).toBe('new/model');
   });
 
-  it('updateOpenRouterConfig clears supportedParameters when model is unknown', () => {
+  it('strips unsupported non-reasoning extras when model changes to unknown', () => {
     const store = createStudySettingsStore();
     const id = store.getState().openRouterConfigs[0].id;
-    const before = store.getState().openRouterConfigs[0];
-    expect(before.supportedParameters).toEqual(['reasoning']);
+    store.getState().updateOpenRouterConfig(id, { supportedParameters: ['tools', 'response_format', 'structured_outputs'] });
     store.getState().updateOpenRouterConfig(id, { model: 'openrouter/elephant-alpha' });
     expect(store.getState().openRouterConfigs[0].supportedParameters).toBeUndefined();
+  });
+
+  it('normalizes legacy reasoning-supportedParameters entries on load', () => {
+    const legacyConfig = {
+      id: 'legacy-1',
+      label: 'Claude',
+      model: 'anthropic/claude-sonnet-4',
+      enableReasoning: false,
+      enableStreaming: true,
+      supportedParameters: ['reasoning'],
+    };
+    localStorage.setItem(
+      STUDY_SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        targetAudience: TARGET_AUDIENCE_OPTIONS[0],
+        agentPersonality: AGENT_PERSONALITY_OPTIONS[0],
+        localModelId: '',
+        openRouterResponseHealing: true,
+        openRouterConfigs: [legacyConfig],
+        surfaceProviders: {
+          studyQuestionExplain: { provider: 'openrouter', openRouterConfigId: legacyConfig.id },
+        },
+      }),
+    );
+
+    const store = createStudySettingsStore();
+    const migrated = store.getState().openRouterConfigs.find((config) => config.id === legacyConfig.id);
+    expect(migrated).toBeDefined();
+    expect(migrated?.enableReasoning).toBe(false);
+    expect(migrated?.supportedParameters).toBeUndefined();
   });
 
   it('deleteOpenRouterConfig cascades bindings to fallback', () => {

@@ -4,6 +4,7 @@ import {
   DEFAULT_AGENT_PERSONALITY,
   normalizeAgentPersonality,
 } from '../features/studyPanel/agentPersonalityPresets';
+import { ALL_SURFACE_IDS } from '../types/llmInference';
 import type {
   InferenceSurfaceId,
   LlmInferenceProviderId,
@@ -11,12 +12,11 @@ import type {
   OpenRouterSupportedParameter,
   SurfaceProviderBinding,
 } from '../types/llmInference';
-import { inferOpenRouterSupportedParameters } from '../lib/openRouterReasoning';
-import { ALL_SURFACE_IDS } from '../types/llmInference';
 import {
   buildSeedOpenRouterConfigs,
   GENERATION_SURFACE_DEFAULT_MODEL,
   PREVIOUS_GENERATION_SURFACE_DEFAULT_MODEL,
+  inferOpenRouterExtraSupportedParameters,
   seededConfigIdForModel,
   STUDY_SURFACE_DEFAULT_MODEL,
 } from '../infrastructure/openRouterDefaults';
@@ -54,7 +54,6 @@ function buildDefaultSurfaceBindings(
     studyQuestionExplain: or(studyId),
     studyFormulaExplain: or(studyId),
     studyQuestionMermaid: or(studyId),
-    screenCaptureSummary: or(studyId),
     subjectGenerationTopics: or(genId),
     subjectGenerationEdges: or(genId),
     topicContent: or(genId),
@@ -117,7 +116,6 @@ function isStringRecord(v: unknown): v is Record<string, unknown> {
 function parseStoredSupportedParameters(raw: unknown): readonly OpenRouterSupportedParameter[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const allowed = new Set<OpenRouterSupportedParameter>([
-    'reasoning',
     'tools',
     'response_format',
     'structured_outputs',
@@ -137,8 +135,7 @@ function parseConfigs(raw: unknown): OpenRouterModelConfig[] | null {
     const enableReasoning = item.enableReasoning === true;
     const enableStreaming = item.enableStreaming !== false;
     if (!id || !model) continue;
-    const supportedParameters =
-      inferOpenRouterSupportedParameters(model) ?? parseStoredSupportedParameters(item.supportedParameters);
+    const supportedParameters = parseStoredSupportedParameters(item.supportedParameters);
     out.push({
       id,
       label: label || model,
@@ -329,7 +326,7 @@ export const createStudySettingsStore = () =>
       addOpenRouterConfig: (partial) => {
         const id = partial.id ?? randomId();
         const model = partial.model.trim();
-        const supportedParameters = inferOpenRouterSupportedParameters(model);
+        const supportedParameters = inferOpenRouterExtraSupportedParameters(model);
         const config: OpenRouterModelConfig = {
           id,
           label: partial.label || model,
@@ -352,7 +349,7 @@ export const createStudySettingsStore = () =>
                 ...(patch.model !== undefined
                   ? {
                       model: patch.model,
-                      supportedParameters: inferOpenRouterSupportedParameters(patch.model),
+                      supportedParameters: inferOpenRouterExtraSupportedParameters(patch.model),
                     }
                   : {}),
                 ...(patch.enableReasoning !== undefined ? { enableReasoning: patch.enableReasoning } : {}),

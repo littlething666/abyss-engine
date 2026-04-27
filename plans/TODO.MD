@@ -102,6 +102,3 @@
   - [ ] tts for llm answers
   - [ ] color themes
   - [ ] card visuals and animations
-
-- [ ] **Separate Tooling (Out of this project scope)**
-  - [ ] Train model for mermaid diagrams via funtion calling

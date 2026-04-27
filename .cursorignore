@@ -2,3 +2,4 @@
 !node_modules/three/
 !.cursor/plans/
 research/
+pnpm-lock.yaml

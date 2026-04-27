@@ -3,7 +3,6 @@ export type InferenceSurfaceId =
   | 'studyQuestionExplain'
   | 'studyFormulaExplain'
   | 'studyQuestionMermaid'
-  | 'screenCaptureSummary'
   | 'subjectGenerationTopics'
   | 'subjectGenerationEdges'
   | 'topicContent'
@@ -13,7 +12,6 @@ export const ALL_SURFACE_IDS: readonly InferenceSurfaceId[] = [
   'studyQuestionExplain',
   'studyFormulaExplain',
   'studyQuestionMermaid',
-  'screenCaptureSummary',
   'subjectGenerationTopics',
   'subjectGenerationEdges',
   'topicContent',
@@ -36,7 +34,6 @@ export const SURFACE_DISPLAY_LABELS: Record<InferenceSurfaceId, string> = {
   studyQuestionExplain: 'Study Question Explain',
   studyFormulaExplain: 'Study Formula Explain',
   studyQuestionMermaid: 'Study Mermaid Diagrams',
-  screenCaptureSummary: 'Screen Capture Summary',
   subjectGenerationTopics: 'Curriculum — Topics',
   subjectGenerationEdges: 'Curriculum — Edges',
   topicContent: 'Topic Content',
@@ -45,7 +42,6 @@ export const SURFACE_DISPLAY_LABELS: Record<InferenceSurfaceId, string> = {
 
 /** Declared OpenRouter chat parameters this app knows how to use for a config. */
 export type OpenRouterSupportedParameter =
-  | 'reasoning'
   | 'tools'
   | 'response_format'
   | 'structured_outputs';
@@ -58,10 +54,10 @@ export interface OpenRouterModelConfig {
   id: string;
   label: string;
   model: string;
-  /** When the model supports OpenRouter `reasoning`, persisted user preference. */
+  /** User preference controlling whether to request OpenRouter `reasoning` for this config. */
   enableReasoning: boolean;
   enableStreaming: boolean;
-  /** If omitted or empty, inferred from `model` when loading or after model edits. */
+  /** Extra OpenRouter request capabilities known to the product for this model. */
   supportedParameters?: readonly OpenRouterSupportedParameter[];
 }
 

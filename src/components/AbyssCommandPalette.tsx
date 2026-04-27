@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
-  Camera,
   Check,
   Circle,
   History,
@@ -75,7 +74,6 @@ const RECENT_COMMAND_IDS = [
   'filter-category-sort',
   'filter-sequence-build',
   'filter-connection-web',
-  'summarize-screen',
   'new-subject-curriculum',
   'prepare-trial',
   'force-complete-trial',
@@ -170,7 +168,6 @@ export interface AbyssCommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   isDebugMode: boolean;
-  onSummarizeScreen?: () => void;
   onOpenSubjectCurriculum?: () => void;
   onStartStudyWithCardTypes?: (selection: StudyCardFilterSelection) => void;
 }
@@ -183,7 +180,6 @@ export function AbyssCommandPalette({
   open,
   onOpenChange,
   isDebugMode,
-  onSummarizeScreen,
   onOpenSubjectCurriculum,
   onStartStudyWithCardTypes,
 }: AbyssCommandPaletteProps) {
@@ -229,7 +225,6 @@ export function AbyssCommandPalette({
   const enabledMiniGameTypes = useMemo(() => MINI_GAME_TYPES_ORDER.filter((t) => studyCardFilter.mini[t]), [studyCardFilter.mini]);
   const studySelection = useMemo((): StudyCardFilterSelection => ({ enabledBaseTypes, enabledMiniGameTypes }), [enabledBaseTypes, enabledMiniGameTypes]);
   const canStartFilteredStudy = Boolean(selectedTopic) && (enabledBaseTypes.length > 0 || enabledMiniGameTypes.length > 0) && Boolean(onStartStudyWithCardTypes);
-  const canSummarizeScreen = Boolean(onSummarizeScreen);
   const canOpenSubjectCurriculum = Boolean(onOpenSubjectCurriculum);
 
   const handlePrepareTrialReady = () => {
@@ -335,7 +330,6 @@ export function AbyssCommandPalette({
     onStartStudyWithCardTypes(studySelection);
     onOpenChange(false);
   };
-  const handleSummarizeScreen = () => { if (!onSummarizeScreen) return; onSummarizeScreen(); onOpenChange(false); };
   const handleOpenSubjectCurriculum = () => { if (!onOpenSubjectCurriculum) return; onOpenSubjectCurriculum(); onOpenChange(false); };
 
   const sfxLabel = sfxEnabled ? 'Turn off sound effects' : 'Turn on sound effects';
@@ -353,7 +347,6 @@ export function AbyssCommandPalette({
     'filter-category-sort': { id: 'filter-category-sort', label: 'Include ' + MINI_GAME_TYPE_LABELS.CATEGORY_SORT, value: 'filter include CATEGORY_SORT', icon: studyCardFilter.mini.CATEGORY_SORT ? Check : Circle, onSelect: () => handleCommandSelect('filter-category-sort', true, () => setStudyCardFilter((p) => ({ ...p, mini: { ...p.mini, CATEGORY_SORT: !p.mini.CATEGORY_SORT } }))), disabled: false },
     'filter-sequence-build': { id: 'filter-sequence-build', label: 'Include ' + MINI_GAME_TYPE_LABELS.SEQUENCE_BUILD, value: 'filter include SEQUENCE_BUILD', icon: studyCardFilter.mini.SEQUENCE_BUILD ? Check : Circle, onSelect: () => handleCommandSelect('filter-sequence-build', true, () => setStudyCardFilter((p) => ({ ...p, mini: { ...p.mini, SEQUENCE_BUILD: !p.mini.SEQUENCE_BUILD } }))), disabled: false },
     'filter-connection-web': { id: 'filter-connection-web', label: 'Include ' + MINI_GAME_TYPE_LABELS.CONNECTION_WEB, value: 'filter include CONNECTION_WEB', icon: studyCardFilter.mini.CONNECTION_WEB ? Check : Circle, onSelect: () => handleCommandSelect('filter-connection-web', true, () => setStudyCardFilter((p) => ({ ...p, mini: { ...p.mini, CONNECTION_WEB: !p.mini.CONNECTION_WEB } }))), disabled: false },
-    'summarize-screen': { id: 'summarize-screen', label: 'Summarize screen with assistant', value: 'screen capture summarize screenshot assistant vision', icon: Camera, onSelect: () => handleCommandSelect('summarize-screen', canSummarizeScreen, handleSummarizeScreen), disabled: !canSummarizeScreen },
     'new-subject-curriculum': { id: 'new-subject-curriculum', label: 'New subject from prompt (curriculum graph)', value: 'new subject curriculum graph generate indexeddb', icon: Network, onSelect: () => handleCommandSelect('new-subject-curriculum', canOpenSubjectCurriculum, handleOpenSubjectCurriculum), disabled: !canOpenSubjectCurriculum },
     'prepare-trial': { id: 'prepare-trial', label: 'Prepare selected crystal trial for challenge', value: 'prepare trial ready selected crystal crystal trial', icon: ShieldCheck, onSelect: () => handleCommandSelect('prepare-trial', canPrepareTrialReady, handlePrepareTrialReady), disabled: !canPrepareTrialReady },
     'force-complete-trial': { id: 'force-complete-trial', label: 'Force complete selected crystal trial (correct answers)', value: 'force complete selected crystal trial correct answers debug', icon: Check, onSelect: () => handleCommandSelect('force-complete-trial', canForceTrialPass, handleForceTrialPass), disabled: !canForceTrialPass },
@@ -368,7 +361,6 @@ export function AbyssCommandPalette({
     .filter((c) => c != null)
     .filter((c) => {
       if (c.id.startsWith('filter-')) return Boolean(onStartStudyWithCardTypes);
-      if (c.id === 'summarize-screen') return Boolean(onSummarizeScreen);
       if (c.id === 'new-subject-curriculum') return Boolean(onOpenSubjectCurriculum);
       if (c.id === 'prepare-trial' || c.id === 'force-complete-trial' || c.id === 'add-xp' || c.id === 'subtract-xp' || c.id === 'trigger-level-up-animation' || c.id === 'toggle-xp-buff') return isDebugMode;
       return true;
@@ -436,13 +428,6 @@ export function AbyssCommandPalette({
                 })}
               </CommandGroup>
             </>
-          ) : null}
-          {onSummarizeScreen ? (
-            <CommandGroup heading="Assistant">
-              <CommandItem value={commandMetadata['summarize-screen'].value} onSelect={commandMetadata['summarize-screen'].onSelect}>
-                <Camera className="size-4" /><span>{commandMetadata['summarize-screen'].label}</span>
-              </CommandItem>
-            </CommandGroup>
           ) : null}
           {onOpenSubjectCurriculum ? (
             <CommandGroup heading="Curriculum">

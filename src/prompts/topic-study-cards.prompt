@@ -8,7 +8,7 @@ Output **exactly one JSON object**:
 ## Card types and required JSON field names (do not rename or substitute)
 
 - **FLASHCARD** — `content` must use **`front`** and **`back`** string fields only. Do **not** use `question`/`answer` for flashcards.
-- **SINGLE_CHOICE** — `content` must include **`question`**, **`options`** (array of exactly 4 strings), **`correctAnswer`** (one string matching an option), and **`explanation`**. Do **not** use a field named `answer`; use **`correctAnswer`**.
+- **SINGLE_CHOICE** — `content` must include **`question`**, **`options`** (array of exactly 4 strings), **`correctAnswer`** (one string that must exactly match one full entry in `options`), and **`explanation`**. Do **not** use a field named `answer`; use **`correctAnswer`**.
 - **MULTI_CHOICE** — `content` must include **`question`**, **`options`**, **`correctAnswers`** (array of strings; subset of options), and **`explanation`**. Do **not** use `answer`; use **`correctAnswers`**.
 
 ### Minimal examples (structure only)
@@ -17,7 +17,9 @@ FLASHCARD:
 `{ "id": "{{topicId}}-flash-1", "type": "FLASHCARD", "difficulty": {{targetDifficulty}}, "content": { "front": "…", "back": "…" } }`
 
 SINGLE_CHOICE:
-`{ "id": "{{topicId}}-sc-1", "type": "SINGLE_CHOICE", "difficulty": {{targetDifficulty}}, "content": { "question": "…", "options": ["A","B","C","D"], "correctAnswer": "B", "explanation": "…" } }`
+`{ "id": "{{topicId}}-sc-1", "type": "SINGLE_CHOICE", "difficulty": {{targetDifficulty}}, "content": { "question": "…", "options": ["option A text", "option B text", "option C text", "option D text"], "correctAnswer": "option B text", "explanation": "…" } }`
+
+Do not prefix options with `A)`, `B)`, `C)`, `D)` unless you also set `correctAnswer` to that exact prefixed string.
 
 MULTI_CHOICE:
 `{ "id": "{{topicId}}-mc-1", "type": "MULTI_CHOICE", "difficulty": {{targetDifficulty}}, "content": { "question": "…", "options": ["…","…"], "correctAnswers": ["…"], "explanation": "…" } }`
@@ -28,7 +30,7 @@ Requirements:
 - Difficulty must be **{{targetDifficulty}}** for all cards in this response.
 - Content must align with the theory, grounding sources, content strategy, and target difficulty questions below.
 
-### JSON strings and LaTeX (required)
+### JSON strings and LaTeX escaping (required)
 
 In JSON, `\` starts an escape. Single-backslash LaTeX inside string values **breaks** parsing or math:
 
@@ -36,7 +38,7 @@ In JSON, `\` starts an escape. Single-backslash LaTeX inside string values **bre
 - **Wrong:** `"$\alpha_i$"` — `\a` is an **invalid** JSON escape; the whole JSON is invalid.
 - **Right:** double the backslash so the parsed string contains one `\` for LaTeX: `"$\\theta_i$"`, `"$\\alpha_i$"`, `"$\\dot{q}$"`, `"$\\frac{a}{b}$"`.
 
-Use LaTeX in `question`, `options`, `explanation`, `front`, `back`, etc. only with **`\\command`** form inside JSON strings (or write math without backslashes when possible).
+Use LaTeX syntax in `question`, `options`, `explanation`, `front`, `back`, etc. only with **`\\command`** form inside JSON strings (or write math without backslashes when possible).
 
 Topic id: {{topicId}}
 Topic title: {{topicTitle}}

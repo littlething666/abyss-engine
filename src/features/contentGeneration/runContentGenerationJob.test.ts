@@ -132,7 +132,7 @@ describe('runContentGenerationJob', () => {
     expect(j?.status).toBe('aborted');
   });
 
-  it('forces reasoning off in structured OpenRouter requests', async () => {
+  it('preserves requested reasoning in structured OpenRouter requests', async () => {
     surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam.mockReturnValue(true);
     surfaceProvidersApi.resolveOpenRouterStructuredJsonChatExtras.mockReturnValue({
       responseFormat: { type: 'json_object' },
@@ -162,7 +162,7 @@ describe('runContentGenerationJob', () => {
 
     expect(streamChat).toHaveBeenCalledWith(expect.objectContaining({
       includeOpenRouterReasoning: true,
-      enableReasoning: false,
+      enableReasoning: true,
       enableStreaming: false,
       responseFormat: { type: 'json_object' },
       plugins: [{ id: 'response-healing' }],

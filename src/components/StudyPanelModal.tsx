@@ -31,7 +31,7 @@ import { cardRefKey } from '@/lib/topicRef';
 import { RatingFeedbackCanvas, type RatingFeedbackCanvasHandle } from './studyPanel/RatingFeedbackCanvas';
 import { useRatingFeedback } from '@/hooks/useRatingFeedback';
 import { uiStore } from '@/store/uiStore';
-import { makeOpenRouterReasoningSupportedSelector } from '../infrastructure/llmInferenceSurfaceProviders';
+import { makeOpenRouterProviderSelector } from '../infrastructure/llmInferenceSurfaceProviders';
 import { Settings } from 'lucide-react';
 import { useStudySettingsStore } from '@/store/studySettingsStore';
 
@@ -70,13 +70,13 @@ export function StudyPanelModal({
   const formulaReasoning = useReasoningToggle('studyFormulaExplain');
   const mermaidReasoning = useReasoningToggle('studyQuestionMermaid');
   const explainReasoningSupported = useStudySettingsStore(
-    makeOpenRouterReasoningSupportedSelector('studyQuestionExplain'),
+    makeOpenRouterProviderSelector('studyQuestionExplain'),
   );
   const formulaReasoningSupported = useStudySettingsStore(
-    makeOpenRouterReasoningSupportedSelector('studyFormulaExplain'),
+    makeOpenRouterProviderSelector('studyFormulaExplain'),
   );
   const mermaidReasoningSupported = useStudySettingsStore(
-    makeOpenRouterReasoningSupportedSelector('studyQuestionMermaid'),
+    makeOpenRouterProviderSelector('studyQuestionMermaid'),
   );
   const ttsEnabled = useInferenceTtsToggle();
   const llmExplain = useStudyQuestionLlmExplain({

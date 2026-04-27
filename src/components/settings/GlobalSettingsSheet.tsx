@@ -10,6 +10,15 @@ import {
   SheetDescription,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,8 +39,6 @@ import {
 } from '@/types/llmInference';
 import type { InferenceSurfaceId, LlmInferenceProviderId } from '@/types/llmInference';
 import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
-import { openRouterConfigSupportsReasoning } from '@/infrastructure/llmInferenceSurfaceProviders';
-import { inferOpenRouterSupportedParameters } from '@/lib/openRouterReasoning';
 
 const CURRICULUM_SURFACE_IDS = [
   'subjectGenerationTopics',
@@ -42,6 +49,55 @@ const CONTENT_SHEET_CLASSNAME = '!w-full sm:max-w-xl overflow-y-auto';
 const SECTION_SPACING = 'pt-5';
 const ROW_CLASSNAME = 'flex items-center justify-between gap-2';
 const SELECT_CLASSNAME = 'w-44 shrink-0';
+const KNOWN_INDEXED_DB_NAMES = ['abyss-deck', 'abyss-content-generation-logs'] as const;
+
+function listIndexedDbNames(): Promise<string[]> {
+  if (typeof window === 'undefined' || !window.indexedDB || typeof window.indexedDB.databases !== 'function') {
+    return Promise.resolve([...KNOWN_INDEXED_DB_NAMES]);
+  }
+
+  return window.indexedDB
+    .databases()
+    .then((databases) => {
+      const names = databases.map((db) => db?.name).filter((name): name is string => typeof name === 'string' && name.length > 0);
+      if (names.length === 0) {
+        return [...KNOWN_INDEXED_DB_NAMES];
+      }
+      const unique = new Set(names);
+      for (const name of KNOWN_INDEXED_DB_NAMES) {
+        unique.add(name);
+      }
+      return [...unique];
+    })
+    .catch(() => {
+      return [...KNOWN_INDEXED_DB_NAMES];
+    });
+}
+
+async function deleteIndexedDb(name: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const request = window.indexedDB.deleteDatabase(name);
+    request.onsuccess = () => {
+      resolve();
+    };
+    request.onerror = () => {
+      reject(request.error ?? new Error(`Failed to delete IndexedDB database: ${name}`));
+    };
+  });
+}
+
+async function pruneStorage(): Promise<void> {
+  if (typeof window === 'undefined' || !window.localStorage || !window.indexedDB) {
+    return;
+  }
+
+  window.localStorage.clear();
+
+  const names = await listIndexedDbNames();
+  for (const name of names) {
+    await deleteIndexedDb(name);
+  }
+}
 
 function SurfaceBindingRow({ surfaceId }: { surfaceId: InferenceSurfaceId }) {
   const binding = useStudySettingsStore((s) => s.surfaceProviders[surfaceId]);
@@ -140,7 +196,6 @@ function OpenRouterConfigList() {
             <span className="text-xs text-muted-foreground">Reasoning</span>
             <Switch
               checked={c.enableReasoning}
-              disabled={!openRouterConfigSupportsReasoning(c)}
               onCheckedChange={(v) => updateConfig(c.id, { enableReasoning: v })}
               aria-label={`Enable reasoning for ${c.label}`}
             />
@@ -184,7 +239,6 @@ function OpenRouterConfigList() {
           <span className="text-xs text-muted-foreground">Reasoning</span>
           <Switch
             checked={draftReasoning}
-            disabled={inferOpenRouterSupportedParameters(draftModel.trim()) === undefined}
             onCheckedChange={setDraftReasoning}
             aria-label="Enable reasoning for new config"
           />
@@ -286,9 +340,37 @@ export function GlobalSettingsSheet() {
   const setLocalModelId = useStudySettingsStore((s) => s.setLocalModelId);
   const openRouterResponseHealing = useStudySettingsStore((s) => s.openRouterResponseHealing);
   const setOpenRouterResponseHealing = useStudySettingsStore((s) => s.setOpenRouterResponseHealing);
+  const [isPruneDialogOpen, setIsPruneDialogOpen] = useState(false);
+  const [pruneError, setPruneError] = useState<string | null>(null);
+  const [isPruning, setIsPruning] = useState(false);
 
   const handleOpenChange = (next: boolean) => {
     if (!next) close();
+  };
+
+  const handlePruneDialogOpen = () => {
+    setPruneError(null);
+    setIsPruneDialogOpen(true);
+  };
+
+  const handlePruneStorage = async () => {
+    if (isPruning) return;
+    setIsPruning(true);
+    setPruneError(null);
+
+    try {
+      await pruneStorage();
+      setIsPruneDialogOpen(false);
+      close();
+      window.location.reload();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to prune storage. Please try again or restart the app.';
+      setPruneError(message);
+      setIsPruning(false);
+    }
   };
 
   return (
@@ -398,8 +480,56 @@ export function GlobalSettingsSheet() {
               />
             </div>
           </section>
+
+          <section className={SECTION_SPACING}>
+            <Badge variant="outline">🧹 Storage management</Badge>
+            <div className="space-y-1 pt-3">
+              <p className="text-xs text-muted-foreground">
+                Prune all persisted client-side data in localStorage and IndexedDB.
+              </p>
+              <div className={ROW_CLASSNAME}>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handlePruneDialogOpen}
+                  disabled={isPruning}
+                  aria-label="Open prune storage confirmation dialog"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Prune storage
+                </Button>
+              </div>
+            </div>
+          </section>
         </div>
       </SheetContent>
+
+      <AlertDialog open={isPruneDialogOpen} onOpenChange={setIsPruneDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Prune browser storage?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove all localStorage and IndexedDB data for this browser profile.
+              You will be signed out of local sessions and all cached study state will be lost.
+              Reload is required after pruning.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {pruneError ? <p className="text-xs text-destructive pt-1">{pruneError}</p> : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPruning} onClick={() => setIsPruneDialogOpen(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handlePruneStorage}
+              disabled={isPruning}
+            >
+              {isPruning ? 'Pruning...' : 'Confirm prune'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   );
 }

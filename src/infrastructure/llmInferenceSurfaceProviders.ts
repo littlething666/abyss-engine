@@ -22,10 +22,6 @@ function openRouterConfigForSurface(surfaceId: InferenceSurfaceId): OpenRouterMo
   return getOpenRouterConfigById(binding.openRouterConfigId);
 }
 
-export function openRouterConfigSupportsReasoning(config: OpenRouterModelConfig | undefined): boolean {
-  return config?.supportedParameters?.includes('reasoning') === true;
-}
-
 export function openRouterConfigSupportsParameter(
   config: OpenRouterModelConfig | undefined,
   parameter: 'tools' | 'response_format' | 'structured_outputs',
@@ -34,26 +30,25 @@ export function openRouterConfigSupportsParameter(
 }
 
 /** Selector factory for Zustand stores with StudySettings state. */
-export function makeOpenRouterReasoningSupportedSelector(surfaceId: InferenceSurfaceId) {
+export function makeOpenRouterProviderSelector(surfaceId: InferenceSurfaceId) {
   return (state: StudySettingsState) => {
     const binding = state.surfaceProviders[surfaceId];
     if (binding.provider !== 'openrouter' || !binding.openRouterConfigId) return false;
-    const config = state.openRouterConfigs.find((c) => c.id === binding.openRouterConfigId);
-    return openRouterConfigSupportsReasoning(config);
+    return state.openRouterConfigs.some((config) => config.id === binding.openRouterConfigId);
   };
 }
 
-/** True when this surface uses OpenRouter and the bound model supports the `reasoning` request field. */
+/** True when this surface uses OpenRouter and has a bound, known OpenRouter config. */
 export function resolveIncludeOpenRouterReasoningParam(surfaceId: InferenceSurfaceId): boolean {
   if (inferenceProviderForSurface(surfaceId) !== 'openrouter') return false;
-  return openRouterConfigSupportsReasoning(openRouterConfigForSurface(surfaceId));
+  return openRouterConfigForSurface(surfaceId) !== undefined;
 }
 
-/** OpenRouter config flag; false when local or model does not support `reasoning`. */
+/** OpenRouter config flag; false when local or when no OpenRouter binding exists. */
 export function resolveEnableReasoningForSurface(surfaceId: InferenceSurfaceId): boolean {
-  if (!resolveIncludeOpenRouterReasoningParam(surfaceId)) return false;
   const config = openRouterConfigForSurface(surfaceId);
-  return config?.enableReasoning === true;
+  if (!config) return false;
+  return config.enableReasoning === true;
 }
 
 /** Maps per-surface OpenRouter capability + user toggle into chat-completions body fields. */
