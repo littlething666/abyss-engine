@@ -37,7 +37,7 @@ import { CrystalTrialModal } from '@/components/CrystalTrial';
 import { MentorBootstrapMount } from '@/components/MentorBootstrapMount';
 import { MentorDialogOverlay } from '@/components/MentorDialogOverlay';
 import { useMentorStore } from '@/features/mentor/mentorStore';
-import { evaluateTrigger } from '@/features/mentor/dialogRuleEngine';
+import { tryEnqueueBubbleClick } from '@/features/mentor';
 import { MENTOR_VOICE_ID } from '@/features/mentor/mentorVoice';
 import { telemetry } from '@/features/telemetry';
 import { useMediaQuery } from '@/hooks/use-media-query';
@@ -236,18 +236,13 @@ const HomeContent: React.FC = () => {
     setIsIncrementalSubjectOpen(true);
   }, [closeDiscoveryModal]);
 
-  // Mentor v1 (Phase 2): Quick Actions "Mentor" item is the keyboard-accessible parity
-  // for the (Phase 3) MentorBubble billboard. Both paths emit the same `mentor.bubble.click`
-  // trigger. While the overlay is open the rule engine itself returns null (no-op), and
-  // while it is closed the auto-pop effect inside MentorDialogOverlay opens the queued head.
+  // Mentor v1 (Phase 3): Quick Actions "Mentor" item is the keyboard-accessible parity
+  // for the MentorBubble billboard. Both paths emit `mentor.bubble.click` through the
+  // shared `tryEnqueueBubbleClick()` helper, which encodes the v1 Pin selection rules:
+  // overlay-open is a no-op, a non-empty queue is a no-op (the queued head wins), and
+  // otherwise the trigger is evaluated, enqueued, and its cooldown recorded.
   const handleQuickActionMentor = useCallback(() => {
-    const plan = evaluateTrigger('mentor.bubble.click', {});
-    if (!plan) return;
-    const store = useMentorStore.getState();
-    store.enqueue(plan);
-    if (plan.cooldownMs && plan.cooldownMs > 0) {
-      store.recordCooldown('mentor.bubble.click', plan.enqueuedAt);
-    }
+    tryEnqueueBubbleClick();
   }, []);
 
   // Mentor v1 (Phase 2): primary completion signal for `onboarding.first_subject`.
