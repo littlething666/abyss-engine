@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,13 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useUIStore } from '@/store/uiStore';
 
 const MENTOR_TYPE_CHARS_PER_SECOND = 60;
+
+function nowMs(): number {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+  return Date.now();
+}
 
 function applyEffect(effect: MentorEffect | undefined): void {
   if (!effect) return;
@@ -64,16 +71,22 @@ export function MentorDialogOverlay() {
     }
   }, [currentDialog, queueLen, openCurrentFromQueue]);
 
+  // Tracks when the active dialog was first shown so completion telemetry can
+  // report durationMs. Reset alongside other per-plan state below.
+  const startedAtRef = useRef<number | null>(null);
+
   // Mark seen + telemetry once per dialog open. Note: oneShot suppression in
   // the rule engine ALSO checks seenTriggers, so this is what locks out future
   // welcome/first-subject fires after the dialog is actually rendered.
   useEffect(() => {
     if (!currentDialog) return;
+    startedAtRef.current = nowMs();
     markSeen(currentDialog.trigger);
     telemetry.log('mentor_dialog_shown', {
       triggerId: currentDialog.trigger,
       source: 'canned',
       voiceId: MENTOR_VOICE_ID,
+      planId: currentDialog.id,
     });
   }, [currentDialog, markSeen]);
 
@@ -133,12 +146,17 @@ export function MentorDialogOverlay() {
         setMessageIndex(nextIndex);
         return;
       }
+      const startedAt = startedAtRef.current;
+      const durationMs = startedAt === null ? 0 : Math.max(0, nowMs() - startedAt);
       telemetry.log('mentor_dialog_completed', {
         triggerId: currentDialog.trigger,
         source: 'canned',
         voiceId: MENTOR_VOICE_ID,
+        planId: currentDialog.id,
+        durationMs,
         outcome,
       });
+      startedAtRef.current = null;
       dismissCurrent();
     },
     [cancel, currentDialog, dismissCurrent, messageIndex, messages.length],
@@ -179,6 +197,7 @@ export function MentorDialogOverlay() {
         triggerId: currentDialog.trigger,
         source: 'canned',
         voiceId: MENTOR_VOICE_ID,
+        planId: currentDialog.id,
         choiceId: choice.id,
       });
       if (choice.effect) {
