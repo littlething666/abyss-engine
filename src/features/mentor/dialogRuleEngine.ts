@@ -1,4 +1,7 @@
-import { getMentorLine } from './mentorLines';
+import {
+  getMentorLine,
+  getSubjectGenerationStartedVariant,
+} from './mentorLines';
 import { useMentorStore, type MentorState } from './mentorStore';
 import { MENTOR_VOICE_ID } from './mentorVoice';
 import type {
@@ -28,63 +31,67 @@ interface TriggerSpec {
   ) => MentorMessage[];
 }
 
+/**
+ * Build the destination "where to first?" message for the pre-first-subject
+ * onboarding flow. Used both as the standalone single-message dialog when
+ * `playerName !== null` and as the final message in the welcome chain when
+ * the player still needs to set a name.
+ */
+function buildPreFirstSubjectDestinationMessage(variantText: string): MentorMessage {
+  return {
+    id: 'pre-first-subject-destination',
+    text: variantText,
+    choices: [
+      {
+        id: 'create-subject',
+        label: 'Create my first subject',
+        effect: { kind: 'open_discovery' },
+        next: 'end',
+      },
+      { id: 'maybe-later', label: 'Maybe later', next: 'end' },
+    ],
+  };
+}
+
 export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
-  'onboarding.welcome': {
-    trigger: 'onboarding.welcome',
+  'onboarding.pre_first_subject': {
+    trigger: 'onboarding.pre_first_subject',
     priority: 100,
-    oneShot: true,
-    isApplicable: (s) =>
-      s.playerName === null && !s.seenTriggers.includes('onboarding.welcome'),
-    buildMessages: () => [
-      {
-        id: 'welcome-greet',
-        text:
-          "Oh. A new test subject. Hello. I'm contractually required to be " +
-          "encouraging. Let's get this over with — pleasantly.",
-      },
-      {
-        id: 'welcome-name',
-        text: 'Before I file your paperwork, what should I call you?',
-        input: { kind: 'name', placeholder: 'Type a name', maxLen: 24 },
-        choices: [{ id: 'skip-name', label: 'Skip', next: 'welcome-next' }],
-      },
-      {
-        id: 'welcome-next',
-        text: 'Where to first?',
-        choices: [
-          {
-            id: 'create-subject',
-            label: 'Create my first subject',
-            effect: { kind: 'open_discovery' },
-            next: 'end',
-          },
-          { id: 'maybe-later', label: 'Maybe later', next: 'end' },
-        ],
-      },
-    ],
-  },
-  'onboarding.first_subject': {
-    trigger: 'onboarding.first_subject',
-    priority: 95,
-    oneShot: true,
-    isApplicable: (s) =>
-      !s.seenTriggers.includes('onboarding.first_subject') &&
-      s.firstSubjectGenerationEnqueuedAt === null,
-    buildMessages: (variantText) => [
-      {
-        id: 'first-subject',
-        text: variantText,
-        choices: [
-          {
-            id: 'open-discovery',
-            label: 'Open the altar',
-            effect: { kind: 'open_discovery' },
-            next: 'end',
-          },
-          { id: 'maybe-later', label: 'Maybe later', next: 'end' },
-        ],
-      },
-    ],
+    // Intentionally NOT oneShot. The single gate for pre-first-subject
+    // onboarding is `firstSubjectGenerationEnqueuedAt === null`, which lets
+    // bootstrap nudge the player on each fresh app session AND lets the
+    // bubble / Quick Action resolver re-surface the dialog after dismiss
+    // until the player actually starts generating their first subject.
+    // `seenTriggers` is consequently irrelevant for this onboarding path —
+    // markSeen still fires from the overlay on each open, but no rule reads
+    // it for this trigger.
+    isApplicable: (s) => s.firstSubjectGenerationEnqueuedAt === null,
+    buildMessages: (variantText, _payload, snapshot) => {
+      // State-aware composition: if a returning player already has a saved
+      // name, skip the greet + name prompt and go directly to the
+      // destination CTA. Without a name, run the original 3-message welcome
+      // chain (greet → name input → destination).
+      if (snapshot.playerName !== null) {
+        return [buildPreFirstSubjectDestinationMessage(variantText)];
+      }
+      return [
+        {
+          id: 'pre-first-subject-greet',
+          text:
+            "Oh. A new test subject. Hello. I'm contractually required to be " +
+            "encouraging. Let's get this over with — pleasantly.",
+        },
+        {
+          id: 'pre-first-subject-name',
+          text: 'Before I file your paperwork, what should I call you?',
+          input: { kind: 'name', placeholder: 'Type a name', maxLen: 24 },
+          choices: [
+            { id: 'skip-name', label: 'Skip', next: 'pre-first-subject-destination' },
+          ],
+        },
+        buildPreFirstSubjectDestinationMessage(variantText),
+      ];
+    },
   },
   'session.completed': {
     trigger: 'session.completed',
@@ -186,8 +193,7 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
 };
 
 const VARIANT_COUNTS: Record<MentorTriggerId, number> = {
-  'onboarding.welcome': 1,
-  'onboarding.first_subject': 2,
+  'onboarding.pre_first_subject': 2,
   'session.completed': 3,
   'crystal.leveled': 3,
   'crystal.trial.awaiting': 2,
@@ -225,10 +231,20 @@ export function evaluateTrigger(
 
   const variantCount = VARIANT_COUNTS[trigger];
   const variantIndex = store.nextVariantIndex(trigger, variantCount, rng);
-  const variantText = interpolate(
-    getMentorLine(store.mentorLocale, trigger, MENTOR_VOICE_ID, variantIndex),
-    { ...payload, name: store.playerName ?? 'test subject' },
-  );
+
+  // Stage-aware variant for `subject.generation.started`: when the payload
+  // carries a stage, route the copy through the private stage-bucket helper
+  // so the public LineCatalog stays flat. Other triggers, and started
+  // emissions without a stage, fall back to the generic catalog lookup.
+  const rawVariant =
+    trigger === 'subject.generation.started' && payload.stage
+      ? getSubjectGenerationStartedVariant(payload.stage, MENTOR_VOICE_ID, variantIndex)
+      : getMentorLine(store.mentorLocale, trigger, MENTOR_VOICE_ID, variantIndex);
+
+  const variantText = interpolate(rawVariant, {
+    ...payload,
+    name: store.playerName ?? 'test subject',
+  });
 
   return {
     id: `${trigger}#${nowMs}#${variantIndex}`,

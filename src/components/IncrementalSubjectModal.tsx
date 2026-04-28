@@ -30,11 +30,9 @@ const subjectIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export interface IncrementalSubjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Fired after the generation request is queued (before `onClose`). Use to dismiss a parent surface (e.g. Discovery). */
-  onEnqueued?: () => void;
 }
 
-export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: IncrementalSubjectModalProps) {
+export function IncrementalSubjectModal({ isOpen, onClose }: IncrementalSubjectModalProps) {
   const [topicName, setTopicName] = useState('');
   const [studyGoal, setStudyGoal] = useState<StudyGoal>(STUDY_CHECKLIST_DEFAULTS.studyGoal);
   const [priorKnowledge, setPriorKnowledge] = useState<PriorKnowledge>(STUDY_CHECKLIST_DEFAULTS.priorKnowledge);
@@ -78,6 +76,10 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
         return;
       }
 
+      // First-subject milestone tracking is owned by
+      // src/infrastructure/eventBusHandlers.ts. The 'subject:generation-pipeline'
+      // bus event is the canonical signal; presentation only triggers the
+      // generation and closes its surface.
       triggerSubjectGeneration(sid, {
         topicName: name,
         studyGoal,
@@ -86,7 +88,6 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
         focusAreas: focusAreas.trim() || undefined,
       });
       toast.success('Subject generation started — check progress in the HUD.');
-      onEnqueued?.();
       onClose();
     } catch (e) {
       setLocalError(e instanceof Error ? e.message : String(e));

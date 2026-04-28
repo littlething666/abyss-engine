@@ -1,25 +1,27 @@
-import { evaluateTrigger } from './dialogRuleEngine';
-import { selectIsOverlayOpen, useMentorStore } from './mentorStore';
+import {
+  activeSubjectGenerationStatus,
+  useContentGenerationStore,
+} from '@/features/contentGeneration';
+
+import {
+  readMentorEntryContextFromStores,
+  tryEnqueueMentorEntry,
+} from './mentorEntryPoint';
 
 /**
- * Implements the v1 Pin selection rules for `mentor.bubble.click`:
+ * Thin wrapper over the contextual mentor entry resolver. Both the
+ * MentorBubble billboard and the HUD Quick Actions "\ud83d\udde3\ufe0f Mentor"
+ * item route through this helper so they always agree on which dialog the
+ * click should open.
  *
- * - If the overlay is already open: no-op (Pin rule #8).
- * - If the overlay is closed but `dialogQueue` is non-empty: no-op. The
- *   queued plan wins; `MentorDialogOverlay`'s auto-pop effect opens its head.
- * - Otherwise: evaluate the trigger, enqueue the plan, record cooldown.
- *
- * Returns `true` if a new plan was enqueued, `false` otherwise.
+ * Callers do not need to gather context themselves; this helper snapshots
+ * the cross-feature stores (mentor + content generation) at click time and
+ * forwards the plain-data context into `tryEnqueueMentorEntry`.
  */
 export function tryEnqueueBubbleClick(): boolean {
-  const store = useMentorStore.getState();
-  if (selectIsOverlayOpen(store)) return false;
-  if (store.dialogQueue.length > 0) return false;
-  const plan = evaluateTrigger('mentor.bubble.click', {});
-  if (!plan) return false;
-  store.enqueue(plan);
-  if (plan.cooldownMs && plan.cooldownMs > 0) {
-    store.recordCooldown('mentor.bubble.click', plan.enqueuedAt);
-  }
-  return true;
+  const subjectGenerationStatus = activeSubjectGenerationStatus(
+    useContentGenerationStore.getState(),
+  );
+  const ctx = readMentorEntryContextFromStores(subjectGenerationStatus);
+  return tryEnqueueMentorEntry(ctx);
 }

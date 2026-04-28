@@ -1,8 +1,7 @@
 export type MentorVoiceId = 'witty-sarcastic';
 
 export const MENTOR_TRIGGER_IDS = [
-  'onboarding.welcome',
-  'onboarding.first_subject',
+  'onboarding.pre_first_subject',
   'session.completed',
   'crystal.leveled',
   'crystal.trial.awaiting',
@@ -56,10 +55,12 @@ export interface DialogPlan {
   oneShot?: boolean;
 }
 
+export type SubjectGenerationStage = 'topics' | 'edges';
+
 export interface MentorTriggerPayload {
   topic?: string;
   subjectName?: string;
-  stage?: 'topics' | 'edges';
+  stage?: SubjectGenerationStage;
   pipelineId?: string;
   from?: number;
   to?: number;
