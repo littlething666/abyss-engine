@@ -5,6 +5,7 @@ import { BUNDLED_DECK_CONTENT_VERSION } from '../deckContentVersion';
 import {
   deckDb,
   topicCompositeKey,
+  type DeckContentSource,
   type DeckSubjectRow,
   type TopicCardsRow,
   type TopicRow,
@@ -19,6 +20,16 @@ import {
 import type { SubjectGraph } from '../../types/core';
 
 let seedPromise: Promise<void> | null = null;
+
+function withContentSource(
+  subject: Omit<DeckSubjectRow, 'contentSource'>,
+  contentSource: DeckContentSource,
+): DeckSubjectRow {
+  return {
+    ...subject,
+    contentSource,
+  };
+}
 
 export function resetDeckSeedSingletonForTests(): void {
   seedPromise = null;
@@ -40,7 +51,7 @@ async function loadAllSeedData(): Promise<{
   cardRows: TopicCardsRow[];
 }> {
   const manifest = await fetchManifest();
-  const subjects = manifest.subjects as DeckSubjectRow[];
+  const subjects = manifest.subjects.map((subject) => withContentSource(subject as Omit<DeckSubjectRow, 'contentSource'>, 'bundled'));
   const subjectIdsOrdered = subjects.map((s) => s.id);
   const graphs: SubjectGraph[] = [];
   const topicRows: TopicRow[] = [];
@@ -72,6 +83,17 @@ async function loadAllSeedData(): Promise<{
   return { subjects, subjectIdsOrdered, graphs, topicRows, cardRows };
 }
 
+function partitionOrderedSubjectIds(rows: DeckSubjectRow[], order: string[]): string[] {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const ordered = order.filter((id) => byId.has(id));
+  const seen = new Set(ordered);
+  const extras = rows
+    .map((row) => row.id)
+    .filter((id) => !seen.has(id))
+    .sort((a, b) => a.localeCompare(b));
+  return [...ordered, ...extras];
+}
+
 async function writeSeedToDb(data: Awaited<ReturnType<typeof loadAllSeedData>>): Promise<void> {
   logDeckIndexedDb('writeSeedToDb:start', {
     subjects: data.subjects.length,
@@ -83,12 +105,27 @@ async function writeSeedToDb(data: Awaited<ReturnType<typeof loadAllSeedData>>):
     'rw',
     [deckDb.subjects, deckDb.graphs, deckDb.topics, deckDb.topicCards, deckDb.meta],
     async () => {
-      logDeckIndexedDb('writeSeedToDb:transaction', { op: 'clear+put all stores' });
-      await deckDb.subjects.clear();
-      await deckDb.graphs.clear();
-      await deckDb.topics.clear();
-      await deckDb.topicCards.clear();
-      await deckDb.meta.clear();
+      const existingSubjects = await deckDb.subjects.toArray();
+      const existingOrderRow = await deckDb.meta.get('subjectIdsOrdered');
+      const existingOrder = (existingOrderRow?.value as string[] | undefined) ?? [];
+      const existingBundledIds = existingSubjects
+        .filter((subject) => subject.contentSource === 'bundled')
+        .map((subject) => subject.id);
+      const existingGeneratedRows = existingSubjects.filter((subject) => subject.contentSource === 'generated');
+      const generatedIdsOrdered = partitionOrderedSubjectIds(existingGeneratedRows, existingOrder);
+
+      logDeckIndexedDb('writeSeedToDb:transaction', {
+        op: 'replace-bundled-only',
+        bundledSubjectCount: existingBundledIds.length,
+        generatedSubjectCount: existingGeneratedRows.length,
+      });
+
+      for (const subjectId of existingBundledIds) {
+        await deckDb.subjects.delete(subjectId);
+        await deckDb.graphs.delete(subjectId);
+        await deckDb.topics.where('subjectId').equals(subjectId).delete();
+        await deckDb.topicCards.where('subjectId').equals(subjectId).delete();
+      }
 
       for (const s of data.subjects) {
         await deckDb.subjects.put(s);
@@ -104,7 +141,10 @@ async function writeSeedToDb(data: Awaited<ReturnType<typeof loadAllSeedData>>):
       }
 
       await deckDb.meta.put({ key: 'bundledContentVersion', value: BUNDLED_DECK_CONTENT_VERSION });
-      await deckDb.meta.put({ key: 'subjectIdsOrdered', value: data.subjectIdsOrdered });
+      await deckDb.meta.put({
+        key: 'subjectIdsOrdered',
+        value: [...generatedIdsOrdered, ...data.subjectIdsOrdered],
+      });
       await deckDb.meta.put({ key: 'seededAt', value: Date.now() });
     },
   );

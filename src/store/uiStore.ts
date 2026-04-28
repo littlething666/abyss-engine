@@ -33,6 +33,7 @@ export interface UIStore {
   isRitualModalOpen: boolean;
   isStudyTimelineOpen: boolean;
   isCrystalTrialOpen: boolean;
+  isGenerationProgressOpen: boolean;
   isGlobalSettingsOpen: boolean;
   selectedTopic: TopicRef | null;
   isCurrentCardFlipped: boolean;
@@ -49,6 +50,9 @@ export interface UIStore {
   closeStudyTimeline: () => void;
   openCrystalTrial: () => void;
   closeCrystalTrial: () => void;
+  openGenerationProgress: () => void;
+  closeGenerationProgress: () => void;
+  setGenerationProgressOpen: (open: boolean) => void;
   openGlobalSettings: () => void;
   closeGlobalSettings: () => void;
   selectTopic: (topic: TopicRef | null) => void;
@@ -62,6 +66,7 @@ export const selectIsAnyModalOpen = (s: UIStore) =>
   || s.isRitualModalOpen
   || s.isStudyTimelineOpen
   || s.isCrystalTrialOpen
+  || s.isGenerationProgressOpen
   || s.isGlobalSettingsOpen;
 
 const createUIStore = () =>
@@ -71,6 +76,7 @@ const createUIStore = () =>
     isRitualModalOpen: false,
     isStudyTimelineOpen: false,
     isCrystalTrialOpen: false,
+    isGenerationProgressOpen: false,
     isGlobalSettingsOpen: false,
     selectedTopic: null,
     isCurrentCardFlipped: false,
@@ -120,6 +126,14 @@ const createUIStore = () =>
       }
       set({ isCrystalTrialOpen: false });
     },
+    openGenerationProgress: () => {
+      const state = get();
+      if (state.isGenerationProgressOpen) return;
+      set({ isGenerationProgressOpen: true });
+      emitModalOpened('generation_progress', state.selectedTopic);
+    },
+    closeGenerationProgress: () => set({ isGenerationProgressOpen: false }),
+    setGenerationProgressOpen: (open) => set({ isGenerationProgressOpen: open }),
     openGlobalSettings: () => {
       if (get().isGlobalSettingsOpen) return;
       set({ isGlobalSettingsOpen: true });

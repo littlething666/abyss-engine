@@ -16,6 +16,12 @@ export {
   activeTopicGenerationLabel,
   activeTopicContentGenerationLabel,
 } from './activeTopicGenerationLabel';
+export {
+  activeSubjectGenerationStatus,
+} from './activeSubjectGenerationStatus';
+export type {
+  ActiveSubjectGenerationStatus,
+} from './activeSubjectGenerationStatus';
 
 export {
   canRetryJob,

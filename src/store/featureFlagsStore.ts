@@ -12,6 +12,8 @@ const STORAGE_KEY = 'abyss.feature-flags';
 export interface FeatureFlagsState {
   /** When true, the Pomodoro timer overlay is rendered in the scene HUD. */
   pomodoroVisible: boolean;
+  /** When true, bundled starter curricula are shown in manifest-driven UI surfaces. */
+  pregeneratedCurriculumsVisible: boolean;
   /** When true, the Ritual (Attunement) entry point is exposed in the Wisdom Altar header. */
   ritualVisible: boolean;
   /** Master gate for scene / feedback sound effects (not TTS). */
@@ -20,6 +22,7 @@ export interface FeatureFlagsState {
 
 export interface FeatureFlagsActions {
   setPomodoroVisible: (v: boolean) => void;
+  setPregeneratedCurriculumsVisible: (v: boolean) => void;
   setRitualVisible: (v: boolean) => void;
   setSfxEnabled: (v: boolean) => void;
   toggleSfxEnabled: () => void;
@@ -29,6 +32,7 @@ export type FeatureFlagsStore = FeatureFlagsState & FeatureFlagsActions;
 
 const DEFAULT_STATE: FeatureFlagsState = {
   pomodoroVisible: false,
+  pregeneratedCurriculumsVisible: false,
   ritualVisible: false,
   sfxEnabled: false,
 };
@@ -48,6 +52,10 @@ function readSnapshot(): FeatureFlagsState {
     return {
       pomodoroVisible:
         typeof parsed.pomodoroVisible === 'boolean' ? parsed.pomodoroVisible : DEFAULT_STATE.pomodoroVisible,
+      pregeneratedCurriculumsVisible:
+        typeof parsed.pregeneratedCurriculumsVisible === 'boolean'
+          ? parsed.pregeneratedCurriculumsVisible
+          : DEFAULT_STATE.pregeneratedCurriculumsVisible,
       ritualVisible:
         typeof parsed.ritualVisible === 'boolean' ? parsed.ritualVisible : DEFAULT_STATE.ritualVisible,
       sfxEnabled:
@@ -76,6 +84,8 @@ export const useFeatureFlagsStore = create<FeatureFlagsStore>((set, get) => {
     const current = get();
     const snapshot: FeatureFlagsState = {
       pomodoroVisible: patch.pomodoroVisible ?? current.pomodoroVisible,
+      pregeneratedCurriculumsVisible:
+        patch.pregeneratedCurriculumsVisible ?? current.pregeneratedCurriculumsVisible,
       ritualVisible: patch.ritualVisible ?? current.ritualVisible,
       sfxEnabled: patch.sfxEnabled ?? current.sfxEnabled,
     };
@@ -86,6 +96,7 @@ export const useFeatureFlagsStore = create<FeatureFlagsStore>((set, get) => {
   return {
     ...initial,
     setPomodoroVisible: (v) => persist({ pomodoroVisible: v }),
+    setPregeneratedCurriculumsVisible: (v) => persist({ pregeneratedCurriculumsVisible: v }),
     setRitualVisible: (v) => persist({ ritualVisible: v }),
     setSfxEnabled: (v) => persist({ sfxEnabled: v }),
     toggleSfxEnabled: () => persist({ sfxEnabled: !get().sfxEnabled }),

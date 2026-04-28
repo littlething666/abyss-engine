@@ -1,15 +1,22 @@
 import { logDeckIndexedDb } from './deckDb/deckDbDebugLog';
 import { pubSubClient } from './pubsub';
 import { ensureDeckSeeded } from './deckDb/deckSeed';
-import { deckDb, topicCompositeKey, type DeckSubjectRow } from './deckDb/deckDb';
+import { deckDb, topicCompositeKey, type DeckContentSource, type DeckSubjectRow } from './deckDb/deckDb';
 import type { IDeckContentWriter } from '../types/repository';
 import type { Card, Subject, SubjectGraph, TopicDetails } from '../types/core';
 
-async function upsertSubject(subject: Subject & { themeId?: string }): Promise<void> {
+async function upsertSubject(
+  subject: Subject & { themeId?: string; contentSource?: DeckContentSource },
+): Promise<void> {
   await ensureDeckSeeded();
   logDeckIndexedDb('write', { op: 'transaction:rw', stores: ['subjects', 'meta'], action: 'upsertSubject', subjectId: subject.id });
   await deckDb.transaction('rw', deckDb.subjects, deckDb.meta, async () => {
-    await deckDb.subjects.put(subject as DeckSubjectRow);
+    const existing = await deckDb.subjects.get(subject.id);
+    const row: DeckSubjectRow = {
+      ...(subject as Omit<DeckSubjectRow, 'contentSource'>),
+      contentSource: subject.contentSource ?? existing?.contentSource ?? 'generated',
+    };
+    await deckDb.subjects.put(row);
     const orderRow = await deckDb.meta.get('subjectIdsOrdered');
     const order = (orderRow?.value as string[] | undefined) ?? [];
     if (!order.includes(subject.id)) {

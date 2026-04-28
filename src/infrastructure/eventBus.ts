@@ -93,6 +93,14 @@ export type AppEventMap = {
       added: Array<{ topicId: string; prereqId: string; kind: 'filler-tier1' | 'filler-tier2' }>;
     };
   };
+  /** Emitted when a subject-generation pipeline terminates in a failed or aborted stage. */
+  'subjectGraph.generationFailed': {
+    subjectId: string;
+    subjectName: string;
+    pipelineId: string;
+    stage: 'topics' | 'edges';
+    error: string;
+  };
   /** Emitted when topic lattice or prerequisite wiring fails validation or parsing. */
   'subjectGraph.validationFailed': {
     subjectId: string;

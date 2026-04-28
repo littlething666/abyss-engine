@@ -15,6 +15,7 @@ import {
   getNexusCrystalGeometry,
 } from '../graphics/altar';
 import { CUBE_REFLECTION_EXCLUDED_LAYER } from '../constants/sceneLayers';
+import { MentorBubble } from './MentorBubble';
 
 /**
  * Visual size of the altar vs. unscaled design geometry: world scale = 1 / divisor.
@@ -38,10 +39,10 @@ const NEXUS_HALF_HEIGHT = 0.8;
  * Vertical center of the nexus so (platform top → crystal bottom) ≈ platform height:
  * centerY - NEXUS_HALF_HEIGHT = PLATFORM_TOP_Y + PLATFORM_HEIGHT
  */
-const NEXUS_CENTER_Y = PLATFORM_TOP_Y + PLATFORM_HEIGHT + NEXUS_HALF_HEIGHT;
+export const NEXUS_CENTER_Y = PLATFORM_TOP_Y + PLATFORM_HEIGHT + NEXUS_HALF_HEIGHT;
 
 /** Local-space bob; world amplitude = this × `ALTAR_SCALE` (scales down with a smaller altar). */
-const NEXUS_BOB_AMPLITUDE_LOCAL = 0.08;
+export const NEXUS_BOB_AMPLITUDE_LOCAL = 0.08;
 
 /** Fragment vertical bob in the same local space as `FRAGMENT_ORBITS` (scaled by `ALTAR_SCALE` in world). */
 const FRAGMENT_BOB_READY_LOCAL = 0.14;
@@ -231,6 +232,8 @@ export const WisdomAltar: React.FC = () => {
         >
           <primitive object={groundRing} attach="material" />
         </mesh>
+
+        <MentorBubble />
       </group>
     </group>
   );

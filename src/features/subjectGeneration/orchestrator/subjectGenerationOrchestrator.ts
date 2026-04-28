@@ -148,6 +148,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
         ok: false,
         error: latticeJob.error ?? 'Subject topic lattice generation failed',
         pipelineId,
+        stage: 'topics',
       };
     }
     if (!lattice) {
@@ -262,6 +263,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
         ok: false,
         error: edgesJob.error ?? 'Subject prerequisite wiring failed',
         pipelineId,
+        stage: 'edges',
       };
     }
     if (!lastValidatedGraph) {

@@ -61,7 +61,7 @@ export async function runExpansionJob(
   }
   const existingRegistry = buildExistingConceptRegistry(existingCards);
 
-  const manifest = await deckRepository.getManifest();
+  const manifest = await deckRepository.getManifest({ includePregeneratedCurriculums: true });
   const subjectRow = manifest.subjects.find((s) => s.id === subjectId);
   const contentStrategy = subjectRow?.metadata?.strategy?.content;
   const contentBrief = contentStrategy?.contentBrief?.trim() || undefined;

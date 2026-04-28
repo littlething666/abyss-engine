@@ -42,7 +42,7 @@ export async function resolveSubjectGraphRetryContextFromJob(
   const subjectId = job.subjectId;
   if (!subjectId) return null;
 
-  const manifest = await deckRepository.getManifest();
+  const manifest = await deckRepository.getManifest({ includePregeneratedCurriculums: true });
   const subject = manifest.subjects.find((s) => s.id === subjectId);
   const manifestChecklist =
     subject?.metadata && hasTopicName(subject.metadata.checklist)

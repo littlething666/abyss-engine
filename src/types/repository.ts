@@ -16,15 +16,21 @@ export interface Manifest {
   subjects: Subject[];
 }
 
+export type DeckContentSource = 'bundled' | 'generated';
+
+export interface ManifestOptions {
+  includePregeneratedCurriculums?: boolean;
+}
+
 export interface IDeckRepository {
-  getManifest(): Promise<Manifest>;
+  getManifest(options?: ManifestOptions): Promise<Manifest>;
   getSubjectGraph(subjectId: string): Promise<SubjectGraph>;
   getTopicDetails(subjectId: string, topicId: string): Promise<TopicDetails>;
   getTopicCards(subjectId: string, topicId: string): Promise<Card[]>;
 }
 
 export interface IDeckContentWriter {
-  upsertSubject(subject: Subject & { themeId?: string }): Promise<void>;
+  upsertSubject(subject: Subject & { themeId?: string; contentSource?: DeckContentSource }): Promise<void>;
   upsertGraph(graph: SubjectGraph): Promise<void>;
   upsertTopicDetails(details: TopicDetails): Promise<void>;
   upsertTopicCards(subjectId: string, topicId: string, cards: Card[]): Promise<void>;
