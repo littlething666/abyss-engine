@@ -39,6 +39,7 @@ import {
 } from '@/types/llmInference';
 import type { InferenceSurfaceId, LlmInferenceProviderId } from '@/types/llmInference';
 import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
+import { useMentorStore } from '@/features/mentor/mentorStore';
 
 const CURRICULUM_SURFACE_IDS = [
   'subjectGenerationTopics',
@@ -267,6 +268,8 @@ function PreferencesSection() {
   const setRitualVisible = useFeatureFlagsStore((s) => s.setRitualVisible);
   const setSfxEnabled = useFeatureFlagsStore((s) => s.setSfxEnabled);
   const tts = useInferenceTtsToggle();
+  const mentorTtsMuted = useMentorStore((s) => s.ttsMuted);
+  const setMentorTtsMuted = useMentorStore((s) => s.setTtsMuted);
 
   return (
     <section className={SECTION_SPACING}>
@@ -283,6 +286,19 @@ function PreferencesSection() {
             checked={tts.enableTts}
             onCheckedChange={() => tts.toggleTts()}
             aria-label="Enable text-to-speech"
+          />
+        </div>
+        <div className={ROW_CLASSNAME}>
+          <div className="min-w-0">
+            <span className="text-sm text-foreground">Mentor narration</span>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              Mute the witty mentor&apos;s voice. The global Text-to-speech master switch above must also be on.
+            </p>
+          </div>
+          <Switch
+            checked={!mentorTtsMuted}
+            onCheckedChange={(v) => setMentorTtsMuted(!v)}
+            aria-label="Mentor narration"
           />
         </div>
         <div className={ROW_CLASSNAME}>
