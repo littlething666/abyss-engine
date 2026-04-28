@@ -33,3 +33,4 @@ export type { EvaluateContext } from './dialogRuleEngine';
 export { useMentorSpeech } from './useMentorSpeech';
 export type { UseMentorSpeechResult } from './useMentorSpeech';
 export { bootstrapMentor, __resetMentorBootstrapForTests } from './mentorBootstrap';
+export { tryEnqueueBubbleClick } from './mentorBubbleClick';
