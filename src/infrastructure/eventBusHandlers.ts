@@ -21,6 +21,7 @@ import {
 } from '@/features/crystalTrial';
 import { useProgressionStore } from '@/features/progression/progressionStore';
 import { calculateLevelFromXP } from '@/features/progression/progressionUtils';
+import { handleMentorTrigger } from '@/features/mentor/mentorTriggers';
 import { pubSubClient } from './pubsub';
 import { toast } from '@/infrastructure/toast';
 
@@ -237,6 +238,10 @@ if (!g.__abyssEventBusHandlersRegistered) {
         activeExpansionJobs.delete(expansionKey);
       });
     }
+
+    // Mentor side-effect: forward level-up to the mentor rule engine. Cooldown
+    // and one-shot suppression are enforced by the engine + mentor store.
+    handleMentorTrigger('crystal.leveled', { from: e.from, to: e.to });
   });
 
   // Crystal Trial: background pre-generation triggered on positive XP gains
@@ -294,6 +299,26 @@ if (!g.__abyssEventBusHandlersRegistered) {
     // clearTrial for passed trials is handled by the modal's Level Up button.
   });
 
+  // Mentor side-effect: crystal-trial `awaiting_player` transition watcher.
+  // The store holds `trials: Record<topicRefKey, CrystalTrial>` so we diff
+  // each entry against the previous snapshot and only fire on a real
+  // transition (prev !== awaiting_player && next === awaiting_player). This
+  // avoids re-firing on unrelated state changes (cooldown counters, other
+  // trials). Registration sits inside the existing
+  // `__abyssEventBusHandlersRegistered` guard so it is set up exactly once.
+  useCrystalTrialStore.subscribe((next, prev) => {
+    const prevTrials = prev.trials;
+    const nextTrials = next.trials;
+    if (prevTrials === nextTrials) return;
+    for (const key of Object.keys(nextTrials)) {
+      const nextTrial = nextTrials[key];
+      if (!nextTrial || nextTrial.status !== 'awaiting_player') continue;
+      const prevTrial = prevTrials[key];
+      if (prevTrial && prevTrial.status === 'awaiting_player') continue;
+      handleMentorTrigger('crystal.trial.awaiting', { topic: nextTrial.topicId });
+    }
+  });
+
   // Card pool change detection: invalidate pre-generated trials
   pubSubClient.on('cards-updated', (msg) => {
     if (!msg.subjectId || !msg.topicId) {
@@ -344,6 +369,13 @@ if (!g.__abyssEventBusHandlersRegistered) {
       },
       { subjectId: e.subjectId, topicId: e.topicId, sessionId: e.sessionId },
     );
+
+    // Mentor side-effect: forward session completion to the mentor rule
+    // engine. Cooldown/one-shot suppression handled downstream.
+    handleMentorTrigger('session.completed', {
+      correctRate: e.correctRate,
+      totalAttempts: e.totalAttempts,
+    });
   });
 
   appEventBus.on('ritual:submitted', (e) => {
