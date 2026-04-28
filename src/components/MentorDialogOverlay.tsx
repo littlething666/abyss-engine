@@ -2,17 +2,28 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
+import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { telemetry } from '@/features/telemetry';
 import { useMentorStore } from '@/features/mentor/mentorStore';
+import type { MentorEffect, MentorMessage, MentorMood } from '@/features/mentor/mentorTypes';
 import { useMentorSpeech } from '@/features/mentor/useMentorSpeech';
 import { MENTOR_VOICE_ID } from '@/features/mentor/mentorVoice';
-import type { MentorEffect, MentorMessage } from '@/features/mentor/mentorTypes';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { cn } from '@/lib/utils';
 import { useUIStore } from '@/store/uiStore';
 
 const MENTOR_TYPE_CHARS_PER_SECOND = 60;
+
+const MOOD_RING: Record<MentorMood, string> = {
+  neutral: 'ring-muted-foreground',
+  cheer: 'ring-emerald-400',
+  tease: 'ring-amber-400',
+  concern: 'ring-rose-400',
+  celebrate: 'ring-violet-400',
+  hint: 'ring-sky-400',
+};
 
 function nowMs(): number {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -62,6 +73,7 @@ export function MentorDialogOverlay() {
   const openCurrentFromQueue = useMentorStore((s) => s.openCurrentFromQueue);
   const dismissCurrent = useMentorStore((s) => s.dismissCurrent);
   const markSeen = useMentorStore((s) => s.markSeen);
+  const setNarrationEnabled = useMentorStore((s) => s.setNarrationEnabled);
   const setPlayerName = useMentorStore((s) => s.setPlayerName);
   const isStudyPanelOpen = useUIStore((s) => s.isStudyPanelOpen);
 
@@ -255,6 +267,11 @@ export function MentorDialogOverlay() {
     handleAdvance('choice');
   }, [currentDialog, handleAdvance, nameDraft, setPlayerName]);
 
+  const handleAvatarToggleNarration = useCallback(() => {
+    const currentEnabled = useMentorStore.getState().narrationEnabled;
+    setNarrationEnabled(!currentEnabled);
+  }, [setNarrationEnabled]);
+
   if (!currentDialog || !currentMessage) return null;
   if (isStudyPanelOpen) return null;
 
@@ -263,6 +280,7 @@ export function MentorDialogOverlay() {
   const hasInteractiveControls =
     Boolean(currentMessage.input) ||
     (currentMessage.choices !== undefined && currentMessage.choices.length > 0);
+  const moodRingClass = MOOD_RING[currentMessage.mood ?? 'neutral'];
 
   return (
     <div
@@ -272,9 +290,24 @@ export function MentorDialogOverlay() {
     >
       <div className="pointer-events-auto w-full max-w-md rounded-xl border bg-background/95 px-4 py-3 shadow-lg backdrop-blur">
         <div className="flex items-start justify-between gap-2 pb-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Mentor{ttsActive ? ' · 🔊' : ''}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={handleAvatarToggleNarration}
+              aria-label={ttsActive ? 'Disable mentor narration' : 'Enable mentor narration'}
+              data-testid="mentor-dialog-avatar"
+            >
+              <Avatar size="sm" className={cn('ring-2', moodRingClass)}>
+                <AvatarImage src="/images/crystal.svg" alt="Mentor" />
+                <AvatarFallback>M</AvatarFallback>
+                {ttsActive ? <AvatarBadge className="animate-pulse" /> : null}
+              </Avatar>
+            </button>
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Mentor
+            </span>
+          </div>
           <button
             type="button"
             onClick={handleClose}

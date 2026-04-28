@@ -270,8 +270,8 @@ function PreferencesSection() {
   const setRitualVisible = useFeatureFlagsStore((s) => s.setRitualVisible);
   const setSfxEnabled = useFeatureFlagsStore((s) => s.setSfxEnabled);
   const tts = useInferenceTtsToggle();
-  const mentorTtsMuted = useMentorStore((s) => s.ttsMuted);
-  const setMentorTtsMuted = useMentorStore((s) => s.setTtsMuted);
+  const mentorNarrationEnabled = useMentorStore((s) => s.narrationEnabled);
+  const setMentorNarrationEnabled = useMentorStore((s) => s.setNarrationEnabled);
 
   return (
     <section className={SECTION_SPACING}>
@@ -279,27 +279,28 @@ function PreferencesSection() {
       <div className="pt-3 space-y-3">
         <div className={ROW_CLASSNAME}>
           <div className="min-w-0">
-            <span className="text-sm text-foreground">Text-to-speech</span>
+            <span className="text-sm text-foreground">Study narrator</span>
             <p className="text-xs text-muted-foreground pt-0.5">
-              Master switch for narration across all AI surfaces.
+              Controls narration for study-panel explain and formula read-aloud lines.
             </p>
           </div>
           <Switch
             checked={tts.enableTts}
             onCheckedChange={() => tts.toggleTts()}
-            aria-label="Enable text-to-speech"
+            aria-label="Enable study narrator"
           />
         </div>
         <div className={ROW_CLASSNAME}>
           <div className="min-w-0">
             <span className="text-sm text-foreground">Mentor narration</span>
             <p className="text-xs text-muted-foreground pt-0.5">
-              Mute the witty mentor&apos;s voice. The global Text-to-speech master switch above must also be on.
+              Toggle narration for mentor dialog lines. This is independent from the
+              study narrator.
             </p>
           </div>
           <Switch
-            checked={!mentorTtsMuted}
-            onCheckedChange={(v) => setMentorTtsMuted(!v)}
+            checked={mentorNarrationEnabled}
+            onCheckedChange={setMentorNarrationEnabled}
             aria-label="Mentor narration"
           />
         </div>

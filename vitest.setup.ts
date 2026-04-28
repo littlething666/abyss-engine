@@ -2,6 +2,76 @@ import 'fake-indexeddb/auto';
 
 import { vi } from 'vitest';
 
+if (typeof window === 'undefined') {
+  (globalThis as unknown as { localStorage: Storage }).localStorage = {
+    getItem: vi.fn(),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+    clear: vi.fn(),
+    key: vi.fn(),
+    length: 0,
+  } as unknown as Storage;
+}
+
+function isStorageLike(value: unknown): value is Storage {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<Storage>;
+  return (
+    typeof candidate.getItem === 'function'
+    && typeof candidate.setItem === 'function'
+    && typeof candidate.removeItem === 'function'
+    && typeof candidate.clear === 'function'
+    && typeof candidate.key === 'function'
+  );
+}
+
+function createInMemoryStorage(): Storage {
+  const map = new Map<string, string>();
+  return {
+    get length() {
+      return map.size;
+    },
+    clear: () => map.clear(),
+    getItem: (key) => (map.has(key) ? map.get(key) ?? null : null),
+    key: (index) => Array.from(map.keys())[index] ?? null,
+    removeItem: (key) => {
+      map.delete(key);
+    },
+    setItem: (key, value) => {
+      map.set(key, String(value));
+    },
+  };
+}
+
+(() => {
+  const fallbackStorage = createInMemoryStorage();
+  const needsFallback = !isStorageLike((globalThis as unknown as { localStorage?: Storage }).localStorage);
+  if (needsFallback) {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: fallbackStorage,
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  if (typeof window !== 'undefined') {
+    const hasWindowStorage = isStorageLike((window as unknown as { localStorage?: Storage }).localStorage);
+    if (!hasWindowStorage) {
+      Object.defineProperty(window, 'localStorage', {
+        value: fallbackStorage,
+        configurable: true,
+        writable: true,
+      });
+    } else if (typeof globalThis !== 'undefined' && (globalThis as unknown as { localStorage?: Storage }).localStorage !== window.localStorage) {
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: window.localStorage,
+        configurable: true,
+        writable: true,
+      });
+    }
+  }
+})();
+
 // Enables React `act()` in Vitest jsdom (see react.dev/link/wrap-tests-with-act).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;

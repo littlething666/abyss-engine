@@ -3,15 +3,6 @@ import * as React from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-// Mock the global TTS toggle hook so we can flip enableTts deterministically.
-let enableTtsValue = false;
-vi.mock('@/hooks/useInferenceTtsToggle', () => ({
-  useInferenceTtsToggle: () => ({
-    enableTts: enableTtsValue,
-    toggleTts: vi.fn(),
-  }),
-}));
-
 import {
   DEFAULT_EPHEMERAL_STATE,
   DEFAULT_PERSISTED_STATE,
@@ -116,7 +107,6 @@ function renderHook<T>(useHook: () => T): HookHandle<T> {
 // ---- tests -----------------------------------------------------------------
 
 beforeEach(() => {
-  enableTtsValue = false;
   useMentorStore.setState({
     ...DEFAULT_PERSISTED_STATE,
     ...DEFAULT_EPHEMERAL_STATE,
@@ -130,33 +120,42 @@ afterEach(() => {
 });
 
 describe('useMentorSpeech', () => {
-  it('enabled is false when the global TTS toggle is off', () => {
-    enableTtsValue = false;
-    useMentorStore.setState({ ttsMuted: false });
+  it('enabled is false when mentor narration is disabled', () => {
+    useMentorStore.setState({ narrationEnabled: false });
     const hook = renderHook(useMentorSpeech);
     expect(hook.current.enabled).toBe(false);
     hook.unmount();
   });
 
-  it('enabled is false when mentor mute is on, even with the global toggle on', () => {
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: true });
-    const hook = renderHook(useMentorSpeech);
-    expect(hook.current.enabled).toBe(false);
-    hook.unmount();
-  });
-
-  it('enabled is true when both gates are on', () => {
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: false });
+  it('enabled is true when mentor narration is enabled', () => {
+    useMentorStore.setState({ narrationEnabled: true });
     const hook = renderHook(useMentorSpeech);
     expect(hook.current.enabled).toBe(true);
     hook.unmount();
   });
 
+  it('enabled is false when narrator is disabled mid-utterance', () => {
+    useMentorStore.setState({ narrationEnabled: true });
+    const hook = renderHook(useMentorSpeech);
+
+    act(() => {
+      hook.current.speak('mid-sentence');
+    });
+    expect(cancelSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      useMentorStore.setState({ narrationEnabled: false });
+    });
+    hook.rerender();
+
+    expect(cancelSpy).toHaveBeenCalled();
+    expect(hook.current.enabled).toBe(false);
+    expect(hook.current.isSpeaking).toBe(false);
+    hook.unmount();
+  });
+
   it('speak is a no-op when disabled', () => {
-    enableTtsValue = false;
-    useMentorStore.setState({ ttsMuted: false });
+    useMentorStore.setState({ narrationEnabled: false });
     const hook = renderHook(useMentorSpeech);
 
     act(() => {
@@ -169,8 +168,7 @@ describe('useMentorSpeech', () => {
   });
 
   it('speak is a no-op when text is empty', () => {
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: false });
+    useMentorStore.setState({ narrationEnabled: true });
     const hook = renderHook(useMentorSpeech);
 
     act(() => {
@@ -182,8 +180,7 @@ describe('useMentorSpeech', () => {
   });
 
   it('speak hands off to window.speechSynthesis.speak when enabled', () => {
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: false });
+    useMentorStore.setState({ narrationEnabled: true });
     const hook = renderHook(useMentorSpeech);
 
     act(() => {
@@ -205,8 +202,7 @@ describe('useMentorSpeech', () => {
   });
 
   it('onerror also resets isSpeaking to false', () => {
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: false });
+    useMentorStore.setState({ narrationEnabled: true });
     const hook = renderHook(useMentorSpeech);
 
     act(() => {
@@ -223,8 +219,7 @@ describe('useMentorSpeech', () => {
   });
 
   it('cancel cancels in-flight speech and resets isSpeaking', () => {
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: false });
+    useMentorStore.setState({ narrationEnabled: true });
     const hook = renderHook(useMentorSpeech);
 
     act(() => {
@@ -244,8 +239,7 @@ describe('useMentorSpeech', () => {
   });
 
   it('cancel does NOT call window.speechSynthesis.cancel when no utterance is in flight', () => {
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: false });
+    useMentorStore.setState({ narrationEnabled: true });
     const hook = renderHook(useMentorSpeech);
 
     act(() => {
@@ -257,8 +251,7 @@ describe('useMentorSpeech', () => {
   });
 
   it('cancels any in-flight utterance on unmount', () => {
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: false });
+    useMentorStore.setState({ narrationEnabled: true });
     const hook = renderHook(useMentorSpeech);
 
     act(() => {
@@ -271,33 +264,9 @@ describe('useMentorSpeech', () => {
     expect(cancelSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels in-flight speech when the gate flips off mid-utterance', () => {
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: false });
-    const hook = renderHook(useMentorSpeech);
-
-    act(() => {
-      hook.current.speak('mid-sentence');
-    });
-    expect(cancelSpy).not.toHaveBeenCalled();
-
-    // Flip mentor mute on. Re-render so the hook observes the new gate value.
-    act(() => {
-      useMentorStore.setState({ ttsMuted: true });
-    });
-    hook.rerender();
-
-    expect(cancelSpy).toHaveBeenCalled();
-    expect(hook.current.enabled).toBe(false);
-    expect(hook.current.isSpeaking).toBe(false);
-
-    hook.unmount();
-  });
-
   it('speak is a silent no-op when window.speechSynthesis is unavailable', () => {
     uninstallSpeechSynthesis();
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: false });
+    useMentorStore.setState({ narrationEnabled: true });
 
     const hook = renderHook(useMentorSpeech);
 
@@ -315,8 +284,7 @@ describe('useMentorSpeech', () => {
   });
 
   it('returns a stable shape', () => {
-    enableTtsValue = true;
-    useMentorStore.setState({ ttsMuted: false });
+    useMentorStore.setState({ narrationEnabled: true });
     const hook = renderHook(useMentorSpeech);
     const result: UseMentorSpeechResult = hook.current;
     expect(typeof result.speak).toBe('function');

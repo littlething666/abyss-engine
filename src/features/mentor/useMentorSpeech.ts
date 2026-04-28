@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
 import { useMentorStore } from './mentorStore';
 
 export interface UseMentorSpeechResult {
@@ -17,19 +16,17 @@ export interface UseMentorSpeechResult {
 }
 
 /**
- * Web Speech API only mentor TTS hook (Q2). Gated on BOTH the global TTS
- * master toggle (`useInferenceTtsToggle.enableTts`) AND mentor mute
- * (`mentorStore.ttsMuted`).
+ * Web Speech API mentor-only TTS hook (Q2). Gated only on the mentor narration
+ * preference (`mentorStore.narrationEnabled`).
  *
  * Explicitly NOT used: provider-backed TTS, `getChatCompletionsRepositoryForSurface`,
  * `llmInferenceRegistry`. The mentor canned lines never round-trip an LLM.
  *
- * Cancels in-flight speech on unmount or when either gate flips off.
+ * Cancels in-flight speech on unmount or when mentor narration flips off.
  */
 export function useMentorSpeech(): UseMentorSpeechResult {
-  const { enableTts } = useInferenceTtsToggle();
-  const ttsMuted = useMentorStore((s) => s.ttsMuted);
-  const enabled = enableTts && !ttsMuted;
+  const narrationEnabled = useMentorStore((s) => s.narrationEnabled);
+  const enabled = narrationEnabled;
 
   const utteranceCountRef = useRef(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -71,7 +68,7 @@ export function useMentorSpeech(): UseMentorSpeechResult {
 
   // Cancel in-flight speech on unmount.
   useEffect(() => () => cancel(), [cancel]);
-  // Cancel when either gate flips off.
+  // Cancel when narration flips off.
   useEffect(() => {
     if (!enabled) cancel();
   }, [enabled, cancel]);

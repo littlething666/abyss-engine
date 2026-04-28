@@ -79,4 +79,46 @@ describe('MentorDialogOverlay', () => {
 
     root.unmount();
   });
+
+  it('toggles mentor narration when clicking the avatar', () => {
+    useMentorStore.setState({
+      ...DEFAULT_PERSISTED_STATE,
+      ...DEFAULT_EPHEMERAL_STATE,
+      currentDialog: {
+        id: 'active-mentor',
+        trigger: 'mentor.bubble.click',
+        priority: 80,
+        enqueuedAt: 1,
+        messages: [
+          {
+            id: 'm1',
+            text: 'Welcome back',
+            mood: 'neutral',
+          },
+        ],
+        source: 'canned',
+        voiceId: 'witty-sarcastic',
+      },
+      narrationEnabled: false,
+    });
+
+    const { root, container } = renderOverlay();
+    const avatar = container.querySelector('[data-testid="mentor-dialog-avatar"]');
+    const isNarrationEnabled = () => useMentorStore.getState().narrationEnabled;
+
+    expect(avatar).not.toBeNull();
+    expect(isNarrationEnabled()).toBe(false);
+
+    act(() => {
+      avatar?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(isNarrationEnabled()).toBe(true);
+
+    act(() => {
+      avatar?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(isNarrationEnabled()).toBe(false);
+
+    root.unmount();
+  });
 });

@@ -104,7 +104,7 @@ describe('migrateMentorState', () => {
       mentorLocale: 'en',
       playerName: null,
       seenTriggers: [],
-      ttsMuted: false,
+      narrationEnabled: true,
       cooldowns: {},
     });
   });
@@ -121,7 +121,7 @@ describe('migrateMentorState', () => {
       1,
     );
     expect(result.playerName).toBe('Sergio');
-    expect(result.ttsMuted).toBe(true);
+    expect(result.narrationEnabled).toBe(false);
     expect(result.seenTriggers).toEqual(['onboarding.welcome']);
     expect(result.cooldowns['crystal.leveled']).toBe(999);
     expect(result.firstSubjectGenerationEnqueuedAt).toBe(12345);

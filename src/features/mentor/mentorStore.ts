@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import type { DialogPlan, MentorTriggerId } from './mentorTypes';
 
 const STORAGE_KEY = 'abyss-mentor-v1';
-const STORAGE_VERSION = 1;
+const STORAGE_VERSION = 2;
 
 export interface VariantCursor {
   order: readonly number[];
@@ -15,7 +15,7 @@ export interface MentorPersistedState {
   playerName: string | null;
   mentorLocale: 'en';
   seenTriggers: MentorTriggerId[];
-  ttsMuted: boolean;
+  narrationEnabled: boolean;
   lastInteractionAt: number | null;
   cooldowns: Partial<Record<MentorTriggerId, number>>;
   firstSubjectGenerationEnqueuedAt: number | null;
@@ -29,7 +29,7 @@ export interface MentorEphemeralState {
 
 export interface MentorActions {
   setPlayerName: (name: string | null) => void;
-  setTtsMuted: (muted: boolean) => void;
+  setNarrationEnabled: (enabled: boolean) => void;
   enqueue: (plan: DialogPlan) => void;
   popHead: () => DialogPlan | null;
   peekHead: () => DialogPlan | null;
@@ -52,7 +52,7 @@ export const DEFAULT_PERSISTED_STATE: MentorPersistedState = {
   playerName: null,
   mentorLocale: 'en',
   seenTriggers: [],
-  ttsMuted: false,
+  narrationEnabled: true,
   lastInteractionAt: null,
   cooldowns: {},
   firstSubjectGenerationEnqueuedAt: null,
@@ -123,6 +123,10 @@ export function migrateMentorState(
   if (!persisted || typeof persisted !== 'object') return base;
   const p = persisted as Partial<MentorPersistedState>;
   if (fromVersion <= 1) {
+    const legacyNarrationEnabled =
+      typeof (p as { ttsMuted?: unknown }).ttsMuted === 'boolean'
+        ? !(p as { ttsMuted?: boolean }).ttsMuted
+        : base.narrationEnabled;
     return {
       playerName: typeof p.playerName === 'string' ? p.playerName : base.playerName,
       mentorLocale: 'en',
@@ -131,7 +135,8 @@ export function migrateMentorState(
             (t): t is MentorTriggerId => typeof t === 'string',
           )
         : base.seenTriggers,
-      ttsMuted: typeof p.ttsMuted === 'boolean' ? p.ttsMuted : base.ttsMuted,
+      narrationEnabled:
+        typeof p.narrationEnabled === 'boolean' ? p.narrationEnabled : legacyNarrationEnabled,
       lastInteractionAt:
         typeof p.lastInteractionAt === 'number' ? p.lastInteractionAt : null,
       cooldowns:
@@ -154,7 +159,7 @@ export const useMentorStore = create<MentorState>()(
       ...DEFAULT_EPHEMERAL_STATE,
 
       setPlayerName: (name) => set({ playerName: name }),
-      setTtsMuted: (muted) => set({ ttsMuted: muted }),
+      setNarrationEnabled: (enabled) => set({ narrationEnabled: enabled }),
 
       enqueue: (plan) => {
         set((state) => {
@@ -269,7 +274,7 @@ export const useMentorStore = create<MentorState>()(
         playerName: state.playerName,
         mentorLocale: state.mentorLocale,
         seenTriggers: state.seenTriggers,
-        ttsMuted: state.ttsMuted,
+        narrationEnabled: state.narrationEnabled,
         lastInteractionAt: state.lastInteractionAt,
         cooldowns: state.cooldowns,
         firstSubjectGenerationEnqueuedAt: state.firstSubjectGenerationEnqueuedAt,
