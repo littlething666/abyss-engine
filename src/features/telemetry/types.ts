@@ -19,6 +19,7 @@ export const TelemetryEventTypeSchema = z.enum([
   'crystal_trial_pregeneration_started',
   'crystal_trial_completed',
   'subject_graph_generated',
+  'subject_graph_generation_failed',
   'subject_graph_validation_failed',
   'mentor_dialog_shown',
   'mentor_dialog_skipped',
@@ -190,6 +191,17 @@ export const SubjectGraphGeneratedPayloadSchema = z.object({
 });
 export type SubjectGraphGeneratedPayload = z.infer<typeof SubjectGraphGeneratedPayloadSchema>;
 
+export const SubjectGraphGenerationFailedPayloadSchema = z.object({
+  subjectId: z.string(),
+  subjectName: z.string(),
+  pipelineId: z.string(),
+  stage: z.enum(['topics', 'edges']),
+  error: z.string(),
+});
+export type SubjectGraphGenerationFailedPayload = z.infer<
+  typeof SubjectGraphGenerationFailedPayloadSchema
+>;
+
 export const SubjectGraphValidationFailedPayloadSchema = z.object({
   subjectId: z.string(),
   stage: z.enum(['topics', 'edges']),
@@ -211,6 +223,9 @@ export const MentorTriggerIdSchema = z.enum([
   'session.completed',
   'crystal.leveled',
   'crystal.trial.awaiting',
+  'subject.generation.started',
+  'subject.generated',
+  'subject.generation.failed',
   'mentor.bubble.click',
 ]);
 export type MentorTriggerIdLiteral = z.infer<typeof MentorTriggerIdSchema>;
@@ -286,6 +301,7 @@ export const TelemetryEventMap: Record<TelemetryEventType, z.ZodSchema<unknown>>
   modal_opened: ModalOpenedPayloadSchema,
   performance_frame_time: PerformanceFrameTimePayloadSchema,
   subject_graph_generated: SubjectGraphGeneratedPayloadSchema,
+  subject_graph_generation_failed: SubjectGraphGenerationFailedPayloadSchema,
   subject_graph_validation_failed: SubjectGraphValidationFailedPayloadSchema,
   mentor_dialog_shown: MentorDialogShownPayloadSchema,
   mentor_dialog_skipped: MentorDialogSkippedPayloadSchema,

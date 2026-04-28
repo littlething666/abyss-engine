@@ -88,6 +88,20 @@ describe('handleMentorTrigger', () => {
     ).toBeUndefined();
   });
 
+  it('enqueues subject generation plans without adding unintended cooldowns', () => {
+    const plan = makePlan('subject.generation.started');
+    vi.mocked(evaluateTrigger).mockReturnValueOnce(plan);
+
+    handleMentorTrigger('subject.generation.started', { subjectName: 'Calculus' });
+
+    expect(useMentorStore.getState().dialogQueue[0]?.trigger).toBe(
+      'subject.generation.started',
+    );
+    expect(
+      useMentorStore.getState().cooldowns['subject.generation.started'],
+    ).toBeUndefined();
+  });
+
   it('does NOT record cooldown when the plan declares cooldownMs of 0', () => {
     const plan = makePlan('crystal.leveled', { cooldownMs: 0 });
     vi.mocked(evaluateTrigger).mockReturnValueOnce(plan);

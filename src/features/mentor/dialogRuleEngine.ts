@@ -112,6 +112,66 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
       },
     ],
   },
+  'subject.generation.started': {
+    trigger: 'subject.generation.started',
+    priority: 72,
+    isApplicable: (s) =>
+      s.currentDialog?.trigger !== 'subject.generation.started' &&
+      !s.dialogQueue.some((plan) => plan.trigger === 'subject.generation.started'),
+    buildMessages: (variantText) => [
+      {
+        id: 'subject-generation-started',
+        text: variantText,
+        mood: 'hint',
+        choices: [
+          {
+            id: 'open-generation-hud',
+            label: 'Open generation HUD',
+            effect: { kind: 'open_generation_hud' },
+          },
+          { id: 'later', label: 'Later', next: 'end' },
+        ],
+      },
+    ],
+  },
+  'subject.generated': {
+    trigger: 'subject.generated',
+    priority: 68,
+    buildMessages: (variantText) => [
+      {
+        id: 'subject-generated',
+        text: `${variantText} Open Discovery to unlock a topic.`,
+        mood: 'celebrate',
+        choices: [
+          {
+            id: 'open-discovery',
+            label: 'Open Discovery',
+            effect: { kind: 'open_discovery' },
+          },
+          { id: 'got-it', label: 'Got it', next: 'end' },
+        ],
+      },
+    ],
+  },
+  'subject.generation.failed': {
+    trigger: 'subject.generation.failed',
+    priority: 82,
+    buildMessages: (variantText) => [
+      {
+        id: 'subject-generation-failed',
+        text: variantText,
+        mood: 'concern',
+        choices: [
+          {
+            id: 'open-generation-hud',
+            label: 'Open generation HUD',
+            effect: { kind: 'open_generation_hud' },
+          },
+          { id: 'ack', label: 'Later', next: 'end' },
+        ],
+      },
+    ],
+  },
   'mentor.bubble.click': {
     trigger: 'mentor.bubble.click',
     priority: 90,
@@ -131,6 +191,9 @@ const VARIANT_COUNTS: Record<MentorTriggerId, number> = {
   'session.completed': 3,
   'crystal.leveled': 3,
   'crystal.trial.awaiting': 2,
+  'subject.generation.started': 3,
+  'subject.generated': 4,
+  'subject.generation.failed': 4,
   'mentor.bubble.click': 3,
 };
 

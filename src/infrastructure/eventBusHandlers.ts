@@ -21,7 +21,11 @@ import {
 } from '@/features/crystalTrial';
 import { useProgressionStore } from '@/features/progression/progressionStore';
 import { calculateLevelFromXP } from '@/features/progression/progressionUtils';
-import { handleMentorTrigger } from '@/features/mentor/mentorTriggers';
+import {
+  handleMentorTrigger,
+  MENTOR_VOICE_ID,
+  useMentorStore,
+} from '@/features/mentor';
 import { pubSubClient } from './pubsub';
 import { toast } from '@/infrastructure/toast';
 
@@ -37,6 +41,25 @@ async function resolveSubjectDisplayName(subjectId: string): Promise<string> {
   } catch {
     return subjectId;
   }
+}
+
+function recordFirstSubjectGenerationEnqueued(subjectId: string): void {
+  const mentor = useMentorStore.getState();
+  if (mentor.firstSubjectGenerationEnqueuedAt !== null) {
+    return;
+  }
+
+  const atMs = Date.now();
+  mentor.markFirstSubjectGenerationEnqueued(atMs);
+  telemetry.log(
+    'mentor_first_subject_generation_enqueued',
+    {
+      triggerId: 'onboarding.first_subject',
+      source: 'canned',
+      voiceId: MENTOR_VOICE_ID,
+    },
+    { subjectId },
+  );
 }
 
 function assertStudyPanelHistoryContext(
@@ -138,13 +161,23 @@ if (!g.__abyssEventBusHandlersRegistered) {
   });
 
   appEventBus.on('subject:generation-pipeline', (e) => {
+    const subjectName = e.checklist.topicName.trim() || e.subjectId;
+    recordFirstSubjectGenerationEnqueued(e.subjectId);
+    handleMentorTrigger('subject.generation.started', { subjectName });
+
     const stageBindings = resolveSubjectGenerationStageBindings();
     const orchestrator = createSubjectGenerationOrchestrator();
     void orchestrator
       .execute({ subjectId: e.subjectId, checklist: e.checklist }, { stageBindings, writer: deckWriter })
       .then((result) => {
         if (result.ok) return;
-        toast.error(result.error);
+        appEventBus.emit('subjectGraph.generationFailed', {
+          subjectId: e.subjectId,
+          subjectName,
+          pipelineId: result.pipelineId,
+          stage: result.stage,
+          error: result.error,
+        });
       });
   });
 
@@ -152,6 +185,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
     void (async () => {
       const subjectName = await resolveSubjectDisplayName(e.subjectId);
       toast.success(`Curriculum generated: ${subjectName}`);
+      handleMentorTrigger('subject.generated', { subjectName });
     })();
 
     telemetry.log(
@@ -171,6 +205,29 @@ if (!g.__abyssEventBusHandlersRegistered) {
               prereqEdgesCorrection: e.prereqEdgesCorrection,
             }
           : {}),
+      },
+      { subjectId: e.subjectId },
+    );
+  });
+
+  appEventBus.on('subjectGraph.generationFailed', (e) => {
+    void (async () => {
+      toast.error(`Curriculum generation needs attention: ${e.subjectName}`);
+      handleMentorTrigger('subject.generation.failed', {
+        subjectName: e.subjectName,
+        stage: e.stage,
+        pipelineId: e.pipelineId,
+      });
+    })();
+
+    telemetry.log(
+      'subject_graph_generation_failed',
+      {
+        subjectId: e.subjectId,
+        subjectName: e.subjectName,
+        pipelineId: e.pipelineId,
+        stage: e.stage,
+        error: e.error,
       },
       { subjectId: e.subjectId },
     );

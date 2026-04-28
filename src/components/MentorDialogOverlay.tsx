@@ -37,6 +37,11 @@ function applyEffect(effect: MentorEffect | undefined): void {
       }
       return;
     }
+    case 'open_generation_hud': {
+      mentor.dismissCurrent();
+      ui.openGenerationProgress();
+      return;
+    }
     case 'dismiss': {
       mentor.dismissCurrent();
       return;
@@ -58,6 +63,7 @@ export function MentorDialogOverlay() {
   const dismissCurrent = useMentorStore((s) => s.dismissCurrent);
   const markSeen = useMentorStore((s) => s.markSeen);
   const setPlayerName = useMentorStore((s) => s.setPlayerName);
+  const isStudyPanelOpen = useUIStore((s) => s.isStudyPanelOpen);
 
   const { speak, cancel, enabled: ttsActive } = useMentorSpeech();
   const reducedMotion = useReducedMotion();
@@ -66,14 +72,15 @@ export function MentorDialogOverlay() {
   // pop the head. This is what makes mentor.bubble.click while the overlay is
   // closed re-open the queued head per the plan.
   useEffect(() => {
-    if (!currentDialog && queueLen > 0) {
+    if (!isStudyPanelOpen && !currentDialog && queueLen > 0) {
       openCurrentFromQueue();
     }
-  }, [currentDialog, queueLen, openCurrentFromQueue]);
+  }, [currentDialog, isStudyPanelOpen, queueLen, openCurrentFromQueue]);
 
   // Tracks when the active dialog was first shown so completion telemetry can
   // report durationMs. Reset alongside other per-plan state below.
   const startedAtRef = useRef<number | null>(null);
+  const revealedCharsRef = useRef(0);
 
   // Mark seen + telemetry once per dialog open. Note: oneShot suppression in
   // the rule engine ALSO checks seenTriggers, so this is what locks out future
@@ -99,6 +106,7 @@ export function MentorDialogOverlay() {
   useEffect(() => {
     setMessageIndex(0);
     setRevealedChars(0);
+    revealedCharsRef.current = 0;
     setNameDraft('');
   }, [currentDialog?.id]);
 
@@ -106,19 +114,35 @@ export function MentorDialogOverlay() {
   const totalChars = currentMessage?.text.length ?? 0;
   const isFullyRevealed = revealedChars >= totalChars;
 
+  useEffect(() => {
+    revealedCharsRef.current = revealedChars;
+  }, [revealedChars]);
+
+  useEffect(() => {
+    setRevealedChars(0);
+    revealedCharsRef.current = 0;
+  }, [currentMessage?.id]);
+
   // Typewriter reveal — under reduced-motion, jump straight to full text.
   useEffect(() => {
     if (!currentMessage) return;
     if (reducedMotion) {
       setRevealedChars(totalChars);
+      revealedCharsRef.current = totalChars;
       return;
     }
-    setRevealedChars(0);
+    if (isStudyPanelOpen) return;
+    const initialChars = revealedCharsRef.current;
+    if (initialChars >= totalChars) return;
     const startedAt = performance.now();
     let raf = 0;
     const tick = (t: number) => {
       const elapsedSec = (t - startedAt) / 1000;
-      const target = Math.min(totalChars, Math.floor(elapsedSec * MENTOR_TYPE_CHARS_PER_SECOND));
+      const target = Math.min(
+        totalChars,
+        initialChars + Math.floor(elapsedSec * MENTOR_TYPE_CHARS_PER_SECOND),
+      );
+      revealedCharsRef.current = target;
       setRevealedChars(target);
       if (target < totalChars) {
         raf = window.requestAnimationFrame(tick);
@@ -126,16 +150,20 @@ export function MentorDialogOverlay() {
     };
     raf = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(raf);
-  }, [currentMessage, totalChars, reducedMotion]);
+  }, [currentMessage, totalChars, reducedMotion, isStudyPanelOpen]);
 
   // Speak each message once on entry. Web Speech API is non-incremental for
   // canned mentor lines (no streaming), so we feed the full text and rely on
   // the hook to cancel on unmount / when gates flip off.
   useEffect(() => {
     if (!currentMessage) return;
+    if (isStudyPanelOpen) {
+      cancel();
+      return;
+    }
     speak(currentMessage.text);
     return () => cancel();
-  }, [currentMessage, speak, cancel]);
+  }, [currentMessage, isStudyPanelOpen, speak, cancel]);
 
   const handleAdvance = useCallback(
     (outcome: 'auto-advance' | 'choice' | 'closed') => {
@@ -164,14 +192,14 @@ export function MentorDialogOverlay() {
 
   // Auto-advance after `autoAdvanceMs` once fully revealed.
   useEffect(() => {
-    if (!currentMessage || !isFullyRevealed) return;
+    if (!currentMessage || !isFullyRevealed || isStudyPanelOpen) return;
     const ms = currentMessage.autoAdvanceMs;
     if (typeof ms !== 'number' || ms <= 0) return;
     const timer = window.setTimeout(() => {
       handleAdvance('auto-advance');
     }, ms);
     return () => window.clearTimeout(timer);
-  }, [currentMessage, isFullyRevealed, handleAdvance]);
+  }, [currentMessage, isFullyRevealed, isStudyPanelOpen, handleAdvance]);
 
   const handleSkipReveal = useCallback(() => {
     if (isFullyRevealed || !currentMessage || !currentDialog) return;
@@ -228,6 +256,7 @@ export function MentorDialogOverlay() {
   }, [currentDialog, handleAdvance, nameDraft, setPlayerName]);
 
   if (!currentDialog || !currentMessage) return null;
+  if (isStudyPanelOpen) return null;
 
   const visibleText = currentMessage.text.slice(0, revealedChars);
   const showsTypewriter = !reducedMotion && !isFullyRevealed;

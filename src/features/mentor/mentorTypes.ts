@@ -6,6 +6,9 @@ export const MENTOR_TRIGGER_IDS = [
   'session.completed',
   'crystal.leveled',
   'crystal.trial.awaiting',
+  'subject.generation.started',
+  'subject.generated',
+  'subject.generation.failed',
   'mentor.bubble.click',
 ] as const;
 
@@ -21,6 +24,7 @@ export type MentorMood =
 
 export type MentorEffect =
   | { kind: 'open_discovery' }
+  | { kind: 'open_generation_hud' }
   | { kind: 'dismiss' };
 
 export interface MentorChoice {
@@ -54,6 +58,9 @@ export interface DialogPlan {
 
 export interface MentorTriggerPayload {
   topic?: string;
+  subjectName?: string;
+  stage?: 'topics' | 'edges';
+  pipelineId?: string;
   from?: number;
   to?: number;
   correctRate?: number;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ListTree, RotateCcw } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +26,7 @@ import {
 } from '@/features/contentGeneration';
 import type { ContentGenerationJob, ContentGenerationJobStatus } from '@/types/contentGeneration';
 import type { GeneratedCardQualityReport, GeneratedCardValidationFailure } from '@/types/contentQuality';
+import { useUIStore } from '@/store/uiStore';
 
 function isJobActive(status: ContentGenerationJobStatus): boolean {
   return (
@@ -73,6 +74,42 @@ function terminalBadgeVariant(
   if (status === 'aborted') return 'destructive';
   if (status === 'completed') return 'outline';
   return 'default';
+}
+
+function jobSummaryLabel(job: ContentGenerationJob): string {
+  if (job.kind === 'subject-graph-topics' && isJobActive(job.status)) {
+    return 'Drafting topic lattice';
+  }
+  if (job.kind === 'subject-graph-edges' && isJobActive(job.status)) {
+    return 'Wiring prerequisites';
+  }
+  if (
+    (job.kind === 'subject-graph-topics' || job.kind === 'subject-graph-edges') &&
+    (job.status === 'failed' || job.status === 'aborted')
+  ) {
+    return 'Subject generation needs attention';
+  }
+  return job.label;
+}
+
+function pipelineSummaryLabel(jobs: ContentGenerationJob[]): string {
+  const latestJob = [...jobs].sort((a, b) => b.createdAt - a.createdAt)[0];
+  if (!latestJob) {
+    return 'In progress';
+  }
+  if (latestJob.kind === 'subject-graph-topics' && isJobActive(latestJob.status)) {
+    return 'Drafting topic lattice';
+  }
+  if (latestJob.kind === 'subject-graph-edges' && isJobActive(latestJob.status)) {
+    return 'Wiring prerequisites';
+  }
+  if (
+    (latestJob.kind === 'subject-graph-topics' || latestJob.kind === 'subject-graph-edges') &&
+    (latestJob.status === 'failed' || latestJob.status === 'aborted')
+  ) {
+    return 'Subject generation needs attention';
+  }
+  return latestJob.status === 'completed' ? 'Completed' : 'In progress';
 }
 
 function isValidationFailureArray(value: unknown): value is GeneratedCardValidationFailure[] {
@@ -188,7 +225,7 @@ function JobRowSummary({ job }: { job: ContentGenerationJob }) {
       <Badge variant={busy ? 'default' : terminalBadgeVariant(job.status)}>
         {statusBadgeLabel(job.status)}
       </Badge>
-      <span className="text-foreground text-xs font-medium">{job.label}</span>
+      <span className="text-foreground text-xs font-medium">{jobSummaryLabel(job)}</span>
     </div>
   );
 }
@@ -197,18 +234,26 @@ function JobRowSummary({ job }: { job: ContentGenerationJob }) {
  * Compact scene HUD for LLM content generation; opens a read-only dialog with a unified job list (live + history).
  */
 export function GenerationProgressHud() {
-  const [open, setOpen] = useState(false);
   const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const jobs = useContentGenerationStore((s) => s.jobs);
   const pipelines = useContentGenerationStore((s) => s.pipelines);
   const abortJob = useContentGenerationStore((s) => s.abortJob);
   const abortPipeline = useContentGenerationStore((s) => s.abortPipeline);
   const clearCompletedJobs = useContentGenerationStore((s) => s.clearCompletedJobs);
+  const open = useUIStore((s) => s.isGenerationProgressOpen);
+  const openGenerationProgress = useUIStore((s) => s.openGenerationProgress);
+  const setGenerationProgressOpen = useUIStore((s) => s.setGenerationProgressOpen);
 
   const handleOpenChange = useCallback((next: boolean) => {
-    setOpen(next);
+    setGenerationProgressOpen(next);
     if (!next) setRetryingIds(new Set());
-  }, []);
+  }, [setGenerationProgressOpen]);
+
+  useEffect(() => {
+    if (!open) {
+      setRetryingIds(new Set());
+    }
+  }, [open]);
 
   const markRetrying = useCallback((id: string) => {
     setRetryingIds((prev) => new Set(prev).add(id));
@@ -271,7 +316,7 @@ export function GenerationProgressHud() {
           variant="ghost"
           size="icon-xs"
           className={isBusy ? 'motion-safe:animate-pulse' : undefined}
-          onClick={() => handleOpenChange(true)}
+          onClick={openGenerationProgress}
           aria-label="Open background LLM content generation"
           title="Open background LLM content generation"
         >
@@ -316,7 +361,7 @@ export function GenerationProgressHud() {
                           <div className="min-w-0">
                             <p className="text-foreground text-xs font-semibold">{meta?.label ?? pid}</p>
                             <p className="text-muted-foreground text-[11px]">
-                              Pipeline: {agg === 'active' ? 'In progress' : agg}
+                              Pipeline: {agg === 'active' ? pipelineSummaryLabel(groupJobs) : agg}
                             </p>
                           </div>
                           <Button type="button" variant="outline" size="sm" onClick={() => abortPipeline(pid)}>
@@ -402,7 +447,7 @@ export function GenerationProgressHud() {
                               {statusBadgeLabel(j.status)}
                             </Badge>
                           </span>
-                          {j.label}
+                          {jobSummaryLabel(j)}
                           {j.finishedAt ? (
                             <span className="text-muted-foreground ml-2 text-xs font-normal">
                               {new Date(j.finishedAt).toLocaleString()}

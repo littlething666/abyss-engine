@@ -35,7 +35,8 @@ Rules:
 - `miniGameAffordances` must contain anchors that can directly become category-sort, sequence-build, or connection-web cards. Provide 1-2 sets per mini-game type.
 - Define notation and conventions once, then use them consistently.
 - Avoid false-premise questions and unsourced historical or implementation claims.
-- Prefer plain text formulas. If using LaTeX commands inside JSON strings, escape backslashes as `\\`.
+- Use ASCII-only JSON string content. Do not emit Unicode math or technical symbols such as π, ω, ∠, ·, ×, ÷, ≤, ≥, ≈, →, or ∑.
+- Express symbols and formulas with LaTeX commands instead, escaping backslashes for JSON strings. Examples: `\\pi`, `\\omega`, `\\angle ABC`, `a \\cdot b`, `a \\times b`, `x \\leq y`, `\\sum_{i=1}^{n} i`.
 
 Context:
 

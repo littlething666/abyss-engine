@@ -56,6 +56,67 @@ describe('evaluateTrigger', () => {
     expect(evaluateTrigger('mentor.bubble.click', {}, { rng })).not.toBeNull();
   });
 
+  it('interpolates subject generation payloads into generated lines', () => {
+    const identityRng = () => 0.99;
+    const plan = evaluateTrigger(
+      'subject.generated',
+      { subjectName: 'Topology' },
+      { rng: identityRng },
+    );
+
+    expect(plan).not.toBeNull();
+    expect(plan!.messages[0]?.text).toContain('Topology');
+    expect(plan!.messages[0]?.mood).toBe('celebrate');
+  });
+
+  it('adds a discovery-modal action to subject generation success messages', () => {
+    const plan = evaluateTrigger('subject.generated', { subjectName: 'Topology' }, { rng: () => 0.99 });
+
+    expect(plan).not.toBeNull();
+    expect(plan!.messages[0]?.choices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'open-discovery', effect: { kind: 'open_discovery' } }),
+      ]),
+    );
+  });
+
+  it('suppresses duplicate subject.generation.started chatter while one is current', () => {
+    useMentorStore.setState({
+      currentDialog: {
+        id: 'current-start',
+        trigger: 'subject.generation.started',
+        priority: 72,
+        enqueuedAt: 1,
+        messages: [{ id: 'm1', text: 'Generating...', mood: 'hint' }],
+        source: 'canned',
+        voiceId: 'witty-sarcastic',
+      },
+    });
+
+    expect(
+      evaluateTrigger('subject.generation.started', { subjectName: 'Calculus' }, { rng }),
+    ).toBeNull();
+  });
+
+  it('adds a visible generation HUD choice to failed subject-generation lines', () => {
+    const identityRng = () => 0.99;
+    const plan = evaluateTrigger(
+      'subject.generation.failed',
+      { subjectName: 'Calculus' },
+      { rng: identityRng },
+    );
+
+    expect(plan).not.toBeNull();
+    expect(plan!.messages[0]?.choices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'open-generation-hud',
+          effect: { kind: 'open_generation_hud' },
+        }),
+      ]),
+    );
+  });
+
   it('uses the player name when set', () => {
     useMentorStore.setState({ playerName: 'Sergio' });
     // Fisher-Yates with rng()->0.99 leaves the order as the identity

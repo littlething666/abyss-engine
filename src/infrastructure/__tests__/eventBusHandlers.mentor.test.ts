@@ -1,5 +1,51 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { busApi, mentorApi, orchestratorApi, toastApi, telemetryApi, deckApi } =
+  vi.hoisted(() => {
+    const handlers = new Map<string, Array<(payload: unknown) => void>>();
+    const mentorState = {
+      firstSubjectGenerationEnqueuedAt: null as number | null,
+      markFirstSubjectGenerationEnqueued: vi.fn(),
+    };
+    mentorState.markFirstSubjectGenerationEnqueued.mockImplementation((atMs: number) => {
+      mentorState.firstSubjectGenerationEnqueuedAt = atMs;
+    });
+
+    return {
+      busApi: {
+        handlers,
+        on: vi.fn((event: string, handler: (payload: unknown) => void) => {
+          const existing = handlers.get(event) ?? [];
+          existing.push(handler);
+          handlers.set(event, existing);
+          return vi.fn();
+        }),
+        emit: vi.fn((event: string, payload: unknown) => {
+          for (const handler of handlers.get(event) ?? []) {
+            handler(payload);
+          }
+        }),
+      },
+      mentorApi: {
+        handleMentorTrigger: vi.fn(),
+        state: mentorState,
+      },
+      orchestratorApi: {
+        execute: vi.fn().mockResolvedValue({ ok: true }),
+      },
+      toastApi: {
+        error: vi.fn(),
+        success: vi.fn(),
+      },
+      telemetryApi: {
+        log: vi.fn(),
+      },
+      deckApi: {
+        getManifest: vi.fn().mockResolvedValue({ subjects: [] }),
+      },
+    };
+  });
+
 // ---- Heavy-collaborator mocks ---------------------------------------------
 //
 // eventBusHandlers.ts imports a deep tree of LLM, repository and pipeline
@@ -9,13 +55,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // all out and only let the real `useCrystalTrialStore` and our
 // `handleMentorTrigger` spy run.
 
-vi.mock('@/features/mentor/mentorTriggers', () => ({
-  handleMentorTrigger: vi.fn(),
+vi.mock('@/features/mentor', () => ({
+  handleMentorTrigger: mentorApi.handleMentorTrigger,
+  MENTOR_VOICE_ID: 'witty-sarcastic',
+  useMentorStore: {
+    getState: () => mentorApi.state,
+  },
 }));
 
 vi.mock('@/infrastructure/di', () => ({
   deckRepository: {
-    getManifest: vi.fn().mockResolvedValue({ subjects: [] }),
+    getManifest: deckApi.getManifest,
   },
   deckWriter: {},
   chatCompletionsRepository: {},
@@ -42,7 +92,7 @@ vi.mock(
 
 vi.mock('@/features/subjectGeneration', () => ({
   createSubjectGenerationOrchestrator: vi.fn(() => ({
-    execute: vi.fn().mockResolvedValue({ ok: true }),
+    execute: orchestratorApi.execute,
   })),
   resolveSubjectGenerationStageBindings: vi.fn(() => ({})),
 }));
@@ -79,11 +129,11 @@ vi.mock('@/store/crystalContentCelebrationStore', () => ({
 }));
 
 vi.mock('@/features/telemetry', () => ({
-  telemetry: { log: vi.fn() },
+  telemetry: telemetryApi,
 }));
 
 vi.mock('@/infrastructure/toast', () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
+  toast: toastApi,
 }));
 
 vi.mock('../pubsub', () => ({
@@ -91,12 +141,12 @@ vi.mock('../pubsub', () => ({
 }));
 
 vi.mock('../eventBus', () => ({
-  appEventBus: { on: vi.fn(), emit: vi.fn(), off: vi.fn() },
+  appEventBus: { on: busApi.on, emit: busApi.emit, off: vi.fn() },
 }));
 
 // ---- Real imports under test ----------------------------------------------
 
-import { handleMentorTrigger } from '@/features/mentor/mentorTriggers';
+import { handleMentorTrigger } from '@/features/mentor';
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 import type { CrystalTrial } from '@/types/crystalTrial';
 
@@ -135,8 +185,23 @@ beforeEach(() => {
     cooldownCardsReviewed: {},
     cooldownStartedAt: {},
   });
+  mentorApi.state.firstSubjectGenerationEnqueuedAt = null;
+  mentorApi.state.markFirstSubjectGenerationEnqueued.mockClear();
+  orchestratorApi.execute.mockReset();
+  orchestratorApi.execute.mockResolvedValue({ ok: true });
+  deckApi.getManifest.mockReset();
+  deckApi.getManifest.mockResolvedValue({ subjects: [] });
+  toastApi.error.mockReset();
+  toastApi.success.mockReset();
+  telemetryApi.log.mockReset();
+  busApi.emit.mockClear();
   handleMentorTriggerSpy.mockReset();
 });
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 describe('eventBusHandlers \u2014 crystal-trial awaiting_player watcher', () => {
   it('fires crystal.trial.awaiting when a trial transitions INTO awaiting_player', () => {
@@ -268,6 +333,85 @@ describe('eventBusHandlers \u2014 crystal-trial awaiting_player watcher', () => 
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith('crystal.trial.awaiting', {
       topic: 'derivatives',
+    });
+  });
+});
+
+describe('eventBusHandlers — subject generation mentor wiring', () => {
+  it('fires the start mentor trigger and records the first subject generation enqueue', async () => {
+    busApi.emit('subject:generation-pipeline', {
+      subjectId: 'calculus',
+      checklist: { topicName: 'Calculus' },
+    });
+    await flushMicrotasks();
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject.generation.started', {
+      subjectName: 'Calculus',
+    });
+    expect(mentorApi.state.markFirstSubjectGenerationEnqueued).toHaveBeenCalledTimes(1);
+    expect(telemetryApi.log).toHaveBeenCalledWith(
+      'mentor_first_subject_generation_enqueued',
+      expect.objectContaining({
+        triggerId: 'onboarding.first_subject',
+        voiceId: 'witty-sarcastic',
+      }),
+      { subjectId: 'calculus' },
+    );
+  });
+
+  it('routes failed subject generation to a generic toast and mentor failure trigger', async () => {
+    orchestratorApi.execute.mockResolvedValueOnce({
+      ok: false,
+      error: 'edges failed',
+      pipelineId: 'pipeline-1',
+      stage: 'edges',
+    });
+
+    busApi.emit('subject:generation-pipeline', {
+      subjectId: 'calculus',
+      checklist: { topicName: 'Calculus' },
+    });
+    await flushMicrotasks();
+
+    expect(toastApi.error).toHaveBeenCalledWith(
+      'Curriculum generation needs attention: Calculus',
+    );
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject.generation.failed', {
+      subjectName: 'Calculus',
+      stage: 'edges',
+      pipelineId: 'pipeline-1',
+    });
+    expect(telemetryApi.log).toHaveBeenCalledWith(
+      'subject_graph_generation_failed',
+      expect.objectContaining({
+        subjectId: 'calculus',
+        subjectName: 'Calculus',
+        pipelineId: 'pipeline-1',
+        stage: 'edges',
+        error: 'edges failed',
+      }),
+      { subjectId: 'calculus' },
+    );
+  });
+
+  it('routes subjectGraph.generated through success toast and mentor completion trigger', async () => {
+    deckApi.getManifest.mockResolvedValueOnce({
+      subjects: [{ id: 'calculus', name: 'Calculus' }],
+    });
+
+    busApi.emit('subjectGraph.generated', {
+      subjectId: 'calculus',
+      boundModel: 'edges-model',
+      stageADurationMs: 100,
+      stageBDurationMs: 200,
+      retryCount: 0,
+      lattice: { topics: [] },
+    });
+    await flushMicrotasks();
+
+    expect(toastApi.success).toHaveBeenCalledWith('Curriculum generated: Calculus');
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject.generated', {
+      subjectName: 'Calculus',
     });
   });
 });

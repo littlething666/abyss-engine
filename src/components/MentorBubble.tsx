@@ -4,7 +4,16 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
 import { Billboard } from '@react-three/drei/webgpu';
-import { tryEnqueueBubbleClick, useMentorStore, type MentorMood } from '../features/mentor';
+import {
+  activeSubjectGenerationStatus,
+  useContentGenerationStore,
+} from '@/features/contentGeneration';
+import { useShallow } from 'zustand/react/shallow';
+import {
+  tryEnqueueBubbleClick,
+  useMentorStore,
+  type MentorMood,
+} from '../features/mentor';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { NEXUS_BOB_AMPLITUDE_LOCAL, NEXUS_CENTER_Y } from './WisdomAltar';
 
@@ -12,12 +21,18 @@ const BUBBLE_VERTICAL_OFFSET_LOCAL = 1.25;
 const DISC_RADIUS_LOCAL = 0.22;
 const RING_INNER_LOCAL = 0.24;
 const RING_OUTER_LOCAL = 0.30;
+const PIP_RADIUS_LOCAL = 0.048;
+const PIP_SPACING_LOCAL = 0.12;
+const PIP_Y_LOCAL = -0.015;
 const PULSE_FREQUENCY_HZ = 1.4;
 const PULSE_AMPLITUDE = 0.07;
+const ALERT_PULSE_AMPLITUDE = 0.11;
 const NEUTRAL_DISC_OPACITY = 0.7;
 const NEUTRAL_RING_OPACITY = 0.55;
 const ACTIVE_DISC_OPACITY = 0.92;
 const ACTIVE_RING_OPACITY = 0.95;
+const ACTIVE_PIP_OPACITY = 0.95;
+const INACTIVE_PIP_OPACITY = 0.12;
 
 const MOOD_COLOR: Record<MentorMood, string> = {
   neutral: '#9bc1ff',
@@ -31,6 +46,7 @@ const MOOD_COLOR: Record<MentorMood, string> = {
 // Module-static — matches WisdomAltar's `groundRingGeometry` pattern.
 const discGeometry = new THREE.CircleGeometry(DISC_RADIUS_LOCAL, 32);
 const ringGeometry = new THREE.RingGeometry(RING_INNER_LOCAL, RING_OUTER_LOCAL, 32);
+const pipGeometry = new THREE.CircleGeometry(PIP_RADIUS_LOCAL, 24);
 
 /**
  * Floating mentor bubble — small WebGPU-safe billboard above the nexus that
@@ -47,11 +63,27 @@ export const MentorBubble: React.FC = () => {
 
   const mood = useMentorStore((s) => {
     const head = s.currentDialog ?? s.dialogQueue[0] ?? null;
-    return head?.messages[0]?.mood ?? 'neutral';
+    return head?.messages[0]?.mood ?? null;
   });
-  const isActive = useMentorStore(
+  const hasMentorActivity = useMentorStore(
     (s) => s.currentDialog !== null || s.dialogQueue.length > 0,
   );
+  const subjectGeneration = useContentGenerationStore(useShallow(activeSubjectGenerationStatus));
+  const generationMood: MentorMood =
+    subjectGeneration?.phase === 'failed'
+      ? 'concern'
+      : subjectGeneration
+        ? 'hint'
+        : 'neutral';
+  const resolvedMood = mood ?? generationMood;
+  const isActive = hasMentorActivity || subjectGeneration !== null;
+  const litPipCount =
+    subjectGeneration?.phase === 'edges' || subjectGeneration?.phase === 'failed'
+      ? 2
+      : subjectGeneration?.phase === 'topics'
+        ? 1
+        : 0;
+  const isAlert = subjectGeneration?.phase === 'failed';
 
   const discMaterial = useMemo(() => {
     const m = new THREE.MeshBasicNodeMaterial();
@@ -67,21 +99,39 @@ export const MentorBubble: React.FC = () => {
     m.opacity = NEUTRAL_RING_OPACITY;
     return m;
   }, []);
+  const leftPipMaterial = useMemo(() => {
+    const m = new THREE.MeshBasicNodeMaterial();
+    m.transparent = true;
+    m.depthWrite = false;
+    m.opacity = INACTIVE_PIP_OPACITY;
+    return m;
+  }, []);
+  const rightPipMaterial = useMemo(() => {
+    const m = new THREE.MeshBasicNodeMaterial();
+    m.transparent = true;
+    m.depthWrite = false;
+    m.opacity = INACTIVE_PIP_OPACITY;
+    return m;
+  }, []);
 
   // Sync color on mood change rather than every frame.
   useEffect(() => {
-    const hex = MOOD_COLOR[mood] ?? MOOD_COLOR.neutral;
+    const hex = MOOD_COLOR[resolvedMood] ?? MOOD_COLOR.neutral;
     discMaterial.color.set(hex);
     ringMaterial.color.set(hex);
-  }, [mood, discMaterial, ringMaterial]);
+    leftPipMaterial.color.set(hex);
+    rightPipMaterial.color.set(hex);
+  }, [resolvedMood, discMaterial, ringMaterial, leftPipMaterial, rightPipMaterial]);
 
   // Dispose materials on unmount; geometries are module-static.
   useEffect(
     () => () => {
       discMaterial.dispose();
       ringMaterial.dispose();
+      leftPipMaterial.dispose();
+      rightPipMaterial.dispose();
     },
-    [discMaterial, ringMaterial],
+    [discMaterial, ringMaterial, leftPipMaterial, rightPipMaterial],
   );
 
   useFrame(() => {
@@ -98,19 +148,40 @@ export const MentorBubble: React.FC = () => {
     if (reducedMotion) {
       group.scale.setScalar(1);
       discMaterial.opacity = isActive ? ACTIVE_DISC_OPACITY : NEUTRAL_DISC_OPACITY;
-      ringMaterial.opacity = isActive ? ACTIVE_RING_OPACITY : NEUTRAL_RING_OPACITY;
+      ringMaterial.opacity = isAlert
+        ? 1
+        : isActive
+          ? ACTIVE_RING_OPACITY
+          : NEUTRAL_RING_OPACITY;
+      leftPipMaterial.opacity = litPipCount >= 1 ? ACTIVE_PIP_OPACITY : INACTIVE_PIP_OPACITY;
+      rightPipMaterial.opacity = litPipCount >= 2 ? ACTIVE_PIP_OPACITY : INACTIVE_PIP_OPACITY;
       return;
     }
 
     if (isActive) {
       const phase = t * PULSE_FREQUENCY_HZ * Math.PI * 2;
-      group.scale.setScalar(1 + Math.sin(phase) * PULSE_AMPLITUDE);
-      discMaterial.opacity = ACTIVE_DISC_OPACITY;
-      ringMaterial.opacity = ACTIVE_RING_OPACITY * (0.85 + 0.15 * Math.sin(phase));
+      const pulseAmplitude = isAlert ? ALERT_PULSE_AMPLITUDE : PULSE_AMPLITUDE;
+      group.scale.setScalar(1 + Math.sin(phase) * pulseAmplitude);
+      discMaterial.opacity = isAlert
+        ? ACTIVE_DISC_OPACITY * (0.9 + 0.1 * Math.sin(phase))
+        : ACTIVE_DISC_OPACITY;
+      ringMaterial.opacity = isAlert
+        ? 0.92 + 0.08 * Math.sin(phase)
+        : ACTIVE_RING_OPACITY * (0.85 + 0.15 * Math.sin(phase));
+      leftPipMaterial.opacity =
+        litPipCount >= 1
+          ? ACTIVE_PIP_OPACITY * (0.82 + 0.18 * Math.sin(phase))
+          : INACTIVE_PIP_OPACITY;
+      rightPipMaterial.opacity =
+        litPipCount >= 2
+          ? ACTIVE_PIP_OPACITY * (0.82 + 0.18 * Math.sin(phase + Math.PI / 2))
+          : INACTIVE_PIP_OPACITY;
     } else {
       group.scale.setScalar(1);
       discMaterial.opacity = NEUTRAL_DISC_OPACITY;
       ringMaterial.opacity = NEUTRAL_RING_OPACITY;
+      leftPipMaterial.opacity = INACTIVE_PIP_OPACITY;
+      rightPipMaterial.opacity = INACTIVE_PIP_OPACITY;
     }
   });
 
@@ -143,6 +214,12 @@ export const MentorBubble: React.FC = () => {
       </mesh>
       <mesh geometry={ringGeometry}>
         <primitive object={ringMaterial} attach="material" />
+      </mesh>
+      <mesh geometry={pipGeometry} position={[-PIP_SPACING_LOCAL / 2, PIP_Y_LOCAL, 0]}>
+        <primitive object={leftPipMaterial} attach="material" />
+      </mesh>
+      <mesh geometry={pipGeometry} position={[PIP_SPACING_LOCAL / 2, PIP_Y_LOCAL, 0]}>
+        <primitive object={rightPipMaterial} attach="material" />
       </mesh>
     </Billboard>
   );

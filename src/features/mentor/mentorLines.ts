@@ -39,6 +39,29 @@ const en: LineCatalog = {
       "Trial is queued for {topic}. The rules haven't changed. The questions, on the other hand…",
     ],
   },
+  'subject.generation.started': {
+    'witty-sarcastic': [
+      'I have begun assembling {subjectName}. The machinery is humming, which is either progress or a small administrative omen. Watch the generation HUD for details.',
+      '{subjectName} is entering the curriculum apparatus. If anything sparks, the background generation HUD will make it look official.',
+      'Good news: {subjectName} is being generated. Better news: the HUD is tracking it, so neither of us has to pretend this silence is suspense.',
+    ],
+  },
+  'subject.generated': {
+    'witty-sarcastic': [
+      '{subjectName} has been planted. Please admire the curriculum from a respectful distance until the crystals develop an ego.',
+      'Curriculum complete: {subjectName}. The abyss has accepted your offering and returned a syllabus, because apparently that is how this place flirts.',
+      '{subjectName} is now a crystal syllabus. Somehow, this is progress. I checked the form twice.',
+      'Subject generated: {subjectName}. The graph exists, the locks exist, and your future excuses are already losing structural integrity.',
+    ],
+  },
+  'subject.generation.failed': {
+    'witty-sarcastic': [
+      '{subjectName} hit a generation fault. The good news is the HUD kept receipts. Open background generation and inspect the bureaucracy.',
+      '{subjectName} did not survive the apparatus. Before we blame the abyss, check the generation HUD. It enjoys evidence.',
+      'The curriculum machine declined {subjectName}. Rude, but documented. Open the background generation panel for the retry lever.',
+      'Generation paused itself with great confidence and poor results. {subjectName} needs attention in the HUD, where the logs are having a very official little meeting.',
+    ],
+  },
   'mentor.bubble.click': {
     'witty-sarcastic': [
       "You rang? Or did you click on me by accident again, {name}?",
