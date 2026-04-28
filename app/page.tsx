@@ -1,408 +1,113 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
-import dynamic from 'next/dynamic';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useProgressionStore as useStudyStore } from '@/features/progression';
-import { undoManager } from '@/features/progression/undoManager';
-import { useUIStore } from '@/store/uiStore';
-import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
-import { CoarseChoice, Rating } from '@/types';
+import dynamic from 'next/dynamic';
 
-import { initAbyssDev } from '@/utils/abyssDev';
-import { AttunementRitualPayload } from '@/types/progression';
-import { filterCardsForStudy, useTopicMetadata, type StudyCardFilterSelection } from '@/features/content';
-import { initializeDebugMode, isDebugModeEnabled } from '@/infrastructure/debugMode';
-import { Button } from '@/components/ui/button';
-import { CloudLoadingScreen } from '@/components/ui/CloudLoadingScreen';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Sparkles } from 'lucide-react';
-
-import StatsOverlay from '@/components/StatsOverlay';
-import { GenerationProgressHud } from '@/components/GenerationProgressHud';
+import { ChatGptStyleHud } from '@/components/ChatGptStyleHud';
+import { ContentGenerationHUD } from '@/components/ContentGenerationHUD';
+import { CrystalDeckPanel } from '@/components/CrystalDeckPanel';
+import { CrystalTopicLockedTooltip } from '@/components/CrystalTopicLockedTooltip';
+import { DiscoveryModal } from '@/components/DiscoveryModal';
+import { ImportSubjectFromUrlModal } from '@/components/ImportSubjectFromUrlModal';
 import { IncrementalSubjectModal } from '@/components/IncrementalSubjectModal';
-import { AttunementRitualModal } from '@/components/AttunementRitualModal';
-import DiscoveryModal from '@/components/DiscoveryModal';
-import StudyPanelModal from '@/components/StudyPanelModal';
-import StudyTimelineModal from '@/components/StudyTimelineModal';
-import { AbyssCommandPalette } from '@/components/AbyssCommandPalette';
-import SubjectNavigationHud from '@/components/SubjectNavigationHud';
-import PomodoroTimerOverlay from '@/components/PomodoroTimer3D';
-import { CrystalTrialModal } from '@/components/CrystalTrial';
 import { MentorBootstrapMount } from '@/components/MentorBootstrapMount';
 import { MentorDialogOverlay } from '@/components/MentorDialogOverlay';
-import { useMentorStore } from '@/features/mentor/mentorStore';
-import { tryEnqueueBubbleClick } from '@/features/mentor';
-import { MENTOR_VOICE_ID } from '@/features/mentor/mentorVoice';
-import { telemetry } from '@/features/telemetry';
-import { useMediaQuery } from '@/hooks/use-media-query';
-import { useContentGenerationHydration } from '@/hooks/useContentGenerationHydration';
-import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifecycle';
-import { topicRefKey } from '@/lib/topicRef';
-import { useTopicCardQueriesForSubjectFilter } from '@/hooks/useTopicCardQueries';
-import { toast } from '@/infrastructure/toast';
+import { TextDecodingHelp } from '@/components/TextDecodingHelp';
+import { ResetWorldDialog } from '@/components/ResetWorldDialog';
+import { StudyPanel } from '@/components/StudyPanel';
+import { useStudyPanelStore } from '@/features/study/studyPanelStore';
+import { setStudyPanelStrategyForTesting } from '@/features/study/studyPanelStrategy';
+import { runStudyPanelHotkeyAction } from '@/features/study/studyPanelHotkeys';
+import { studyPanelStrategyKeyFromUrl } from '@/features/study/studyPanelStrategyKeyFromUrl';
+import { useSubjectGenerationStore } from '@/features/subjectGeneration';
 
-const Scene = dynamic(() => import('@/components/Scene'), {
-  ssr: false,
-  loading: () => null,
-});
+const SceneClient = dynamic(
+  () => import('@/components/SceneClient').then((m) => m.SceneClient),
+  { ssr: false },
+);
 
-const HomeContent: React.FC = () => {
+export default function Home() {
   const searchParams = useSearchParams();
-  initializeDebugMode(searchParams);
-  const isDebugMode = isDebugModeEnabled();
-  const skipSceneLoadingOverlay =
-    searchParams.get('e2e') === '1' || process.env.NEXT_PUBLIC_PLAYWRIGHT === '1';
-  const [showStats, setShowStats] = useState(true);
-  const [isCameraAngleUnlocked, setIsCameraAngleUnlocked] = useState(isDebugMode);
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const studyPanelOpen = useStudyPanelStore((s) => s.isOpen);
+  const closeStudyPanel = useStudyPanelStore((s) => s.close);
+  const isAnySubjectGenerating = useSubjectGenerationStore((s) =>
+    Object.values(s.jobs).some((j) => j.status !== 'complete' && j.status !== 'failed'),
+  );
+
+  // Discovery modal
+  const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
+  const handleOpenDiscovery = useCallback(() => setIsDiscoveryOpen(true), []);
+  const handleCloseDiscovery = useCallback(() => setIsDiscoveryOpen(false), []);
+
+  // Generation HUD
+  const [isGenerationHudOpen, setIsGenerationHudOpen] = useState(false);
+  const handleOpenGenerationHud = useCallback(() => setIsGenerationHudOpen(true), []);
+  const handleCloseGenerationHud = useCallback(() => setIsGenerationHudOpen(false), []);
+
+  // Subject creation modals (HUD entry points)
   const [isIncrementalSubjectOpen, setIsIncrementalSubjectOpen] = useState(false);
-  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const [isImportSubjectOpen, setIsImportSubjectOpen] = useState(false);
 
-  useContentGenerationHydration();
-  useContentGenerationLifecycle();
-  const initializedRef = useRef(false);
+  // Reset world dialog
+  const [isResetWorldOpen, setIsResetWorldOpen] = useState(false);
 
-  const [sceneOverlayMounted, setSceneOverlayMounted] = useState(() => !skipSceneLoadingOverlay);
-  const [sceneOverlayVisible, setSceneOverlayVisible] = useState(() => !skipSceneLoadingOverlay);
-
-  const handleSceneCanvasReady = useCallback(() => {
-    if (skipSceneLoadingOverlay) return;
-    setSceneOverlayVisible(false);
-  }, [skipSceneLoadingOverlay]);
-
-  const handleSceneCanvasReleased = useCallback(() => {
-    if (skipSceneLoadingOverlay) return;
-    setSceneOverlayMounted(true);
-    setSceneOverlayVisible(true);
-  }, [skipSceneLoadingOverlay]);
-
-  const handleSceneOverlayExitComplete = useCallback(() => {
-    setSceneOverlayMounted(false);
-  }, []);
-
-  const pomodoroVisible = useFeatureFlagsStore((s) => s.pomodoroVisible);
-
-  const currentSession = useStudyStore((state) => state.currentSession);
-  const activeCrystals = useStudyStore((s) => s.activeCrystals);
-  const currentSubjectId = useStudyStore((s) => s.currentSubjectId);
-  const sm2Data = useStudyStore((s) => s.sm2Data);
-  const unlockPoints = useStudyStore((s) => s.unlockPoints);
-  const activeBuffs = useStudyStore((state) => state.activeBuffs);
-  const getRemainingRitualCooldownMs = useStudyStore((state) => state.getRemainingRitualCooldownMs);
-  const getDueCardsCount = useStudyStore((state) => state.getDueCardsCount);
-  const focusStudyCard = useStudyStore((state) => state.focusStudyCard);
-  const startTopicStudySession = useStudyStore((state) => state.startTopicStudySession);
-
-  const activeTopicRefs = useMemo(
-    () => activeCrystals.map((c) => ({ subjectId: c.subjectId, topicId: c.topicId })),
-    [activeCrystals],
-  );
-  const allTopicMetadata = useTopicMetadata(activeTopicRefs);
-  const { topicCardQueries, topicCardsByKey, queriedTopicRefs } = useTopicCardQueriesForSubjectFilter(
-    activeTopicRefs,
-    currentSubjectId,
-    allTopicMetadata,
-  );
-  const allTopicsCardCounts = useMemo(() => {
-    let due = 0;
-    let total = 0;
-    topicCardQueries.forEach((query, index) => {
-      const cards = query?.data ?? [];
-      const ref = queriedTopicRefs[index];
-      if (!ref) return;
-      due += getDueCardsCount(ref, cards);
-      total += cards.length;
-    });
-    return { due, total };
-  }, [getDueCardsCount, topicCardQueries, queriedTopicRefs]);
-  const totalCards = allTopicsCardCounts.total;
-
-  const initialize = useStudyStore((s) => s.initialize);
-  const submitStudyResult = useStudyStore((s) => s.submitStudyResult);
-  const submitCoarseStudyResult = useStudyStore((s) => s.submitCoarseStudyResult);
-  const advanceStudyAfterReveal = useStudyStore((state) => state.advanceStudyAfterReveal);
-  const undoLastStudyResult = useStudyStore((s) => s.undoLastStudyResult);
-  const redoLastStudyResult = useStudyStore((s) => s.redoLastStudyResult);
-  const submitAttunementRitual = useStudyStore((s) => s.submitAttunementRitual);
-  const clearPendingRitual = useStudyStore((s) => s.clearPendingRitual);
-
-  const isDiscoveryModalOpen = useUIStore((s) => s.isDiscoveryModalOpen);
-  const isStudyPanelOpen = useUIStore((s) => s.isStudyPanelOpen);
-  const isRitualModalOpen = useUIStore((s) => s.isRitualModalOpen);
-  const isStudyTimelineOpen = useUIStore((state) => state.isStudyTimelineOpen);
-  const closeDiscoveryModal = useUIStore((s) => s.closeDiscoveryModal);
-  const openDiscoveryModal = useUIStore((s) => s.openDiscoveryModal);
-  const openGlobalSettings = useUIStore((s) => s.openGlobalSettings);
-  const closeStudyPanel = useUIStore((s) => s.closeStudyPanel);
-  const openRitualModal = useUIStore((s) => s.openRitualModal);
-  const closeRitualModal = useUIStore((s) => s.closeRitualModal);
-  const closeStudyTimeline = useUIStore((state) => state.closeStudyTimeline);
-  const selectTopic = useUIStore((state) => state.selectTopic);
-  const openStudyPanel = useUIStore((state) => state.openStudyPanel);
-
-  const ritualCooldownRemainingMs = getRemainingRitualCooldownMs(Date.now());
-
-  const currentTopicId = currentSession?.topicId || null;
-  const currentSubjectIdSession = currentSession?.subjectId ?? null;
-
+  // Apply ?study= from the URL once on mount.
   useEffect(() => {
-    initAbyssDev();
-    if (!initializedRef.current) {
-      initializedRef.current = true;
-      initialize();
+    const key = studyPanelStrategyKeyFromUrl(searchParams);
+    if (key) {
+      setStudyPanelStrategyForTesting(key);
     }
-  }, [initialize]);
+  }, [searchParams]);
 
-  const handleRate = (cardId: string, isCorrect?: boolean, selfRating?: Rating) => {
-    const reviewRating = selfRating ?? (isCorrect === undefined ? 3 : isCorrect ? 3 : 1);
-    submitStudyResult(cardId || currentSession?.currentCardId || '', reviewRating);
-  };
-
-  const handleCoarseRate = useCallback(
-    (cardId: string, coarseChoice: CoarseChoice) => submitCoarseStudyResult(cardId || currentSession?.currentCardId || '', coarseChoice),
-    [currentSession?.currentCardId, submitCoarseStudyResult],
-  );
-
-  const handleCloseDiscoveryModal = () => { closeDiscoveryModal(); };
-  const handleCloseStudyPanel = () => { closeStudyPanel(); };
-
-  const handleUndo = useCallback(() => {
-    if (!undoManager.canUndo) return;
-    undoLastStudyResult();
-  }, [undoLastStudyResult]);
-
-  const handleRedo = useCallback(() => {
-    if (!undoManager.canRedo) return;
-    redoLastStudyResult();
-  }, [redoLastStudyResult]);
-
-  const handleOpenRitualModal = () => { openRitualModal(); };
-  const handleAttunementSubmit = (payload: AttunementRitualPayload) => submitAttunementRitual(payload);
-  const handleCloseAttunement = () => { clearPendingRitual(); closeRitualModal(); };
-  const handleCloseStudyTimeline = () => { closeStudyTimeline(); };
-
-  const handleTimelineOpenStudy = useCallback(
-    (payload: { subjectId: string; topicId: string; cardId?: string }) => {
-      const ref = { subjectId: payload.subjectId, topicId: payload.topicId };
-      const cards = topicCardsByKey.get(topicRefKey(ref));
-      if (!cards?.length) return;
-      focusStudyCard(ref, cards, payload.cardId ?? null);
-      selectTopic(ref);
-      closeStudyTimeline();
-      openStudyPanel();
-    },
-    [topicCardsByKey, focusStudyCard, selectTopic, closeStudyTimeline, openStudyPanel],
-  );
-
-  const handleStartStudyWithCardTypes = useCallback(
-    (selection: StudyCardFilterSelection) => {
-      const topic = useUIStore.getState().selectedTopic;
-      if (!topic) {
-        toast.error('Select a topic crystal first.');
-        return;
+  // Global hotkeys for the study panel.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (runStudyPanelHotkeyAction(e)) {
+        e.preventDefault();
       }
-      const cards = topicCardsByKey.get(topicRefKey(topic)) ?? [];
-      const filtered = filterCardsForStudy(
-        cards,
-        new Set(selection.enabledBaseTypes),
-        new Set(selection.enabledMiniGameTypes),
-      );
-      if (filtered.length === 0) {
-        toast.error('No cards match the selected types.');
-        return;
-      }
-      selectTopic(topic);
-      startTopicStudySession(topic, filtered);
-      openStudyPanel();
-    },
-    [topicCardsByKey, selectTopic, startTopicStudySession, openStudyPanel],
-  );
-
-  const handleQuickActionWisdomAltar = useCallback(() => { openDiscoveryModal(); }, [openDiscoveryModal]);
-  const handleQuickActionCommandPalette = useCallback(() => { setIsCommandPaletteOpen(true); }, []);
-  const handleQuickActionSettings = useCallback(() => { openGlobalSettings(); }, [openGlobalSettings]);
-  const handleCreateSubjectFromHud = useCallback(() => { setIsIncrementalSubjectOpen(true); }, []);
-  // Mentor v1 (Phase 1): Discovery's empty-state CTA closes Discovery before opening
-  // IncrementalSubjectModal so the two surfaces never stack. The mentor's `open_discovery`
-  // effect (Phase 2) routes through `openDiscoveryModal()` and then surfaces this CTA.
-  const handleCreateSubjectFromDiscovery = useCallback(() => {
-    closeDiscoveryModal();
-    setIsIncrementalSubjectOpen(true);
-  }, [closeDiscoveryModal]);
-
-  // Mentor v1 (Phase 3): Quick Actions "Mentor" item is the keyboard-accessible parity
-  // for the MentorBubble billboard. Both paths emit `mentor.bubble.click` through the
-  // shared `tryEnqueueBubbleClick()` helper, which encodes the v1 Pin selection rules:
-  // overlay-open is a no-op, a non-empty queue is a no-op (the queued head wins), and
-  // otherwise the trigger is evaluated, enqueued, and its cooldown recorded.
-  const handleQuickActionMentor = useCallback(() => {
-    tryEnqueueBubbleClick();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
-
-  // Mentor v1 (Phase 2): primary completion signal for `onboarding.first_subject`.
-  // Fired by IncrementalSubjectModal AFTER the generation request is accepted by
-  // `triggerSubjectGeneration` and BEFORE `onClose`. Records the timestamp and logs
-  // telemetry; the rule engine consumes `firstSubjectGenerationEnqueuedAt` to lock
-  // the trigger out of future fires (subject deletion does not re-arm it).
-  const handleSubjectGenerationEnqueued = useCallback(() => {
-    useMentorStore.getState().markFirstSubjectGenerationEnqueued(Date.now());
-    telemetry.log('mentor_first_subject_generation_enqueued', {
-      triggerId: 'onboarding.first_subject',
-      source: 'canned',
-      voiceId: MENTOR_VOICE_ID,
-    });
-  }, []);
-
-  const TOP_LEFT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', left: 'calc(0.75rem + env(safe-area-inset-left))' };
-  const TOP_RIGHT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', right: 'calc(0.75rem + env(safe-area-inset-right))' };
-  const BOTTOM_RIGHT_STYLE: React.CSSProperties = { bottom: 'calc(0.75rem + env(safe-area-inset-bottom))', right: 'calc(0.75rem + env(safe-area-inset-right))' };
-
-  const quickActionsTrigger = (
-    <Button
-      size="icon-sm"
-      variant="outline"
-      type="button"
-      title="Quick actions"
-      aria-label="Quick actions"
-      data-testid="quick-actions-trigger"
-    >
-      <Sparkles className="h-3.5 w-3.5" />
-    </Button>
-  );
 
   return (
-    <div className="w-screen h-screen relative overflow-hidden">
+    <main className="relative h-screen w-screen overflow-hidden">
       <MentorBootstrapMount />
-
-      {sceneOverlayMounted && (
-        <div className="fixed inset-0 z-40">
-          <CloudLoadingScreen
-            visible={sceneOverlayVisible}
-            onExitComplete={handleSceneOverlayExitComplete}
-          />
-        </div>
-      )}
-
-      <SubjectNavigationHud onCreateSubject={handleCreateSubjectFromHud} />
-
-      <div className="absolute inset-0">
-        <Scene
-          showStats={isDebugMode && showStats}
-          isCameraAngleUnlocked={isCameraAngleUnlocked}
-          onCanvasReady={handleSceneCanvasReady}
-          onCanvasReleased={handleSceneCanvasReleased}
-        />
-      </div>
-
-      <div
-        className="fixed z-20 max-w-[min(100%,11rem)] text-left"
-        style={TOP_LEFT_STYLE}
-      >
-        <h1 className="m-0 text-sm font-semibold tracking-tight text-foreground">
-          Abyss Engine
-        </h1>
-      </div>
-
-      <div
-        className="fixed z-20 flex flex-col items-end gap-1.5"
-        style={TOP_RIGHT_STYLE}
-      >
-        <GenerationProgressHud />
-        <StatsOverlay activeBuffs={activeBuffs} />
-      </div>
-
-      <div
-        className="fixed z-20 flex flex-row items-end justify-end gap-2"
-        style={BOTTOM_RIGHT_STYLE}
-      >
-        {pomodoroVisible ? <PomodoroTimerOverlay /> : null}
-        <DropdownMenu>
-          <DropdownMenuTrigger render={quickActionsTrigger} />
-          <DropdownMenuContent side="top" align="end" sideOffset={8}>
-            <DropdownMenuItem onClick={handleQuickActionWisdomAltar}>
-              🏛️ Wisdom Altar
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleQuickActionMentor} data-testid="quick-action-mentor">
-              🗣️ Mentor
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleQuickActionCommandPalette}>
-              🔍 Command palette (⌘K)
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleQuickActionSettings}>
-              ⚙️ Settings
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      <AbyssCommandPalette
-        open={isCommandPaletteOpen}
-        onOpenChange={setIsCommandPaletteOpen}
-        isDebugMode={isDebugMode}
-        onOpenSubjectCurriculum={() => setIsIncrementalSubjectOpen(true)}
-        onStartStudyWithCardTypes={handleStartStudyWithCardTypes}
+      <SceneClient />
+      <ChatGptStyleHud
+        onOpenDiscovery={handleOpenDiscovery}
+        onOpenGenerationHud={handleOpenGenerationHud}
+        onOpenIncrementalSubject={() => setIsIncrementalSubjectOpen(true)}
+        onOpenImportSubject={() => setIsImportSubjectOpen(true)}
+        onOpenResetWorld={() => setIsResetWorldOpen(true)}
+        isAnySubjectGenerating={isAnySubjectGenerating}
       />
+      <CrystalTopicLockedTooltip />
+      <CrystalDeckPanel />
+      <TextDecodingHelp />
 
+      <DiscoveryModal isOpen={isDiscoveryOpen} onClose={handleCloseDiscovery} />
+      <ContentGenerationHUD isOpen={isGenerationHudOpen} onClose={handleCloseGenerationHud} />
       <IncrementalSubjectModal
         isOpen={isIncrementalSubjectOpen}
         onClose={() => setIsIncrementalSubjectOpen(false)}
-        onEnqueued={handleSubjectGenerationEnqueued}
+      />
+      <ImportSubjectFromUrlModal
+        isOpen={isImportSubjectOpen}
+        onClose={() => setIsImportSubjectOpen(false)}
+      />
+      <ResetWorldDialog
+        isOpen={isResetWorldOpen}
+        onClose={() => setIsResetWorldOpen(false)}
       />
 
-      <AttunementRitualModal
-        isOpen={isRitualModalOpen}
-        cooldownRemainingMs={ritualCooldownRemainingMs}
-        onClose={handleCloseAttunement}
-        onSubmit={handleAttunementSubmit}
+      <StudyPanel isOpen={studyPanelOpen} onClose={closeStudyPanel} />
+
+      <MentorDialogOverlay
+        onOpenDiscovery={handleOpenDiscovery}
+        onOpenGenerationHud={handleOpenGenerationHud}
       />
-
-      <DiscoveryModal
-        isOpen={isDiscoveryModalOpen}
-        unlockPoints={unlockPoints}
-        onOpenRitual={handleOpenRitualModal}
-        ritualCooldownRemainingMs={ritualCooldownRemainingMs}
-        onClose={handleCloseDiscoveryModal}
-        onCreateSubject={handleCreateSubjectFromDiscovery}
-      />
-
-      <StudyPanelModal
-        isOpen={isStudyPanelOpen}
-        currentCardId={currentSession?.currentCardId || null}
-        currentTopicId={currentTopicId}
-        currentSubjectId={currentSubjectIdSession}
-        totalCards={currentSession?.totalCards ?? totalCards}
-        onClose={handleCloseStudyPanel}
-        onSubmitResult={handleRate}
-        onSubmitCoarseResult={handleCoarseRate}
-        onAdvance={advanceStudyAfterReveal}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-      />
-
-      <StudyTimelineModal
-        isOpen={isStudyTimelineOpen}
-        onClose={handleCloseStudyTimeline}
-        topicMetadata={allTopicMetadata}
-        onOpenEntryStudy={handleTimelineOpenStudy}
-      />
-
-      <CrystalTrialModal />
-
-      <MentorDialogOverlay />
-    </div>
-  );
-}
-
-export default function Home() {
-  return (
-    <Suspense fallback={<CloudLoadingScreen />}>
-      <HomeContent />
-    </Suspense>
+    </main>
   );
 }

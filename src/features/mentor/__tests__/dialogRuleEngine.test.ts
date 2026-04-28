@@ -17,14 +17,6 @@ beforeEach(() => {
 describe('evaluateTrigger', () => {
   const rng = () => 0;
 
-  it('returns null for one-shot triggers already seen', () => {
-    useMentorStore.setState({
-      seenTriggers: ['onboarding.welcome'],
-      playerName: null,
-    });
-    expect(evaluateTrigger('onboarding.welcome', {}, { rng })).toBeNull();
-  });
-
   it('returns null when cooldown is active', () => {
     const now = 1_000_000;
     useMentorStore.setState({ cooldowns: { 'crystal.leveled': now - 1000 } });
@@ -47,9 +39,52 @@ describe('evaluateTrigger', () => {
     expect(plan!.messages[0]?.text).toContain('2');
   });
 
-  it('skips onboarding.first_subject if generation already enqueued', () => {
-    useMentorStore.setState({ firstSubjectGenerationEnqueuedAt: 12345 });
-    expect(evaluateTrigger('onboarding.first_subject', {}, { rng })).toBeNull();
+  describe('onboarding.pre_first_subject', () => {
+    it('is suppressed once firstSubjectGenerationEnqueuedAt is set', () => {
+      useMentorStore.setState({ firstSubjectGenerationEnqueuedAt: 12345 });
+      expect(
+        evaluateTrigger('onboarding.pre_first_subject', {}, { rng }),
+      ).toBeNull();
+    });
+
+    it('is allowed even when seenTriggers already contains it (no oneShot)', () => {
+      useMentorStore.setState({
+        seenTriggers: ['onboarding.pre_first_subject'],
+        firstSubjectGenerationEnqueuedAt: null,
+      });
+      const plan = evaluateTrigger('onboarding.pre_first_subject', {}, { rng });
+      expect(plan).not.toBeNull();
+      expect(plan!.trigger).toBe('onboarding.pre_first_subject');
+    });
+
+    it('runs the full greet → name → destination chain when playerName is null', () => {
+      useMentorStore.setState({ playerName: null });
+      const plan = evaluateTrigger('onboarding.pre_first_subject', {}, { rng });
+      expect(plan).not.toBeNull();
+      expect(plan!.messages.map((m) => m.id)).toEqual([
+        'pre-first-subject-greet',
+        'pre-first-subject-name',
+        'pre-first-subject-destination',
+      ]);
+      // Name prompt has the input and a Skip choice that lands on the
+      // destination message id.
+      expect(plan!.messages[1]?.input?.kind).toBe('name');
+      expect(plan!.messages[1]?.choices).toEqual([
+        { id: 'skip-name', label: 'Skip', next: 'pre-first-subject-destination' },
+      ]);
+    });
+
+    it('skips the name prompt and shows only the destination when playerName is already set', () => {
+      useMentorStore.setState({ playerName: 'Sergio' });
+      const plan = evaluateTrigger('onboarding.pre_first_subject', {}, { rng });
+      expect(plan).not.toBeNull();
+      expect(plan!.messages).toHaveLength(1);
+      expect(plan!.messages[0]?.id).toBe('pre-first-subject-destination');
+      const choiceIds = plan!.messages[0]?.choices?.map((c) => c.id) ?? [];
+      expect(choiceIds).toEqual(
+        expect.arrayContaining(['create-subject', 'maybe-later']),
+      );
+    });
   });
 
   it('mentor.bubble.click is always allowed', () => {
@@ -70,7 +105,11 @@ describe('evaluateTrigger', () => {
   });
 
   it('adds a discovery-modal action to subject generation success messages', () => {
-    const plan = evaluateTrigger('subject.generated', { subjectName: 'Topology' }, { rng: () => 0.99 });
+    const plan = evaluateTrigger(
+      'subject.generated',
+      { subjectName: 'Topology' },
+      { rng: () => 0.99 },
+    );
 
     expect(plan).not.toBeNull();
     expect(plan!.messages[0]?.choices).toEqual(
@@ -96,6 +135,50 @@ describe('evaluateTrigger', () => {
     expect(
       evaluateTrigger('subject.generation.started', { subjectName: 'Calculus' }, { rng }),
     ).toBeNull();
+  });
+
+  describe('subject.generation.started stage-aware copy', () => {
+    it('uses the topics stage variant when payload.stage is "topics"', () => {
+      const plan = evaluateTrigger(
+        'subject.generation.started',
+        { subjectName: 'Calculus', stage: 'topics' },
+        { rng: () => 0 },
+      );
+      expect(plan).not.toBeNull();
+      const text = plan!.messages[0]?.text ?? '';
+      expect(text).toContain('Calculus');
+      // Topics-stage tuple consistently mentions stage one or the topic
+      // lattice; the generic fallback variants do not.
+      expect(
+        /(stage one|topic outline|topic lattice|topic generation)/i.test(text),
+      ).toBe(true);
+    });
+
+    it('uses the edges stage variant when payload.stage is "edges"', () => {
+      const plan = evaluateTrigger(
+        'subject.generation.started',
+        { subjectName: 'Calculus', stage: 'edges' },
+        { rng: () => 0 },
+      );
+      expect(plan).not.toBeNull();
+      const text = plan!.messages[0]?.text ?? '';
+      expect(text).toContain('Calculus');
+      expect(
+        /(stage two|edges|prerequisites|dependencies)/i.test(text),
+      ).toBe(true);
+    });
+
+    it('falls back to the generic catalog when stage is omitted', () => {
+      const plan = evaluateTrigger(
+        'subject.generation.started',
+        { subjectName: 'Calculus' },
+        { rng: () => 0 },
+      );
+      expect(plan).not.toBeNull();
+      // Generic variants in the catalog don't mention stage one / stage two.
+      const text = plan!.messages[0]?.text ?? '';
+      expect(/stage (one|two)/i.test(text)).toBe(false);
+    });
   });
 
   it('adds a visible generation HUD choice to failed subject-generation lines', () => {

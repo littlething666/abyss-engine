@@ -64,9 +64,11 @@ describe('mentorStore', () => {
 
   it('marks triggers seen idempotently and records cooldowns', () => {
     const store = useMentorStore.getState();
-    store.markSeen('onboarding.welcome');
-    store.markSeen('onboarding.welcome');
-    expect(useMentorStore.getState().seenTriggers).toEqual(['onboarding.welcome']);
+    store.markSeen('onboarding.pre_first_subject');
+    store.markSeen('onboarding.pre_first_subject');
+    expect(useMentorStore.getState().seenTriggers).toEqual([
+      'onboarding.pre_first_subject',
+    ]);
 
     store.recordCooldown('crystal.leveled', 12345);
     expect(useMentorStore.getState().cooldowns['crystal.leveled']).toBe(12345);
@@ -109,7 +111,12 @@ describe('migrateMentorState', () => {
     });
   });
 
-  it('coerces partial payloads safely', () => {
+  it('coerces partial payloads safely (legacy seenTriggers strings are preserved as-is)', () => {
+    // Legacy persistence may still contain the retired 'onboarding.welcome'
+    // string in seenTriggers — the migration is permissive (filters by
+    // typeof === 'string') so it preserves whatever made it through. The
+    // rule engine no longer reads seenTriggers for the renamed onboarding
+    // trigger, so leftover strings are harmless.
     const result = migrateMentorState(
       {
         playerName: 'Sergio',
