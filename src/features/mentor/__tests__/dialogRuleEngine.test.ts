@@ -58,9 +58,12 @@ describe('evaluateTrigger', () => {
 
   it('uses the player name when set', () => {
     useMentorStore.setState({ playerName: 'Sergio' });
-    const plan = evaluateTrigger('mentor.bubble.click', {}, { rng });
+    // Fisher-Yates with rng()->0.99 leaves the order as the identity
+    // [0, 1, 2], so variant 0 — the only mentor.bubble.click line that
+    // contains the {name} placeholder — is selected deterministically.
+    const identityRng = () => 0.99;
+    const plan = evaluateTrigger('mentor.bubble.click', {}, { rng: identityRng });
     expect(plan).not.toBeNull();
-    // Variant index 0 with the {name} placeholder produces a Sergio-mentioning line.
     const fullText = plan!.messages.map((m) => m.text).join(' ');
     expect(fullText).toContain('Sergio');
   });
