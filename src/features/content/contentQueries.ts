@@ -1,5 +1,6 @@
 import { UseQueryResult } from '@tanstack/react-query';
 import { Subject, SubjectGraph } from '../../types/core';
+import type { ManifestOptions } from '../../types/repository';
 import {
   useManifest,
   useSubjectGraph,
@@ -10,8 +11,8 @@ import {
 
 export { useManifest, useSubjectGraph, useTopicDetails, useTopicCards };
 
-export function useSubjects(): UseQueryResult<Subject[], Error> {
-  const manifestQuery = useManifest();
+export function useSubjects(options: ManifestOptions = {}): UseQueryResult<Subject[], Error> {
+  const manifestQuery = useManifest(options);
   return {
     ...manifestQuery,
     data: manifestQuery.data?.subjects ?? [],

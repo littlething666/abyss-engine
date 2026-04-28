@@ -6,6 +6,7 @@ import { StudyForceGraph } from '@/components/StudyForceGraph';
 import StudyPanelModal from '@/components/StudyPanelModal';
 import TopicSelectionBar from '@/components/TopicSelectionBar';
 import { IncrementalSubjectModal } from '@/components/IncrementalSubjectModal';
+import { FirstCurriculumEmptyState } from '@/components/FirstCurriculumEmptyState';
 import SubjectNavigationHud from '@/components/SubjectNavigationHud';
 import {
   Select,
@@ -206,9 +207,7 @@ export function StudyGraphPageClient() {
         ) : null}
 
         {!isLoading && !error && subjectIds.length === 0 ? (
-          <div className="text-muted-foreground absolute inset-0 z-10 flex items-center justify-center px-4 text-center text-sm">
-            No subjects in the manifest yet.
-          </div>
+          <FirstCurriculumEmptyState onGenerate={handleCreateSubjectFromHud} />
         ) : null}
 
         {!isLoading && !error && graphsQuery.data?.length ? (

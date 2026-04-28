@@ -1,0 +1,68 @@
+export type MentorVoiceId = 'witty-sarcastic';
+
+export const MENTOR_TRIGGER_IDS = [
+  'onboarding.welcome',
+  'onboarding.first_subject',
+  'session.completed',
+  'crystal.leveled',
+  'crystal.trial.awaiting',
+  'subject.generation.started',
+  'subject.generated',
+  'subject.generation.failed',
+  'mentor.bubble.click',
+] as const;
+
+export type MentorTriggerId = (typeof MENTOR_TRIGGER_IDS)[number];
+
+export type MentorMood =
+  | 'neutral'
+  | 'cheer'
+  | 'tease'
+  | 'concern'
+  | 'celebrate'
+  | 'hint';
+
+export type MentorEffect =
+  | { kind: 'open_discovery' }
+  | { kind: 'open_generation_hud' }
+  | { kind: 'dismiss' };
+
+export interface MentorChoice {
+  id: string;
+  label: string;
+  next?: 'end' | string;
+  effect?: MentorEffect;
+}
+
+export interface MentorMessage {
+  id: string;
+  text: string;
+  mood?: MentorMood;
+  delayMs?: number;
+  choices?: MentorChoice[];
+  input?: { kind: 'name'; placeholder?: string; maxLen?: number };
+  autoAdvanceMs?: number;
+}
+
+export interface DialogPlan {
+  id: string;
+  trigger: MentorTriggerId;
+  priority: number;
+  enqueuedAt: number;
+  messages: MentorMessage[];
+  source: 'canned';
+  voiceId: MentorVoiceId;
+  cooldownMs?: number;
+  oneShot?: boolean;
+}
+
+export interface MentorTriggerPayload {
+  topic?: string;
+  subjectName?: string;
+  stage?: 'topics' | 'edges';
+  pipelineId?: string;
+  from?: number;
+  to?: number;
+  correctRate?: number;
+  totalAttempts?: number;
+}

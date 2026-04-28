@@ -39,6 +39,7 @@ import {
 } from '@/types/llmInference';
 import type { InferenceSurfaceId, LlmInferenceProviderId } from '@/types/llmInference';
 import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
+import { useMentorStore } from '@/features/mentor/mentorStore';
 
 const CURRICULUM_SURFACE_IDS = [
   'subjectGenerationTopics',
@@ -261,12 +262,16 @@ function OpenRouterConfigList() {
 
 function PreferencesSection() {
   const pomodoroVisible = useFeatureFlagsStore((s) => s.pomodoroVisible);
+  const pregeneratedCurriculumsVisible = useFeatureFlagsStore((s) => s.pregeneratedCurriculumsVisible);
   const ritualVisible = useFeatureFlagsStore((s) => s.ritualVisible);
   const sfxEnabled = useFeatureFlagsStore((s) => s.sfxEnabled);
   const setPomodoroVisible = useFeatureFlagsStore((s) => s.setPomodoroVisible);
+  const setPregeneratedCurriculumsVisible = useFeatureFlagsStore((s) => s.setPregeneratedCurriculumsVisible);
   const setRitualVisible = useFeatureFlagsStore((s) => s.setRitualVisible);
   const setSfxEnabled = useFeatureFlagsStore((s) => s.setSfxEnabled);
   const tts = useInferenceTtsToggle();
+  const mentorTtsMuted = useMentorStore((s) => s.ttsMuted);
+  const setMentorTtsMuted = useMentorStore((s) => s.setTtsMuted);
 
   return (
     <section className={SECTION_SPACING}>
@@ -287,6 +292,19 @@ function PreferencesSection() {
         </div>
         <div className={ROW_CLASSNAME}>
           <div className="min-w-0">
+            <span className="text-sm text-foreground">Mentor narration</span>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              Mute the witty mentor&apos;s voice. The global Text-to-speech master switch above must also be on.
+            </p>
+          </div>
+          <Switch
+            checked={!mentorTtsMuted}
+            onCheckedChange={(v) => setMentorTtsMuted(!v)}
+            aria-label="Mentor narration"
+          />
+        </div>
+        <div className={ROW_CLASSNAME}>
+          <div className="min-w-0">
             <span className="text-sm text-foreground">Pomodoro timer</span>
             <p className="text-xs text-muted-foreground pt-0.5">
               Show the focus timer in the scene HUD.
@@ -296,6 +314,19 @@ function PreferencesSection() {
             checked={pomodoroVisible}
             onCheckedChange={setPomodoroVisible}
             aria-label="Show Pomodoro timer"
+          />
+        </div>
+        <div className={ROW_CLASSNAME}>
+          <div className="min-w-0">
+            <span className="text-sm text-foreground">Pregenerated curricula</span>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              Show bundled starter curricula alongside the ones you generate yourself.
+            </p>
+          </div>
+          <Switch
+            checked={pregeneratedCurriculumsVisible}
+            onCheckedChange={setPregeneratedCurriculumsVisible}
+            aria-label="Show pregenerated curricula"
           />
         </div>
         <div className={ROW_CLASSNAME}>

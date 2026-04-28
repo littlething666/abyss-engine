@@ -68,7 +68,7 @@ export async function generateTrialQuestions(
   const cardContext = serializeCardsForPrompt(levelCards);
 
   // 5. Get optional content brief
-  const manifest = await deckRepository.getManifest();
+  const manifest = await deckRepository.getManifest({ includePregeneratedCurriculums: true });
   const subject = manifest.subjects.find((s) => s.id === subjectId);
   const contentBrief =
     subject?.metadata?.strategy?.content?.contentBrief?.trim() || undefined;

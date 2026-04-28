@@ -1,14 +1,17 @@
 import Dexie, { type Table } from 'dexie';
 
 import { topicRefKey } from '@/lib/topicRef';
+import type { DeckContentSource } from '@/types/repository';
 import type { Card, Subject, SubjectGraph, TopicDetails } from '../../types/core';
+
+export type { DeckContentSource } from '@/types/repository';
 
 export function topicCompositeKey(subjectId: string, topicId: string): string {
   return topicRefKey({ subjectId, topicId });
 }
 
 /** Manifest row; may include themeId from JSON beyond core Subject fields. */
-export type DeckSubjectRow = Subject & { themeId?: string };
+export type DeckSubjectRow = Subject & { themeId?: string; contentSource: DeckContentSource };
 
 export interface MetaRow {
   key: string;
@@ -38,9 +41,9 @@ export class DeckDatabase extends Dexie {
 
   constructor() {
     super('abyss-deck');
-    this.version(1).stores({
+    this.version(2).stores({
       meta: 'key',
-      subjects: 'id',
+      subjects: 'id, contentSource',
       graphs: 'subjectId',
       topics: 'key, subjectId, topicId',
       topicCards: 'key, subjectId, topicId',

@@ -106,7 +106,7 @@ export async function runTopicGenerationPipeline(
     return { ok: true, pipelineId: '', skipped: true };
   }
 
-  const manifest = await deckRepository.getManifest();
+  const manifest = await deckRepository.getManifest({ includePregeneratedCurriculums: true });
   const subject = manifest.subjects.find((s) => s.id === subjectId);
   const subjectTitle = subject?.name ?? graph.title;
   const contentStrategy = subject?.metadata?.strategy?.content;

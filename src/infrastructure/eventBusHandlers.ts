@@ -21,6 +21,11 @@ import {
 } from '@/features/crystalTrial';
 import { useProgressionStore } from '@/features/progression/progressionStore';
 import { calculateLevelFromXP } from '@/features/progression/progressionUtils';
+import {
+  handleMentorTrigger,
+  MENTOR_VOICE_ID,
+  useMentorStore,
+} from '@/features/mentor';
 import { pubSubClient } from './pubsub';
 import { toast } from '@/infrastructure/toast';
 
@@ -30,12 +35,31 @@ const g = globalThis as typeof globalThis & {
 
 async function resolveSubjectDisplayName(subjectId: string): Promise<string> {
   try {
-    const manifest = await deckRepository.getManifest();
+    const manifest = await deckRepository.getManifest({ includePregeneratedCurriculums: true });
     const subject = manifest.subjects.find((s) => s.id === subjectId);
     return subject?.name?.trim() || subjectId;
   } catch {
     return subjectId;
   }
+}
+
+function recordFirstSubjectGenerationEnqueued(subjectId: string): void {
+  const mentor = useMentorStore.getState();
+  if (mentor.firstSubjectGenerationEnqueuedAt !== null) {
+    return;
+  }
+
+  const atMs = Date.now();
+  mentor.markFirstSubjectGenerationEnqueued(atMs);
+  telemetry.log(
+    'mentor_first_subject_generation_enqueued',
+    {
+      triggerId: 'onboarding.first_subject',
+      source: 'canned',
+      voiceId: MENTOR_VOICE_ID,
+    },
+    { subjectId },
+  );
 }
 
 function assertStudyPanelHistoryContext(
@@ -137,13 +161,23 @@ if (!g.__abyssEventBusHandlersRegistered) {
   });
 
   appEventBus.on('subject:generation-pipeline', (e) => {
+    const subjectName = e.checklist.topicName.trim() || e.subjectId;
+    recordFirstSubjectGenerationEnqueued(e.subjectId);
+    handleMentorTrigger('subject.generation.started', { subjectName });
+
     const stageBindings = resolveSubjectGenerationStageBindings();
     const orchestrator = createSubjectGenerationOrchestrator();
     void orchestrator
       .execute({ subjectId: e.subjectId, checklist: e.checklist }, { stageBindings, writer: deckWriter })
       .then((result) => {
         if (result.ok) return;
-        toast.error(result.error);
+        appEventBus.emit('subjectGraph.generationFailed', {
+          subjectId: e.subjectId,
+          subjectName,
+          pipelineId: result.pipelineId,
+          stage: result.stage,
+          error: result.error,
+        });
       });
   });
 
@@ -151,6 +185,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
     void (async () => {
       const subjectName = await resolveSubjectDisplayName(e.subjectId);
       toast.success(`Curriculum generated: ${subjectName}`);
+      handleMentorTrigger('subject.generated', { subjectName });
     })();
 
     telemetry.log(
@@ -170,6 +205,29 @@ if (!g.__abyssEventBusHandlersRegistered) {
               prereqEdgesCorrection: e.prereqEdgesCorrection,
             }
           : {}),
+      },
+      { subjectId: e.subjectId },
+    );
+  });
+
+  appEventBus.on('subjectGraph.generationFailed', (e) => {
+    void (async () => {
+      toast.error(`Curriculum generation needs attention: ${e.subjectName}`);
+      handleMentorTrigger('subject.generation.failed', {
+        subjectName: e.subjectName,
+        stage: e.stage,
+        pipelineId: e.pipelineId,
+      });
+    })();
+
+    telemetry.log(
+      'subject_graph_generation_failed',
+      {
+        subjectId: e.subjectId,
+        subjectName: e.subjectName,
+        pipelineId: e.pipelineId,
+        stage: e.stage,
+        error: e.error,
       },
       { subjectId: e.subjectId },
     );
@@ -237,6 +295,10 @@ if (!g.__abyssEventBusHandlersRegistered) {
         activeExpansionJobs.delete(expansionKey);
       });
     }
+
+    // Mentor side-effect: forward level-up to the mentor rule engine. Cooldown
+    // and one-shot suppression are enforced by the engine + mentor store.
+    handleMentorTrigger('crystal.leveled', { from: e.from, to: e.to });
   });
 
   // Crystal Trial: background pre-generation triggered on positive XP gains
@@ -294,6 +356,26 @@ if (!g.__abyssEventBusHandlersRegistered) {
     // clearTrial for passed trials is handled by the modal's Level Up button.
   });
 
+  // Mentor side-effect: crystal-trial `awaiting_player` transition watcher.
+  // The store holds `trials: Record<topicRefKey, CrystalTrial>` so we diff
+  // each entry against the previous snapshot and only fire on a real
+  // transition (prev !== awaiting_player && next === awaiting_player). This
+  // avoids re-firing on unrelated state changes (cooldown counters, other
+  // trials). Registration sits inside the existing
+  // `__abyssEventBusHandlersRegistered` guard so it is set up exactly once.
+  useCrystalTrialStore.subscribe((next, prev) => {
+    const prevTrials = prev.trials;
+    const nextTrials = next.trials;
+    if (prevTrials === nextTrials) return;
+    for (const key of Object.keys(nextTrials)) {
+      const nextTrial = nextTrials[key];
+      if (!nextTrial || nextTrial.status !== 'awaiting_player') continue;
+      const prevTrial = prevTrials[key];
+      if (prevTrial && prevTrial.status === 'awaiting_player') continue;
+      handleMentorTrigger('crystal.trial.awaiting', { topic: nextTrial.topicId });
+    }
+  });
+
   // Card pool change detection: invalidate pre-generated trials
   pubSubClient.on('cards-updated', (msg) => {
     if (!msg.subjectId || !msg.topicId) {
@@ -344,6 +426,13 @@ if (!g.__abyssEventBusHandlersRegistered) {
       },
       { subjectId: e.subjectId, topicId: e.topicId, sessionId: e.sessionId },
     );
+
+    // Mentor side-effect: forward session completion to the mentor rule
+    // engine. Cooldown/one-shot suppression handled downstream.
+    handleMentorTrigger('session.completed', {
+      correctRate: e.correctRate,
+      totalAttempts: e.totalAttempts,
+    });
   });
 
   appEventBus.on('ritual:submitted', (e) => {

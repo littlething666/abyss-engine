@@ -1,4 +1,4 @@
-import type { IDeckRepository, Manifest } from '../../types/repository';
+import type { IDeckRepository, Manifest, ManifestOptions } from '../../types/repository';
 import type { Card, SubjectGraph, TopicDetails } from '../../types/core';
 import {
   fetchManifest,
@@ -9,8 +9,12 @@ import {
 
 /** Direct HTTP reads (no IndexedDB). Useful for tooling or alternate DI wiring. */
 export class ApiDeckRepository implements IDeckRepository {
-  async getManifest(): Promise<Manifest> {
-    return fetchManifest();
+  async getManifest(options: ManifestOptions = {}): Promise<Manifest> {
+    const manifest = await fetchManifest();
+    if (options.includePregeneratedCurriculums ?? false) {
+      return manifest;
+    }
+    return { subjects: [] };
   }
 
   async getSubjectGraph(subjectId: string): Promise<SubjectGraph> {

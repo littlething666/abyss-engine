@@ -1,7 +1,8 @@
 import { UseQueryResult, useQuery } from '@tanstack/react-query';
 import { Card, SubjectGraph, TopicDetails } from '../types/core';
-import { Manifest } from '../types/repository';
+import { Manifest, ManifestOptions } from '../types/repository';
 import { deckRepository } from '../infrastructure/di';
+import { useFeatureFlagsStore } from '../store/featureFlagsStore';
 
 const DEFAULT_STALE_TIME = Number.POSITIVE_INFINITY;
 
@@ -10,10 +11,15 @@ export function topicCardsQueryKey(subjectId: string, topicId: string) {
   return ['content', 'topic-cards', subjectId, topicId] as const;
 }
 
-export function useManifest(): UseQueryResult<Manifest, Error> {
+export function useManifest(options: ManifestOptions = {}): UseQueryResult<Manifest, Error> {
+  const pregeneratedCurriculumsVisible = useFeatureFlagsStore((s) => s.pregeneratedCurriculumsVisible);
+  const includePregeneratedCurriculums =
+    options.includePregeneratedCurriculums ?? pregeneratedCurriculumsVisible;
+
   return useQuery({
-    queryKey: ['content', 'subjects'] as const,
-    queryFn: async (): Promise<Manifest> => deckRepository.getManifest(),
+    queryKey: ['content', 'subjects', includePregeneratedCurriculums] as const,
+    queryFn: async (): Promise<Manifest> =>
+      deckRepository.getManifest({ includePregeneratedCurriculums }),
     staleTime: DEFAULT_STALE_TIME,
   });
 }

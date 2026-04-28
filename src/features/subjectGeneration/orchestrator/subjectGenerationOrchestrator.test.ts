@@ -231,6 +231,7 @@ describe('createSubjectGenerationOrchestrator', () => {
     if (!result.ok) {
       expect(result.error).toBe('topics bad');
       expect(result.pipelineId).toBeDefined();
+      expect(result.stage).toBe('topics');
     }
     expect(writer.upsertGraph).not.toHaveBeenCalled();
     expect(runContentGenerationJob).toHaveBeenCalledTimes(1);
