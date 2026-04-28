@@ -19,7 +19,7 @@ export async function applyGraphToStorage(
     throw new Error(`Subject id "${subject.id}" does not match graph.subjectId "${graph.subjectId}"`);
   }
 
-  await writer.upsertSubject({ ...subject, themeId: graph.themeId });
+  await writer.upsertSubject({ ...subject, themeId: graph.themeId, contentSource: 'generated' });
   await writer.upsertGraph(graph);
 
   for (const node of graph.nodes) {

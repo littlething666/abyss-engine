@@ -262,9 +262,11 @@ function OpenRouterConfigList() {
 
 function PreferencesSection() {
   const pomodoroVisible = useFeatureFlagsStore((s) => s.pomodoroVisible);
+  const pregeneratedCurriculumsVisible = useFeatureFlagsStore((s) => s.pregeneratedCurriculumsVisible);
   const ritualVisible = useFeatureFlagsStore((s) => s.ritualVisible);
   const sfxEnabled = useFeatureFlagsStore((s) => s.sfxEnabled);
   const setPomodoroVisible = useFeatureFlagsStore((s) => s.setPomodoroVisible);
+  const setPregeneratedCurriculumsVisible = useFeatureFlagsStore((s) => s.setPregeneratedCurriculumsVisible);
   const setRitualVisible = useFeatureFlagsStore((s) => s.setRitualVisible);
   const setSfxEnabled = useFeatureFlagsStore((s) => s.setSfxEnabled);
   const tts = useInferenceTtsToggle();
@@ -312,6 +314,19 @@ function PreferencesSection() {
             checked={pomodoroVisible}
             onCheckedChange={setPomodoroVisible}
             aria-label="Show Pomodoro timer"
+          />
+        </div>
+        <div className={ROW_CLASSNAME}>
+          <div className="min-w-0">
+            <span className="text-sm text-foreground">Pregenerated curricula</span>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              Show bundled starter curricula alongside the ones you generate yourself.
+            </p>
+          </div>
+          <Switch
+            checked={pregeneratedCurriculumsVisible}
+            onCheckedChange={setPregeneratedCurriculumsVisible}
+            aria-label="Show pregenerated curricula"
           />
         </div>
         <div className={ROW_CLASSNAME}>

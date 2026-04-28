@@ -1,26 +1,25 @@
 import { logDeckIndexedDb } from '../deckDb/deckDbDebugLog';
 import { ensureDeckSeeded } from '../deckDb/deckSeed';
-import { deckDb, topicCompositeKey } from '../deckDb/deckDb';
-import type { IDeckRepository, Manifest } from '../../types/repository';
+import { deckDb, topicCompositeKey, type DeckSubjectRow } from '../deckDb/deckDb';
+import type { IDeckRepository, Manifest, ManifestOptions } from '../../types/repository';
 import type { Card, Subject, SubjectGraph, TopicDetails } from '../../types/core';
 
 export class IndexedDbDeckRepository implements IDeckRepository {
-  async getManifest(): Promise<Manifest> {
+  async getManifest(options: ManifestOptions = {}): Promise<Manifest> {
     await ensureDeckSeeded();
     const orderRow = await deckDb.meta.get('subjectIdsOrdered');
     const order = (orderRow?.value as string[] | undefined) ?? [];
     const rows = await deckDb.subjects.toArray();
-    const byId = new Map(rows.map((s) => [s.id, s]));
-    const subjects: Subject[] = order
-      .map((id) => byId.get(id))
-      .filter((s): s is Subject => Boolean(s));
+    const includePregeneratedCurriculums = options.includePregeneratedCurriculums ?? false;
+    const subjects = buildOrderedManifestSubjects(rows, order, includePregeneratedCurriculums);
     if (subjects.length === 0 && rows.length > 0) {
-      const fallback = rows.sort((a, b) => a.id.localeCompare(b.id));
+      const fallback = buildOrderedManifestSubjects(rows, [], includePregeneratedCurriculums);
       logDeckIndexedDb('IndexedDB', {
         method: 'getManifest',
         ops: 'meta.get(subjectIdsOrdered)+subjects.toArray',
         subjectCount: fallback.length,
         order: 'sorted-id-fallback',
+        includePregeneratedCurriculums,
       });
       return { subjects: fallback };
     }
@@ -28,6 +27,7 @@ export class IndexedDbDeckRepository implements IDeckRepository {
       method: 'getManifest',
       ops: 'meta.get(subjectIdsOrdered)+subjects.toArray',
       subjectCount: subjects.length,
+      includePregeneratedCurriculums,
     });
     return { subjects };
   }
@@ -72,4 +72,33 @@ export class IndexedDbDeckRepository implements IDeckRepository {
     });
     return row?.cards ?? [];
   }
+}
+
+function buildOrderedManifestSubjects(
+  rows: DeckSubjectRow[],
+  order: string[],
+  includePregeneratedCurriculums: boolean,
+): Subject[] {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const orderedRows = order
+    .map((id) => byId.get(id))
+    .filter((row): row is DeckSubjectRow => Boolean(row));
+  const seen = new Set(orderedRows.map((row) => row.id));
+  const extras = rows
+    .filter((row) => !seen.has(row.id))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const partitionedRows = partitionRowsByVisibility([...orderedRows, ...extras], includePregeneratedCurriculums);
+  return partitionedRows;
+}
+
+function partitionRowsByVisibility(
+  rows: DeckSubjectRow[],
+  includePregeneratedCurriculums: boolean,
+): DeckSubjectRow[] {
+  const generated = rows.filter((row) => row.contentSource === 'generated');
+  if (!includePregeneratedCurriculums) {
+    return generated;
+  }
+  const bundled = rows.filter((row) => row.contentSource === 'bundled');
+  return [...generated, ...bundled];
 }

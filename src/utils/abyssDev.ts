@@ -99,7 +99,7 @@ function getStore() {
 }
 
 const getAllSubjectGraphs = async (): Promise<SubjectGraph[]> => {
-  const manifest = await deckRepository.getManifest();
+  const manifest = await deckRepository.getManifest({ includePregeneratedCurriculums: true });
   const subjectIds = (manifest.subjects ?? []).map((subject: { id: string }) => subject.id);
 
   const responses = await Promise.allSettled(subjectIds.map((subjectId) => deckRepository.getSubjectGraph(subjectId)));

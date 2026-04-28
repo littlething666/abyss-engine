@@ -31,7 +31,7 @@ const g = globalThis as typeof globalThis & {
 
 async function resolveSubjectDisplayName(subjectId: string): Promise<string> {
   try {
-    const manifest = await deckRepository.getManifest();
+    const manifest = await deckRepository.getManifest({ includePregeneratedCurriculums: true });
     const subject = manifest.subjects.find((s) => s.id === subjectId);
     return subject?.name?.trim() || subjectId;
   } catch {

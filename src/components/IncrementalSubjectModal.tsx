@@ -72,7 +72,7 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
 
     setSubmitting(true);
     try {
-      const manifest = await deckRepository.getManifest();
+      const manifest = await deckRepository.getManifest({ includePregeneratedCurriculums: true });
       if (manifest.subjects.some((s) => s.id === sid)) {
         setLocalError(`A subject with id "${sid}" already exists. Use a different name.`);
         return;

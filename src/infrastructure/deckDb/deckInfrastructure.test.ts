@@ -15,6 +15,7 @@ const subjectRow = {
   description: 'd',
   color: '#000',
   geometry: { gridTile: 'box' as const },
+  contentSource: 'generated' as const,
 };
 
 const graph = {
@@ -83,6 +84,59 @@ describe('IndexedDB deck', () => {
 
     const cards = await repo.getTopicCards('sub-a', 'top-1');
     expect(cards).toEqual([]);
+  });
+
+  it('hides bundled subjects by default and shows generated first when enabled', async () => {
+    await primeDeckDbForTests({
+      subjects: [
+        {
+          id: 'bundled-a',
+          name: 'Bundled A',
+          description: '',
+          color: '#111',
+          geometry: { gridTile: 'box' },
+          contentSource: 'bundled',
+        },
+        {
+          id: 'generated-a',
+          name: 'Generated A',
+          description: '',
+          color: '#222',
+          geometry: { gridTile: 'sphere' },
+          contentSource: 'generated',
+        },
+        {
+          id: 'bundled-b',
+          name: 'Bundled B',
+          description: '',
+          color: '#333',
+          geometry: { gridTile: 'plane' },
+          contentSource: 'bundled',
+        },
+        {
+          id: 'generated-b',
+          name: 'Generated B',
+          description: '',
+          color: '#444',
+          geometry: { gridTile: 'cylinder' },
+          contentSource: 'generated',
+        },
+      ],
+      graphs: [],
+      topicDetails: [],
+      topicCards: [],
+    });
+
+    const hiddenManifest = await repo.getManifest();
+    expect(hiddenManifest.subjects.map((subject) => subject.id)).toEqual(['generated-a', 'generated-b']);
+
+    const visibleManifest = await repo.getManifest({ includePregeneratedCurriculums: true });
+    expect(visibleManifest.subjects.map((subject) => subject.id)).toEqual([
+      'generated-a',
+      'generated-b',
+      'bundled-a',
+      'bundled-b',
+    ]);
   });
 
   it('deckContentWriter upserts cards and emits pubsub', async () => {
