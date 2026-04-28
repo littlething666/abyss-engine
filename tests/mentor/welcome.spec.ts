@@ -12,18 +12,27 @@ import { test, expect } from '../fixtures/app';
  *
  * The welcome trigger is one-shot: once the overlay renders the trigger is
  * marked seen, so we don't try to re-fire it within a single test.
+ *
+ * These specs intentionally don't assert the exact mentor copy — the canned
+ * lines in mentorLines.ts are tweaked frequently and matching them here would
+ * brittle. Structural assertions (overlay visible, text non-empty, choice
+ * testids present, store seen state) cover the v1 contract.
  */
 test.describe('Mentor \u2014 onboarding.welcome flow', () => {
-  test('welcome dialog auto-opens on first boot and renders the greeting', async ({
+  test('welcome dialog auto-opens on first boot and renders non-empty greeting', async ({
     seededApp: page,
   }) => {
     const overlay = page.getByTestId('mentor-dialog-overlay');
     await expect(overlay).toBeVisible({ timeout: 10_000 });
 
     const text = page.getByTestId('mentor-dialog-text');
-    // Typewriter reveal may be in progress; assert the initial greeting
-    // substring shows up after reveal completes.
-    await expect.poll(async () => (await text.textContent())?.includes('test subject'), {
+    // Wait for the typewriter to reveal something — the in-progress caret
+    // (▌) tells us reveal is still ticking, so wait until it's gone.
+    await expect.poll(async () => {
+      const inner = await text.innerHTML();
+      const visible = (await text.textContent()) ?? '';
+      return !inner.includes('\u258c') && visible.trim().length > 0;
+    }, {
       timeout: 5000,
       message: 'welcome greeting text never finished revealing',
     }).toBe(true);
@@ -36,12 +45,10 @@ test.describe('Mentor \u2014 onboarding.welcome flow', () => {
     await expect(overlay).toBeVisible({ timeout: 10_000 });
 
     const text = page.getByTestId('mentor-dialog-text');
-    // Click before the reveal completes — handler is the same once revealed,
-    // but the assertion below works either way.
     await text.click();
 
-    // After the click, the visible text should not contain the in-progress
-    // typewriter caret (▌) since revealedChars === totalChars.
+    // After the click, the in-progress typewriter caret (▌) should no
+    // longer be present since revealedChars === totalChars.
     await expect.poll(async () => {
       const innerHtml = await text.innerHTML();
       return innerHtml.includes('\u258c');
