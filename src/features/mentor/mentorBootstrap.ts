@@ -1,6 +1,7 @@
 'use client';
 
 import { appEventBus } from '@/infrastructure/eventBus';
+import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 import { evaluateTrigger } from './dialogRuleEngine';
 import { useMentorStore } from './mentorStore';
 import type { MentorTriggerId, MentorTriggerPayload } from './mentorTypes';
@@ -49,16 +50,18 @@ function scheduleWelcomeEnqueue(): void {
 
 /**
  * Idempotent module-load bootstrap. Subscribes mentor triggers to the
- * `appEventBus` and schedules the deferred onboarding welcome enqueue.
+ * `appEventBus` and the crystal-trial store, then schedules the deferred
+ * onboarding welcome enqueue.
  *
- * - `crystal:leveled` → `crystal.leveled` trigger (60s cooldown enforced by rule engine)
- * - `session:completed` → `session.completed` trigger
- * - `onboarding.welcome` → enqueued after rehydration if oneShot is unfired
+ * - `crystal:leveled` -> `crystal.leveled` trigger (60s cooldown enforced by rule engine)
+ * - `session:completed` -> `session.completed` trigger
+ * - `crystalTrialStore.trials[*].status === 'awaiting_player'` (true transition only)
+ *   -> `crystal.trial.awaiting` trigger
+ * - `onboarding.welcome` -> enqueued after rehydration if oneShot is unfired
  *
- * Crystal-trial `awaiting_player` is intentionally NOT wired here yet — it
- * needs a `useCrystalTrialStore.subscribe` watcher with a prev/next status
- * diff and is tracked as a Phase-2 follow-up commit so we can read the
- * trial-store shape without guessing.
+ * Mentor side-effects are intentionally colocated here (rather than inside
+ * `eventBusHandlers.ts`) so all mentor wiring lives behind the single
+ * `__abyssMentorBootstrapped` guard and can be reset from tests.
  */
 export function bootstrapMentor(): void {
   if (g.__abyssMentorBootstrapped) return;
@@ -73,6 +76,24 @@ export function bootstrapMentor(): void {
       correctRate: e.correctRate,
       totalAttempts: e.totalAttempts,
     });
+  });
+
+  // Crystal-trial awaiting_player watcher. The store holds
+  // `trials: Record<topicRefKey, CrystalTrial>` so we diff each entry against
+  // the previous snapshot and only fire on a real transition
+  // (prev !== awaiting_player && next === awaiting_player). This avoids
+  // re-firing on unrelated state changes (cooldown counters, other trials).
+  useCrystalTrialStore.subscribe((next, prev) => {
+    const prevTrials = prev.trials;
+    const nextTrials = next.trials;
+    if (prevTrials === nextTrials) return;
+    for (const key of Object.keys(nextTrials)) {
+      const nextTrial = nextTrials[key];
+      if (!nextTrial || nextTrial.status !== 'awaiting_player') continue;
+      const prevTrial = prevTrials[key];
+      if (prevTrial && prevTrial.status === 'awaiting_player') continue;
+      tryEnqueue('crystal.trial.awaiting', { topic: nextTrial.topicId });
+    }
   });
 
   scheduleWelcomeEnqueue();
