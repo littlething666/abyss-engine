@@ -2,9 +2,10 @@ export type MentorVoiceId = 'witty-sarcastic';
 
 export const MENTOR_TRIGGER_IDS = [
   'onboarding.pre_first_subject',
+  'onboarding.subject_unlock_first_crystal',
   'session.completed',
   'crystal.leveled',
-  'crystal.trial.awaiting',
+  'crystal.trial.available_for_player',
   'subject.generation.started',
   'subject.generated',
   'subject.generation.failed',
@@ -21,8 +22,14 @@ export type MentorMood =
   | 'celebrate'
   | 'hint';
 
+// Optional `subjectId` carries the discovery scope into the modal. When
+// undefined, DiscoveryModal falls back to the sessionStorage default; when
+// '__all_floors__', the modal explicitly opens in all-subjects mode.
 export type MentorEffect =
-  | { kind: 'open_discovery' }
+  | {
+      kind: 'open_discovery';
+      subjectId?: string | '__all_floors__';
+    }
   | { kind: 'open_generation_hud' }
   | { kind: 'dismiss' };
 
@@ -57,6 +64,7 @@ export interface DialogPlan {
 
 export interface MentorTriggerPayload {
   topic?: string;
+  subjectId?: string;
   subjectName?: string;
   stage?: 'topics' | 'edges';
   pipelineId?: string;

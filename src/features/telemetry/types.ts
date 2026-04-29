@@ -220,11 +220,22 @@ export type SubjectGraphValidationFailedPayload = z.infer<typeof SubjectGraphVal
 // `onboarding.welcome` + `onboarding.first_subject` were collapsed into the
 // single canonical `onboarding.pre_first_subject` trigger; the rule engine
 // gates only on firstSubjectGenerationEnqueuedAt === null.
+//
+// `crystal.trial.awaiting` was renamed to
+// `crystal.trial.available_for_player` so the trigger expresses the
+// player-facing predicate (trial is prepared AND XP is at the band cap),
+// not the raw store status.
+//
+// `onboarding.subject_unlock_first_crystal` is the post-curriculum
+// contextual entry trigger — fires once per newly generated subject whose
+// topics are still fully locked, opening the Discovery modal scoped to
+// that subject.
 export const MentorTriggerIdSchema = z.enum([
   'onboarding.pre_first_subject',
+  'onboarding.subject_unlock_first_crystal',
   'session.completed',
   'crystal.leveled',
-  'crystal.trial.awaiting',
+  'crystal.trial.available_for_player',
   'subject.generation.started',
   'subject.generated',
   'subject.generation.failed',
@@ -252,7 +263,10 @@ export type MentorDialogSkippedPayload = z.infer<typeof MentorDialogSkippedPaylo
 export const MentorDialogCompletedPayloadSchema = MentorEventBaseSchema.extend({
   planId: z.string(),
   durationMs: z.number().nonnegative(),
-  outcome: z.enum(['auto-advance', 'choice', 'closed']),
+  // 'ambient' covers the Workstream A visual-novel advance path — a tap
+  // outside any interactive element (Canvas miss, dialog ‘<p>’ tap, floor
+  // deselect plane) that completes typing or advances to the next message.
+  outcome: z.enum(['auto-advance', 'choice', 'closed', 'ambient']),
   choiceId: z.string().optional(),
 });
 export type MentorDialogCompletedPayload = z.infer<typeof MentorDialogCompletedPayloadSchema>;

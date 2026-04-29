@@ -16,10 +16,12 @@ import {
 } from '@/features/contentGeneration';
 import {
   getXpToNextBandThreshold,
-  isXpMaxedForCurrentLevel,
   useProgressionStore as useStudyStore,
 } from '@/features/progression';
-import { useCrystalTrialStore } from '@/features/crystalTrial';
+import {
+  isCrystalTrialAvailableForPlayer,
+  useCrystalTrialStore,
+} from '@/features/crystalTrial';
 import type { TopicMetadata } from '@/features/content';
 import type { Card } from '@/types/core';
 import { useCrystalContentCelebrationStore } from '@/store/crystalContentCelebrationStore';
@@ -59,7 +61,10 @@ export default function TopicSelectionBar({
     selectedTopic ? state.getTrialStatus(selectedTopic) : 'idle',
   );
   const openCrystalTrial = useUIStore((state) => state.openCrystalTrial);
-  const xpReadyForTrial = isXpMaxedForCurrentLevel(selectedXp);
+  // Single source of truth for the trial-availability predicate, shared
+  // with Crystals.tsx (VFX), CrystalTrialModal.tsx (Begin Trial enable),
+  // and eventBusHandlers.ts (mentor watcher).
+  const trialAvailable = isCrystalTrialAvailableForPlayer(trialStatus, selectedXp);
   const xpUntilTrialReady = getXpToNextBandThreshold(selectedXp);
 
   const allGraphs = useAllGraphs();
@@ -191,16 +196,19 @@ export default function TopicSelectionBar({
     selectTopic(null);
   };
 
-  const trialReady = trialStatus === 'awaiting_player' && xpReadyForTrial;
   const isTrialLoading = trialStatus === 'pregeneration';
+  // "Prepared but XP-deficient" → show the small "X XP left" hint next to
+  // the Begin Trial button. Falls out of `trialAvailable` so the gate can
+  // remain disabled while still surfacing the actionable goal to the
+  // player.
   const trialDisabledText =
-    trialStatus === 'awaiting_player' && !xpReadyForTrial && xpUntilTrialReady > 0
+    trialStatus === 'awaiting_player' && !trialAvailable && xpUntilTrialReady > 0
       ? `${Math.max(0, xpUntilTrialReady)} XP left`
       : null;
 
   const handleBeginTrial: React.MouseEventHandler<HTMLButtonElement> = (event) => {
     stopPropagation(event);
-    if (!trialReady) {
+    if (!trialAvailable) {
       return;
     }
     openCrystalTrial();
@@ -219,7 +227,7 @@ export default function TopicSelectionBar({
     selectedTopicContentStatus === 'ready' &&
     isCelebrationPendingForTopic;
 
-  const trialGateParticlesActive = trialReady;
+  const trialGateParticlesActive = trialAvailable;
 
   const containerClass = 'fixed z-50 flex justify-center px-2 sm:px-3';
   const containerStyle: React.CSSProperties = {
@@ -337,8 +345,8 @@ export default function TopicSelectionBar({
               <Button
                 type="button"
                 size="icon-sm"
-                variant={trialReady ? 'default' : 'secondary'}
-                disabled={!trialReady || isTrialLoading}
+                variant={trialAvailable ? 'default' : 'secondary'}
+                disabled={!trialAvailable || isTrialLoading}
                 onClick={handleBeginTrial}
                 onPointerDown={stopPropagation}
                 onMouseDown={stopPropagation}
@@ -346,7 +354,7 @@ export default function TopicSelectionBar({
                 aria-label={
                   isTrialLoading
                     ? 'Generating trial'
-                    : trialReady
+                    : trialAvailable
                       ? 'Begin trial'
                       : trialDisabledText
                         ? `Trial unavailable: ${trialDisabledText}`
@@ -355,7 +363,7 @@ export default function TopicSelectionBar({
                 title={
                   isTrialLoading
                     ? 'Generating trial questions...'
-                    : trialReady
+                    : trialAvailable
                       ? 'Begin trial'
                       : trialDisabledText
                         ? `Trial unavailable: ${trialDisabledText}`

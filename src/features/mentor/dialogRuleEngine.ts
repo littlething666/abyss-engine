@@ -93,6 +93,44 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
       return messages;
     },
   },
+  // Post-curriculum contextual entry. Fired by eventBusHandlers when a
+  // subject's curriculum has just been generated and the player has not
+  // unlocked any topic in that subject yet. The choice CTA opens Discovery
+  // scoped to the newly generated subject (subjectId is forwarded into
+  // the open_discovery effect). Dedupes against an already-active or
+  // queued plan of the same trigger so a fast back-to-back regenerate
+  // does not stack notifications.
+  'onboarding.subject_unlock_first_crystal': {
+    trigger: 'onboarding.subject_unlock_first_crystal',
+    priority: 78,
+    isApplicable: (s) =>
+      s.currentDialog?.trigger !== 'onboarding.subject_unlock_first_crystal' &&
+      !s.dialogQueue.some(
+        (plan) => plan.trigger === 'onboarding.subject_unlock_first_crystal',
+      ),
+    buildMessages: (text, payload) => [
+      {
+        id: 'subject-unlock-first-crystal',
+        text,
+        mood: 'hint',
+        choices: [
+          {
+            id: 'open-discovery',
+            label: 'Open Discovery',
+            effect: {
+              kind: 'open_discovery',
+              // payload.subjectId is set by eventBusHandlers; if missing
+              // (e.g. test harness), the modal falls back to its sessionStorage
+              // default via DiscoveryModal.
+              subjectId: payload.subjectId,
+            },
+            next: 'end',
+          },
+          { id: 'maybe-later', label: 'Maybe later', next: 'end' },
+        ],
+      },
+    ],
+  },
   'session.completed': {
     trigger: 'session.completed',
     priority: 60,
@@ -104,10 +142,10 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
     cooldownMs: 60_000,
     buildMessages: (text) => [{ id: 'crystal-leveled', text, mood: 'celebrate' }],
   },
-  'crystal.trial.awaiting': {
-    trigger: 'crystal.trial.awaiting',
+  'crystal.trial.available_for_player': {
+    trigger: 'crystal.trial.available_for_player',
     priority: 75,
-    buildMessages: (text) => [{ id: 'trial-awaiting', text, mood: 'hint' }],
+    buildMessages: (text) => [{ id: 'trial-available-for-player', text, mood: 'hint' }],
   },
   // Generation-started dedupes against current/queued plans of the same
   // trigger so contextual entry from the bubble (which the engine fires
@@ -165,9 +203,10 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
 
 const VARIANT_COUNTS: Record<MentorTriggerId, number> = {
   'onboarding.pre_first_subject': 1,
+  'onboarding.subject_unlock_first_crystal': 3,
   'session.completed': 3,
   'crystal.leveled': 3,
-  'crystal.trial.awaiting': 2,
+  'crystal.trial.available_for_player': 2,
   'subject.generation.started': 3,
   'subject.generated': 4,
   'subject.generation.failed': 4,

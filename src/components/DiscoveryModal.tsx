@@ -39,6 +39,7 @@ import { useContentGenerationStore } from '@/features/contentGeneration/contentG
 import type { ContentGenerationJobKind } from '@/types/contentGeneration';
 import { TopicDetailsPopup } from './TopicDetailsPopup';
 import { useShallow } from 'zustand/react/shallow';
+import { useUIStore } from '@/store/uiStore';
 
 const DISCOVERY_MODAL_SUBJECT_STORAGE_KEY = 'abyss:discoveryModalSubjectId';
 
@@ -213,6 +214,11 @@ export function DiscoveryModal({
   const isRitualSubmissionAvailable = ritualCooldownRemainingMs <= 0;
   const ritualVisible = useFeatureFlagsStore((s) => s.ritualVisible);
 
+  // UI-store-supplied scope hint. When non-null at open time it wins over
+  // the sessionStorage default so the mentor's open_discovery effect can
+  // pre-filter the modal to a specific subject.
+  const uiStoreSubjectIdHint = useUIStore((s) => s.discoveryModalSubjectId);
+
   const modalSubjectScopeForGraphs = modalSubjectId === '__all_floors__' ? null : modalSubjectId;
 
   useEffect(() => {
@@ -221,6 +227,16 @@ export function DiscoveryModal({
       setTopicListFilter('locked');
     }
   }, [isOpen]);
+
+  // When the modal opens with a uiStore-supplied scope hint, adopt it as the
+  // current scope and persist to sessionStorage so subsequent unscoped opens
+  // remember it. Re-runs if the hint changes while the modal is already open.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (uiStoreSubjectIdHint === null || uiStoreSubjectIdHint === undefined) return;
+    setModalSubjectId(uiStoreSubjectIdHint);
+    writeStoredModalSubjectId(uiStoreSubjectIdHint);
+  }, [isOpen, uiStoreSubjectIdHint]);
 
   const getTopicsByTier = useStudyStore((state) => state.getTopicsByTier);
   const unlockTopic = useStudyStore((state) => state.unlockTopic);

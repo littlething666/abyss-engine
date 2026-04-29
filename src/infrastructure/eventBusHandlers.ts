@@ -18,6 +18,7 @@ import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQue
 import {
   resolveCrystalTrialPregenerateLevels,
   busMayStartTrialPregeneration,
+  isCrystalTrialAvailableForPlayer,
 } from '@/features/crystalTrial';
 import { useProgressionStore } from '@/features/progression/progressionStore';
 import { calculateLevelFromXP } from '@/features/progression/progressionUtils';
@@ -84,6 +85,14 @@ if (!g.__abyssEventBusHandlersRegistered) {
   g.__abyssEventBusHandlersRegistered = true;
 
   const activeExpansionJobs = new Map<string, AbortController>();
+
+  // Module-scoped dedupe for the post-curriculum onboarding trigger.
+  // Ensures `onboarding.subject_unlock_first_crystal` fires at most once per
+  // subjectId across regenerates (a player who regenerates a subject's
+  // curriculum without unlocking any topic should NOT see the same
+  // "open Discovery" prod twice). Falling back to `subject.generated`
+  // keeps the celebration line for subjects already engaged with.
+  const firedSubjectUnlockFirstCrystal = new Set<string>();
 
   appEventBus.on('card:reviewed', (e) => {
     telemetry.log(
@@ -195,7 +204,26 @@ if (!g.__abyssEventBusHandlersRegistered) {
     void (async () => {
       const subjectName = await resolveSubjectDisplayName(e.subjectId);
       toast.success(`Curriculum generated: ${subjectName}`);
-      handleMentorTrigger('subject.generated', { subjectName });
+
+      // Branch: if no topic from this subject has been unlocked yet, fire the
+      // contextual onboarding prod (scoped to this subject so DiscoveryModal
+      // pre-filters); otherwise fire the generic celebration line.
+      // The dedupe set guards against re-fires across regenerates within the
+      // same session — once shown, the player won't see this prod again for
+      // the same subjectId regardless of subsequent generations.
+      const hasAnyUnlockedInSubject = useProgressionStore
+        .getState()
+        .activeCrystals.some((c) => c.subjectId === e.subjectId);
+      const alreadyFiredOnboarding = firedSubjectUnlockFirstCrystal.has(e.subjectId);
+      if (!hasAnyUnlockedInSubject && !alreadyFiredOnboarding) {
+        firedSubjectUnlockFirstCrystal.add(e.subjectId);
+        handleMentorTrigger('onboarding.subject_unlock_first_crystal', {
+          subjectName,
+          subjectId: e.subjectId,
+        });
+      } else {
+        handleMentorTrigger('subject.generated', { subjectName });
+      }
     })();
 
     telemetry.log(
@@ -366,25 +394,60 @@ if (!g.__abyssEventBusHandlersRegistered) {
     // clearTrial for passed trials is handled by the modal's Level Up button.
   });
 
-  // Mentor side-effect: crystal-trial `awaiting_player` transition watcher.
-  // The store holds `trials: Record<topicRefKey, CrystalTrial>` so we diff
-  // each entry against the previous snapshot and only fire on a real
-  // transition (prev !== awaiting_player && next === awaiting_player). This
-  // avoids re-firing on unrelated state changes (cooldown counters, other
-  // trials). Registration sits inside the existing
-  // `__abyssEventBusHandlersRegistered` guard so it is set up exactly once.
-  useCrystalTrialStore.subscribe((next, prev) => {
-    const prevTrials = prev.trials;
-    const nextTrials = next.trials;
-    if (prevTrials === nextTrials) return;
-    for (const key of Object.keys(nextTrials)) {
-      const nextTrial = nextTrials[key];
-      if (!nextTrial || nextTrial.status !== 'awaiting_player') continue;
-      const prevTrial = prevTrials[key];
-      if (prevTrial && prevTrial.status === 'awaiting_player') continue;
-      handleMentorTrigger('crystal.trial.awaiting', { topic: nextTrial.topicId });
+  // ---- Mentor side-effect: trial-availability watcher ----
+  //
+  // Fires `crystal.trial.available_for_player` exactly once per topic per
+  // false→true transition of `isCrystalTrialAvailableForPlayer(status, xp)`.
+  // The predicate combines BOTH the trial-store status (must be
+  // `awaiting_player`) AND the progression-store XP (must be at the
+  // band cap), so a trial that is prepared but XP-deficient does NOT
+  // fire — the player would see a mentor announcement they cannot act
+  // on. This watcher subscribes to both stores so availability reached
+  // by either path (pregeneration completing, or player catching up XP
+  // after pregeneration was already done) triggers the announcement.
+  //
+  // Set membership is local to this module so we never re-fire on
+  // unrelated state changes (cooldown counters, other trials, XP gains
+  // in already-available crystals). Falling out of availability (e.g.
+  // trial moved to `in_progress` when the modal opens) silently drops
+  // the key from the set; the next true transition re-fires.
+  const availableKeys = new Set<string>();
+
+  function recomputeTrialAvailability(): void {
+    const trials = useCrystalTrialStore.getState().trials;
+    const activeCrystals = useProgressionStore.getState().activeCrystals;
+    const xpByKey = new Map<string, number>();
+    for (const crystal of activeCrystals) {
+      xpByKey.set(topicRefKey(crystal), crystal.xp);
     }
-  });
+
+    const seen = new Set<string>();
+    for (const [key, trial] of Object.entries(trials)) {
+      if (!trial) continue;
+      seen.add(key);
+      const xp = xpByKey.get(key) ?? 0;
+      const isAvailable = isCrystalTrialAvailableForPlayer(trial.status, xp);
+      const wasAvailable = availableKeys.has(key);
+      if (isAvailable && !wasAvailable) {
+        availableKeys.add(key);
+        handleMentorTrigger('crystal.trial.available_for_player', {
+          topic: trial.topicId,
+        });
+      } else if (!isAvailable && wasAvailable) {
+        availableKeys.delete(key);
+      }
+    }
+
+    // Drop keys whose trials disappeared from the store entirely (e.g.
+    // `clearTrial` after a passed trial). Without this, a recreated trial
+    // for the same topic key could skip the false→true edge.
+    for (const key of availableKeys) {
+      if (!seen.has(key)) availableKeys.delete(key);
+    }
+  }
+
+  useCrystalTrialStore.subscribe(recomputeTrialAvailability);
+  useProgressionStore.subscribe(recomputeTrialAvailability);
 
   // Card pool change detection: invalidate pre-generated trials
   pubSubClient.on('cards-updated', (msg) => {

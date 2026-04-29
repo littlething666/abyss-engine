@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createCrystalInstancedAttributes,
-  CRYSTAL_INSTANCE_OFFSET_TRIAL_READY,
+  CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE,
   CRYSTAL_INSTANCE_STRIDE,
 } from './crystalInstanceAttributes';
 
@@ -13,10 +13,10 @@ describe('createCrystalInstancedAttributes', () => {
     expect(attributes.interleaved).toBe(attributes.instanceSubjectSeed.data);
     expect(attributes.interleaved).toBe(attributes.instanceColor.data);
     expect(attributes.interleaved).toBe(attributes.instanceSelectCeremony.data);
-    expect(attributes.interleaved).toBe(attributes.instanceTrialReady.data);
+    expect(attributes.interleaved).toBe(attributes.instanceTrialAvailable.data);
   });
 
-  it('packs trial after color and ceremony without overlapping stride', () => {
-    expect(CRYSTAL_INSTANCE_OFFSET_TRIAL_READY + 1).toBe(CRYSTAL_INSTANCE_STRIDE);
+  it('packs trial-available after color and ceremony without overlapping stride', () => {
+    expect(CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE + 1).toBe(CRYSTAL_INSTANCE_STRIDE);
   });
 });

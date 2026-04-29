@@ -5,6 +5,8 @@ export {
 export {
   trialStatusRequiresXpCapAtLevelBoundary,
   busMayStartTrialPregeneration,
+  isCrystalTrialPrepared,
+  isCrystalTrialAvailableForPlayer,
 } from './trialPolicy';
 export { useCrystalTrialStore } from './crystalTrialStore';
 export { evaluateTrial } from './evaluateTrial';

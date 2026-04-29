@@ -23,6 +23,7 @@ import { useTopicCardQueriesForActiveTopics } from '../hooks/useTopicCardQueries
 import { useSceneInvalidator } from '../hooks/useSceneInvalidator'
 import { useSelectedCrystalSpotlight } from '../hooks/useSelectedCrystalSpotlight'
 import { useCeremonyCameraDolly } from '../hooks/useCeremonyCameraDolly'
+import { requestAmbientAdvance } from '../features/mentor/overlayController'
 import '../graphics/nodeMaterialRegistration'
 import { SceneSky, SunSyncedAmbientFill, SunSyncedDirectionalLight } from './SceneSky'
 import { FLOOR_SURFACE_Y } from '../constants/sceneFloor'
@@ -293,6 +294,13 @@ export const Scene: React.FC<SceneProps> = ({
           gl.toneMappingExposure = 0.55
           onCanvasReady?.()
         }}
+        onPointerMissed={() => {
+          // Taps in 3D space that did not hit any picker (sky, outside
+          // the floor plane) drive the mentor ambient-advance. The
+          // controller suppresses the call when no dialog is open or
+          // the active message is interactive.
+          requestAmbientAdvance()
+        }}
       >
         {showStats && <SceneDebugStats onReport={setStatsText} />}
         <SceneFrameLimiter />
@@ -368,6 +376,11 @@ export const Scene: React.FC<SceneProps> = ({
             onClick={() => {
               const { selectTopic } = useUIStore.getState()
               selectTopic(null)
+              // Floor deselect plane catches taps that did not hit a
+              // crystal. Forward to the mentor ambient-advance so a
+              // single tap on the floor both clears the crystal
+              // selection and progresses the dialog.
+              requestAmbientAdvance()
             }}
           >
             <planeGeometry args={[GRID_SIZE, GRID_SIZE]} />

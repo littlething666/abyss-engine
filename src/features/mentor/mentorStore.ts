@@ -8,11 +8,11 @@ import {
 } from './mentorTypes';
 
 const STORAGE_KEY = 'abyss-mentor-v1';
-// Bumped to 3 in the contextual-entry refactor. The migration filters
+// Bumped to 4 in the trial-availability rename. The migration filters
 // `seenTriggers` and `cooldowns` against the live MENTOR_TRIGGER_IDS so
-// retired ids (e.g. `onboarding.welcome`, `onboarding.first_subject`) are
-// dropped from persisted state on upgrade.
-const STORAGE_VERSION = 3;
+// retired ids (e.g. `onboarding.welcome`, `onboarding.first_subject`,
+// `crystal.trial.awaiting`) are dropped from persisted state on upgrade.
+const STORAGE_VERSION = 4;
 
 export interface VariantCursor {
   order: readonly number[];
@@ -126,8 +126,9 @@ function getMemoryStorage(): Storage {
 /**
  * Migrate persisted mentor state from any prior storage version to the
  * current schema. Filters trigger-keyed fields against the live
- * MENTOR_TRIGGER_IDS so onboarding-id renames (e.g. `onboarding.welcome` /
- * `onboarding.first_subject` → `onboarding.pre_first_subject`) are
+ * MENTOR_TRIGGER_IDS so trigger-id renames (e.g. `onboarding.welcome` /
+ * `onboarding.first_subject` → `onboarding.pre_first_subject`,
+ * `crystal.trial.awaiting` → `crystal.trial.available_for_player`) are
  * applied without a state reset.
  */
 export function migrateMentorState(

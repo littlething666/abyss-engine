@@ -45,3 +45,12 @@ export type {
   MentorEntryContext,
   MentorEntryDecision,
 } from './mentorEntryResolver';
+export {
+  useMentorOverlayController,
+  requestAmbientAdvance,
+} from './overlayController';
+export type {
+  AmbientAdvanceOutcome,
+  MentorOverlayHandlers,
+  MentorOverlayStep,
+} from './overlayController';

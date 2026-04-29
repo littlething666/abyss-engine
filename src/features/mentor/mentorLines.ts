@@ -20,6 +20,13 @@ const en: LineCatalog = {
       "Oh. A new test subject. Hello. I'm contractually required to be encouraging. Let's get this over with — pleasantly.",
     ],
   },
+  'onboarding.subject_unlock_first_crystal': {
+    'witty-sarcastic': [
+      "{subjectName} is a curriculum now, but a curriculum is just paperwork until you actually pick a topic. Shall we?",
+      "Your {subjectName} crystals are arranged and waiting. Pick one to unlock — the abyss enjoys decisive subjects.",
+      "Topics for {subjectName} are racked and locked. Open Discovery and free one before we both lose interest, {name}.",
+    ],
+  },
   'session.completed': {
     'witty-sarcastic': [
       "Session over. Statistics suggest you got {correctRate} of {totalAttempts} right. Statistics also lie occasionally.",
@@ -34,10 +41,10 @@ const en: LineCatalog = {
       "Level {to}. I'd throw confetti, but the budget is finite and the confetti is canned.",
     ],
   },
-  'crystal.trial.awaiting': {
+  'crystal.trial.available_for_player': {
     'witty-sarcastic': [
-      "{topic} is ready for its trial, {name}. Try not to embarrass either of us.",
-      "Trial is queued for {topic}. The rules haven't changed. The questions, on the other hand…",
+      "{topic}'s trial is available, {name}. Try not to embarrass either of us.",
+      "Trial available for {topic}. The rules haven't changed. The questions, on the other hand…",
     ],
   },
   'subject.generation.started': {

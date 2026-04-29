@@ -10,6 +10,10 @@ import { useMentorStore } from '@/features/mentor/mentorStore';
 import type { MentorEffect, MentorMessage, MentorMood } from '@/features/mentor/mentorTypes';
 import { useMentorSpeech } from '@/features/mentor/useMentorSpeech';
 import { MENTOR_VOICE_ID } from '@/features/mentor/mentorVoice';
+import {
+  requestAmbientAdvance,
+  useMentorOverlayController,
+} from '@/features/mentor/overlayController';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/store/uiStore';
@@ -41,10 +45,15 @@ function applyEffect(effect: MentorEffect | undefined): void {
       mentor.dismissCurrent();
       // Defer one rAF so dismiss() state settles before the new modal opens.
       // Without this the discovery modal animation can stutter under React 18 batching.
+      // The optional `effect.subjectId` carries through to uiStore so
+      // DiscoveryModal can pre-filter to the requested subject (Workstream B's
+      // post-curriculum onboarding flow); undefined preserves the legacy
+      // sessionStorage fallback.
+      const openWithScope = () => ui.openDiscoveryModal(effect.subjectId);
       if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(() => ui.openDiscoveryModal());
+        window.requestAnimationFrame(openWithScope);
       } else {
-        ui.openDiscoveryModal();
+        openWithScope();
       }
       return;
     }
@@ -178,7 +187,7 @@ export function MentorDialogOverlay() {
   }, [currentMessage, isStudyPanelOpen, speak, cancel]);
 
   const handleAdvance = useCallback(
-    (outcome: 'auto-advance' | 'choice' | 'closed') => {
+    (outcome: 'auto-advance' | 'choice' | 'closed' | 'ambient') => {
       if (!currentDialog) return;
       cancel();
       const nextIndex = messageIndex + 1;
@@ -227,6 +236,7 @@ export function MentorDialogOverlay() {
   }, [cancel, currentDialog, currentMessage, isFullyRevealed, revealedChars, totalChars]);
 
   const handleClose = useCallback(() => handleAdvance('closed'), [handleAdvance]);
+  const handleAmbientAdvance = useCallback(() => handleAdvance('ambient'), [handleAdvance]);
 
   const handleChoice = useCallback(
     (choiceId: string) => {
@@ -272,19 +282,73 @@ export function MentorDialogOverlay() {
     setNarrationEnabled(!currentEnabled);
   }, [setNarrationEnabled]);
 
+  // Compute interactive-vs-not the same way the JSX does, so the
+  // controller's published `isInteractive` stays in lockstep with what
+  // the player actually sees on screen.
+  const hasInteractiveControls =
+    Boolean(currentMessage?.input) ||
+    (currentMessage?.choices !== undefined && currentMessage.choices.length > 0);
+
+  // Publish step state to the overlay controller so out-of-tree consumers
+  // (Canvas onPointerMissed, floor deselect plane onClick) can apply the
+  // VN rules without reaching into overlay internals. Updates land on
+  // every step transition: new plan, message change, reveal completion,
+  // interactive-state change.
+  useEffect(() => {
+    if (!currentDialog || !currentMessage) {
+      useMentorOverlayController.getState().clear();
+      return;
+    }
+    useMentorOverlayController.getState().setStep({
+      planId: currentDialog.id,
+      messageId: currentMessage.id,
+      messageIndex,
+      isInteractive: hasInteractiveControls,
+      isFullyRevealed,
+    });
+  }, [
+    currentDialog,
+    currentMessage,
+    messageIndex,
+    hasInteractiveControls,
+    isFullyRevealed,
+  ]);
+
+  // Register handlers separately from the step publish: the handler
+  // identities depend on different deps (handleSkipReveal /
+  // handleAmbientAdvance), so splitting the effects keeps each one
+  // narrowly scoped and avoids re-registering handlers on every reveal
+  // tick. Detach on unmount.
+  useEffect(() => {
+    useMentorOverlayController.getState().setHandlers({
+      skipReveal: handleSkipReveal,
+      advance: handleAmbientAdvance,
+    });
+    return () => {
+      useMentorOverlayController.getState().setHandlers(null);
+    };
+  }, [handleSkipReveal, handleAmbientAdvance]);
+
+  // Clear the controller fully when the overlay unmounts (route swap,
+  // hot reload). The handler-detach effect above handles handler
+  // teardown; this clears the published step state too so a stale
+  // ambient tap during an HMR cycle cannot land.
+  useEffect(() => {
+    return () => {
+      useMentorOverlayController.getState().clear();
+    };
+  }, []);
+
   if (!currentDialog || !currentMessage) return null;
   if (isStudyPanelOpen) return null;
 
   const visibleText = currentMessage.text.slice(0, revealedChars);
   const showsTypewriter = !reducedMotion && !isFullyRevealed;
-  const hasInteractiveControls =
-    Boolean(currentMessage.input) ||
-    (currentMessage.choices !== undefined && currentMessage.choices.length > 0);
   const moodRingClass = MOOD_RING[currentMessage.mood ?? 'neutral'];
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-[max(1rem,calc(env(safe-area-inset-bottom)+0.75rem))]"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-[55] flex justify-center px-4 pb-[max(1rem,calc(env(safe-area-inset-bottom)+0.75rem))]"
       data-testid="mentor-dialog-overlay"
       aria-live="polite"
     >
@@ -321,7 +385,7 @@ export function MentorDialogOverlay() {
 
         <p
           className="cursor-pointer text-sm leading-snug text-foreground"
-          onClick={handleSkipReveal}
+          onClick={() => requestAmbientAdvance()}
           data-testid="mentor-dialog-text"
         >
           {visibleText}

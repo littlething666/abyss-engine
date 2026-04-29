@@ -9,6 +9,10 @@ import {
   DEFAULT_PERSISTED_STATE,
   useMentorStore,
 } from '@/features/mentor';
+import {
+  requestAmbientAdvance,
+  useMentorOverlayController,
+} from '@/features/mentor/overlayController';
 import { uiStore } from '@/store/uiStore';
 
 vi.mock('@/features/mentor/useMentorSpeech', () => ({
@@ -17,6 +21,13 @@ vi.mock('@/features/mentor/useMentorSpeech', () => ({
     cancel: vi.fn(),
     enabled: false,
   }),
+}));
+
+// Force reduced-motion semantics in JSDOM so the typewriter completes
+// synchronously and the controller publishes isFullyRevealed=true on the
+// first effect tick. Prevents the new tests from racing the rAF loop.
+vi.mock('@/hooks/useReducedMotion', () => ({
+  useReducedMotion: () => true,
 }));
 
 function renderOverlay(): { root: Root; container: HTMLDivElement } {
@@ -45,6 +56,11 @@ beforeEach(() => {
     selectedTopic: null,
     isCurrentCardFlipped: false,
   });
+  // The overlay controller is module-scoped — reset between tests so
+  // the previous test's published step / registered handlers do not
+  // leak.
+  useMentorOverlayController.getState().clear();
+  useMentorOverlayController.getState().setHandlers(null);
 });
 
 afterEach(() => {
@@ -120,5 +136,198 @@ describe('MentorDialogOverlay', () => {
     expect(isNarrationEnabled()).toBe(false);
 
     root.unmount();
+  });
+});
+
+describe('MentorDialogOverlay \u2014 overlayController integration', () => {
+  it('publishes step state on mount for a plain non-interactive message', () => {
+    useMentorStore.setState({
+      ...DEFAULT_PERSISTED_STATE,
+      ...DEFAULT_EPHEMERAL_STATE,
+      currentDialog: {
+        id: 'plan-step-publish',
+        trigger: 'mentor.bubble.click',
+        priority: 80,
+        enqueuedAt: 1,
+        messages: [
+          { id: 'msg-1', text: 'A plain message', mood: 'neutral' },
+          { id: 'msg-2', text: 'Second message', mood: 'neutral' },
+        ],
+        source: 'canned',
+        voiceId: 'witty-sarcastic',
+      },
+    });
+
+    const { root } = renderOverlay();
+
+    const s = useMentorOverlayController.getState();
+    expect(s.planId).toBe('plan-step-publish');
+    expect(s.messageId).toBe('msg-1');
+    expect(s.messageIndex).toBe(0);
+    // Reduced-motion is mocked to true, so the typewriter jumps to fully
+    // revealed on the first reveal-effect tick.
+    expect(s.isFullyRevealed).toBe(true);
+    expect(s.isInteractive).toBe(false);
+    expect(s.handlers).not.toBeNull();
+
+    root.unmount();
+  });
+
+  it('publishes isInteractive=true when the active message has choices', () => {
+    useMentorStore.setState({
+      ...DEFAULT_PERSISTED_STATE,
+      ...DEFAULT_EPHEMERAL_STATE,
+      currentDialog: {
+        id: 'plan-with-choices',
+        trigger: 'onboarding.subject_unlock_first_crystal',
+        priority: 78,
+        enqueuedAt: 1,
+        messages: [
+          {
+            id: 'msg-prompt',
+            text: 'Pick one',
+            mood: 'hint',
+            choices: [
+              { id: 'open-discovery', label: 'Open' },
+              { id: 'maybe-later', label: 'Later', next: 'end' },
+            ],
+          },
+        ],
+        source: 'canned',
+        voiceId: 'witty-sarcastic',
+      },
+    });
+
+    const { root } = renderOverlay();
+
+    const s = useMentorOverlayController.getState();
+    expect(s.planId).toBe('plan-with-choices');
+    expect(s.isInteractive).toBe(true);
+    expect(s.isFullyRevealed).toBe(true);
+
+    root.unmount();
+  });
+
+  it('tapping the dialog <p> routes through requestAmbientAdvance and advances a revealed non-interactive message', () => {
+    useMentorStore.setState({
+      ...DEFAULT_PERSISTED_STATE,
+      ...DEFAULT_EPHEMERAL_STATE,
+      currentDialog: {
+        id: 'plan-multi',
+        trigger: 'mentor.bubble.click',
+        priority: 80,
+        enqueuedAt: 1,
+        messages: [
+          { id: 'msg-1', text: 'First', mood: 'neutral' },
+          { id: 'msg-2', text: 'Second', mood: 'neutral' },
+        ],
+        source: 'canned',
+        voiceId: 'witty-sarcastic',
+      },
+    });
+
+    const { root, container } = renderOverlay();
+    const text = container.querySelector('[data-testid="mentor-dialog-text"]');
+    expect(text).not.toBeNull();
+    expect(useMentorOverlayController.getState().messageIndex).toBe(0);
+
+    // Tap on the dialog text — same code path as the canvas-miss tap.
+    act(() => {
+      text?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    // Advanced to the second message; the controller's published step
+    // state must have followed the React state update.
+    expect(useMentorStore.getState().currentDialog?.id).toBe('plan-multi');
+    const advanced = useMentorOverlayController.getState();
+    expect(advanced.messageIndex).toBe(1);
+    expect(advanced.messageId).toBe('msg-2');
+    expect(advanced.isFullyRevealed).toBe(true);
+
+    root.unmount();
+  });
+
+  it('requestAmbientAdvance is a no-op when the message has choices, even when revealed', () => {
+    useMentorStore.setState({
+      ...DEFAULT_PERSISTED_STATE,
+      ...DEFAULT_EPHEMERAL_STATE,
+      currentDialog: {
+        id: 'plan-interactive-noop',
+        trigger: 'onboarding.subject_unlock_first_crystal',
+        priority: 78,
+        enqueuedAt: 1,
+        messages: [
+          {
+            id: 'msg-prompt',
+            text: 'Pick one',
+            mood: 'hint',
+            choices: [
+              { id: 'open-discovery', label: 'Open' },
+              { id: 'maybe-later', label: 'Later', next: 'end' },
+            ],
+          },
+          { id: 'msg-after', text: 'After', mood: 'neutral' },
+        ],
+        source: 'canned',
+        voiceId: 'witty-sarcastic',
+      },
+    });
+
+    const { root } = renderOverlay();
+
+    expect(useMentorOverlayController.getState().messageIndex).toBe(0);
+    expect(useMentorOverlayController.getState().isInteractive).toBe(true);
+
+    let outcome: ReturnType<typeof requestAmbientAdvance> | undefined;
+    act(() => {
+      outcome = requestAmbientAdvance();
+    });
+
+    expect(outcome).toBe('noop');
+    // Must not have advanced past the choice prompt.
+    expect(useMentorOverlayController.getState().messageIndex).toBe(0);
+    expect(useMentorOverlayController.getState().messageId).toBe('msg-prompt');
+    // Dialog must still be present — not dismissed.
+    expect(useMentorStore.getState().currentDialog?.id).toBe('plan-interactive-noop');
+
+    root.unmount();
+  });
+
+  it('clears the controller state when the overlay unmounts', () => {
+    useMentorStore.setState({
+      ...DEFAULT_PERSISTED_STATE,
+      ...DEFAULT_EPHEMERAL_STATE,
+      currentDialog: {
+        id: 'plan-unmount',
+        trigger: 'mentor.bubble.click',
+        priority: 80,
+        enqueuedAt: 1,
+        messages: [{ id: 'msg-1', text: 'Hello', mood: 'neutral' }],
+        source: 'canned',
+        voiceId: 'witty-sarcastic',
+      },
+    });
+
+    const { root } = renderOverlay();
+    expect(useMentorOverlayController.getState().planId).toBe('plan-unmount');
+    expect(useMentorOverlayController.getState().handlers).not.toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+
+    const s = useMentorOverlayController.getState();
+    // Both the cleanup-on-unmount effect (clear) and the handler-detach
+    // effect run during unmount; final state must be the no-active-dialog
+    // defaults plus null handlers.
+    expect(s.planId).toBeNull();
+    expect(s.messageId).toBeNull();
+    expect(s.messageIndex).toBe(0);
+    expect(s.isInteractive).toBe(false);
+    expect(s.isFullyRevealed).toBe(false);
+    expect(s.handlers).toBeNull();
+
+    // Subsequent ambient taps must no-op.
+    expect(requestAmbientAdvance()).toBe('noop');
   });
 });

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { CrystalTrialScenarioQuestion, TrialQuestionCategory } from '@/types/crystalTrial';
+import MathMarkdownRenderer from '../MathMarkdownRenderer';
 
 const CATEGORY_ICONS: Record<TrialQuestionCategory, string> = {
   interview: '🎤',
@@ -43,15 +44,19 @@ export function TrialQuestionCard({
 
       {/* Scenario */}
       <div className="bg-muted/60 border border-border rounded-lg p-4">
-        <p className="text-foreground text-sm leading-relaxed">
-          {question.scenario}
-        </p>
+        <MathMarkdownRenderer
+          source={question.scenario}
+          className="text-foreground text-sm leading-relaxed markdown-body markdown-body--inline"
+        />
       </div>
 
       {/* Question */}
-      <h3 className="text-base font-medium text-foreground">
-        {question.question}
-      </h3>
+      <div className="text-base font-medium text-foreground">
+        <MathMarkdownRenderer
+          source={question.question}
+          className="text-foreground markdown-body markdown-body--inline"
+        />
+      </div>
 
       {/* Options */}
       <div className="flex flex-col gap-2">
@@ -81,9 +86,15 @@ export function TrialQuestionCard({
               onClick={() => onSelectAnswer(option)}
               className={`text-left px-4 py-3 rounded-lg border transition-colors ${borderColor} ${bgColor} ${isSubmitted ? 'cursor-default' : 'hover:border-muted-foreground cursor-pointer'}`}
             >
-              <span className="text-sm text-foreground">
-                {String.fromCharCode(65 + i)}. {option}
-              </span>
+              <div className="text-sm text-foreground flex items-start gap-2">
+                <span className="shrink-0">
+                  {String.fromCharCode(65 + i)}.
+                </span>
+                <MathMarkdownRenderer
+                  source={option}
+                  className="text-sm text-foreground markdown-body markdown-body--inline flex-1 min-w-0"
+                />
+              </div>
             </button>
           );
         })}
@@ -93,16 +104,20 @@ export function TrialQuestionCard({
       {isSubmitted && (
         <div className="mt-2 p-3 rounded-lg bg-secondary/50 border border-border">
           <p className="text-xs text-muted-foreground mb-1 font-medium">Explanation</p>
-          <p className="text-sm text-foreground/80 leading-relaxed">
-            {question.explanation}
-          </p>
+          <MathMarkdownRenderer
+            source={question.explanation}
+            className="text-sm text-foreground/80 leading-relaxed markdown-body markdown-body--inline"
+          />
           <div className="mt-2 flex flex-wrap gap-1">
             {question.sourceCardSummaries.map((summary, j) => (
               <span
                 key={j}
-                className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded"
+                className="text-xs bg-secondary px-2 py-0.5 rounded overflow-hidden"
               >
-                {summary}
+                <MathMarkdownRenderer
+                  source={summary}
+                  className="text-xs text-muted-foreground markdown-body markdown-body--inline leading-tight"
+                />
               </span>
             ))}
           </div>

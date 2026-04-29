@@ -24,7 +24,7 @@ import {
   CRYSTAL_INSTANCE_OFFSET_MORPH,
   CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY,
   CRYSTAL_INSTANCE_OFFSET_SEED,
-  CRYSTAL_INSTANCE_OFFSET_TRIAL_READY,
+  CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE,
   CRYSTAL_INSTANCE_STRIDE,
   type CrystalInstancedAttributes,
 } from './crystalInstanceAttributes';
@@ -100,7 +100,7 @@ export function createCrystalNodeMaterial(
   const iSubjectSeed = instancedDynamicBufferAttribute(ib, 'float', S, CRYSTAL_INSTANCE_OFFSET_SEED).setInstanced(true);
   const iColor = instancedDynamicBufferAttribute(ib, 'vec3', S, CRYSTAL_INSTANCE_OFFSET_COLOR).setInstanced(true);
   const iSelectCeremony = instancedDynamicBufferAttribute(ib, 'vec2', S, CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY).setInstanced(true);
-  const iTrialReady = instancedDynamicBufferAttribute(ib, 'float', S, CRYSTAL_INSTANCE_OFFSET_TRIAL_READY).setInstanced(true);
+  const iTrialAvailable = instancedDynamicBufferAttribute(ib, 'float', S, CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE).setInstanced(true);
   const iSelected = iSelectCeremony.x;
   const iCeremonyPhase = iSelectCeremony.y;
 
@@ -236,10 +236,11 @@ export function createCrystalNodeMaterial(
   const ceremonyFlash = float(iCeremonyPhase).mul(float(1).sub(float(iCeremonyPhase))).mul(8.0);
   const selectionBoost = iSelected.mul(1.5);
 
-  // Crystal Trial: slow sinusoidal pulse when trial is ready (distinct from ceremony flash)
-  // Frequency ~1.5 Hz, amplitude 0.8, biased to always be slightly glowing
+  // Crystal Trial: slow sinusoidal pulse when the trial is available for the
+  // player (distinct from ceremony flash). Frequency ~1.5 Hz, amplitude 0.8,
+  // biased to always be slightly glowing.
   const trialPulseRaw = sin(time.mul(float(9.42))).mul(float(0.4)).add(float(0.6));
-  const trialPulse = iTrialReady.mul(trialPulseRaw).mul(float(0.8));
+  const trialPulse = iTrialAvailable.mul(trialPulseRaw).mul(float(0.8));
 
   material.emissiveNode = iColor.mul(
     fresnelTerm.add(levelNorm.mul(0.3)).add(selectionBoost).add(ceremonyFlash).add(trialPulse).add(emissiveIntensity.mul(0.15)),
