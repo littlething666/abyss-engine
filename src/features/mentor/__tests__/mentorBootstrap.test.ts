@@ -33,11 +33,11 @@ describe('mentorBootstrap', () => {
     __resetMentorBootstrapForTests();
   });
 
-  it('schedules onboarding.pre_first_subject on first run when firstSubjectGenerationEnqueuedAt is null', async () => {
+  it('schedules onboarding:pre-first-subject on first run when firstSubjectGenerationEnqueuedAt is null', async () => {
     bootstrapMentor();
     await flushRafTwice();
     const queue = useMentorStore.getState().dialogQueue;
-    expect(queue.some((p) => p.trigger === 'onboarding.pre_first_subject')).toBe(true);
+    expect(queue.some((p) => p.trigger === 'onboarding:pre-first-subject')).toBe(true);
   });
 
   it('does NOT schedule onboarding when firstSubjectGenerationEnqueuedAt is set', async () => {
@@ -47,7 +47,7 @@ describe('mentorBootstrap', () => {
     expect(
       useMentorStore
         .getState()
-        .dialogQueue.some((p) => p.trigger === 'onboarding.pre_first_subject'),
+        .dialogQueue.some((p) => p.trigger === 'onboarding:pre-first-subject'),
     ).toBe(false);
   });
 
@@ -57,7 +57,7 @@ describe('mentorBootstrap', () => {
     await flushRafTwice();
     const occurrences = useMentorStore
       .getState()
-      .dialogQueue.filter((p) => p.trigger === 'onboarding.pre_first_subject').length;
+      .dialogQueue.filter((p) => p.trigger === 'onboarding:pre-first-subject').length;
     expect(occurrences).toBe(1);
   });
 });

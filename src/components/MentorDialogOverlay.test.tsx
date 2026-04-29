@@ -71,7 +71,7 @@ describe('MentorDialogOverlay', () => {
   it('does not auto-open queued dialogs while the study panel is open, then opens after study closes', async () => {
     useMentorStore.getState().enqueue({
       id: 'queued-start',
-      trigger: 'subject.generation.started',
+      trigger: 'subject:generation-started',
       priority: 72,
       enqueuedAt: 1,
       messages: [{ id: 'm1', text: 'Generating Calculus.', mood: 'hint' }],
@@ -102,7 +102,7 @@ describe('MentorDialogOverlay', () => {
       ...DEFAULT_EPHEMERAL_STATE,
       currentDialog: {
         id: 'active-mentor',
-        trigger: 'mentor.bubble.click',
+        trigger: 'mentor-bubble:clicked',
         priority: 80,
         enqueuedAt: 1,
         messages: [
@@ -146,7 +146,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
       ...DEFAULT_EPHEMERAL_STATE,
       currentDialog: {
         id: 'plan-step-publish',
-        trigger: 'mentor.bubble.click',
+        trigger: 'mentor-bubble:clicked',
         priority: 80,
         enqueuedAt: 1,
         messages: [
@@ -179,7 +179,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
       ...DEFAULT_EPHEMERAL_STATE,
       currentDialog: {
         id: 'plan-with-choices',
-        trigger: 'onboarding.subject_unlock_first_crystal',
+        trigger: 'onboarding:subject-unlock-first-crystal',
         priority: 78,
         enqueuedAt: 1,
         messages: [
@@ -214,7 +214,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
       ...DEFAULT_EPHEMERAL_STATE,
       currentDialog: {
         id: 'plan-multi',
-        trigger: 'mentor.bubble.click',
+        trigger: 'mentor-bubble:clicked',
         priority: 80,
         enqueuedAt: 1,
         messages: [
@@ -253,7 +253,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
       ...DEFAULT_EPHEMERAL_STATE,
       currentDialog: {
         id: 'plan-interactive-noop',
-        trigger: 'onboarding.subject_unlock_first_crystal',
+        trigger: 'onboarding:subject-unlock-first-crystal',
         priority: 78,
         enqueuedAt: 1,
         messages: [
@@ -299,7 +299,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
       ...DEFAULT_EPHEMERAL_STATE,
       currentDialog: {
         id: 'plan-unmount',
-        trigger: 'mentor.bubble.click',
+        trigger: 'mentor-bubble:clicked',
         priority: 80,
         enqueuedAt: 1,
         messages: [{ id: 'msg-1', text: 'Hello', mood: 'neutral' }],

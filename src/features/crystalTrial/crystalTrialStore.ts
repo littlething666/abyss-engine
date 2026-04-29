@@ -341,7 +341,7 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
 
         const completedTrial = get().getCurrentTrial(ref);
         if (completedTrial) {
-          appEventBus.emit('crystal:trial-completed', {
+          appEventBus.emit('crystal-trial:completed', {
             subjectId: ref.subjectId,
             topicId: ref.topicId,
             targetLevel: completedTrial.targetLevel,

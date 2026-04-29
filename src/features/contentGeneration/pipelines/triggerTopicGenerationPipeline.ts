@@ -12,7 +12,7 @@ export function triggerTopicGenerationPipeline(
     stage?: TopicGenerationStage;
   },
 ): void {
-  appEventBus.emit('topic:generation-pipeline', {
+  appEventBus.emit('topic-content:generation-requested', {
     subjectId,
     topicId,
     ...(options?.enableReasoning !== undefined ? { enableReasoning: options.enableReasoning } : {}),

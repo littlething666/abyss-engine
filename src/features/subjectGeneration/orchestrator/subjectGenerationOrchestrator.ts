@@ -110,7 +110,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       parseOutput: async (raw, job) => {
         const p = parseTopicLatticeResponse(raw);
         if (!p.ok) {
-          appEventBus.emit('subjectGraph.validationFailed', {
+          appEventBus.emit('subject-graph:validation-failed', {
             subjectId: request.subjectId,
             stage: 'topics',
             error: p.error,
@@ -123,7 +123,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
         }
         const v = validateTopicLattice(p.lattice, latticeExpectations);
         if (!v.ok) {
-          appEventBus.emit('subjectGraph.validationFailed', {
+          appEventBus.emit('subject-graph:validation-failed', {
             subjectId: request.subjectId,
             stage: 'topics',
             error: v.error,
@@ -178,7 +178,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       parseOutput: async (raw, job) => {
         const stageMs = jobDurationMs(job);
         const failEdges = (error: string, parseError: string | undefined) => {
-          appEventBus.emit('subjectGraph.validationFailed', {
+          appEventBus.emit('subject-graph:validation-failed', {
             subjectId: request.subjectId,
             stage: 'edges',
             error,
@@ -239,7 +239,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
         const corr = edgesCorrectionLog;
         const prereqEdgesCorrectionApplied =
           corr !== undefined && (corr.removed.length > 0 || corr.added.length > 0);
-        appEventBus.emit('subjectGraph.generated', {
+        appEventBus.emit('subject-graph:generated', {
           subjectId: request.subjectId,
           boundModel: stageBindings.edges.model,
           stageADurationMs,

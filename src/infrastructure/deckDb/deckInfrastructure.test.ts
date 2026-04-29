@@ -153,7 +153,7 @@ describe('IndexedDB deck', () => {
     const cards = await repo.getTopicCards('sub-a', 'top-1');
     expect(cards).toEqual([newCard]);
     expect(emitSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'cards-updated', subjectId: 'sub-a', topicId: 'top-1' }),
+      expect.objectContaining({ type: 'topic-cards:updated', subjectId: 'sub-a', topicId: 'top-1' }),
     );
   });
 });

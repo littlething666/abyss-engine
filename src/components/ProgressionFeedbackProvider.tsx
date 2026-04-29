@@ -51,7 +51,7 @@ export function ProgressionFeedbackProvider() {
     );
 
     unsubs.push(
-      appEventBus.on('study-panel:history', (e) => {
+      appEventBus.on('study-panel:history-applied', (e) => {
         if (e.action === 'undo' || e.action === 'redo') {
           const label = e.action === 'undo' ? 'Undo complete.' : 'Redo complete.';
           toast.success(`${label} ${e.undoCount} undo • ${e.redoCount} redo available.`);

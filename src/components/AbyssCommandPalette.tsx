@@ -234,7 +234,7 @@ export function AbyssCommandPalette({
     const currentTrialStatus = trialStore.getTrialStatus(selectedTopic);
     if (currentTrialStatus === 'cooldown') trialStore.clearCooldown(selectedTopic);
     if (currentTrialStatus === 'idle') {
-      appEventBus.emit('crystal:trial-pregenerate', {
+      appEventBus.emit('crystal-trial:pregeneration-requested', {
         subjectId: selectedTopic.subjectId, topicId: selectedTopic.topicId,
         currentLevel: selectedCrystalLevel, targetLevel: selectedCrystalLevel + 1,
       });

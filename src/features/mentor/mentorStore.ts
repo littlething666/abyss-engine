@@ -2,17 +2,20 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import {
-  MENTOR_TRIGGER_IDS,
   type DialogPlan,
   type MentorTriggerId,
 } from './mentorTypes';
 
 const STORAGE_KEY = 'abyss-mentor-v1';
-// Bumped to 4 in the trial-availability rename. The migration filters
-// `seenTriggers` and `cooldowns` against the live MENTOR_TRIGGER_IDS so
-// retired ids (e.g. `onboarding.welcome`, `onboarding.first_subject`,
-// `crystal.trial.awaiting`) are dropped from persisted state on upgrade.
-const STORAGE_VERSION = 4;
+// Bumped to 5 in the trigger-id colon-namespace rename
+// (`subject.generation.started` etc. → `subject:generation-started`).
+// Scoped hard cut: `seenTriggers` and `cooldowns` are keyed by trigger
+// ids that the v4 -> v5 rename invalidated, so they are unconditionally
+// reset. All other persisted fields (e.g. `playerName`,
+// `firstSubjectGenerationEnqueuedAt` which gates the onboarding intro)
+// are preserved across the bump - wiping them would silently re-open
+// the onboarding dialog for every existing user on next load.
+const STORAGE_VERSION = 5;
 
 export interface VariantCursor {
   order: readonly number[];
@@ -123,62 +126,69 @@ function getMemoryStorage(): Storage {
   } satisfies Storage;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
- * Migrate persisted mentor state from any prior storage version to the
- * current schema. Filters trigger-keyed fields against the live
- * MENTOR_TRIGGER_IDS so trigger-id renames (e.g. `onboarding.welcome` /
- * `onboarding.first_subject` → `onboarding.pre_first_subject`,
- * `crystal.trial.awaiting` → `crystal.trial.available_for_player`) are
- * applied without a state reset.
+ * Scoped hard cut on version bump: only fields keyed by the renamed
+ * trigger ids (`seenTriggers`, `cooldowns`) are unconditionally reset,
+ * because the v4 -> v5 dot-namespace -> colon-namespace rename made the
+ * legacy values meaningless. All other persisted fields are preserved
+ * with per-field defensive type guards so malformed legacy blobs cannot
+ * leak unexpected types into the new state.
+ *
+ * Critically, `firstSubjectGenerationEnqueuedAt` is preserved: the
+ * `onboarding:pre-first-subject` trigger gates on this field being
+ * null, so a wholesale wipe would re-open the full onboarding dialog
+ * for every existing user on next load.
+ *
+ * zustand only invokes `migrate` when the stored version differs from
+ * `STORAGE_VERSION`, so the current-version pass-through path is
+ * handled by zustand internally.
  */
 export function migrateMentorState(
   persisted: unknown,
-  fromVersion: number,
+  _fromVersion: number,
 ): MentorPersistedState {
-  const base: MentorPersistedState = { ...DEFAULT_PERSISTED_STATE };
-  if (!persisted || typeof persisted !== 'object') return base;
-  const p = persisted as Partial<MentorPersistedState> & Record<string, unknown>;
-
-  const validTriggerIds = new Set<MentorTriggerId>(MENTOR_TRIGGER_IDS);
-
-  // v0/v1 used `ttsMuted: boolean`; later versions use `narrationEnabled`.
-  const legacyNarrationEnabled =
-    typeof (p as { ttsMuted?: unknown }).ttsMuted === 'boolean'
-      ? !(p as { ttsMuted?: boolean }).ttsMuted
-      : base.narrationEnabled;
-
-  const seenTriggers = Array.isArray(p.seenTriggers)
-    ? (p.seenTriggers as unknown[])
-        .filter((t): t is string => typeof t === 'string')
-        .filter((t): t is MentorTriggerId => validTriggerIds.has(t as MentorTriggerId))
-    : base.seenTriggers;
-
-  const cooldownsRaw =
-    p.cooldowns && typeof p.cooldowns === 'object'
-      ? (p.cooldowns as Record<string, unknown>)
-      : {};
-  const cooldowns: MentorPersistedState['cooldowns'] = {};
-  for (const [key, value] of Object.entries(cooldownsRaw)) {
-    if (typeof value !== 'number') continue;
-    if (!validTriggerIds.has(key as MentorTriggerId)) continue;
-    cooldowns[key as MentorTriggerId] = value;
+  if (!isPlainObject(persisted)) {
+    return { ...DEFAULT_PERSISTED_STATE };
   }
 
-  void fromVersion; // Migration is currently version-agnostic past v0/v1 detection above.
+  const playerName =
+    typeof persisted.playerName === 'string' || persisted.playerName === null
+      ? (persisted.playerName as string | null)
+      : DEFAULT_PERSISTED_STATE.playerName;
+
+  const mentorLocale =
+    persisted.mentorLocale === 'en' ? 'en' : DEFAULT_PERSISTED_STATE.mentorLocale;
+
+  const narrationEnabled =
+    typeof persisted.narrationEnabled === 'boolean'
+      ? persisted.narrationEnabled
+      : DEFAULT_PERSISTED_STATE.narrationEnabled;
+
+  const lastInteractionAt =
+    typeof persisted.lastInteractionAt === 'number' || persisted.lastInteractionAt === null
+      ? (persisted.lastInteractionAt as number | null)
+      : DEFAULT_PERSISTED_STATE.lastInteractionAt;
+
+  const firstSubjectGenerationEnqueuedAt =
+    typeof persisted.firstSubjectGenerationEnqueuedAt === 'number' ||
+    persisted.firstSubjectGenerationEnqueuedAt === null
+      ? (persisted.firstSubjectGenerationEnqueuedAt as number | null)
+      : DEFAULT_PERSISTED_STATE.firstSubjectGenerationEnqueuedAt;
 
   return {
-    playerName: typeof p.playerName === 'string' ? p.playerName : base.playerName,
-    mentorLocale: 'en',
-    seenTriggers,
-    narrationEnabled:
-      typeof p.narrationEnabled === 'boolean' ? p.narrationEnabled : legacyNarrationEnabled,
-    lastInteractionAt:
-      typeof p.lastInteractionAt === 'number' ? p.lastInteractionAt : null,
-    cooldowns,
-    firstSubjectGenerationEnqueuedAt:
-      typeof p.firstSubjectGenerationEnqueuedAt === 'number'
-        ? p.firstSubjectGenerationEnqueuedAt
-        : null,
+    playerName,
+    mentorLocale,
+    narrationEnabled,
+    lastInteractionAt,
+    firstSubjectGenerationEnqueuedAt,
+    // Hard-cut the two trigger-id-keyed fields (legacy values are now
+    // meaningless dot-namespace ids).
+    seenTriggers: [],
+    cooldowns: {},
   };
 }
 

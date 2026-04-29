@@ -235,7 +235,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           const trialStatusAfter = useCrystalTrialStore.getState().getTrialStatus(ref);
           if (!hasBoundaryPregeneration && hasAddedAnyXp(previousXp, newXp) && trialStatusAfter === 'idle') {
             // Use level from pre-reward XP (currentLevel); post-set crystal XP can differ
-            appEventBus.emit('crystal:trial-pregenerate', {
+            appEventBus.emit('crystal-trial:pregeneration-requested', {
               subjectId: ref.subjectId,
               topicId: ref.topicId,
               currentLevel,
@@ -348,7 +348,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           (k) => Boolean(payload.checklist[k as keyof typeof payload.checklist]),
         );
 
-        appEventBus.emit('ritual:submitted', {
+        appEventBus.emit('attunement-ritual:submitted', {
           subjectId: payload.subjectId,
           topicId: payload.topicId,
           harmonyScore,
@@ -447,7 +447,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           },
           pendingRitual: null,
         });
-        appEventBus.emit('study-panel:history', {
+        appEventBus.emit('study-panel:history-applied', {
           action: 'submit',
           subjectId: ref.subjectId,
           topicId: ref.topicId,
@@ -574,7 +574,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           throw new Error('undoLastStudyResult: restored session missing subjectId, topicId or sessionId');
         }
         set(restored);
-        appEventBus.emit('study-panel:history', {
+        appEventBus.emit('study-panel:history-applied', {
           action: 'undo',
           subjectId,
           topicId,
@@ -597,7 +597,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           throw new Error('redoLastStudyResult: restored session missing subjectId, topicId or sessionId');
         }
         set(restored);
-        appEventBus.emit('study-panel:history', {
+        appEventBus.emit('study-panel:history-applied', {
           action: 'redo',
           subjectId,
           topicId,
@@ -699,7 +699,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           const trialStatus = useCrystalTrialStore.getState().getTrialStatus(ref);
           const newXp = previousXp + effectiveXpAmount;
           if (currentLevel < MAX_CRYSTAL_LEVEL && hasAddedAnyXp(previousXp, newXp) && trialStatus === 'idle') {
-            appEventBus.emit('crystal:trial-pregenerate', {
+            appEventBus.emit('crystal-trial:pregeneration-requested', {
               subjectId: ref.subjectId,
               topicId: ref.topicId,
               currentLevel,

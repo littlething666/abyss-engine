@@ -18,7 +18,7 @@ function resetStore(): void {
 function makeDummyPlan(overrides: Partial<DialogPlan> = {}): DialogPlan {
   return {
     id: 'plan-fixture',
-    trigger: 'onboarding.subject_unlock_first_crystal',
+    trigger: 'onboarding:subject-unlock-first-crystal',
     priority: 78,
     enqueuedAt: 0,
     messages: [],
@@ -38,17 +38,17 @@ describe('dialogRuleEngine', () => {
     resetStore();
   });
 
-  describe('onboarding.pre_first_subject', () => {
+  describe('onboarding:pre-first-subject', () => {
     it('is gated on firstSubjectGenerationEnqueuedAt === null', () => {
-      const plan = evaluateTrigger('onboarding.pre_first_subject', undefined, { nowMs: 0 });
+      const plan = evaluateTrigger('onboarding:pre-first-subject', undefined, { nowMs: 0 });
       expect(plan).not.toBeNull();
       useMentorStore.setState({ firstSubjectGenerationEnqueuedAt: Date.now() });
-      const after = evaluateTrigger('onboarding.pre_first_subject', undefined, { nowMs: 0 });
+      const after = evaluateTrigger('onboarding:pre-first-subject', undefined, { nowMs: 0 });
       expect(after).toBeNull();
     });
 
     it('uses the unnamed greet branch and shows a name input when playerName is null', () => {
-      const plan = evaluateTrigger('onboarding.pre_first_subject', undefined, { nowMs: 0 });
+      const plan = evaluateTrigger('onboarding:pre-first-subject', undefined, { nowMs: 0 });
       expect(plan).not.toBeNull();
       const ids = plan!.messages.map((m) => m.id);
       expect(ids).toContain('onboarding-name');
@@ -58,7 +58,7 @@ describe('dialogRuleEngine', () => {
 
     it('uses the named greet branch and skips the name input when playerName is set', () => {
       useMentorStore.setState({ playerName: 'Sergio' });
-      const plan = evaluateTrigger('onboarding.pre_first_subject', undefined, { nowMs: 0 });
+      const plan = evaluateTrigger('onboarding:pre-first-subject', undefined, { nowMs: 0 });
       expect(plan).not.toBeNull();
       const ids = plan!.messages.map((m) => m.id);
       expect(ids).not.toContain('onboarding-name');
@@ -68,10 +68,10 @@ describe('dialogRuleEngine', () => {
     });
   });
 
-  describe('subject.generation.started', () => {
+  describe('subject:generation-started', () => {
     it('selects topics-stage copy when payload.stage = topics', () => {
       const plan = evaluateTrigger(
-        'subject.generation.started',
+        'subject:generation-started',
         { subjectName: 'Topology', stage: 'topics' },
         { nowMs: 0 },
       );
@@ -81,7 +81,7 @@ describe('dialogRuleEngine', () => {
 
     it('selects edges-stage copy when payload.stage = edges', () => {
       const plan = evaluateTrigger(
-        'subject.generation.started',
+        'subject:generation-started',
         { subjectName: 'Topology', stage: 'edges' },
         { nowMs: 0 },
       );
@@ -89,10 +89,10 @@ describe('dialogRuleEngine', () => {
     });
   });
 
-  describe('onboarding.subject_unlock_first_crystal', () => {
+  describe('onboarding:subject-unlock-first-crystal', () => {
     it('emits a single hint message carrying open-discovery and maybe-later choices', () => {
       const plan = evaluateTrigger(
-        'onboarding.subject_unlock_first_crystal',
+        'onboarding:subject-unlock-first-crystal',
         { subjectName: 'Topology', subjectId: 'subj-topology' },
         { nowMs: 0 },
       );
@@ -120,7 +120,7 @@ describe('dialogRuleEngine', () => {
 
     it('interpolates the payload subjectName into the variant text', () => {
       const plan = evaluateTrigger(
-        'onboarding.subject_unlock_first_crystal',
+        'onboarding:subject-unlock-first-crystal',
         { subjectName: 'Quantum Computing', subjectId: 'subj-qc' },
         { nowMs: 0 },
       );
@@ -132,7 +132,7 @@ describe('dialogRuleEngine', () => {
       // When no subjectId is in payload, the effect leaves the field undefined
       // so DiscoveryModal falls back to its sessionStorage default (Workstream B6).
       const plan = evaluateTrigger(
-        'onboarding.subject_unlock_first_crystal',
+        'onboarding:subject-unlock-first-crystal',
         { subjectName: 'No-Scope Subject' },
         { nowMs: 0 },
       );
@@ -143,10 +143,10 @@ describe('dialogRuleEngine', () => {
 
     it('returns null when a dialog of the same trigger is already current', () => {
       useMentorStore.setState({
-        currentDialog: makeDummyPlan({ id: 'active', trigger: 'onboarding.subject_unlock_first_crystal' }),
+        currentDialog: makeDummyPlan({ id: 'active', trigger: 'onboarding:subject-unlock-first-crystal' }),
       });
       const plan = evaluateTrigger(
-        'onboarding.subject_unlock_first_crystal',
+        'onboarding:subject-unlock-first-crystal',
         { subjectName: 'Topology', subjectId: 'subj-topology' },
         { nowMs: 0 },
       );
@@ -156,11 +156,11 @@ describe('dialogRuleEngine', () => {
     it('returns null when a dialog of the same trigger is already queued', () => {
       useMentorStore.setState({
         dialogQueue: [
-          makeDummyPlan({ id: 'queued', trigger: 'onboarding.subject_unlock_first_crystal' }),
+          makeDummyPlan({ id: 'queued', trigger: 'onboarding:subject-unlock-first-crystal' }),
         ],
       });
       const plan = evaluateTrigger(
-        'onboarding.subject_unlock_first_crystal',
+        'onboarding:subject-unlock-first-crystal',
         { subjectName: 'Topology', subjectId: 'subj-topology' },
         { nowMs: 0 },
       );
@@ -168,17 +168,17 @@ describe('dialogRuleEngine', () => {
     });
 
     it('fires alongside an unrelated current dialog of a different trigger', () => {
-      // Sanity: dedupe is per-trigger, not global. A pending crystal.leveled
+      // Sanity: dedupe is per-trigger, not global. A pending crystal:leveled
       // celebration must not block the onboarding prod for a freshly
       // generated subject.
       useMentorStore.setState({
         currentDialog: makeDummyPlan({
           id: 'active-leveled',
-          trigger: 'crystal.leveled',
+          trigger: 'crystal:leveled',
         }),
       });
       const plan = evaluateTrigger(
-        'onboarding.subject_unlock_first_crystal',
+        'onboarding:subject-unlock-first-crystal',
         { subjectName: 'Topology', subjectId: 'subj-topology' },
         { nowMs: 0 },
       );

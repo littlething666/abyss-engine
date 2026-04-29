@@ -37,7 +37,7 @@ describe('buildTimelineSummaryBuckets', () => {
     const buckets = buildTimelineSummaryBuckets(
       [
         telemetryEvent(
-          'study_card_reviewed',
+          'study-card:reviewed',
           {
             cardId: 'c1',
             rating: 3,
@@ -49,7 +49,7 @@ describe('buildTimelineSummaryBuckets', () => {
           { timestamp: olderDay },
         ),
         telemetryEvent(
-          'study_session_complete',
+          'study-session:completed',
           {
             sessionId: 's1',
             topicId: 'topic-a',
@@ -60,7 +60,7 @@ describe('buildTimelineSummaryBuckets', () => {
           { timestamp: newerDay },
         ),
         telemetryEvent(
-          'study_card_reviewed',
+          'study-card:reviewed',
           {
             cardId: 'c2',
             rating: 2,
@@ -91,7 +91,7 @@ describe('buildTimelineSummaryBuckets', () => {
     const buckets = buildTimelineSummaryBuckets(
       [
         telemetryEvent(
-          'attunement_ritual_submitted',
+          'attunement-ritual:submitted',
           {
             harmonyScore: 80,
             readinessBucket: 'high',
@@ -113,7 +113,7 @@ describe('filterTimelineEntriesByOccurredRange', () => {
     const entries = buildTimelineEntries(
       [
         telemetryEvent(
-          'study_card_reviewed',
+          'study-card:reviewed',
           {
             cardId: 'a',
             rating: 3,
@@ -125,7 +125,7 @@ describe('filterTimelineEntriesByOccurredRange', () => {
           { timestamp: 1000 },
         ),
         telemetryEvent(
-          'study_card_reviewed',
+          'study-card:reviewed',
           {
             cardId: 'b',
             rating: 3,
@@ -151,7 +151,7 @@ describe('groupTimelineEntriesBySession', () => {
     const entries = buildTimelineEntries(
       [
         telemetryEvent(
-          'study_card_reviewed',
+          'study-card:reviewed',
           {
             cardId: 'x',
             rating: 3,
@@ -163,7 +163,7 @@ describe('groupTimelineEntriesBySession', () => {
           { sessionId: 's-one' },
         ),
         telemetryEvent(
-          'study_card_reviewed',
+          'study-card:reviewed',
           {
             cardId: 'y',
             rating: 3,
@@ -193,7 +193,7 @@ describe('sortStudyTimelineSessionGroupsByFirstOccurredAt', () => {
       entries: [
         {
           id: '1',
-          type: 'study_card_reviewed',
+          type: 'study-card:reviewed',
           topicId: 't',
           topicName: 'T',
           sessionId: 'late-id',
@@ -212,7 +212,7 @@ describe('sortStudyTimelineSessionGroupsByFirstOccurredAt', () => {
       entries: [
         {
           id: '2',
-          type: 'study_card_reviewed',
+          type: 'study-card:reviewed',
           topicId: 't',
           topicName: 'T',
           sessionId: 'early-id',
@@ -236,7 +236,7 @@ describe('sortStudyTimelineSessionGroupsByFirstOccurredAt', () => {
       entries: [
         {
           id: 'b',
-          type: 'study_card_reviewed',
+          type: 'study-card:reviewed',
           topicId: 't',
           topicName: 'T',
           sessionId: 'session-b',
@@ -255,7 +255,7 @@ describe('sortStudyTimelineSessionGroupsByFirstOccurredAt', () => {
       entries: [
         {
           id: 'a',
-          type: 'study_card_reviewed',
+          type: 'study-card:reviewed',
           topicId: 't',
           topicName: 'T',
           sessionId: 'session-a',

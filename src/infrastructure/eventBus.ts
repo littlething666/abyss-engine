@@ -4,6 +4,30 @@ import type { TopicLattice } from '@/types/topicLattice';
 
 type Rating = 1 | 2 | 3 | 4;
 
+/**
+ * Runtime source of truth for app-bus event names.
+ * Keep this list aligned with `AppEventMap` keys; `eventNamePattern.test.ts`
+ * asserts every name matches the canonical `domain:event` regex.
+ */
+export const APP_EVENT_NAMES = [
+  'card:reviewed',
+  'xp:gained',
+  'crystal:leveled',
+  'session:completed',
+  'attunement-ritual:submitted',
+  'study-panel:history-applied',
+  'study-panel:opened',
+  'topic-content:generation-requested',
+  'subject-graph:generation-requested',
+  'subject-graph:generated',
+  'subject-graph:generation-failed',
+  'subject-graph:validation-failed',
+  'crystal-trial:pregeneration-requested',
+  'crystal-trial:completed',
+] as const;
+
+export type AppEventName = (typeof APP_EVENT_NAMES)[number];
+
 export type AppEventMap = {
   'card:reviewed': {
     cardId: string;
@@ -45,7 +69,7 @@ export type AppEventMap = {
     sessionDurationMs: number;
     totalAttempts: number;
   };
-  'ritual:submitted': {
+  'attunement-ritual:submitted': {
     subjectId: string;
     topicId: string;
     harmonyScore: number;
@@ -53,7 +77,7 @@ export type AppEventMap = {
     checklistKeys: string[];
     buffsGranted: Buff[];
   };
-  'study-panel:history': {
+  'study-panel:history-applied': {
     action: 'undo' | 'redo' | 'submit';
     subjectId?: string;
     topicId?: string;
@@ -63,7 +87,7 @@ export type AppEventMap = {
   };
   /** Emitted when the study panel is shown (after `startTopicStudySession` in normal flows). */
   'study-panel:opened': Record<string, never>;
-  'topic:generation-pipeline': {
+  'topic-content:generation-requested': {
     subjectId: string;
     topicId: string;
     enableReasoning?: boolean;
@@ -72,12 +96,12 @@ export type AppEventMap = {
     /** Defaults to `full` in the runner when omitted. */
     stage?: 'theory' | 'study-cards' | 'mini-games' | 'full';
   };
-  'subject:generation-pipeline': {
+  'subject-graph:generation-requested': {
     subjectId: string;
     checklist: StudyChecklist;
   };
   /** Emitted after a two-stage subject graph is validated and persisted. */
-  'subjectGraph.generated': {
+  'subject-graph:generated': {
     subjectId: string;
     boundModel: string;
     stageADurationMs: number;
@@ -94,7 +118,7 @@ export type AppEventMap = {
     };
   };
   /** Emitted when a subject-generation pipeline terminates in a failed or aborted stage. */
-  'subjectGraph.generationFailed': {
+  'subject-graph:generation-failed': {
     subjectId: string;
     subjectName: string;
     pipelineId: string;
@@ -102,7 +126,7 @@ export type AppEventMap = {
     error: string;
   };
   /** Emitted when topic lattice or prerequisite wiring fails validation or parsing. */
-  'subjectGraph.validationFailed': {
+  'subject-graph:validation-failed': {
     subjectId: string;
     stage: 'topics' | 'edges';
     error: string;
@@ -113,14 +137,14 @@ export type AppEventMap = {
     latticeSnapshot?: TopicLattice;
   };
   /** Fired when positive crystal XP gains should trigger background trial pre-generation. */
-  'crystal:trial-pregenerate': {
+  'crystal-trial:pregeneration-requested': {
     subjectId: string;
     topicId: string;
     currentLevel: number;
     targetLevel: number;
   };
   /** Fired when a Crystal Trial is submitted and evaluated. */
-  'crystal:trial-completed': {
+  'crystal-trial:completed': {
     subjectId: string;
     topicId: string;
     targetLevel: number;

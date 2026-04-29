@@ -9,7 +9,7 @@ describe('emitCrystalTrialPregenerateForTopic', () => {
     vi.restoreAllMocks();
   });
 
-  it('emits crystal:trial-pregenerate with levels derived from crystal XP', () => {
+  it('emits crystal-trial:pregeneration-requested with levels derived from crystal XP', () => {
     const emitSpy = vi.spyOn(appEventBus, 'emit');
 
     emitCrystalTrialPregenerateForTopic(
@@ -25,7 +25,7 @@ describe('emitCrystalTrialPregenerateForTopic', () => {
       ],
     );
 
-    expect(emitSpy).toHaveBeenCalledWith('crystal:trial-pregenerate', {
+    expect(emitSpy).toHaveBeenCalledWith('crystal-trial:pregeneration-requested', {
       subjectId: 's1',
       topicId: 't1',
       currentLevel: 1,

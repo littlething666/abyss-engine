@@ -27,17 +27,17 @@ export interface MentorEntryContext {
 
   /**
    * `null` when the player has not yet enqueued their first subject
-   * generation. Acts as the gate for `onboarding.pre_first_subject`.
+   * generation. Acts as the gate for `onboarding:pre-first-subject`.
    */
   firstSubjectGenerationEnqueuedAt: number | null;
 }
 
 export interface MentorEntryDecision {
   trigger:
-    | 'subject.generation.failed'
-    | 'subject.generation.started'
-    | 'onboarding.pre_first_subject'
-    | 'mentor.bubble.click';
+    | 'subject:generation-failed'
+    | 'subject:generation-started'
+    | 'onboarding:pre-first-subject'
+    | 'mentor-bubble:clicked';
   payload: MentorTriggerPayload;
 }
 
@@ -47,10 +47,10 @@ export interface MentorEntryDecision {
  * is closed with an empty queue.
  *
  * Priority order matches the contextual-entry plan:
- *   1. subject.generation.failed    — a recent pipeline needs attention
- *   2. subject.generation.started   — a pipeline is currently running (topics/edges)
- *   3. onboarding.pre_first_subject — the player has not started their first subject
- *   4. mentor.bubble.click          — generic chatter fallback
+ *   1. subject:generation-failed    — a recent pipeline needs attention
+ *   2. subject:generation-started   — a pipeline is currently running (topics/edges)
+ *   3. onboarding:pre-first-subject — the player has not started their first subject
+ *   4. mentor-bubble:clicked        — generic chatter fallback
  *
  * Keeping the resolver pure makes it directly unit-testable from plain
  * context, with no zustand/dom dependencies. The caller
@@ -64,7 +64,7 @@ export function resolveMentorEntry(
   if (phase === 'failed') {
     const subjectName = context.subjectGenerationLabel ?? '';
     return {
-      trigger: 'subject.generation.failed',
+      trigger: 'subject:generation-failed',
       payload: subjectName ? { subjectName } : {},
     };
   }
@@ -73,12 +73,12 @@ export function resolveMentorEntry(
     const subjectName = context.subjectGenerationLabel ?? '';
     const payload: MentorTriggerPayload = { stage: phase };
     if (subjectName) payload.subjectName = subjectName;
-    return { trigger: 'subject.generation.started', payload };
+    return { trigger: 'subject:generation-started', payload };
   }
 
   if (context.firstSubjectGenerationEnqueuedAt === null) {
-    return { trigger: 'onboarding.pre_first_subject', payload: {} };
+    return { trigger: 'onboarding:pre-first-subject', payload: {} };
   }
 
-  return { trigger: 'mentor.bubble.click', payload: {} };
+  return { trigger: 'mentor-bubble:clicked', payload: {} };
 }

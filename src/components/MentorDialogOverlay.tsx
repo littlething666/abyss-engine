@@ -110,7 +110,7 @@ export function MentorDialogOverlay() {
     if (!currentDialog) return;
     startedAtRef.current = nowMs();
     markSeen(currentDialog.trigger);
-    telemetry.log('mentor_dialog_shown', {
+    telemetry.log('mentor-dialog:shown', {
       triggerId: currentDialog.trigger,
       source: 'canned',
       voiceId: MENTOR_VOICE_ID,
@@ -197,7 +197,7 @@ export function MentorDialogOverlay() {
       }
       const startedAt = startedAtRef.current;
       const durationMs = startedAt === null ? 0 : Math.max(0, nowMs() - startedAt);
-      telemetry.log('mentor_dialog_completed', {
+      telemetry.log('mentor-dialog:completed', {
         triggerId: currentDialog.trigger,
         source: 'canned',
         voiceId: MENTOR_VOICE_ID,
@@ -224,7 +224,7 @@ export function MentorDialogOverlay() {
 
   const handleSkipReveal = useCallback(() => {
     if (isFullyRevealed || !currentMessage || !currentDialog) return;
-    telemetry.log('mentor_dialog_skipped', {
+    telemetry.log('mentor-dialog:skipped', {
       triggerId: currentDialog.trigger,
       source: 'canned',
       voiceId: MENTOR_VOICE_ID,
@@ -243,7 +243,7 @@ export function MentorDialogOverlay() {
       if (!currentDialog || !currentMessage) return;
       const choice = currentMessage.choices?.find((c) => c.id === choiceId);
       if (!choice) return;
-      telemetry.log('mentor_choice_selected', {
+      telemetry.log('mentor-choice:selected', {
         triggerId: currentDialog.trigger,
         source: 'canned',
         voiceId: MENTOR_VOICE_ID,
@@ -268,7 +268,7 @@ export function MentorDialogOverlay() {
     const trimmed = nameDraft.trim();
     if (!trimmed || !currentDialog) return;
     setPlayerName(trimmed);
-    telemetry.log('mentor_onboarding_completed', {
+    telemetry.log('mentor-onboarding:completed', {
       triggerId: currentDialog.trigger,
       source: 'canned',
       voiceId: MENTOR_VOICE_ID,

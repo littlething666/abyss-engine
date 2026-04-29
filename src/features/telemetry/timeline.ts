@@ -2,7 +2,10 @@ import { parseCardRefKey } from '@/lib/topicRef';
 
 import { type TelemetryEvent } from './types';
 
-export type TimelineEntryType = 'study_session_complete' | 'attunement_ritual_submitted' | 'study_card_reviewed';
+export type TimelineEntryType =
+  | 'study-session:completed'
+  | 'attunement-ritual:submitted'
+  | 'study-card:reviewed';
 
 export interface TimelineMetric {
   label: string;
@@ -46,13 +49,13 @@ export const MIN_TIMELINE_DAYS = 1;
 
 /** Events shown on the summary (motivation) layer of the study timeline. */
 export const TIMELINE_LAYER_SUMMARY_TYPES: ReadonlyArray<TimelineEntryType> = [
-  'study_session_complete',
-  'attunement_ritual_submitted',
-  'study_card_reviewed',
+  'study-session:completed',
+  'attunement-ritual:submitted',
+  'study-card:reviewed',
 ];
 
 /** Per-card review entries for the drill-down layer. */
-export const TIMELINE_LAYER_REVIEW_TYPES: ReadonlyArray<TimelineEntryType> = ['study_card_reviewed'];
+export const TIMELINE_LAYER_REVIEW_TYPES: ReadonlyArray<TimelineEntryType> = ['study-card:reviewed'];
 
 function coerceDays(days: number): number {
   if (!Number.isFinite(days) || days < MIN_TIMELINE_DAYS) {
@@ -90,7 +93,7 @@ function buildStudySessionEntry(
 
   return {
     id: `study-session-complete-${event.id}`,
-    type: 'study_session_complete',
+    type: 'study-session:completed',
     topicId,
     topicName: getTopicName(topicId, topicMetadata),
     sessionId,
@@ -140,7 +143,7 @@ function buildStudyCardReviewedEntry(
 
   return {
     id: `study-card-reviewed-${event.id}`,
-    type: 'study_card_reviewed',
+    type: 'study-card:reviewed',
     subjectId,
     topicId,
     topicName: getTopicName(topicId, topicMetadata),
@@ -192,7 +195,7 @@ function buildRitualEntry(
 
   return {
     id: `attunement-ritual-submitted-${event.id}`,
-    type: 'attunement_ritual_submitted',
+    type: 'attunement-ritual:submitted',
     topicId,
     topicName: getTopicName(topicId, topicMetadata),
     sessionId,
@@ -219,11 +222,11 @@ function buildRitualEntry(
 }
 
 function buildTimelineEntry(event: TelemetryEvent, topicMetadata: TimelineTopicMetadata = {}): StudyTimelineEntry {
-  if (event.type === 'study_session_complete') {
+  if (event.type === 'study-session:completed') {
     return buildStudySessionEntry(event, topicMetadata);
   }
 
-  if (event.type === 'attunement_ritual_submitted') {
+  if (event.type === 'attunement-ritual:submitted') {
     return buildRitualEntry(event, topicMetadata);
   }
 
@@ -237,9 +240,9 @@ function filterByWindow(entries: StudyTimelineEntry[], daysWindow: number, now: 
 }
 
 const SUPPORTED_EVENT_TYPES: ReadonlyArray<TimelineEntryType> = [
-  'study_session_complete',
-  'attunement_ritual_submitted',
-  'study_card_reviewed',
+  'study-session:completed',
+  'attunement-ritual:submitted',
+  'study-card:reviewed',
 ];
 
 export interface StudyTimelineSessionGroup {
@@ -367,11 +370,11 @@ export function buildTimelineSummaryBuckets(
       bucket.topicNames.push(topicLabel);
     }
 
-    if (entry.type === 'study_session_complete') {
+    if (entry.type === 'study-session:completed') {
       bucket.sessionsCompleted += 1;
-    } else if (entry.type === 'attunement_ritual_submitted') {
+    } else if (entry.type === 'attunement-ritual:submitted') {
       bucket.ritualsCompleted += 1;
-    } else if (entry.type === 'study_card_reviewed') {
+    } else if (entry.type === 'study-card:reviewed') {
       bucket.cardsReviewed += 1;
       if (entry.isCorrect === true) {
         bucket.correctReviews += 1;

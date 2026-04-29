@@ -66,7 +66,7 @@ describe('StudyTimelineModal', () => {
       onClose: vi.fn(),
       timelineNow: now,
       eventsOverride: [
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-x',
           rating: 3,
           isCorrect: true,
@@ -89,7 +89,7 @@ describe('StudyTimelineModal', () => {
       onClose: vi.fn(),
       timelineNow: now,
       eventsOverride: [
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-newer',
           rating: 4,
           isCorrect: true,
@@ -101,7 +101,7 @@ describe('StudyTimelineModal', () => {
           sessionId: 'session-b',
           timestamp: now - 1 * 60 * 60 * 1000,
         }),
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-oldest',
           rating: 1,
           isCorrect: false,
@@ -113,7 +113,7 @@ describe('StudyTimelineModal', () => {
           sessionId: 'session-a',
           timestamp: now - 4 * 60 * 60 * 1000,
         }),
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-latest',
           rating: 2,
           isCorrect: false,
@@ -153,7 +153,7 @@ describe('StudyTimelineModal', () => {
       onClose: vi.fn(),
       timelineNow: now,
       eventsOverride: [
-        telemetryEvent('study_session_complete', {
+        telemetryEvent('study-session:completed', {
           sessionId: 'study-1',
           topicId: 'topic-a',
           totalAttempts: 2,
@@ -164,7 +164,7 @@ describe('StudyTimelineModal', () => {
           sessionId: 'session-1',
           timestamp: now - dayMs,
         }),
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-7',
           rating: 3,
           isCorrect: true,
@@ -195,7 +195,7 @@ describe('StudyTimelineModal', () => {
       onClose: vi.fn(),
       timelineNow: now,
       eventsOverride: [
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-short',
           rating: 2,
           isCorrect: false,
@@ -207,7 +207,7 @@ describe('StudyTimelineModal', () => {
           sessionId: 'study-1',
           timestamp: now - 2 * 60 * 60 * 1000,
         }),
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-long',
           rating: 4,
           isCorrect: true,
@@ -245,7 +245,7 @@ describe('StudyTimelineModal', () => {
       onClose: vi.fn(),
       timelineNow: now,
       eventsOverride: [
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-correct',
           rating: 4,
           isCorrect: true,
@@ -257,7 +257,7 @@ describe('StudyTimelineModal', () => {
           sessionId: 'study-1',
           timestamp: now - 2 * 60 * 60 * 1000,
         }),
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-wrong',
           rating: 1,
           isCorrect: false,
@@ -291,7 +291,7 @@ describe('StudyTimelineModal', () => {
       onClose: vi.fn(),
       timelineNow: now,
       eventsOverride: [
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-short',
           rating: 3,
           isCorrect: true,
@@ -303,7 +303,7 @@ describe('StudyTimelineModal', () => {
           sessionId: 'session-small',
           timestamp: now - 3 * 60 * 60 * 1000,
         }),
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-long-1',
           rating: 4,
           isCorrect: true,
@@ -315,7 +315,7 @@ describe('StudyTimelineModal', () => {
           sessionId: 'session-large',
           timestamp: now - 2 * 60 * 60 * 1000,
         }),
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-long-2',
           rating: 2,
           isCorrect: false,
@@ -368,7 +368,7 @@ describe('StudyTimelineModal', () => {
       onClose: vi.fn(),
       timelineNow: now,
       eventsOverride: [
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-a',
           rating: 2,
           isCorrect: true,
@@ -380,7 +380,7 @@ describe('StudyTimelineModal', () => {
           sessionId: 'session-full',
           timestamp: now - 3 * 60 * 60 * 1000,
         }),
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-b',
           rating: 1,
           isCorrect: false,
@@ -392,7 +392,7 @@ describe('StudyTimelineModal', () => {
           sessionId: 'session-full',
           timestamp: now - 2 * 60 * 60 * 1000,
         }),
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-c',
           rating: 4,
           isCorrect: true,
@@ -436,7 +436,7 @@ describe('StudyTimelineModal', () => {
       onClose: vi.fn(),
       timelineNow: now,
       eventsOverride: [
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-7',
           rating: 3,
           isCorrect: true,
@@ -480,7 +480,7 @@ describe('StudyTimelineModal', () => {
       timelineNow: now,
       onOpenEntryStudy,
       eventsOverride: [
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'card-7',
           rating: 3,
           isCorrect: true,
@@ -531,7 +531,7 @@ describe('StudyTimelineModal', () => {
       onClose,
       timelineNow: now,
       eventsOverride: [
-        telemetryEvent('study_card_reviewed', {
+        telemetryEvent('study-card:reviewed', {
           cardId: 'old-card',
           rating: 3,
           isCorrect: true,

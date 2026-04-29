@@ -5,9 +5,9 @@ import { appEventBus } from '@/infrastructure/eventBus';
 import { triggerSubjectGeneration } from './triggerSubjectGeneration';
 
 describe('triggerSubjectGeneration', () => {
-  it("emits subject:generation-pipeline with subjectId and checklist", () => {
+  it("emits subject-graph:generation-requested with subjectId and checklist", () => {
     const handler = vi.fn();
-    const off = appEventBus.on('subject:generation-pipeline', handler);
+    const off = appEventBus.on('subject-graph:generation-requested', handler);
 
     triggerSubjectGeneration('my-subject', {
       topicName: 'My Topic',

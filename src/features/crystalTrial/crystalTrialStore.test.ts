@@ -91,7 +91,7 @@ describe('forceCompleteWithCorrectAnswers', () => {
       q3: 'C',
       q4: 'D',
     });
-    expect(emitSpy).toHaveBeenCalledWith('crystal:trial-completed', {
+    expect(emitSpy).toHaveBeenCalledWith('crystal-trial:completed', {
       subjectId,
       topicId,
       targetLevel: 2,
@@ -114,7 +114,7 @@ describe('forceCompleteWithCorrectAnswers', () => {
     expect(result?.passed).toBe(true);
     expect(result?.score).toBe(1);
     expect(trial?.status).toBe('passed');
-    expect(emitSpy).toHaveBeenCalledWith('crystal:trial-completed', {
+    expect(emitSpy).toHaveBeenCalledWith('crystal-trial:completed', {
       subjectId,
       topicId,
       targetLevel: 2,
