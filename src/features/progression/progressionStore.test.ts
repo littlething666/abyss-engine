@@ -410,7 +410,7 @@ describe('progressionStore card-only canonical API', () => {
     },
   );
 
-  it('does not emit crystal:trial-pregenerate when XP is capped at boundary while trial is failed', () => {
+  it('does not emit crystal-trial:pregeneration-requested when XP is capped at boundary while trial is failed', () => {
     const ref = topicRef('topic-a');
     const key = topicRefKey(ref);
     useCrystalTrialStore.setState({
@@ -428,12 +428,12 @@ describe('progressionStore card-only canonical API', () => {
     useProgressionStore.getState().startTopicStudySession(ref, cards);
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
 
-    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal:trial-pregenerate');
+    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal-trial:pregeneration-requested');
     expect(pregenCalls).toHaveLength(0);
     emitSpy.mockRestore();
   });
 
-  it('emits crystal:trial-pregenerate on positive XP gain during submitStudyResult', () => {
+  it('emits crystal-trial:pregeneration-requested on positive XP gain during submitStudyResult', () => {
     const ref = topicRef('topic-a');
     const emitSpy = vi.spyOn(appEventBus, 'emit');
     const cards = [createCard('a-1')];
@@ -445,7 +445,7 @@ describe('progressionStore card-only canonical API', () => {
     useProgressionStore.getState().startTopicStudySession(ref, cards);
     useProgressionStore.getState().submitStudyResult(cr('topic-a', 'a-1'), 4);
 
-    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal:trial-pregenerate');
+    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal-trial:pregeneration-requested');
     expect(pregenCalls).toHaveLength(1);
     expect(pregenCalls[0]?.[1]).toMatchObject({
       subjectId: DS,
@@ -456,7 +456,7 @@ describe('progressionStore card-only canonical API', () => {
     emitSpy.mockRestore();
   });
 
-  it('does not emit crystal:trial-pregenerate on addXP when trial is failed', () => {
+  it('does not emit crystal-trial:pregeneration-requested on addXP when trial is failed', () => {
     const ref = topicRef('topic-a');
     const key = topicRefKey(ref);
     const emitSpy = vi.spyOn(appEventBus, 'emit');
@@ -471,7 +471,7 @@ describe('progressionStore card-only canonical API', () => {
 
     useProgressionStore.getState().addXP(ref, 10);
 
-    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal:trial-pregenerate');
+    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal-trial:pregeneration-requested');
     expect(pregenCalls).toHaveLength(0);
     emitSpy.mockRestore();
   });
@@ -576,7 +576,7 @@ describe('progressionStore card-only canonical API', () => {
     expect(useProgressionStore.getState().activeCrystals[0]?.xp).toBe(0);
   });
 
-  it('emits crystal:trial-pregenerate on positive XP gain during addXP', () => {
+  it('emits crystal-trial:pregeneration-requested on positive XP gain during addXP', () => {
     const ref = topicRef('topic-a');
     const emitSpy = vi.spyOn(appEventBus, 'emit');
 
@@ -587,7 +587,7 @@ describe('progressionStore card-only canonical API', () => {
 
     useProgressionStore.getState().addXP(ref, 10);
 
-    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal:trial-pregenerate');
+    const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal-trial:pregeneration-requested');
     expect(pregenCalls).toHaveLength(1);
     expect(pregenCalls[0]?.[1]).toMatchObject({
       subjectId: DS,
@@ -861,7 +861,7 @@ describe('progressionStore card-only canonical API', () => {
 
     useProgressionStore.getState().undoLastStudyResult();
     const undoEvents = dispatchSpy.mock.calls.filter(
-      ([event]) => event instanceof CustomEvent && event.type === 'abyss-study-panel:history',
+      ([event]) => event instanceof CustomEvent && event.type === 'abyss-study-panel:history-applied',
     );
     expect(undoEvents).toHaveLength(1);
     expect((undoEvents[0]?.[0] as CustomEvent).detail).toMatchObject({
@@ -874,7 +874,7 @@ describe('progressionStore card-only canonical API', () => {
 
     useProgressionStore.getState().redoLastStudyResult();
     const redoEvents = dispatchSpy.mock.calls.filter(
-      ([event]) => event instanceof CustomEvent && event.type === 'abyss-study-panel:history',
+      ([event]) => event instanceof CustomEvent && event.type === 'abyss-study-panel:history-applied',
     );
     expect(redoEvents).toHaveLength(2);
     expect((redoEvents[1]?.[0] as CustomEvent).detail).toMatchObject({
@@ -903,7 +903,7 @@ describe('progressionStore card-only canonical API', () => {
     useProgressionStore.getState().redoLastStudyResult();
     expect(dispatchSpy).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'abyss-study-panel:history',
+        type: 'abyss-study-panel:history-applied',
       }),
     );
 

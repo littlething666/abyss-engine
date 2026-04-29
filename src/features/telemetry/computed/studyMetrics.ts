@@ -5,7 +5,12 @@ function toStartOfUtcDay(timestamp: number) {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
-const SESSION_COMPLETE_TYPES: TelemetryEvent['type'][] = ['study_session_complete', 'study_undo', 'study_redo', 'study_card_reviewed'];
+const SESSION_COMPLETE_TYPES: TelemetryEvent['type'][] = [
+  'study-session:completed',
+  'study-panel:undo-applied',
+  'study-panel:redo-applied',
+  'study-card:reviewed',
+];
 
 export function computeStudyStreak(events: TelemetryEvent[]) {
   const daySet = new Set<number>();
@@ -37,13 +42,13 @@ export function computeStudyStreak(events: TelemetryEvent[]) {
 
 export function computeTotalStudyHours(events: TelemetryEvent[]) {
   const totalMilliseconds = events.reduce((sum, event) => {
-    if (event.type === 'study_session_complete') {
+    if (event.type === 'study-session:completed') {
       const payload = event.payload as { sessionDurationMs?: unknown };
       const rawDuration = typeof payload.sessionDurationMs === 'number' ? payload.sessionDurationMs : 0;
       return sum + Math.max(0, rawDuration);
     }
 
-    if (event.type === 'study_card_reviewed') {
+    if (event.type === 'study-card:reviewed') {
       const payload = event.payload as { timeTakenMs?: unknown };
       const rawDuration = typeof payload.timeTakenMs === 'number' ? payload.timeTakenMs : 0;
       return sum + Math.max(0, rawDuration);

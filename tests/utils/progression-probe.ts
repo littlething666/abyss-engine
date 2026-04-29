@@ -4,33 +4,15 @@ import { expect } from '@playwright/test';
 /**
  * Installs an in-page probe that captures every `abyss-*` CustomEvent.
  *
- * Events captured:
- *   - abyss-card:reviewed
- *   - abyss-xp:gained
- *   - abyss-session:completed
- *   - abyss-crystal:leveled
- *   - abyss-crystal:trial-pregenerate
- *   - abyss-crystal:trial-completed
- *   - abyss-study-panel:history
- *
- * The probe monkey-patches `window.dispatchEvent` so events synthesized via
- * `AppEventBus.emit` are also captured even when listeners are attached on
- * sub-targets.
+ * The probe monkey-patches `window.dispatchEvent` so any event synthesized
+ * via `AppEventBus.emit` is captured generically by name prefix — no static
+ * list of event types is maintained here. Adding a new `abyss-*` event in
+ * `APP_EVENT_NAMES` is captured automatically.
  */
 export async function installProgressionEventProbe(page: Page): Promise<void> {
   await page.evaluate(() => {
     const win = window as unknown as Record<string, unknown>;
     if (win.__progressionEventProbeInstalled === true) return;
-
-    const eventTypes = [
-      'abyss-card:reviewed',
-      'abyss-xp:gained',
-      'abyss-session:completed',
-      'abyss-crystal:leveled',
-      'abyss-crystal:trial-pregenerate',
-      'abyss-crystal:trial-completed',
-      'abyss-study-panel:history',
-    ];
 
     const events: Array<{ type: string; detail: unknown; at: number }> = [];
     win.__progressionEvents = events;
@@ -45,11 +27,6 @@ export async function installProgressionEventProbe(page: Page): Promise<void> {
       events.push({ type: ce.type, detail, at: Date.now() });
     };
 
-    for (const type of eventTypes) {
-      window.addEventListener(type, collect);
-      document.addEventListener(type, collect);
-    }
-
     try {
       const original = window.dispatchEvent.bind(window);
       window.dispatchEvent = (ev: Event) => {
@@ -59,7 +36,7 @@ export async function installProgressionEventProbe(page: Page): Promise<void> {
         return original(ev);
       };
     } catch {
-      /* monkey-patch failed; addEventListener path still captures handlers */
+      /* monkey-patch failed; tests calling waitForProgressionEvent will time out */
     }
 
     win.__progressionEventProbeInstalled = true;

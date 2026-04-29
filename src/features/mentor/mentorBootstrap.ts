@@ -28,12 +28,12 @@ function scheduleOnboardingEnqueue(): void {
     typeof window === 'undefined' ||
     typeof window.requestAnimationFrame !== 'function'
   ) {
-    handleMentorTrigger('onboarding.pre_first_subject');
+    handleMentorTrigger('onboarding:pre-first-subject');
     return;
   }
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => {
-      handleMentorTrigger('onboarding.pre_first_subject');
+      handleMentorTrigger('onboarding:pre-first-subject');
     });
   });
 }

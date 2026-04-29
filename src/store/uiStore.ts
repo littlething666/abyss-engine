@@ -11,7 +11,7 @@ function emitModalOpened(
   topic: TopicRef | null = null,
   sessionId: string | null = null,
 ) {
-  telemetry.log('modal_opened', {
+  telemetry.log('modal:opened', {
     modalId,
     action: 'opened',
     sessionId,

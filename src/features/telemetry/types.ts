@@ -3,30 +3,30 @@ import { z } from 'zod';
 export const telemetryVersionSchema = z.literal('v1');
 
 export const TelemetryEventTypeSchema = z.enum([
-  'study_session_start',
-  'study_card_reviewed',
-  'study_undo',
-  'study_redo',
-  'study_session_complete',
-  'attunement_ritual_submitted',
-  'attunement_cooldown_checked',
-  'crystal_unlocked',
-  'xp_gained',
-  'level_up',
-  'study_panel_tab_switched',
-  'modal_opened',
-  'performance_frame_time',
-  'crystal_trial_pregeneration_started',
-  'crystal_trial_completed',
-  'subject_graph_generated',
-  'subject_graph_generation_failed',
-  'subject_graph_validation_failed',
-  'mentor_dialog_shown',
-  'mentor_dialog_skipped',
-  'mentor_dialog_completed',
-  'mentor_choice_selected',
-  'mentor_onboarding_completed',
-  'mentor_first_subject_generation_enqueued',
+  'study-session:started',
+  'study-card:reviewed',
+  'study-panel:undo-applied',
+  'study-panel:redo-applied',
+  'study-session:completed',
+  'attunement-ritual:submitted',
+  'attunement-cooldown:checked',
+  'crystal:unlocked',
+  'xp:gained',
+  'crystal:leveled',
+  'study-panel:tab-switched',
+  'modal:opened',
+  'performance:frame-measured',
+  'crystal-trial:pregeneration-started',
+  'crystal-trial:completed',
+  'subject-graph:generated',
+  'subject-graph:generation-failed',
+  'subject-graph:validation-failed',
+  'mentor-dialog:shown',
+  'mentor-dialog:skipped',
+  'mentor-dialog:completed',
+  'mentor-choice:selected',
+  'mentor-onboarding:completed',
+  'mentor:first-subject-generation-enqueued',
 ]);
 
 export type TelemetryEventType = z.infer<typeof TelemetryEventTypeSchema>;
@@ -218,28 +218,28 @@ export type SubjectGraphValidationFailedPayload = z.infer<typeof SubjectGraphVal
 // Plan source of truth: "Witty Mentor — Wisdom Altar Dialog System".
 // Every mentor event carries source: 'canned' and voiceId: 'witty-sarcastic'.
 // `onboarding.welcome` + `onboarding.first_subject` were collapsed into the
-// single canonical `onboarding.pre_first_subject` trigger; the rule engine
+// single canonical `onboarding:pre-first-subject` trigger; the rule engine
 // gates only on firstSubjectGenerationEnqueuedAt === null.
 //
 // `crystal.trial.awaiting` was renamed to
-// `crystal.trial.available_for_player` so the trigger expresses the
+// `crystal-trial:available-for-player` so the trigger expresses the
 // player-facing predicate (trial is prepared AND XP is at the band cap),
 // not the raw store status.
 //
-// `onboarding.subject_unlock_first_crystal` is the post-curriculum
+// `onboarding:subject-unlock-first-crystal` is the post-curriculum
 // contextual entry trigger — fires once per newly generated subject whose
 // topics are still fully locked, opening the Discovery modal scoped to
 // that subject.
 export const MentorTriggerIdSchema = z.enum([
-  'onboarding.pre_first_subject',
-  'onboarding.subject_unlock_first_crystal',
-  'session.completed',
-  'crystal.leveled',
-  'crystal.trial.available_for_player',
-  'subject.generation.started',
-  'subject.generated',
-  'subject.generation.failed',
-  'mentor.bubble.click',
+  'onboarding:pre-first-subject',
+  'onboarding:subject-unlock-first-crystal',
+  'session:completed',
+  'crystal:leveled',
+  'crystal-trial:available-for-player',
+  'subject:generation-started',
+  'subject:generated',
+  'subject:generation-failed',
+  'mentor-bubble:clicked',
 ]);
 export type MentorTriggerIdLiteral = z.infer<typeof MentorTriggerIdSchema>;
 
@@ -301,28 +301,28 @@ export const TelemetryEventPayloadSchema = z.object({
 export type TelemetryEvent = z.infer<typeof TelemetryEventPayloadSchema>;
 
 export const TelemetryEventMap: Record<TelemetryEventType, z.ZodSchema<unknown>> = {
-  study_session_start: StudySessionStartPayloadSchema,
-  study_card_reviewed: StudyCardReviewedPayloadSchema,
-  study_undo: StudyUndoPayloadSchema,
-  study_redo: StudyRedoPayloadSchema,
-  study_session_complete: StudySessionCompletePayloadSchema,
-  attunement_ritual_submitted: AttunementRitualSubmittedPayloadSchema,
-  attunement_cooldown_checked: AttunementCooldownPayloadSchema,
-  crystal_unlocked: CrystalUnlockedPayloadSchema,
-  xp_gained: XpGainedPayloadSchema,
-  level_up: LevelUpPayloadSchema,
-  crystal_trial_pregeneration_started: CrystalTrialPregenerationStartedPayloadSchema,
-  crystal_trial_completed: CrystalTrialCompletedPayloadSchema,
-  study_panel_tab_switched: StudyPanelTabSwitchedPayloadSchema,
-  modal_opened: ModalOpenedPayloadSchema,
-  performance_frame_time: PerformanceFrameTimePayloadSchema,
-  subject_graph_generated: SubjectGraphGeneratedPayloadSchema,
-  subject_graph_generation_failed: SubjectGraphGenerationFailedPayloadSchema,
-  subject_graph_validation_failed: SubjectGraphValidationFailedPayloadSchema,
-  mentor_dialog_shown: MentorDialogShownPayloadSchema,
-  mentor_dialog_skipped: MentorDialogSkippedPayloadSchema,
-  mentor_dialog_completed: MentorDialogCompletedPayloadSchema,
-  mentor_choice_selected: MentorChoiceSelectedPayloadSchema,
-  mentor_onboarding_completed: MentorOnboardingCompletedPayloadSchema,
-  mentor_first_subject_generation_enqueued: MentorFirstSubjectGenerationEnqueuedPayloadSchema,
+  'study-session:started': StudySessionStartPayloadSchema,
+  'study-card:reviewed': StudyCardReviewedPayloadSchema,
+  'study-panel:undo-applied': StudyUndoPayloadSchema,
+  'study-panel:redo-applied': StudyRedoPayloadSchema,
+  'study-session:completed': StudySessionCompletePayloadSchema,
+  'attunement-ritual:submitted': AttunementRitualSubmittedPayloadSchema,
+  'attunement-cooldown:checked': AttunementCooldownPayloadSchema,
+  'crystal:unlocked': CrystalUnlockedPayloadSchema,
+  'xp:gained': XpGainedPayloadSchema,
+  'crystal:leveled': LevelUpPayloadSchema,
+  'crystal-trial:pregeneration-started': CrystalTrialPregenerationStartedPayloadSchema,
+  'crystal-trial:completed': CrystalTrialCompletedPayloadSchema,
+  'study-panel:tab-switched': StudyPanelTabSwitchedPayloadSchema,
+  'modal:opened': ModalOpenedPayloadSchema,
+  'performance:frame-measured': PerformanceFrameTimePayloadSchema,
+  'subject-graph:generated': SubjectGraphGeneratedPayloadSchema,
+  'subject-graph:generation-failed': SubjectGraphGenerationFailedPayloadSchema,
+  'subject-graph:validation-failed': SubjectGraphValidationFailedPayloadSchema,
+  'mentor-dialog:shown': MentorDialogShownPayloadSchema,
+  'mentor-dialog:skipped': MentorDialogSkippedPayloadSchema,
+  'mentor-dialog:completed': MentorDialogCompletedPayloadSchema,
+  'mentor-choice:selected': MentorChoiceSelectedPayloadSchema,
+  'mentor-onboarding:completed': MentorOnboardingCompletedPayloadSchema,
+  'mentor:first-subject-generation-enqueued': MentorFirstSubjectGenerationEnqueuedPayloadSchema,
 };

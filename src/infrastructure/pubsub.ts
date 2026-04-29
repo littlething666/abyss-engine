@@ -1,6 +1,17 @@
 import { QueryClient } from '@tanstack/react-query';
 
-type PubSubEventType = 'topic-updated' | 'cards-updated' | 'subject-updated';
+/**
+ * Runtime source of truth for pub/sub event types.
+ * `eventNamePattern.test.ts` asserts every name matches the canonical
+ * `domain:event` regex.
+ */
+export const PUB_SUB_EVENT_TYPES = [
+  'topic:updated',
+  'topic-cards:updated',
+  'subject:updated',
+] as const;
+
+export type PubSubEventType = (typeof PUB_SUB_EVENT_TYPES)[number];
 
 export interface PubSubMessage {
   type: PubSubEventType;
@@ -63,7 +74,7 @@ export class PubSubClient {
     }
 
     switch (message.type) {
-      case 'topic-updated': {
+      case 'topic:updated': {
         const subjectId = message.subjectId ?? '';
         const topicId = message.topicId ?? '';
         if (subjectId && topicId) {
@@ -74,7 +85,7 @@ export class PubSubClient {
         }
         return;
       }
-      case 'cards-updated': {
+      case 'topic-cards:updated': {
         const subjectId = message.subjectId ?? '';
         const topicId = message.topicId ?? '';
         if (subjectId && topicId) {
@@ -85,7 +96,7 @@ export class PubSubClient {
         }
         return;
       }
-      case 'subject-updated': {
+      case 'subject:updated': {
         if (message.subjectId) {
           this.queryClient.invalidateQueries({ queryKey: ['content', 'subject', message.subjectId, 'graph'] });
           this.queryClient.invalidateQueries({ queryKey: ['content', 'subject', 'graphs'] });

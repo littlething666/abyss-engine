@@ -50,7 +50,7 @@ export function CrystalTrialModal() {
   const xpUntilTrialReady = getXpToNextBandThreshold(selectedXp);
   // Single source of truth for the Begin Trial enable predicate, shared with
   // Crystals.tsx (per-frame trial-pulse VFX) and eventBusHandlers.ts
-  // (mentor `crystal.trial.available_for_player` watcher). The selector
+  // (mentor `crystal-trial:available-for-player` watcher). The selector
   // requires a non-nullable status; short-circuit to false when no trial
   // is active for the selected topic so the button stays disabled.
   const canStartTrial = trial ? isCrystalTrialAvailableForPlayer(trial.status, selectedXp) : false;
@@ -114,7 +114,7 @@ export function CrystalTrialModal() {
     if (trialResult) {
       setResult(trialResult);
       const t = useCrystalTrialStore.getState().getCurrentTrial(selectedTopic);
-      appEventBus.emit('crystal:trial-completed', {
+      appEventBus.emit('crystal-trial:completed', {
         subjectId: selectedTopic.subjectId,
         topicId: selectedTopic.topicId,
         targetLevel: t?.targetLevel ?? 0,

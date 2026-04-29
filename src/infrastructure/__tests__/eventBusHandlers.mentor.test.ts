@@ -86,7 +86,7 @@ const {
 //
 // eventBusHandlers.ts imports a deep tree of LLM, repository and pipeline
 // modules at module init. None of those are exercised by the
-// `crystal.trial.available_for_player` watcher, but their import side-effects
+// `crystal-trial:available-for-player` watcher, but their import side-effects
 // (DB constructors, env reads, etc.) would make this test brittle. We stub
 // them all out and only let the real `useCrystalTrialStore`, our hand-rolled
 // progression-store mock, and our `handleMentorTrigger` spy run.
@@ -264,7 +264,7 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'crystal.trial.available_for_player',
+      'crystal-trial:available-for-player',
       { topic: 'topic-1' },
     );
   });
@@ -314,7 +314,7 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
     ]);
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'crystal.trial.available_for_player',
+      'crystal-trial:available-for-player',
       { topic: 'topic-1' },
     );
   });
@@ -392,7 +392,7 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
     });
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'crystal.trial.available_for_player',
+      'crystal-trial:available-for-player',
       { topic: 'topic-1' },
     );
   });
@@ -465,7 +465,7 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
       .sort();
     expect(topics).toEqual(['topic-1', 'topic-2']);
     for (const call of handleMentorTriggerSpy.mock.calls) {
-      expect(call[0]).toBe('crystal.trial.available_for_player');
+      expect(call[0]).toBe('crystal-trial:available-for-player');
     }
   });
 
@@ -521,7 +521,7 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
     });
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'crystal.trial.available_for_player',
+      'crystal-trial:available-for-player',
       { topic: 'derivatives' },
     );
   });
@@ -529,7 +529,7 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
 
 describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
   it('fires the start mentor trigger and records the first subject generation enqueue', async () => {
-    busApi.emit('subject:generation-pipeline', {
+    busApi.emit('subject-graph:generation-requested', {
       subjectId: 'calculus',
       checklist: { topicName: 'Calculus' },
     });
@@ -537,17 +537,17 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
 
     // The bus handler always passes stage:'topics' so the rule engine can
     // select the topics-stage variant pool.
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject.generation.started', {
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generation-started', {
       subjectName: 'Calculus',
       stage: 'topics',
     });
     expect(mentorApi.state.markFirstSubjectGenerationEnqueued).toHaveBeenCalledTimes(1);
     expect(telemetryApi.log).toHaveBeenCalledWith(
-      'mentor_first_subject_generation_enqueued',
+      'mentor:first-subject-generation-enqueued',
       expect.objectContaining({
-        // Collapsed-onboarding refactor renamed the trigger id from
-        // 'onboarding.first_subject' to the canonical pre_first_subject.
-        triggerId: 'onboarding.pre_first_subject',
+        // Collapsed-onboarding refactor renamed the trigger id to the
+        // canonical colon-namespace `onboarding:pre-first-subject`.
+        triggerId: 'onboarding:pre-first-subject',
         voiceId: 'witty-sarcastic',
       }),
       { subjectId: 'calculus' },
@@ -562,7 +562,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
       stage: 'edges',
     });
 
-    busApi.emit('subject:generation-pipeline', {
+    busApi.emit('subject-graph:generation-requested', {
       subjectId: 'calculus',
       checklist: { topicName: 'Calculus' },
     });
@@ -571,13 +571,13 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     expect(toastApi.error).toHaveBeenCalledWith(
       'Curriculum generation needs attention: Calculus',
     );
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject.generation.failed', {
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generation-failed', {
       subjectName: 'Calculus',
       stage: 'edges',
       pipelineId: 'pipeline-1',
     });
     expect(telemetryApi.log).toHaveBeenCalledWith(
-      'subject_graph_generation_failed',
+      'subject-graph:generation-failed',
       expect.objectContaining({
         subjectId: 'calculus',
         subjectName: 'Calculus',
@@ -589,7 +589,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     );
   });
 
-  it('subjectGraph.generated fires subject.generated when the subject already has unlocked topics', async () => {
+  it('subject-graph:generated fires subject:generated when the subject already has unlocked topics', async () => {
     // Use a unique subjectId so the module-scoped firedSubjectUnlockFirstCrystal
     // dedupe set (which persists across tests because the handlers module is
     // loaded once per process) does not interfere.
@@ -601,7 +601,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     ]);
     handleMentorTriggerSpy.mockReset();
 
-    busApi.emit('subjectGraph.generated', {
+    busApi.emit('subject-graph:generated', {
       subjectId: 'celebrate-subj-1',
       boundModel: 'edges-model',
       stageADurationMs: 100,
@@ -612,18 +612,18 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     await flushMicrotasks();
 
     expect(toastApi.success).toHaveBeenCalledWith('Curriculum generated: Celebration Subject');
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject.generated', {
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generated', {
       subjectName: 'Celebration Subject',
     });
     // Onboarding branch must NOT fire when there is at least one unlocked
     // topic in the subject — the player is past the first-crystal moment.
     expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith(
-      'onboarding.subject_unlock_first_crystal',
+      'onboarding:subject-unlock-first-crystal',
       expect.anything(),
     );
   });
 
-  it('subjectGraph.generated fires the onboarding trigger with subjectId+subjectName when no topic in the subject is unlocked yet', async () => {
+  it('subject-graph:generated fires the onboarding trigger with subjectId+subjectName when no topic in the subject is unlocked yet', async () => {
     deckApi.getManifest.mockResolvedValueOnce({
       subjects: [{ id: 'first-crystal-subj-1', name: 'Topology' }],
     });
@@ -634,7 +634,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     ]);
     handleMentorTriggerSpy.mockReset();
 
-    busApi.emit('subjectGraph.generated', {
+    busApi.emit('subject-graph:generated', {
       subjectId: 'first-crystal-subj-1',
       boundModel: 'edges-model',
       stageADurationMs: 100,
@@ -645,18 +645,18 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     await flushMicrotasks();
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'onboarding.subject_unlock_first_crystal',
+      'onboarding:subject-unlock-first-crystal',
       { subjectName: 'Topology', subjectId: 'first-crystal-subj-1' },
     );
     // Generic celebration must NOT fire on the same emit — the branches
     // are mutually exclusive per the plan.
     expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith(
-      'subject.generated',
+      'subject:generated',
       expect.anything(),
     );
   });
 
-  it('subjectGraph.generated dedupes the onboarding trigger per subjectId across regenerates in the same session', async () => {
+  it('subject-graph:generated dedupes the onboarding trigger per subjectId across regenerates in the same session', async () => {
     // First emit: no unlocked topics — onboarding fires.
     deckApi.getManifest.mockResolvedValue({
       subjects: [{ id: 'first-crystal-subj-2', name: 'Linear Algebra' }],
@@ -664,7 +664,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     progressionApi.setActiveCrystals([]);
     handleMentorTriggerSpy.mockReset();
 
-    busApi.emit('subjectGraph.generated', {
+    busApi.emit('subject-graph:generated', {
       subjectId: 'first-crystal-subj-2',
       boundModel: 'edges-model',
       stageADurationMs: 100,
@@ -675,7 +675,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     await flushMicrotasks();
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'onboarding.subject_unlock_first_crystal',
+      'onboarding:subject-unlock-first-crystal',
       { subjectName: 'Linear Algebra', subjectId: 'first-crystal-subj-2' },
     );
     handleMentorTriggerSpy.mockReset();
@@ -683,7 +683,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     // Second emit: same subjectId, still no unlocked topics. The dedupe set
     // already contains this subjectId, so the handler must fall back to the
     // generic celebration line instead of re-firing the onboarding prod.
-    busApi.emit('subjectGraph.generated', {
+    busApi.emit('subject-graph:generated', {
       subjectId: 'first-crystal-subj-2',
       boundModel: 'edges-model',
       stageADurationMs: 100,
@@ -693,11 +693,11 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     });
     await flushMicrotasks();
 
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject.generated', {
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generated', {
       subjectName: 'Linear Algebra',
     });
     expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith(
-      'onboarding.subject_unlock_first_crystal',
+      'onboarding:subject-unlock-first-crystal',
       expect.anything(),
     );
   });

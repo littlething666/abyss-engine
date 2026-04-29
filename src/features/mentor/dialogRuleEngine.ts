@@ -51,8 +51,8 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
   //     the named greet → CTA flow (no name prompt, distinct copy)
   //   - dismissing the dialog does NOT lock the trigger out; the gate stays
   //     open until a subject generation actually enqueues.
-  'onboarding.pre_first_subject': {
-    trigger: 'onboarding.pre_first_subject',
+  'onboarding:pre-first-subject': {
+    trigger: 'onboarding:pre-first-subject',
     priority: 100,
     isApplicable: (s) => s.firstSubjectGenerationEnqueuedAt === null,
     resolveVariantText: (_payload, snapshot, variantIndex) =>
@@ -100,13 +100,13 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
   // the open_discovery effect). Dedupes against an already-active or
   // queued plan of the same trigger so a fast back-to-back regenerate
   // does not stack notifications.
-  'onboarding.subject_unlock_first_crystal': {
-    trigger: 'onboarding.subject_unlock_first_crystal',
+  'onboarding:subject-unlock-first-crystal': {
+    trigger: 'onboarding:subject-unlock-first-crystal',
     priority: 78,
     isApplicable: (s) =>
-      s.currentDialog?.trigger !== 'onboarding.subject_unlock_first_crystal' &&
+      s.currentDialog?.trigger !== 'onboarding:subject-unlock-first-crystal' &&
       !s.dialogQueue.some(
-        (plan) => plan.trigger === 'onboarding.subject_unlock_first_crystal',
+        (plan) => plan.trigger === 'onboarding:subject-unlock-first-crystal',
       ),
     buildMessages: (text, payload) => [
       {
@@ -131,31 +131,31 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
       },
     ],
   },
-  'session.completed': {
-    trigger: 'session.completed',
+  'session:completed': {
+    trigger: 'session:completed',
     priority: 60,
     buildMessages: (text) => [{ id: 'session-completed', text, mood: 'celebrate' }],
   },
-  'crystal.leveled': {
-    trigger: 'crystal.leveled',
+  'crystal:leveled': {
+    trigger: 'crystal:leveled',
     priority: 70,
     cooldownMs: 60_000,
     buildMessages: (text) => [{ id: 'crystal-leveled', text, mood: 'celebrate' }],
   },
-  'crystal.trial.available_for_player': {
-    trigger: 'crystal.trial.available_for_player',
+  'crystal-trial:available-for-player': {
+    trigger: 'crystal-trial:available-for-player',
     priority: 75,
     buildMessages: (text) => [{ id: 'trial-available-for-player', text, mood: 'hint' }],
   },
   // Generation-started dedupes against current/queued plans of the same
   // trigger so contextual entry from the bubble (which the engine fires
   // with a stage) does not stack on top of the eventBus auto-fire.
-  'subject.generation.started': {
-    trigger: 'subject.generation.started',
+  'subject:generation-started': {
+    trigger: 'subject:generation-started',
     priority: 72,
     isApplicable: (s) =>
-      s.currentDialog?.trigger !== 'subject.generation.started' &&
-      !s.dialogQueue.some((plan) => plan.trigger === 'subject.generation.started'),
+      s.currentDialog?.trigger !== 'subject:generation-started' &&
+      !s.dialogQueue.some((plan) => plan.trigger === 'subject:generation-started'),
     resolveVariantText: (payload, _snapshot, variantIndex) => {
       if (payload.stage === 'topics' || payload.stage === 'edges') {
         return getSubjectGenerationStartedStageLine(
@@ -165,17 +165,17 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
           variantIndex,
         );
       }
-      return getMentorLine('en', 'subject.generation.started', MENTOR_VOICE_ID, variantIndex);
+      return getMentorLine('en', 'subject:generation-started', MENTOR_VOICE_ID, variantIndex);
     },
     buildMessages: (text) => [{ id: 'subject-generation-started', text, mood: 'hint' }],
   },
-  'subject.generated': {
-    trigger: 'subject.generated',
+  'subject:generated': {
+    trigger: 'subject:generated',
     priority: 68,
     buildMessages: (text) => [{ id: 'subject-generated', text, mood: 'celebrate' }],
   },
-  'subject.generation.failed': {
-    trigger: 'subject.generation.failed',
+  'subject:generation-failed': {
+    trigger: 'subject:generation-failed',
     priority: 82,
     buildMessages: (text) => [
       {
@@ -194,23 +194,23 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
       },
     ],
   },
-  'mentor.bubble.click': {
-    trigger: 'mentor.bubble.click',
+  'mentor-bubble:clicked': {
+    trigger: 'mentor-bubble:clicked',
     priority: 90,
     buildMessages: (text) => [{ id: 'bubble-click', text, mood: 'tease' }],
   },
 };
 
 const VARIANT_COUNTS: Record<MentorTriggerId, number> = {
-  'onboarding.pre_first_subject': 1,
-  'onboarding.subject_unlock_first_crystal': 3,
-  'session.completed': 3,
-  'crystal.leveled': 3,
-  'crystal.trial.available_for_player': 2,
-  'subject.generation.started': 3,
-  'subject.generated': 4,
-  'subject.generation.failed': 4,
-  'mentor.bubble.click': 3,
+  'onboarding:pre-first-subject': 1,
+  'onboarding:subject-unlock-first-crystal': 3,
+  'session:completed': 3,
+  'crystal:leveled': 3,
+  'crystal-trial:available-for-player': 2,
+  'subject:generation-started': 3,
+  'subject:generated': 4,
+  'subject:generation-failed': 4,
+  'mentor-bubble:clicked': 3,
 };
 
 const INTERPOLATION_PATTERN = /\{(\w+)\}/g;

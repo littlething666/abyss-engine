@@ -110,51 +110,42 @@ async function openCardByType(
 async function installProgressionEventProbe(page: any) {
   await page.evaluate(() => {
     const win = window as any;
-    const eventTypes = [
-      'abyss-card:reviewed',
-      'abyss-xp:gained',
-      'abyss-study-panel:history',
-      'abyss-session:completed',
-      'abyss-crystal:leveled',
-    ];
+    if (win.__progressionEventProbeInstalled === true) {
+      win.__progressionEvents = win.__progressionEvents ?? [];
+      return;
+    }
 
     win.__progressionEvents = [];
     const collectProgressionEvent = (event: Event) => {
       const customEvent = event as CustomEvent;
-      const detail = customEvent?.detail;
+      if (typeof customEvent?.type !== 'string') return;
+      const detail = customEvent.detail;
       const entry = {
-        type: customEvent?.type,
+        type: customEvent.type,
         detail: detail ? JSON.parse(JSON.stringify(detail)) : undefined,
         at: Date.now(),
       };
       win.__progressionEvents.push(entry);
     };
-    const alreadyInstalled = win.__progressionEventProbeInstalled === true;
-    if (!alreadyInstalled) {
-      eventTypes.forEach((type) => {
-        window.addEventListener(type, collectProgressionEvent);
-        document.addEventListener(type, collectProgressionEvent);
-      });
 
-      try {
-        const originalDispatchEvent = win.dispatchEvent.bind(win);
-        win.dispatchEvent = (event: Event) => {
-          if (typeof event === 'object' && event && 'type' in event) {
-            const customEvent = event as CustomEvent;
-            if (typeof customEvent.type === 'string' && customEvent.type.startsWith('abyss-')) {
-              collectProgressionEvent(customEvent);
-            }
+    try {
+      const originalDispatchEvent = win.dispatchEvent.bind(win);
+      win.dispatchEvent = (event: Event) => {
+        if (typeof event === 'object' && event && 'type' in event) {
+          const customEvent = event as CustomEvent;
+          if (typeof customEvent.type === 'string' && customEvent.type.startsWith('abyss-')) {
+            collectProgressionEvent(customEvent);
           }
+        }
 
-          return originalDispatchEvent(event);
-        };
-      } catch (_error) {
-        // eslint-disable-next-line no-console
-        console.info('Unable to monkey patch dispatchEvent in progression probe.');
-      }
-
-      win.__progressionEventProbeInstalled = true;
+        return originalDispatchEvent(event);
+      };
+    } catch (_error) {
+      // eslint-disable-next-line no-console
+      console.info('Unable to monkey patch dispatchEvent in progression probe.');
     }
+
+    win.__progressionEventProbeInstalled = true;
   });
 }
 

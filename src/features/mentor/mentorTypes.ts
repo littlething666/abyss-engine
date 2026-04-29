@@ -1,15 +1,15 @@
 export type MentorVoiceId = 'witty-sarcastic';
 
 export const MENTOR_TRIGGER_IDS = [
-  'onboarding.pre_first_subject',
-  'onboarding.subject_unlock_first_crystal',
-  'session.completed',
-  'crystal.leveled',
-  'crystal.trial.available_for_player',
-  'subject.generation.started',
-  'subject.generated',
-  'subject.generation.failed',
-  'mentor.bubble.click',
+  'onboarding:pre-first-subject',
+  'onboarding:subject-unlock-first-crystal',
+  'session:completed',
+  'crystal:leveled',
+  'crystal-trial:available-for-player',
+  'subject:generation-started',
+  'subject:generated',
+  'subject:generation-failed',
+  'mentor-bubble:clicked',
 ] as const;
 
 export type MentorTriggerId = (typeof MENTOR_TRIGGER_IDS)[number];

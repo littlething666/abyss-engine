@@ -41,7 +41,7 @@ function testEvents(events: TelemetryEvent[]) {
 describe('timeline entries', () => {
   it('normalizes and merges study, ritual, and card review events', () => {
     const records = testEvents([
-      telemetryEvent('attunement_ritual_submitted', {
+      telemetryEvent('attunement-ritual:submitted', {
         harmonyScore: 88,
         readinessBucket: 'high',
         checklistKeys: ['sleep', 'movement'],
@@ -51,7 +51,7 @@ describe('timeline entries', () => {
         timestamp: now - 6 * 60 * 60 * 1000,
         sessionId: 'ritual-1',
       }),
-      telemetryEvent('study_session_complete', {
+      telemetryEvent('study-session:completed', {
         sessionId: 'study-1',
         totalAttempts: 4,
         correctRate: 0.8,
@@ -61,7 +61,7 @@ describe('timeline entries', () => {
         sessionId: 'study-1',
         timestamp: now - 4 * 60 * 60 * 1000,
       }),
-      telemetryEvent('study_card_reviewed', {
+      telemetryEvent('study-card:reviewed', {
         cardId: 'card-3',
         rating: 3,
         isCorrect: true,
@@ -77,15 +77,15 @@ describe('timeline entries', () => {
 
     expect(records).toHaveLength(3);
     expect(records[0]).toMatchObject({
-      type: 'attunement_ritual_submitted',
+      type: 'attunement-ritual:submitted',
       topicName: 'Topic A',
     });
     expect(records[1]).toMatchObject({
-      type: 'study_session_complete',
+      type: 'study-session:completed',
       topicName: 'Topic A',
     });
     expect(records[2]).toMatchObject({
-      type: 'study_card_reviewed',
+      type: 'study-card:reviewed',
       topicName: 'Topic B',
       title: 'Study card reviewed',
       sessionId: 'study-1',
@@ -94,7 +94,7 @@ describe('timeline entries', () => {
 
   it('tracks review duration on card-reviewed entries', () => {
     const records = buildTimelineEntries([
-      telemetryEvent('study_card_reviewed', {
+      telemetryEvent('study-card:reviewed', {
         cardId: 'card-3',
         rating: 3,
         isCorrect: true,
@@ -116,7 +116,7 @@ describe('timeline entries', () => {
 
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      type: 'study_card_reviewed',
+      type: 'study-card:reviewed',
       cardId: 'card-3',
       durationMs: 600,
       isCorrect: true,
@@ -125,7 +125,7 @@ describe('timeline entries', () => {
 
   it('filters timeline entries by event type', () => {
     const records = buildTimelineEntries([
-      telemetryEvent('study_session_complete', {
+      telemetryEvent('study-session:completed', {
         sessionId: 'study-session',
         totalAttempts: 2,
         correctRate: 0.8,
@@ -135,7 +135,7 @@ describe('timeline entries', () => {
         sessionId: 'study-session',
         timestamp: now - 3 * 60 * 60 * 1000,
       }),
-      telemetryEvent('study_card_reviewed', {
+      telemetryEvent('study-card:reviewed', {
         cardId: 'card-3',
         rating: 4,
         isCorrect: true,
@@ -147,7 +147,7 @@ describe('timeline entries', () => {
         sessionId: 'study-session',
         timestamp: now - 2 * 60 * 60 * 1000,
       }),
-      telemetryEvent('attunement_ritual_submitted', {
+      telemetryEvent('attunement-ritual:submitted', {
         harmonyScore: 70,
         readinessBucket: 'high',
         checklistKeys: ['sleep'],
@@ -160,19 +160,19 @@ describe('timeline entries', () => {
     ], {
       now,
       daysWindow: 7,
-      includeEventTypes: ['study_card_reviewed'],
+      includeEventTypes: ['study-card:reviewed'],
       topicMetadata: {
         'topic-a': { topicName: 'Topic A' },
       },
     });
 
     expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ type: 'study_card_reviewed' });
+    expect(records[0]).toMatchObject({ type: 'study-card:reviewed' });
   });
 
   it('filters entries to configured day windows', () => {
     const records = buildTimelineEntries([
-      telemetryEvent('study_session_complete', {
+      telemetryEvent('study-session:completed', {
         sessionId: 'recent-study',
         totalAttempts: 2,
         correctRate: 0.8,
@@ -182,7 +182,7 @@ describe('timeline entries', () => {
         timestamp: now - 5 * dayMs,
         sessionId: 'recent-study',
       }),
-      telemetryEvent('attunement_ritual_submitted', {
+      telemetryEvent('attunement-ritual:submitted', {
         harmonyScore: 70,
         readinessBucket: 'medium',
         checklistKeys: ['sleep'],
@@ -201,7 +201,7 @@ describe('timeline entries', () => {
 
   it('uses default and bounds for day windows', () => {
     const records = buildTimelineEntries([
-      telemetryEvent('study_session_complete', {
+      telemetryEvent('study-session:completed', {
         sessionId: 'study',
         totalAttempts: 1,
         correctRate: 0.9,
@@ -210,7 +210,7 @@ describe('timeline entries', () => {
         timestamp: now - MIN_TIMELINE_DAYS * dayMs,
         sessionId: 'study',
       }),
-      telemetryEvent('attunement_ritual_submitted', {
+      telemetryEvent('attunement-ritual:submitted', {
         harmonyScore: 75,
         readinessBucket: 'high',
         checklistKeys: [],

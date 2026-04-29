@@ -165,7 +165,7 @@ async function getCardByType(cardType: Card['type']): Promise<TopicCardSelection
         return { topicId, cardId: foundCard.id };
       }
     } catch (error) {
-      console.warn(`[AbyssDev] Failed to load cards for topic "${topicId}".`, error);
+      console.warn(`[AbyssDev] Failed to load cards for topic \"${topicId}\".`, error);
     }
   }
 
@@ -185,24 +185,24 @@ const abyssDev: AbyssDev = {
     const allGraphs = await getAllSubjectGraphs();
     const subjectId = collectTopicIndex(allGraphs).get(topicId);
     if (!subjectId) {
-      console.warn(`[AbyssDev] No subject found for topic "${topicId}".`);
+      console.warn(`[AbyssDev] No subject found for topic \"${topicId}\".`);
       return;
     }
 
     const { activeCrystals } = getStore();
     if (activeCrystals.some((crystal) => crystal.subjectId === subjectId && crystal.topicId === topicId)) {
-      console.log(`[AbyssDev] Crystal already exists for "${topicId}".`);
+      console.log(`[AbyssDev] Crystal already exists for \"${topicId}\".`);
       return;
     }
 
     const position = useStudyStore.getState().unlockTopic({ subjectId, topicId }, allGraphs);
     if (!position) {
-      console.warn(`[AbyssDev] Could not spawn crystal for "${topicId}".`);
+      console.warn(`[AbyssDev] Could not spawn crystal for \"${topicId}\".`);
       return;
     }
 
     void triggerTopicGenerationPipeline(subjectId, topicId);
-    console.log(`[AbyssDev] Spawned crystal for "${topicId}" at [${position[0]}, ${position[1]}]`);
+    console.log(`[AbyssDev] Spawned crystal for \"${topicId}\" at [${position[0]}, ${position[1]}]`);
   },
 
   makeAllCardsDue: () => {
@@ -246,7 +246,7 @@ const abyssDev: AbyssDev = {
 
         uiStore.getState().resetCardFlip();
 
-        console.log(`[AbyssDev] Selected card "${cardId}" in topic "${topicId}"`);
+        console.log(`[AbyssDev] Selected card \"${cardId}\" in topic \"${topicId}\"`);
         return;
       }
 
@@ -362,7 +362,7 @@ const abyssDev: AbyssDev = {
     const trialStore = useCrystalTrialStore.getState();
     const level = abyssDev.getCrystalLevel(topicId) ?? 0;
     trialStore.startPregeneration({ subjectId, topicId, targetLevel: level + 1 });
-    appEventBus.emit('crystal:trial-pregenerate', {
+    appEventBus.emit('crystal-trial:pregeneration-requested', {
       subjectId,
       topicId,
       currentLevel: level,
@@ -403,7 +403,7 @@ const abyssDev: AbyssDev = {
     }
     const result = trialStore.submitTrial(ref);
     if (result) {
-      const payload: AppEventMap['crystal:trial-completed'] = {
+      const payload: AppEventMap['crystal-trial:completed'] = {
         subjectId,
         topicId,
         targetLevel: trial.targetLevel,
@@ -411,7 +411,7 @@ const abyssDev: AbyssDev = {
         score: result.score,
         trialId: trial.trialId,
       };
-      appEventBus.emit('crystal:trial-completed', payload);
+      appEventBus.emit('crystal-trial:completed', payload);
     }
     return result;
   },

@@ -35,7 +35,7 @@ describe('tryEnqueueMentorEntry', () => {
     useMentorStore.setState({
       currentDialog: {
         id: 'plan-x',
-        trigger: 'mentor.bubble.click',
+        trigger: 'mentor-bubble:clicked',
         priority: 10,
         enqueuedAt: 0,
         messages: [{ id: 'm0', text: 'hi', mood: 'neutral' }],
@@ -54,7 +54,7 @@ describe('tryEnqueueMentorEntry', () => {
       dialogQueue: [
         {
           id: 'plan-existing',
-          trigger: 'session.completed',
+          trigger: 'session:completed',
           priority: 50,
           enqueuedAt: 0,
           messages: [{ id: 'm0', text: 'queued', mood: 'neutral' }],

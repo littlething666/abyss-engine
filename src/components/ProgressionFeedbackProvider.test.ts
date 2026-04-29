@@ -119,7 +119,7 @@ describe('ProgressionFeedbackProvider', () => {
     const { unmount } = renderFeedbackProvider();
 
     window.dispatchEvent(
-      new CustomEvent('abyss-study-panel:history', {
+      new CustomEvent('abyss-study-panel:history-applied', {
         detail: {
           action: 'undo',
           topicId: 'topic-a',

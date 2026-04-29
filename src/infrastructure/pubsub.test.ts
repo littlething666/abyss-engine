@@ -19,8 +19,8 @@ describe('PubSubClient content invalidation', () => {
     vi.restoreAllMocks();
   });
 
-  it('invalidates topic-cards and topic-ready keys on cards-updated', () => {
-    client.emit({ type: 'cards-updated', subjectId: 's1', topicId: 't1' });
+  it('invalidates topic-cards and topic-ready keys on topic-cards:updated', () => {
+    client.emit({ type: 'topic-cards:updated', subjectId: 's1', topicId: 't1' });
 
     expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2);
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
@@ -31,8 +31,8 @@ describe('PubSubClient content invalidation', () => {
     });
   });
 
-  it('invalidates topic details and topic-ready keys on topic-updated', () => {
-    client.emit({ type: 'topic-updated', subjectId: 's1', topicId: 't1' });
+  it('invalidates topic details and topic-ready keys on topic:updated', () => {
+    client.emit({ type: 'topic:updated', subjectId: 's1', topicId: 't1' });
 
     expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2);
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({

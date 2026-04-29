@@ -27,8 +27,8 @@ export function resolveCrystalTrialPregenerateLevels(
 }
 
 /**
- * Emits `crystal:trial-pregenerate` for a topic when the learner has a crystal and is
- * below max level. Used after trials are invalidated (e.g. card pool changed), on XP
+ * Emits `crystal-trial:pregeneration-requested` for a topic when the learner has a crystal
+ * and is below max level. Used after trials are invalidated (e.g. card pool changed), on XP
  * gating when starting from `idle`, and when adding positive XP.
  */
 export function emitCrystalTrialPregenerateForTopic(
@@ -39,7 +39,7 @@ export function emitCrystalTrialPregenerateForTopic(
   if (!levels) {
     return;
   }
-  appEventBus.emit('crystal:trial-pregenerate', {
+  appEventBus.emit('crystal-trial:pregeneration-requested', {
     subjectId: ref.subjectId,
     topicId: ref.topicId,
     currentLevel: levels.currentLevel,

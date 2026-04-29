@@ -23,14 +23,14 @@ async function upsertSubject(
       await deckDb.meta.put({ key: 'subjectIdsOrdered', value: [...order, subject.id] });
     }
   });
-  pubSubClient.emit({ type: 'subject-updated', subjectId: subject.id });
+  pubSubClient.emit({ type: 'subject:updated', subjectId: subject.id });
 }
 
 async function upsertGraph(graph: SubjectGraph): Promise<void> {
   await ensureDeckSeeded();
   logDeckIndexedDb('write', { op: 'graphs.put', subjectId: graph.subjectId, nodeCount: graph.nodes.length });
   await deckDb.graphs.put(graph);
-  pubSubClient.emit({ type: 'subject-updated', subjectId: graph.subjectId });
+  pubSubClient.emit({ type: 'subject:updated', subjectId: graph.subjectId });
 }
 
 async function upsertTopicDetails(details: TopicDetails): Promise<void> {
@@ -44,7 +44,7 @@ async function upsertTopicDetails(details: TopicDetails): Promise<void> {
     details,
   });
   pubSubClient.emit({
-    type: 'topic-updated',
+    type: 'topic:updated',
     subjectId: details.subjectId,
     topicId: details.topicId,
   });
@@ -69,7 +69,7 @@ async function upsertTopicCards(subjectId: string, topicId: string, cards: Card[
   const key = topicCompositeKey(subjectId, topicId);
   logDeckIndexedDb('write', { op: 'topicCards.put', key, cardCount: cards.length });
   await deckDb.topicCards.put({ key, subjectId, topicId, cards });
-  pubSubClient.emit({ type: 'cards-updated', subjectId, topicId });
+  pubSubClient.emit({ type: 'topic-cards:updated', subjectId, topicId });
 }
 
 async function appendTopicCards(subjectId: string, topicId: string, cards: Card[]): Promise<void> {
@@ -80,7 +80,7 @@ async function appendTopicCards(subjectId: string, topicId: string, cards: Card[
   const merged = mergeTopicCards(prior, cards);
   logDeckIndexedDb('write', { op: 'topicCards.append', key, priorCount: prior.length, addedCount: cards.length, mergedCount: merged.length });
   await deckDb.topicCards.put({ key, subjectId, topicId, cards: merged });
-  pubSubClient.emit({ type: 'cards-updated', subjectId, topicId });
+  pubSubClient.emit({ type: 'topic-cards:updated', subjectId, topicId });
 }
 
 export const deckContentWriter: IDeckContentWriter = {

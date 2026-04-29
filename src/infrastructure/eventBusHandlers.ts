@@ -61,9 +61,9 @@ function recordFirstSubjectGenerationEnqueued(subjectId: string): void {
   const atMs = Date.now();
   mentor.markFirstSubjectGenerationEnqueued(atMs);
   telemetry.log(
-    'mentor_first_subject_generation_enqueued',
+    'mentor:first-subject-generation-enqueued',
     {
-      triggerId: 'onboarding.pre_first_subject',
+      triggerId: 'onboarding:pre-first-subject',
       source: 'canned',
       voiceId: MENTOR_VOICE_ID,
     },
@@ -72,11 +72,11 @@ function recordFirstSubjectGenerationEnqueued(subjectId: string): void {
 }
 
 function assertStudyPanelHistoryContext(
-  e: AppEventMap['study-panel:history'],
-): asserts e is AppEventMap['study-panel:history'] & { subjectId: string; topicId: string; sessionId: string } {
+  e: AppEventMap['study-panel:history-applied'],
+): asserts e is AppEventMap['study-panel:history-applied'] & { subjectId: string; topicId: string; sessionId: string } {
   if (!e.subjectId?.trim() || !e.topicId?.trim() || !e.sessionId?.trim()) {
     throw new Error(
-      `study-panel:history (${e.action}) requires non-empty subjectId, topicId and sessionId`,
+      `study-panel:history-applied (${e.action}) requires non-empty subjectId, topicId and sessionId`,
     );
   }
 }
@@ -87,16 +87,16 @@ if (!g.__abyssEventBusHandlersRegistered) {
   const activeExpansionJobs = new Map<string, AbortController>();
 
   // Module-scoped dedupe for the post-curriculum onboarding trigger.
-  // Ensures `onboarding.subject_unlock_first_crystal` fires at most once per
+  // Ensures `onboarding:subject-unlock-first-crystal` fires at most once per
   // subjectId across regenerates (a player who regenerates a subject's
   // curriculum without unlocking any topic should NOT see the same
-  // "open Discovery" prod twice). Falling back to `subject.generated`
+  // "open Discovery" prod twice). Falling back to `subject:generated`
   // keeps the celebration line for subjects already engaged with.
   const firedSubjectUnlockFirstCrystal = new Set<string>();
 
   appEventBus.on('card:reviewed', (e) => {
     telemetry.log(
-      'study_card_reviewed',
+      'study-card:reviewed',
       {
         cardId: e.cardId,
         rating: e.rating,
@@ -111,7 +111,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
       { subjectId: e.subjectId, topicId: e.topicId, sessionId: e.sessionId },
     );
     telemetry.log(
-      'xp_gained',
+      'xp:gained',
       {
         amount: e.buffedReward,
         subjectId: e.subjectId,
@@ -152,7 +152,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
   appEventBus.on('xp:gained', (e) => {
     telemetry.log(
-      'xp_gained',
+      'xp:gained',
       {
         amount: e.amount,
         subjectId: e.subjectId,
@@ -164,7 +164,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
     );
   });
 
-  appEventBus.on('topic:generation-pipeline', (e) => {
+  appEventBus.on('topic-content:generation-requested', (e) => {
     void runTopicGenerationPipeline({
       chat: getChatCompletionsRepositoryForSurface('topicContent'),
       deckRepository,
@@ -177,12 +177,12 @@ if (!g.__abyssEventBusHandlersRegistered) {
     });
   });
 
-  appEventBus.on('subject:generation-pipeline', (e) => {
+  appEventBus.on('subject-graph:generation-requested', (e) => {
     const subjectName = e.checklist.topicName.trim() || e.subjectId;
     recordFirstSubjectGenerationEnqueued(e.subjectId);
     // The bus enqueue is always the topics stage of the subject pipeline;
     // explicit stage lets the mentor rule engine select stage-specific copy.
-    handleMentorTrigger('subject.generation.started', { subjectName, stage: 'topics' });
+    handleMentorTrigger('subject:generation-started', { subjectName, stage: 'topics' });
 
     const stageBindings = resolveSubjectGenerationStageBindings();
     const orchestrator = createSubjectGenerationOrchestrator();
@@ -190,7 +190,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
       .execute({ subjectId: e.subjectId, checklist: e.checklist }, { stageBindings, writer: deckWriter })
       .then((result) => {
         if (result.ok) return;
-        appEventBus.emit('subjectGraph.generationFailed', {
+        appEventBus.emit('subject-graph:generation-failed', {
           subjectId: e.subjectId,
           subjectName,
           pipelineId: result.pipelineId,
@@ -200,7 +200,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
       });
   });
 
-  appEventBus.on('subjectGraph.generated', (e) => {
+  appEventBus.on('subject-graph:generated', (e) => {
     void (async () => {
       const subjectName = await resolveSubjectDisplayName(e.subjectId);
       toast.success(`Curriculum generated: ${subjectName}`);
@@ -217,17 +217,17 @@ if (!g.__abyssEventBusHandlersRegistered) {
       const alreadyFiredOnboarding = firedSubjectUnlockFirstCrystal.has(e.subjectId);
       if (!hasAnyUnlockedInSubject && !alreadyFiredOnboarding) {
         firedSubjectUnlockFirstCrystal.add(e.subjectId);
-        handleMentorTrigger('onboarding.subject_unlock_first_crystal', {
+        handleMentorTrigger('onboarding:subject-unlock-first-crystal', {
           subjectName,
           subjectId: e.subjectId,
         });
       } else {
-        handleMentorTrigger('subject.generated', { subjectName });
+        handleMentorTrigger('subject:generated', { subjectName });
       }
     })();
 
     telemetry.log(
-      'subject_graph_generated',
+      'subject-graph:generated',
       {
         subjectId: e.subjectId,
         boundModel: e.boundModel,
@@ -248,10 +248,10 @@ if (!g.__abyssEventBusHandlersRegistered) {
     );
   });
 
-  appEventBus.on('subjectGraph.generationFailed', (e) => {
+  appEventBus.on('subject-graph:generation-failed', (e) => {
     void (async () => {
       toast.error(`Curriculum generation needs attention: ${e.subjectName}`);
-      handleMentorTrigger('subject.generation.failed', {
+      handleMentorTrigger('subject:generation-failed', {
         subjectName: e.subjectName,
         stage: e.stage,
         pipelineId: e.pipelineId,
@@ -259,7 +259,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
     })();
 
     telemetry.log(
-      'subject_graph_generation_failed',
+      'subject-graph:generation-failed',
       {
         subjectId: e.subjectId,
         subjectName: e.subjectName,
@@ -271,17 +271,17 @@ if (!g.__abyssEventBusHandlersRegistered) {
     );
   });
 
-  appEventBus.on('subjectGraph.validationFailed', (e) => {
+  appEventBus.on('subject-graph:validation-failed', (e) => {
     console.error(
-      `[subjectGraph.validationFailed] subject=${e.subjectId} stage=${e.stage} ` +
+      `[subject-graph:validation-failed] subject=${e.subjectId} stage=${e.stage} ` +
         `model=${e.boundModel} retryCount=${e.retryCount}: ${e.error}`,
     );
-    console.groupCollapsed(`[subjectGraph.validationFailed] details (${e.subjectId})`);
+    console.groupCollapsed(`[subject-graph:validation-failed] details (${e.subjectId})`);
     console.error(e);
     console.groupEnd();
 
     telemetry.log(
-      'subject_graph_validation_failed',
+      'subject-graph:validation-failed',
       {
         subjectId: e.subjectId,
         stage: e.stage,
@@ -298,7 +298,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
   appEventBus.on('crystal:leveled', (e) => {
     telemetry.log(
-      'level_up',
+      'crystal:leveled',
       {
         subjectId: e.subjectId,
         topicId: e.topicId,
@@ -336,11 +336,11 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
     // Mentor side-effect: forward level-up to the mentor rule engine. Cooldown
     // and one-shot suppression are enforced by the engine + mentor store.
-    handleMentorTrigger('crystal.leveled', { from: e.from, to: e.to });
+    handleMentorTrigger('crystal:leveled', { from: e.from, to: e.to });
   });
 
   // Crystal Trial: background pre-generation triggered on positive XP gains
-  appEventBus.on('crystal:trial-pregenerate', (e) => {
+  appEventBus.on('crystal-trial:pregeneration-requested', (e) => {
     const trialStore = useCrystalTrialStore.getState();
     const ref = { subjectId: e.subjectId, topicId: e.topicId };
 
@@ -363,7 +363,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
       currentLevel: e.currentLevel,
     });
 
-    telemetry.log('crystal_trial_pregeneration_started', {
+    telemetry.log('crystal-trial:pregeneration-started', {
       subjectId: e.subjectId,
       topicId: e.topicId,
       targetLevel: e.targetLevel,
@@ -375,9 +375,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
   // so the modal can display results. clearTrial() is called from the modal's
   // handleLevelUp callback after the user clicks the Level Up button and XP
   // is applied to cross the level boundary.
-  appEventBus.on('crystal:trial-completed', (e) => {
+  appEventBus.on('crystal-trial:completed', (e) => {
     telemetry.log(
-      'crystal_trial_completed',
+      'crystal-trial:completed',
       {
         subjectId: e.subjectId,
         topicId: e.topicId,
@@ -396,7 +396,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
   // ---- Mentor side-effect: trial-availability watcher ----
   //
-  // Fires `crystal.trial.available_for_player` exactly once per topic per
+  // Fires `crystal-trial:available-for-player` exactly once per topic per
   // false→true transition of `isCrystalTrialAvailableForPlayer(status, xp)`.
   // The predicate combines BOTH the trial-store status (must be
   // `awaiting_player`) AND the progression-store XP (must be at the
@@ -430,7 +430,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
       const wasAvailable = availableKeys.has(key);
       if (isAvailable && !wasAvailable) {
         availableKeys.add(key);
-        handleMentorTrigger('crystal.trial.available_for_player', {
+        handleMentorTrigger('crystal-trial:available-for-player', {
           topic: trial.topicId,
         });
       } else if (!isAvailable && wasAvailable) {
@@ -449,8 +449,10 @@ if (!g.__abyssEventBusHandlersRegistered) {
   useCrystalTrialStore.subscribe(recomputeTrialAvailability);
   useProgressionStore.subscribe(recomputeTrialAvailability);
 
-  // Card pool change detection: invalidate pre-generated trials
-  pubSubClient.on('cards-updated', (msg) => {
+  // Card pool change detection: invalidate pre-generated trials.
+  // Subscribes to the renamed v1 pubsub event `topic-cards:updated` published
+  // by `deckContentWriter.persistTopicContentBundle(...)`.
+  pubSubClient.on('topic-cards:updated', (msg) => {
     if (!msg.subjectId || !msg.topicId) {
       return;
     }
@@ -488,7 +490,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
   appEventBus.on('session:completed', (e) => {
     telemetry.log(
-      'study_session_complete',
+      'study-session:completed',
       {
         sessionId: e.sessionId,
         subjectId: e.subjectId,
@@ -502,15 +504,15 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
     // Mentor side-effect: forward session completion to the mentor rule
     // engine. Cooldown/one-shot suppression handled downstream.
-    handleMentorTrigger('session.completed', {
+    handleMentorTrigger('session:completed', {
       correctRate: e.correctRate,
       totalAttempts: e.totalAttempts,
     });
   });
 
-  appEventBus.on('ritual:submitted', (e) => {
+  appEventBus.on('attunement-ritual:submitted', (e) => {
     telemetry.log(
-      'attunement_ritual_submitted',
+      'attunement-ritual:submitted',
       {
         harmonyScore: e.harmonyScore,
         readinessBucket: e.readinessBucket,
@@ -521,12 +523,12 @@ if (!g.__abyssEventBusHandlersRegistered) {
     );
   });
 
-  appEventBus.on('study-panel:history', (e) => {
+  appEventBus.on('study-panel:history-applied', (e) => {
     assertStudyPanelHistoryContext(e);
 
     if (e.action === 'submit') {
       telemetry.log(
-        'study_session_start',
+        'study-session:started',
         {
           sessionId: e.sessionId,
           subjectId: e.subjectId,
@@ -537,7 +539,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
     }
     if (e.action === 'undo') {
       telemetry.log(
-        'study_undo',
+        'study-panel:undo-applied',
         {
           subjectId: e.subjectId,
           topicId: e.topicId,
@@ -550,7 +552,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
     }
     if (e.action === 'redo') {
       telemetry.log(
-        'study_redo',
+        'study-panel:redo-applied',
         {
           subjectId: e.subjectId,
           topicId: e.topicId,

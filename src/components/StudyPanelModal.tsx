@@ -123,7 +123,7 @@ export function StudyPanelModal({
 
   useEffect(() => {
     if (previousActiveTabRef.current !== activeTab) {
-      telemetry.log('study_panel_tab_switched', {
+      telemetry.log('study-panel:tab-switched', {
         topicId: currentSession?.topicId ?? currentTopicId,
         sessionId: currentSession?.sessionId ?? null,
         tab: activeTab,
