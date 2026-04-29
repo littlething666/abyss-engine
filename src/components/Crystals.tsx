@@ -17,10 +17,12 @@ import {
   calculateLevelFromXP,
   crystalCeremonyStore,
   getCrystalScale,
-  isXpMaxedForCurrentLevel,
   subjectSeedFromId,
   useProgressionStore,
 } from '../features/progression';
+import {
+  isCrystalTrialAvailableForPlayer,
+} from '../features/crystalTrial';
 import { useCrystalTrialStore } from '../features/crystalTrial/crystalTrialStore';
 import { selectIsAnyModalOpen, useUIStore } from '../store/uiStore';
 import { getSubjectColor } from '../utils/geometryMapping';
@@ -45,7 +47,7 @@ import {
   CRYSTAL_INSTANCE_OFFSET_MORPH,
   CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY,
   CRYSTAL_INSTANCE_OFFSET_SEED,
-  CRYSTAL_INSTANCE_OFFSET_TRIAL_READY,
+  CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE,
   CRYSTAL_INSTANCE_STRIDE,
   CRYSTAL_MAX_INSTANCES,
   getClusterGeometry,
@@ -99,9 +101,6 @@ function resolveCrystalBaseShape(
   const subject = subjects.find((s) => s.id === meta.subjectId);
   return subject?.crystalBaseShape ?? DEFAULT_CRYSTAL_BASE_SHAPE;
 }
-
-/** Trial statuses that should show the trial-ready pulse VFX on the crystal. */
-const TRIAL_READY_STATUSES = new Set(['awaiting_player']);
 
 /** Trial status that marks trial question pregeneration in-flight for a topic. */
 const TRIAL_PREGENERATION_STATUS = 'pregeneration';
@@ -204,7 +203,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
       geometry.setAttribute('instanceSubjectSeed', attributes.instanceSubjectSeed);
       geometry.setAttribute('instanceColor', attributes.instanceColor);
       geometry.setAttribute('instanceSelectCeremony', attributes.instanceSelectCeremony);
-      geometry.setAttribute('instanceTrialReady', attributes.instanceTrialReady);
+      geometry.setAttribute('instanceTrialAvailable', attributes.instanceTrialAvailable);
       const material = createCrystalNodeMaterial(attributes, environmentMap);
       groups[shape] = { geometry, material, arrays, attributes };
     }
@@ -416,16 +415,16 @@ export const Crystals: React.FC<CrystalsProps> = ({
       needsInvalidate = true;
     }
 
-    // Pre-compute trial-ready keys once per frame to avoid N individual getTrialStatus calls
+    // Pre-compute trial-available keys once per frame: a trial is "available
+    // for the player" when prepared (questions generated) AND XP is at the
+    // current level-band cap. The pulse VFX uses true availability — not
+    // mere preparation — so the player sees it iff the trial is actionable.
     const trialStoreState = useCrystalTrialStore.getState();
     const crystalXpByTopic = new Map(activeCrystals.map((crystal) => [topicRefKey(crystal), crystal.xp]));
-    const trialReadyKeys = new Set<string>();
+    const trialAvailableKeys = new Set<string>();
     for (const [key, trial] of Object.entries(trialStoreState.trials)) {
-      if (
-        TRIAL_READY_STATUSES.has(trial.status)
-        && isXpMaxedForCurrentLevel(crystalXpByTopic.get(key) ?? 0)
-      ) {
-        trialReadyKeys.add(key);
+      if (isCrystalTrialAvailableForPlayer(trial.status, crystalXpByTopic.get(key) ?? 0)) {
+        trialAvailableKeys.add(key);
       }
     }
 
@@ -508,9 +507,9 @@ export const Crystals: React.FC<CrystalsProps> = ({
       d[row + CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY] = isSelected ? 1 : 0;
       d[row + CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY + 1] = ceremonyPhase;
 
-      const isTrialReady = trialReadyKeys.has(topicKey) ? 1 : 0;
-      d[row + CRYSTAL_INSTANCE_OFFSET_TRIAL_READY] = isTrialReady;
-      if (isTrialReady) {
+      const isTrialAvailable = trialAvailableKeys.has(topicKey) ? 1 : 0;
+      d[row + CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE] = isTrialAvailable;
+      if (isTrialAvailable) {
         needsInvalidate = true;
       }
 
@@ -608,15 +607,13 @@ export const Crystals: React.FC<CrystalsProps> = ({
 
     const ref = parseTopicRefKey(topicKey);
     if (selectedTopic && topicRefKey(selectedTopic) === topicKey) {
-      const isCurrentCrystalReadyForTrial = isXpMaxedForCurrentLevel(
-        activeCrystals.find((item) => topicRefKey(item) === topicKey)?.xp ?? 0,
-      );
       const trialStatus = useCrystalTrialStore.getState().getTrialStatus(ref);
-      if (trialStatus === 'awaiting_player' && isCurrentCrystalReadyForTrial) {
+      const xp = crystals.find((c) => c.subjectId === ref.subjectId && c.topicId === ref.topicId)?.xp ?? 0;
+      if (isCrystalTrialAvailableForPlayer(trialStatus, xp)) {
         useUIStore.getState().openCrystalTrial();
-        return;
+      } else {
+        onStartTopicStudySession?.(ref);
       }
-      onStartTopicStudySession?.(ref);
     } else {
       selectTopic(ref);
     }
@@ -658,11 +655,6 @@ export const Crystals: React.FC<CrystalsProps> = ({
             key={topicKey}
             ref={(el: THREE.Group | null) => {
               labelAnchorRefs.current[index] = el;
-            }}
-            userData={{
-              topicId: crystal.topicId,
-              subjectId: crystal.subjectId,
-              level: calculateLevelFromXP(crystal.xp),
             }}
           >
             {topicMeta?.topicName && (

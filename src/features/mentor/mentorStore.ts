@@ -1,10 +1,18 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { DialogPlan, MentorTriggerId } from './mentorTypes';
+import {
+  MENTOR_TRIGGER_IDS,
+  type DialogPlan,
+  type MentorTriggerId,
+} from './mentorTypes';
 
 const STORAGE_KEY = 'abyss-mentor-v1';
-const STORAGE_VERSION = 2;
+// Bumped to 4 in the trial-availability rename. The migration filters
+// `seenTriggers` and `cooldowns` against the live MENTOR_TRIGGER_IDS so
+// retired ids (e.g. `onboarding.welcome`, `onboarding.first_subject`,
+// `crystal.trial.awaiting`) are dropped from persisted state on upgrade.
+const STORAGE_VERSION = 4;
 
 export interface VariantCursor {
   order: readonly number[];
@@ -52,7 +60,7 @@ export const DEFAULT_PERSISTED_STATE: MentorPersistedState = {
   playerName: null,
   mentorLocale: 'en',
   seenTriggers: [],
-  narrationEnabled: true,
+  narrationEnabled: false,
   lastInteractionAt: null,
   cooldowns: {},
   firstSubjectGenerationEnqueuedAt: null,
@@ -115,41 +123,63 @@ function getMemoryStorage(): Storage {
   } satisfies Storage;
 }
 
+/**
+ * Migrate persisted mentor state from any prior storage version to the
+ * current schema. Filters trigger-keyed fields against the live
+ * MENTOR_TRIGGER_IDS so trigger-id renames (e.g. `onboarding.welcome` /
+ * `onboarding.first_subject` → `onboarding.pre_first_subject`,
+ * `crystal.trial.awaiting` → `crystal.trial.available_for_player`) are
+ * applied without a state reset.
+ */
 export function migrateMentorState(
   persisted: unknown,
   fromVersion: number,
 ): MentorPersistedState {
   const base: MentorPersistedState = { ...DEFAULT_PERSISTED_STATE };
   if (!persisted || typeof persisted !== 'object') return base;
-  const p = persisted as Partial<MentorPersistedState>;
-  if (fromVersion <= 1) {
-    const legacyNarrationEnabled =
-      typeof (p as { ttsMuted?: unknown }).ttsMuted === 'boolean'
-        ? !(p as { ttsMuted?: boolean }).ttsMuted
-        : base.narrationEnabled;
-    return {
-      playerName: typeof p.playerName === 'string' ? p.playerName : base.playerName,
-      mentorLocale: 'en',
-      seenTriggers: Array.isArray(p.seenTriggers)
-        ? p.seenTriggers.filter(
-            (t): t is MentorTriggerId => typeof t === 'string',
-          )
-        : base.seenTriggers,
-      narrationEnabled:
-        typeof p.narrationEnabled === 'boolean' ? p.narrationEnabled : legacyNarrationEnabled,
-      lastInteractionAt:
-        typeof p.lastInteractionAt === 'number' ? p.lastInteractionAt : null,
-      cooldowns:
-        p.cooldowns && typeof p.cooldowns === 'object'
-          ? (p.cooldowns as MentorPersistedState['cooldowns'])
-          : base.cooldowns,
-      firstSubjectGenerationEnqueuedAt:
-        typeof p.firstSubjectGenerationEnqueuedAt === 'number'
-          ? p.firstSubjectGenerationEnqueuedAt
-          : null,
-    };
+  const p = persisted as Partial<MentorPersistedState> & Record<string, unknown>;
+
+  const validTriggerIds = new Set<MentorTriggerId>(MENTOR_TRIGGER_IDS);
+
+  // v0/v1 used `ttsMuted: boolean`; later versions use `narrationEnabled`.
+  const legacyNarrationEnabled =
+    typeof (p as { ttsMuted?: unknown }).ttsMuted === 'boolean'
+      ? !(p as { ttsMuted?: boolean }).ttsMuted
+      : base.narrationEnabled;
+
+  const seenTriggers = Array.isArray(p.seenTriggers)
+    ? (p.seenTriggers as unknown[])
+        .filter((t): t is string => typeof t === 'string')
+        .filter((t): t is MentorTriggerId => validTriggerIds.has(t as MentorTriggerId))
+    : base.seenTriggers;
+
+  const cooldownsRaw =
+    p.cooldowns && typeof p.cooldowns === 'object'
+      ? (p.cooldowns as Record<string, unknown>)
+      : {};
+  const cooldowns: MentorPersistedState['cooldowns'] = {};
+  for (const [key, value] of Object.entries(cooldownsRaw)) {
+    if (typeof value !== 'number') continue;
+    if (!validTriggerIds.has(key as MentorTriggerId)) continue;
+    cooldowns[key as MentorTriggerId] = value;
   }
-  return base;
+
+  void fromVersion; // Migration is currently version-agnostic past v0/v1 detection above.
+
+  return {
+    playerName: typeof p.playerName === 'string' ? p.playerName : base.playerName,
+    mentorLocale: 'en',
+    seenTriggers,
+    narrationEnabled:
+      typeof p.narrationEnabled === 'boolean' ? p.narrationEnabled : legacyNarrationEnabled,
+    lastInteractionAt:
+      typeof p.lastInteractionAt === 'number' ? p.lastInteractionAt : null,
+    cooldowns,
+    firstSubjectGenerationEnqueuedAt:
+      typeof p.firstSubjectGenerationEnqueuedAt === 'number'
+        ? p.firstSubjectGenerationEnqueuedAt
+        : null,
+  };
 }
 
 export const useMentorStore = create<MentorState>()(

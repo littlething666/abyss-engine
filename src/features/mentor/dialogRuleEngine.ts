@@ -1,4 +1,8 @@
-import { getMentorLine } from './mentorLines';
+import {
+  getMentorLine,
+  getOnboardingPreFirstSubjectGreet,
+  getSubjectGenerationStartedStageLine,
+} from './mentorLines';
 import { useMentorStore, type MentorState } from './mentorStore';
 import { MENTOR_VOICE_ID } from './mentorVoice';
 import type {
@@ -9,9 +13,7 @@ import type {
 } from './mentorTypes';
 
 export interface EvaluateContext {
-  /** Override Date.now() for deterministic tests. */
   nowMs?: number;
-  /** Variant RNG; defaults to Math.random. */
   rng?: () => number;
 }
 
@@ -20,7 +22,19 @@ interface TriggerSpec {
   priority: number;
   cooldownMs?: number;
   oneShot?: boolean;
+  /** Optional gate beyond cooldown / oneShot. */
   isApplicable?: (snapshot: MentorState, payload: MentorTriggerPayload) => boolean;
+  /**
+   * Optional override that bypasses the default `getMentorLine` lookup.
+   * Used for triggers whose copy depends on more than the trigger id and
+   * locale (e.g. stage-specific or named/unnamed onboarding greet copy).
+   * Returned strings still flow through `interpolate(...)`.
+   */
+  resolveVariantText?: (
+    payload: MentorTriggerPayload,
+    snapshot: MentorState,
+    variantIndex: number,
+  ) => string;
   buildMessages: (
     variantText: string,
     payload: MentorTriggerPayload,
@@ -29,28 +43,43 @@ interface TriggerSpec {
 }
 
 export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
-  'onboarding.welcome': {
-    trigger: 'onboarding.welcome',
+  // Pre-first-subject onboarding. Replaces the prior `onboarding.welcome` +
+  // `onboarding.first_subject` pair. Single canonical trigger gated solely
+  // on `firstSubjectGenerationEnqueuedAt === null`, so:
+  //   - first-time players get the full greet → name input → CTA flow
+  //   - returning players who saved a name but never planted a subject get
+  //     the named greet → CTA flow (no name prompt, distinct copy)
+  //   - dismissing the dialog does NOT lock the trigger out; the gate stays
+  //     open until a subject generation actually enqueues.
+  'onboarding.pre_first_subject': {
+    trigger: 'onboarding.pre_first_subject',
     priority: 100,
-    oneShot: true,
-    isApplicable: (s) =>
-      s.playerName === null && !s.seenTriggers.includes('onboarding.welcome'),
-    buildMessages: () => [
-      {
-        id: 'welcome-greet',
+    isApplicable: (s) => s.firstSubjectGenerationEnqueuedAt === null,
+    resolveVariantText: (_payload, snapshot, variantIndex) =>
+      getOnboardingPreFirstSubjectGreet(
+        'en',
+        MENTOR_VOICE_ID,
+        snapshot.playerName !== null ? 'named' : 'unnamed',
+        variantIndex,
+      ),
+    buildMessages: (greetText, _payload, snapshot) => {
+      const messages: MentorMessage[] = [
+        { id: 'onboarding-greet', text: greetText, mood: 'cheer' },
+      ];
+      if (snapshot.playerName === null) {
+        messages.push({
+          id: 'onboarding-name',
+          text: 'Before I file your paperwork, what should I call you?',
+          input: { kind: 'name', placeholder: 'Type a name', maxLen: 24 },
+          choices: [{ id: 'skip-name', label: 'Skip', next: 'onboarding-cta' }],
+        });
+      }
+      messages.push({
+        id: 'onboarding-cta',
         text:
-          "Oh. A new test subject. Hello. I'm contractually required to be " +
-          "encouraging. Let's get this over with — pleasantly.",
-      },
-      {
-        id: 'welcome-name',
-        text: 'Before I file your paperwork, what should I call you?',
-        input: { kind: 'name', placeholder: 'Type a name', maxLen: 24 },
-        choices: [{ id: 'skip-name', label: 'Skip', next: 'welcome-next' }],
-      },
-      {
-        id: 'welcome-next',
-        text: 'Where to first?',
+          snapshot.playerName !== null
+            ? `Where to first, ${snapshot.playerName}?`
+            : 'Where to first?',
         choices: [
           {
             id: 'create-subject',
@@ -60,25 +89,41 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
           },
           { id: 'maybe-later', label: 'Maybe later', next: 'end' },
         ],
-      },
-    ],
+      });
+      return messages;
+    },
   },
-  'onboarding.first_subject': {
-    trigger: 'onboarding.first_subject',
-    priority: 95,
-    oneShot: true,
+  // Post-curriculum contextual entry. Fired by eventBusHandlers when a
+  // subject's curriculum has just been generated and the player has not
+  // unlocked any topic in that subject yet. The choice CTA opens Discovery
+  // scoped to the newly generated subject (subjectId is forwarded into
+  // the open_discovery effect). Dedupes against an already-active or
+  // queued plan of the same trigger so a fast back-to-back regenerate
+  // does not stack notifications.
+  'onboarding.subject_unlock_first_crystal': {
+    trigger: 'onboarding.subject_unlock_first_crystal',
+    priority: 78,
     isApplicable: (s) =>
-      !s.seenTriggers.includes('onboarding.first_subject') &&
-      s.firstSubjectGenerationEnqueuedAt === null,
-    buildMessages: (variantText) => [
+      s.currentDialog?.trigger !== 'onboarding.subject_unlock_first_crystal' &&
+      !s.dialogQueue.some(
+        (plan) => plan.trigger === 'onboarding.subject_unlock_first_crystal',
+      ),
+    buildMessages: (text, payload) => [
       {
-        id: 'first-subject',
-        text: variantText,
+        id: 'subject-unlock-first-crystal',
+        text,
+        mood: 'hint',
         choices: [
           {
             id: 'open-discovery',
-            label: 'Open the altar',
-            effect: { kind: 'open_discovery' },
+            label: 'Open Discovery',
+            effect: {
+              kind: 'open_discovery',
+              // payload.subjectId is set by eventBusHandlers; if missing
+              // (e.g. test harness), the modal falls back to its sessionStorage
+              // default via DiscoveryModal.
+              subjectId: payload.subjectId,
+            },
             next: 'end',
           },
           { id: 'maybe-later', label: 'Maybe later', next: 'end' },
@@ -89,85 +134,62 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
   'session.completed': {
     trigger: 'session.completed',
     priority: 60,
-    buildMessages: (variantText) => [
-      { id: 'session-completed', text: variantText, autoAdvanceMs: 4500 },
-    ],
+    buildMessages: (text) => [{ id: 'session-completed', text, mood: 'celebrate' }],
   },
   'crystal.leveled': {
     trigger: 'crystal.leveled',
     priority: 70,
     cooldownMs: 60_000,
-    buildMessages: (variantText) => [
-      { id: 'crystal-leveled', text: variantText, autoAdvanceMs: 4500 },
-    ],
+    buildMessages: (text) => [{ id: 'crystal-leveled', text, mood: 'celebrate' }],
   },
-  'crystal.trial.awaiting': {
-    trigger: 'crystal.trial.awaiting',
+  'crystal.trial.available_for_player': {
+    trigger: 'crystal.trial.available_for_player',
     priority: 75,
-    buildMessages: (variantText) => [
-      {
-        id: 'trial-awaiting',
-        text: variantText,
-        choices: [{ id: 'ack', label: 'Got it', next: 'end' }],
-      },
-    ],
+    buildMessages: (text) => [{ id: 'trial-available-for-player', text, mood: 'hint' }],
   },
+  // Generation-started dedupes against current/queued plans of the same
+  // trigger so contextual entry from the bubble (which the engine fires
+  // with a stage) does not stack on top of the eventBus auto-fire.
   'subject.generation.started': {
     trigger: 'subject.generation.started',
     priority: 72,
     isApplicable: (s) =>
       s.currentDialog?.trigger !== 'subject.generation.started' &&
       !s.dialogQueue.some((plan) => plan.trigger === 'subject.generation.started'),
-    buildMessages: (variantText) => [
-      {
-        id: 'subject-generation-started',
-        text: variantText,
-        mood: 'hint',
-        choices: [
-          {
-            id: 'open-generation-hud',
-            label: 'Open generation HUD',
-            effect: { kind: 'open_generation_hud' },
-          },
-          { id: 'later', label: 'Later', next: 'end' },
-        ],
-      },
-    ],
+    resolveVariantText: (payload, _snapshot, variantIndex) => {
+      if (payload.stage === 'topics' || payload.stage === 'edges') {
+        return getSubjectGenerationStartedStageLine(
+          'en',
+          MENTOR_VOICE_ID,
+          payload.stage,
+          variantIndex,
+        );
+      }
+      return getMentorLine('en', 'subject.generation.started', MENTOR_VOICE_ID, variantIndex);
+    },
+    buildMessages: (text) => [{ id: 'subject-generation-started', text, mood: 'hint' }],
   },
   'subject.generated': {
     trigger: 'subject.generated',
     priority: 68,
-    buildMessages: (variantText) => [
-      {
-        id: 'subject-generated',
-        text: `${variantText} Open Discovery to unlock a topic.`,
-        mood: 'celebrate',
-        choices: [
-          {
-            id: 'open-discovery',
-            label: 'Open Discovery',
-            effect: { kind: 'open_discovery' },
-          },
-          { id: 'got-it', label: 'Got it', next: 'end' },
-        ],
-      },
-    ],
+    buildMessages: (text) => [{ id: 'subject-generated', text, mood: 'celebrate' }],
   },
   'subject.generation.failed': {
     trigger: 'subject.generation.failed',
     priority: 82,
-    buildMessages: (variantText) => [
+    buildMessages: (text) => [
       {
         id: 'subject-generation-failed',
-        text: variantText,
+        text,
         mood: 'concern',
         choices: [
           {
             id: 'open-generation-hud',
             label: 'Open generation HUD',
             effect: { kind: 'open_generation_hud' },
+            next: 'end',
           },
-          { id: 'ack', label: 'Later', next: 'end' },
+          { id: 'dismiss', label: 'Dismiss', next: 'end' },
         ],
       },
     ],
@@ -175,33 +197,54 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
   'mentor.bubble.click': {
     trigger: 'mentor.bubble.click',
     priority: 90,
-    buildMessages: (variantText) => [
-      {
-        id: 'bubble-click',
-        text: variantText,
-        choices: [{ id: 'ack', label: 'Bye', next: 'end' }],
-      },
-    ],
+    buildMessages: (text) => [{ id: 'bubble-click', text, mood: 'tease' }],
   },
 };
 
 const VARIANT_COUNTS: Record<MentorTriggerId, number> = {
-  'onboarding.welcome': 1,
-  'onboarding.first_subject': 2,
+  'onboarding.pre_first_subject': 1,
+  'onboarding.subject_unlock_first_crystal': 3,
   'session.completed': 3,
   'crystal.leveled': 3,
-  'crystal.trial.awaiting': 2,
+  'crystal.trial.available_for_player': 2,
   'subject.generation.started': 3,
   'subject.generated': 4,
   'subject.generation.failed': 4,
   'mentor.bubble.click': 3,
 };
 
+const INTERPOLATION_PATTERN = /\{(\w+)\}/g;
+
+export function interpolate(
+  template: string,
+  values: Record<string, unknown>,
+): string {
+  return template.replace(INTERPOLATION_PATTERN, (match, key: string) => {
+    if (key in values) {
+      const v = values[key];
+      if (v === null || v === undefined) return '';
+      if (
+        key === 'correctRate' &&
+        typeof v === 'number' &&
+        Number.isFinite(v) &&
+        v >= 0 &&
+        v <= 1
+      ) {
+        return `${Math.round(v * 100)}%`;
+      }
+      return String(v);
+    }
+    return match;
+  });
+}
+
 /**
- * Evaluate a trigger event and return at most one DialogPlan, or null if
- * suppressed by cooldown / one-shot / applicability. Side effect: advances
- * the variant cursor in the mentor store. Callers are responsible for
- * enqueueing the returned plan.
+ * Evaluate a trigger against the current mentor store snapshot. Returns a
+ * fully-built `DialogPlan` ready for enqueue, or `null` if the trigger is
+ * suppressed by oneShot / cooldown / `isApplicable`.
+ *
+ * The mentor store's variant cursor is advanced as a side effect when a
+ * plan is produced.
  */
 export function evaluateTrigger(
   trigger: MentorTriggerId,
@@ -225,10 +268,14 @@ export function evaluateTrigger(
 
   const variantCount = VARIANT_COUNTS[trigger];
   const variantIndex = store.nextVariantIndex(trigger, variantCount, rng);
-  const variantText = interpolate(
-    getMentorLine(store.mentorLocale, trigger, MENTOR_VOICE_ID, variantIndex),
-    { ...payload, name: store.playerName ?? 'test subject' },
-  );
+
+  const rawText = spec.resolveVariantText
+    ? spec.resolveVariantText(payload, store, variantIndex)
+    : getMentorLine(store.mentorLocale, trigger, MENTOR_VOICE_ID, variantIndex);
+  const variantText = interpolate(rawText, {
+    ...payload,
+    name: store.playerName ?? 'test subject',
+  });
 
   return {
     id: `${trigger}#${nowMs}#${variantIndex}`,
@@ -241,21 +288,4 @@ export function evaluateTrigger(
     cooldownMs: spec.cooldownMs,
     oneShot: spec.oneShot,
   };
-}
-
-export function interpolate(
-  template: string,
-  vars: Record<string, string | number | undefined | null>,
-): string {
-  return template.replace(/\{(\w+)\}/g, (full, key: string) => {
-    const value = vars[key];
-    if (value === undefined || value === null) return full;
-    if (typeof value === 'number') {
-      if (key === 'correctRate' && value >= 0 && value <= 1) {
-        return `${Math.round(value * 100)}%`;
-      }
-      return String(value);
-    }
-    return value;
-  });
 }

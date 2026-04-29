@@ -42,6 +42,8 @@ In JSON, `\` starts an escape. Single-backslash LaTeX inside string values break
 
 Use LaTeX in `scenario`, `question`, `options`, `explanation`, etc. only with `\\command` form inside JSON strings (or write math without backslashes when possible).
 
+Do not wrap currency values in LaTeX math delimiters. Prefer plain currency text like `USD 200/unit`, `200 USD/unit`, or `50M USD`; avoid ambiguous forms like `$\\$200$/unit`, `$\$200$/unit`, or bare `$50M` inside markdown text.
+
 ### Output Format
 Return ONLY valid JSON:
 ```json

@@ -2,14 +2,17 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 
-import { PASS_THRESHOLD, useCrystalTrialStore } from '@/features/crystalTrial';
+import {
+  PASS_THRESHOLD,
+  isCrystalTrialAvailableForPlayer,
+  useCrystalTrialStore,
+} from '@/features/crystalTrial';
 import { useUIStore } from '@/store/uiStore';
 import { useProgressionStore } from '@/features/progression/progressionStore';
 import { appEventBus } from '@/infrastructure/eventBus';
 import {
   CRYSTAL_XP_PER_LEVEL,
   getXpToNextBandThreshold,
-  isXpMaxedForCurrentLevel,
 } from '@/features/progression/progressionUtils';
 import type { CrystalTrialResult, CrystalTrialScenarioQuestion } from '@/types/crystalTrial';
 import { evaluateTrial } from '@/features/crystalTrial/evaluateTrial';
@@ -43,8 +46,14 @@ export function CrystalTrialModal() {
       ) ?? null
     );
   });
-  const xpUntilTrialReady = selectedCrystal ? getXpToNextBandThreshold(selectedCrystal.xp) : 0;
-  const canStartTrial = isXpMaxedForCurrentLevel(selectedCrystal?.xp ?? 0);
+  const selectedXp = selectedCrystal?.xp ?? 0;
+  const xpUntilTrialReady = getXpToNextBandThreshold(selectedXp);
+  // Single source of truth for the Begin Trial enable predicate, shared with
+  // Crystals.tsx (per-frame trial-pulse VFX) and eventBusHandlers.ts
+  // (mentor `crystal.trial.available_for_player` watcher). The selector
+  // requires a non-nullable status; short-circuit to false when no trial
+  // is active for the selected topic so the button stays disabled.
+  const canStartTrial = trial ? isCrystalTrialAvailableForPlayer(trial.status, selectedXp) : false;
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [result, setResult] = useState<CrystalTrialResult | null>(null);
@@ -184,15 +193,13 @@ export function CrystalTrialModal() {
               <div className="text-6xl">🔮</div>
               <div className="text-center">
                 <h3 className="text-xl font-semibold text-foreground mb-2">
-                  Crystal Trial Ready
+                  {canStartTrial ? 'Crystal Trial Available' : 'Trial Prepared'}
                 </h3>
                 <p className="text-sm text-muted-foreground max-w-md">
-                  Answer {questions.length} scenario-based questions to prove
-                  you can apply your knowledge. You need 80% to pass.
+                  {canStartTrial
+                    ? `Answer ${questions.length} scenario-based questions to prove you can apply your knowledge. You need 80% to pass.`
+                    : `Trial questions are ready. Gain ${xpUntilTrialReady} more XP at the current level to take the trial.`}
                 </p>
-                {!canStartTrial && xpUntilTrialReady > 0 ? (
-                  <p className="text-xs text-muted-foreground">{xpUntilTrialReady} XP left</p>
-                ) : null}
               </div>
               <Button onClick={handleStartTrial} size="lg" disabled={!canStartTrial}>
                 Begin Trial

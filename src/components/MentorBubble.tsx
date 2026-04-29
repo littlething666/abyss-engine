@@ -10,10 +10,11 @@ import {
 } from '@/features/contentGeneration';
 import { useShallow } from 'zustand/react/shallow';
 import {
-  tryEnqueueBubbleClick,
+  tryEnqueueMentorEntry,
   useMentorStore,
   type MentorMood,
 } from '../features/mentor';
+import { useMentorEntryContext } from '../hooks/useMentorEntryContext';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { NEXUS_BOB_AMPLITUDE_LOCAL, NEXUS_CENTER_Y } from './WisdomAltar';
 
@@ -51,11 +52,15 @@ const pipGeometry = new THREE.CircleGeometry(PIP_RADIUS_LOCAL, 24);
 /**
  * Floating mentor bubble — small WebGPU-safe billboard above the nexus that
  * mirrors the queued/current mentor plan's mood and is the click target for
- * `mentor.bubble.click`. Reduced motion disables the scale pulse; queued
- * state then surfaces via opacity / emissive only.
+ * the contextual mentor entry. Reduced motion disables the scale pulse;
+ * queued state then surfaces via opacity / emissive only.
  *
- * Click selection is delegated to `tryEnqueueBubbleClick()` so the bubble
- * and HUD Quick Actions "🗣️ Mentor" item share identical semantics.
+ * Click selection is delegated to `tryEnqueueMentorEntry(context)` so the
+ * bubble and HUD Quick Actions "🗣️ Mentor" item share identical, contextual
+ * semantics: the resolver picks the most relevant trigger (failed > active >
+ * pre-first-subject onboarding > generic chatter) given the current
+ * subject-generation status, persisted player name, and first-subject
+ * milestone.
  */
 export const MentorBubble: React.FC = () => {
   const groupRef = useRef<THREE.Group>(null);
@@ -84,6 +89,8 @@ export const MentorBubble: React.FC = () => {
         ? 1
         : 0;
   const isAlert = subjectGeneration?.phase === 'failed';
+
+  const entryContext = useMentorEntryContext();
 
   const discMaterial = useMemo(() => {
     const m = new THREE.MeshBasicNodeMaterial();
@@ -187,7 +194,7 @@ export const MentorBubble: React.FC = () => {
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation();
-    tryEnqueueBubbleClick();
+    tryEnqueueMentorEntry(entryContext);
   };
   const stop = (event: ThreeEvent<PointerEvent>) => event.stopPropagation();
   const handlePointerOver = (event: ThreeEvent<PointerEvent>) => {

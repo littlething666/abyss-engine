@@ -27,6 +27,16 @@ function topicRefsEqual(a: TopicRef | null, b: TopicRef | null) {
   );
 }
 
+/**
+ * Sentinel value used by the discovery scope to indicate "open the modal in
+ * all-subjects mode". Distinct from `null` (which means "caller did not
+ * specify a scope, fall back to DiscoveryModal's sessionStorage default").
+ */
+export const DISCOVERY_MODAL_ALL_SUBJECTS = '__all_floors__' as const;
+export type DiscoveryModalSubjectId =
+  | string
+  | typeof DISCOVERY_MODAL_ALL_SUBJECTS;
+
 export interface UIStore {
   isDiscoveryModalOpen: boolean;
   isStudyPanelOpen: boolean;
@@ -40,7 +50,18 @@ export interface UIStore {
 
   isSelectionMode: boolean;
 
-  openDiscoveryModal: () => void;
+  /**
+   * Optional scope hint for the next Discovery modal open. When non-null,
+   * DiscoveryModal prefers this over its sessionStorage default. Cleared
+   * back to null on close.
+   */
+  discoveryModalSubjectId: DiscoveryModalSubjectId | null;
+
+  /**
+   * Open Discovery. Pass a subjectId (or `DISCOVERY_MODAL_ALL_SUBJECTS`) to
+   * scope the modal; omit to fall back to the sessionStorage default.
+   */
+  openDiscoveryModal: (subjectId?: DiscoveryModalSubjectId) => void;
   closeDiscoveryModal: () => void;
   openStudyPanel: () => void;
   closeStudyPanel: () => void;
@@ -80,17 +101,28 @@ const createUIStore = () =>
     isGlobalSettingsOpen: false,
     selectedTopic: null,
     isCurrentCardFlipped: false,
+    discoveryModalSubjectId: null,
 
     get isSelectionMode() {
       return get().selectedTopic !== null;
     },
 
-    openDiscoveryModal: () => {
-      if (get().isDiscoveryModalOpen) return;
-      set({ isDiscoveryModalOpen: true });
+    openDiscoveryModal: (subjectId) => {
+      const next = subjectId ?? null;
+      // Always update the scope hint, even when re-opening; the previous open
+      // may have left a stale subjectId if close races with another open
+      // (e.g. mentor open_discovery then bubble click).
+      if (get().isDiscoveryModalOpen) {
+        if (get().discoveryModalSubjectId !== next) {
+          set({ discoveryModalSubjectId: next });
+        }
+        return;
+      }
+      set({ isDiscoveryModalOpen: true, discoveryModalSubjectId: next });
       emitModalOpened('discovery', null, null);
     },
-    closeDiscoveryModal: () => set({ isDiscoveryModalOpen: false }),
+    closeDiscoveryModal: () =>
+      set({ isDiscoveryModalOpen: false, discoveryModalSubjectId: null }),
     openStudyPanel: () => {
       const state = get();
       if (state.isStudyPanelOpen) return;
