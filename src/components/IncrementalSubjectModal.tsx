@@ -30,11 +30,16 @@ const subjectIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export interface IncrementalSubjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Fired after the generation request is queued (before `onClose`). Use to dismiss a parent surface (e.g. Discovery). */
-  onEnqueued?: () => void;
 }
 
-export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: IncrementalSubjectModalProps) {
+/**
+ * Modal for kicking off a new subject curriculum generation. The mentor
+ * `firstSubjectGenerationEnqueuedAt` milestone is owned by
+ * `eventBusHandlers.subject:generation-pipeline` and is therefore NOT
+ * surfaced as a prop here — any entry path that ultimately emits the bus
+ * event records the milestone exactly once.
+ */
+export function IncrementalSubjectModal({ isOpen, onClose }: IncrementalSubjectModalProps) {
   const [topicName, setTopicName] = useState('');
   const [studyGoal, setStudyGoal] = useState<StudyGoal>(STUDY_CHECKLIST_DEFAULTS.studyGoal);
   const [priorKnowledge, setPriorKnowledge] = useState<PriorKnowledge>(STUDY_CHECKLIST_DEFAULTS.priorKnowledge);
@@ -86,7 +91,6 @@ export function IncrementalSubjectModal({ isOpen, onClose, onEnqueued }: Increme
         focusAreas: focusAreas.trim() || undefined,
       });
       toast.success('Subject generation started — check progress in the HUD.');
-      onEnqueued?.();
       onClose();
     } catch (e) {
       setLocalError(e instanceof Error ? e.message : String(e));

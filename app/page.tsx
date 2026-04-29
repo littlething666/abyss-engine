@@ -36,10 +36,8 @@ import PomodoroTimerOverlay from '@/components/PomodoroTimer3D';
 import { CrystalTrialModal } from '@/components/CrystalTrial';
 import { MentorBootstrapMount } from '@/components/MentorBootstrapMount';
 import { MentorDialogOverlay } from '@/components/MentorDialogOverlay';
-import { useMentorStore } from '@/features/mentor/mentorStore';
-import { tryEnqueueBubbleClick } from '@/features/mentor';
-import { MENTOR_VOICE_ID } from '@/features/mentor/mentorVoice';
-import { telemetry } from '@/features/telemetry';
+import { tryEnqueueMentorEntry } from '@/features/mentor';
+import { useMentorEntryContext } from '@/hooks/useMentorEntryContext';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useContentGenerationHydration } from '@/hooks/useContentGenerationHydration';
 import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifecycle';
@@ -228,36 +226,41 @@ const HomeContent: React.FC = () => {
   const handleQuickActionCommandPalette = useCallback(() => { setIsCommandPaletteOpen(true); }, []);
   const handleQuickActionSettings = useCallback(() => { openGlobalSettings(); }, [openGlobalSettings]);
   const handleCreateSubjectFromHud = useCallback(() => { setIsIncrementalSubjectOpen(true); }, []);
-  // Mentor v1 (Phase 1): Discovery's empty-state CTA closes Discovery before opening
-  // IncrementalSubjectModal so the two surfaces never stack. The mentor's `open_discovery`
-  // effect (Phase 2) routes through `openDiscoveryModal()` and then surfaces this CTA.
+  // Discovery's empty-state CTA closes Discovery before opening
+  // IncrementalSubjectModal so the two surfaces never stack. The mentor's
+  // `open_discovery` effect routes through `openDiscoveryModal()` and then
+  // surfaces this CTA from the Discovery empty-state.
   const handleCreateSubjectFromDiscovery = useCallback(() => {
     closeDiscoveryModal();
     setIsIncrementalSubjectOpen(true);
   }, [closeDiscoveryModal]);
 
-  // Mentor v1 (Phase 3): Quick Actions "Mentor" item is the keyboard-accessible parity
-  // for the MentorBubble billboard. Both paths emit `mentor.bubble.click` through the
-  // shared `tryEnqueueBubbleClick()` helper, which encodes the v1 Pin selection rules:
-  // overlay-open is a no-op, a non-empty queue is a no-op (the queued head wins), and
-  // otherwise the trigger is evaluated, enqueued, and its cooldown recorded.
+  // Quick Actions "🗣️ Mentor" — keyboard-accessible parity with the
+  // MentorBubble billboard. Both paths route through the contextual entry
+  // helper, which encodes the v1 selection rules:
+  //   overlay open    → no-op
+  //   queue non-empty → no-op (queued head wins)
+  //   else            → resolve trigger from live context, enqueue.
+  const entryContext = useMentorEntryContext();
+  const {
+    subjectGenerationPhase,
+    subjectGenerationLabel,
+    playerName,
+    firstSubjectGenerationEnqueuedAt,
+  } = entryContext;
   const handleQuickActionMentor = useCallback(() => {
-    tryEnqueueBubbleClick();
-  }, []);
-
-  // Mentor v1 (Phase 2): primary completion signal for `onboarding.first_subject`.
-  // Fired by IncrementalSubjectModal AFTER the generation request is accepted by
-  // `triggerSubjectGeneration` and BEFORE `onClose`. Records the timestamp and logs
-  // telemetry; the rule engine consumes `firstSubjectGenerationEnqueuedAt` to lock
-  // the trigger out of future fires (subject deletion does not re-arm it).
-  const handleSubjectGenerationEnqueued = useCallback(() => {
-    useMentorStore.getState().markFirstSubjectGenerationEnqueued(Date.now());
-    telemetry.log('mentor_first_subject_generation_enqueued', {
-      triggerId: 'onboarding.first_subject',
-      source: 'canned',
-      voiceId: MENTOR_VOICE_ID,
+    tryEnqueueMentorEntry({
+      subjectGenerationPhase,
+      subjectGenerationLabel,
+      playerName,
+      firstSubjectGenerationEnqueuedAt,
     });
-  }, []);
+  }, [
+    subjectGenerationPhase,
+    subjectGenerationLabel,
+    playerName,
+    firstSubjectGenerationEnqueuedAt,
+  ]);
 
   const TOP_LEFT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', left: 'calc(0.75rem + env(safe-area-inset-left))' };
   const TOP_RIGHT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', right: 'calc(0.75rem + env(safe-area-inset-right))' };
@@ -352,7 +355,6 @@ const HomeContent: React.FC = () => {
       <IncrementalSubjectModal
         isOpen={isIncrementalSubjectOpen}
         onClose={() => setIsIncrementalSubjectOpen(false)}
-        onEnqueued={handleSubjectGenerationEnqueued}
       />
 
       <AttunementRitualModal

@@ -7,16 +7,17 @@ export type LineCatalog = Record<
   Record<MentorVoiceId, NonEmptyStringTuple>
 >;
 
+// Default mentor line catalog keyed by trigger. Stage-specific copy for
+// `subject.generation.started` and named/unnamed greet copy for
+// `onboarding.pre_first_subject` live in mentor-private pools below; this
+// catalog still holds a default fallback line per trigger for callers that
+// do not pass a stage / branch.
 const en: LineCatalog = {
-  'onboarding.welcome': {
+  'onboarding.pre_first_subject': {
     'witty-sarcastic': [
+      // Fallback (matches the unnamed-greet line). The rule engine selects
+      // the appropriate branch via getOnboardingPreFirstSubjectGreet().
       "Oh. A new test subject. Hello. I'm contractually required to be encouraging. Let's get this over with — pleasantly.",
-    ],
-  },
-  'onboarding.first_subject': {
-    'witty-sarcastic': [
-      "Step one: pick a thing to learn. Step two — well, we'll cross that abyss when you finish step one. Try the Wisdom Altar.",
-      "Nothing on the curriculum yet. The altar takes inputs. Throw it a topic and see what happens.",
     ],
   },
   'session.completed': {
@@ -71,6 +72,47 @@ const en: LineCatalog = {
   },
 };
 
+// Mentor-private greet pools for `onboarding.pre_first_subject`. Distinct
+// copy for unnamed (fresh player) vs named (returning player without first
+// subject). Keeps onboarding applicable for returning players who saved a
+// name but never enqueued their first subject.
+const onboardingPreFirstSubjectGreets: Record<
+  MentorVoiceId,
+  { unnamed: NonEmptyStringTuple; named: NonEmptyStringTuple }
+> = {
+  'witty-sarcastic': {
+    unnamed: [
+      "Oh. A new test subject. Hello. I'm contractually required to be encouraging. Let's get this over with — pleasantly.",
+    ],
+    named: [
+      "Back already, {name}? The paperwork survived your absence. Let's plant your first subject before the abyss notices.",
+    ],
+  },
+};
+
+// Mentor-private stage-specific variant pools for `subject.generation.started`.
+// Selected when payload.stage is provided; the rule engine falls back to the
+// default pool in `mentorLines` when no stage is supplied.
+const subjectGenerationStartedStageLines: Record<
+  'topics' | 'edges',
+  Record<MentorVoiceId, NonEmptyStringTuple>
+> = {
+  topics: {
+    'witty-sarcastic': [
+      'Drafting the topic lattice for {subjectName}. The HUD is keeping receipts; you may resume worrying productively.',
+      '{subjectName} is having its topics generated. The bureaucracy is loud but functional. Watch the generation HUD.',
+      'Topic outline incoming for {subjectName}. The abyss has been polite about it so far. The HUD will tell you if that changes.',
+    ],
+  },
+  edges: {
+    'witty-sarcastic': [
+      'Topics for {subjectName} are wired; we are now connecting prerequisites. The HUD will narrate, sparingly.',
+      'Edges are being threaded through {subjectName}. If a topic looks lonely, do not worry — that is its current job.',
+      'Wiring up the prerequisite graph for {subjectName}. The HUD will know before either of us does when it lands.',
+    ],
+  },
+};
+
 export const mentorLines: Record<'en', LineCatalog> = { en };
 
 export function getMentorLine(
@@ -80,5 +122,27 @@ export function getMentorLine(
   variantIndex: number,
 ): string {
   const variants = mentorLines[locale][trigger][voiceId];
+  return variants[variantIndex % variants.length] ?? variants[0]!;
+}
+
+/** Pick a greet variant from the appropriate onboarding branch. */
+export function getOnboardingPreFirstSubjectGreet(
+  _locale: 'en',
+  voiceId: MentorVoiceId,
+  branch: 'unnamed' | 'named',
+  variantIndex: number,
+): string {
+  const variants = onboardingPreFirstSubjectGreets[voiceId][branch];
+  return variants[variantIndex % variants.length] ?? variants[0]!;
+}
+
+/** Pick a stage-specific variant for `subject.generation.started`. */
+export function getSubjectGenerationStartedStageLine(
+  _locale: 'en',
+  voiceId: MentorVoiceId,
+  stage: 'topics' | 'edges',
+  variantIndex: number,
+): string {
+  const variants = subjectGenerationStartedStageLines[stage][voiceId];
   return variants[variantIndex % variants.length] ?? variants[0]!;
 }

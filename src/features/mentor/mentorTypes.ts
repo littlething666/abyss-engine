@@ -1,8 +1,7 @@
 export type MentorVoiceId = 'witty-sarcastic';
 
 export const MENTOR_TRIGGER_IDS = [
-  'onboarding.welcome',
-  'onboarding.first_subject',
+  'onboarding.pre_first_subject',
   'session.completed',
   'crystal.leveled',
   'crystal.trial.awaiting',

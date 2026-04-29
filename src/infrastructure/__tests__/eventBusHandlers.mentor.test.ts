@@ -260,7 +260,7 @@ describe('eventBusHandlers \u2014 crystal-trial awaiting_player watcher', () => 
 
     expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
 
-    // Same store, different transitions — still no fires.
+    // Same store, different transitions \u2014 still no fires.
     useCrystalTrialStore.setState({
       trials: {
         'subj-1::topic-1': trialFixture({
@@ -337,7 +337,7 @@ describe('eventBusHandlers \u2014 crystal-trial awaiting_player watcher', () => 
   });
 });
 
-describe('eventBusHandlers — subject generation mentor wiring', () => {
+describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
   it('fires the start mentor trigger and records the first subject generation enqueue', async () => {
     busApi.emit('subject:generation-pipeline', {
       subjectId: 'calculus',
@@ -345,14 +345,19 @@ describe('eventBusHandlers — subject generation mentor wiring', () => {
     });
     await flushMicrotasks();
 
+    // The bus handler always passes stage:'topics' so the rule engine can
+    // select the topics-stage variant pool.
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject.generation.started', {
       subjectName: 'Calculus',
+      stage: 'topics',
     });
     expect(mentorApi.state.markFirstSubjectGenerationEnqueued).toHaveBeenCalledTimes(1);
     expect(telemetryApi.log).toHaveBeenCalledWith(
       'mentor_first_subject_generation_enqueued',
       expect.objectContaining({
-        triggerId: 'onboarding.first_subject',
+        // Collapsed-onboarding refactor renamed the trigger id from
+        // 'onboarding.first_subject' to the canonical pre_first_subject.
+        triggerId: 'onboarding.pre_first_subject',
         voiceId: 'witty-sarcastic',
       }),
       { subjectId: 'calculus' },

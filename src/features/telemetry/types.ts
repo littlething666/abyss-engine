@@ -217,9 +217,11 @@ export type SubjectGraphValidationFailedPayload = z.infer<typeof SubjectGraphVal
 // === Mentor v1 (canned-only) ===
 // Plan source of truth: "Witty Mentor — Wisdom Altar Dialog System".
 // Every mentor event carries source: 'canned' and voiceId: 'witty-sarcastic'.
+// `onboarding.welcome` + `onboarding.first_subject` were collapsed into the
+// single canonical `onboarding.pre_first_subject` trigger; the rule engine
+// gates only on firstSubjectGenerationEnqueuedAt === null.
 export const MentorTriggerIdSchema = z.enum([
-  'onboarding.welcome',
-  'onboarding.first_subject',
+  'onboarding.pre_first_subject',
   'session.completed',
   'crystal.leveled',
   'crystal.trial.awaiting',

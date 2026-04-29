@@ -43,6 +43,14 @@ async function resolveSubjectDisplayName(subjectId: string): Promise<string> {
   }
 }
 
+/**
+ * Sole owner of the `firstSubjectGenerationEnqueuedAt` mentor milestone.
+ * Idempotent across all entry paths (Quick Action → IncrementalSubjectModal,
+ * Discovery empty-state CTA, command palette, mentor onboarding CTA), since
+ * the bus event is the single chokepoint downstream of
+ * `triggerSubjectGeneration`. Records the timestamp + telemetry exactly
+ * once; subsequent calls no-op.
+ */
 function recordFirstSubjectGenerationEnqueued(subjectId: string): void {
   const mentor = useMentorStore.getState();
   if (mentor.firstSubjectGenerationEnqueuedAt !== null) {
@@ -54,7 +62,7 @@ function recordFirstSubjectGenerationEnqueued(subjectId: string): void {
   telemetry.log(
     'mentor_first_subject_generation_enqueued',
     {
-      triggerId: 'onboarding.first_subject',
+      triggerId: 'onboarding.pre_first_subject',
       source: 'canned',
       voiceId: MENTOR_VOICE_ID,
     },
@@ -163,7 +171,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
   appEventBus.on('subject:generation-pipeline', (e) => {
     const subjectName = e.checklist.topicName.trim() || e.subjectId;
     recordFirstSubjectGenerationEnqueued(e.subjectId);
-    handleMentorTrigger('subject.generation.started', { subjectName });
+    // The bus enqueue is always the topics stage of the subject pipeline;
+    // explicit stage lets the mentor rule engine select stage-specific copy.
+    handleMentorTrigger('subject.generation.started', { subjectName, stage: 'topics' });
 
     const stageBindings = resolveSubjectGenerationStageBindings();
     const orchestrator = createSubjectGenerationOrchestrator();

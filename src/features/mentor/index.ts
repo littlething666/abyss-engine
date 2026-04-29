@@ -26,7 +26,12 @@ export type {
   MentorState,
   VariantCursor,
 } from './mentorStore';
-export { getMentorLine, mentorLines } from './mentorLines';
+export {
+  getMentorLine,
+  getOnboardingPreFirstSubjectGreet,
+  getSubjectGenerationStartedStageLine,
+  mentorLines,
+} from './mentorLines';
 export type { LineCatalog } from './mentorLines';
 export { evaluateTrigger, interpolate, TRIGGER_SPECS } from './dialogRuleEngine';
 export type { EvaluateContext } from './dialogRuleEngine';
@@ -34,4 +39,9 @@ export { useMentorSpeech } from './useMentorSpeech';
 export type { UseMentorSpeechResult } from './useMentorSpeech';
 export { bootstrapMentor, __resetMentorBootstrapForTests } from './mentorBootstrap';
 export { handleMentorTrigger } from './mentorTriggers';
-export { tryEnqueueBubbleClick } from './mentorBubbleClick';
+export { tryEnqueueMentorEntry } from './mentorEntryPoint';
+export { resolveMentorEntry } from './mentorEntryResolver';
+export type {
+  MentorEntryContext,
+  MentorEntryDecision,
+} from './mentorEntryResolver';
