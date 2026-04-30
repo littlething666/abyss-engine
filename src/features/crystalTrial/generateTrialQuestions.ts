@@ -6,6 +6,7 @@ import {
   resolveEnableStreamingForSurface,
   resolveModelForSurface,
 } from '@/infrastructure/llmInferenceSurfaceProviders';
+import { appEventBus } from '@/infrastructure/eventBus';
 import { runContentGenerationJob } from '@/features/contentGeneration/runContentGenerationJob';
 import {
   buildCrystalTrialMessages,
@@ -34,8 +35,11 @@ export async function generateTrialQuestions(
   const trialStore = useCrystalTrialStore.getState();
   const existingTrial = trialStore.getCurrentTrial(ref);
 
+  // Lifted out so failure events can reference the trial's targetLevel even
+  // when an existing trial is in flight (otherwise targetLevel was scoped to
+  // the start-pregeneration branch only).
+  const targetLevel = existingTrial?.targetLevel ?? currentLevel + 1;
   if (!existingTrial || existingTrial.status === 'failed') {
-    const targetLevel = existingTrial?.targetLevel ?? currentLevel + 1;
     trialStore.startPregeneration({ subjectId, topicId, targetLevel });
   }
 
@@ -57,7 +61,15 @@ export async function generateTrialQuestions(
   }
   if (levelCards.length === 0) {
     trialStore.setTrialGenerationFailed(ref);
-    return { ok: false, error: `No cards at difficulty ${targetDifficulty}` };
+    const error = `No cards at difficulty ${targetDifficulty}`;
+    appEventBus.emit('crystal-trial:generation-failed', {
+      subjectId,
+      topicId,
+      topicLabel: topicTitle,
+      level: targetLevel,
+      errorMessage: error,
+    });
+    return { ok: false, error };
   }
 
   // 3. Compute card pool hash for invalidation detection
@@ -115,6 +127,13 @@ export async function generateTrialQuestions(
 
   if (!result.ok) {
     trialStore.setTrialGenerationFailed(ref);
+    appEventBus.emit('crystal-trial:generation-failed', {
+      subjectId,
+      topicId,
+      topicLabel: topicTitle,
+      level: targetLevel,
+      errorMessage: result.error ?? 'Crystal trial generation failed',
+    });
   }
   return { ok: result.ok, jobId: result.jobId, error: result.error };
 }

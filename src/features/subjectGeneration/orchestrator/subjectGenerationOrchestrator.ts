@@ -53,6 +53,11 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
     const { stageBindings } = deps;
     const strategy = resolveStrategy(request.checklist);
     const topicName = request.checklist.topicName;
+    // Display name carried in every terminal `subject-graph:generation-failed`
+    // emission so downstream listeners (toast, mentor, telemetry) need not
+    // re-derive it. Falls back to the subjectId when the checklist topicName
+    // is whitespace.
+    const subjectName = topicName.trim() || request.subjectId;
 
     const retryDepth = countManualRetryDepth(deps.retryOf, useContentGenerationStore.getState().jobs);
 
@@ -144,9 +149,17 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
     const stageADurationMs = jobDurationMs(jobA);
 
     if (!latticeJob.ok) {
+      const error = latticeJob.error ?? 'Subject topic lattice generation failed';
+      appEventBus.emit('subject-graph:generation-failed', {
+        subjectId: request.subjectId,
+        subjectName,
+        pipelineId,
+        stage: 'topics',
+        error,
+      });
       return {
         ok: false,
-        error: latticeJob.error ?? 'Subject topic lattice generation failed',
+        error,
         pipelineId,
         stage: 'topics',
       };
@@ -259,9 +272,17 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
     });
 
     if (!edgesJob.ok) {
+      const error = edgesJob.error ?? 'Subject prerequisite wiring failed';
+      appEventBus.emit('subject-graph:generation-failed', {
+        subjectId: request.subjectId,
+        subjectName,
+        pipelineId,
+        stage: 'edges',
+        error,
+      });
       return {
         ok: false,
-        error: edgesJob.error ?? 'Subject prerequisite wiring failed',
+        error,
         pipelineId,
         stage: 'edges',
       };

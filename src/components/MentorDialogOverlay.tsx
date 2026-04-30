@@ -16,7 +16,7 @@ import {
 } from '@/features/mentor/overlayController';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { cn } from '@/lib/utils';
-import { useUIStore } from '@/store/uiStore';
+import { selectIsAnyModalOpen, useUIStore } from '@/store/uiStore';
 
 const MENTOR_TYPE_CHARS_PER_SECOND = 60;
 
@@ -36,47 +36,30 @@ function nowMs(): number {
   return Date.now();
 }
 
-function applyEffect(effect: MentorEffect | undefined): void {
-  if (!effect) return;
-  const ui = useUIStore.getState();
-  const mentor = useMentorStore.getState();
-  switch (effect.kind) {
-    case 'open_discovery': {
-      mentor.dismissCurrent();
-      // Defer one rAF so dismiss() state settles before the new modal opens.
-      // Without this the discovery modal animation can stutter under React 18 batching.
-      // The optional `effect.subjectId` carries through to uiStore so
-      // DiscoveryModal can pre-filter to the requested subject (Workstream B's
-      // post-curriculum onboarding flow); undefined preserves the legacy
-      // sessionStorage fallback.
-      const openWithScope = () => ui.openDiscoveryModal(effect.subjectId);
-      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(openWithScope);
-      } else {
-        openWithScope();
-      }
-      return;
-    }
-    case 'open_generation_hud': {
-      mentor.dismissCurrent();
-      ui.openGenerationProgress();
-      return;
-    }
-    case 'dismiss': {
-      mentor.dismissCurrent();
-      return;
-    }
-  }
+export interface MentorDialogOverlayProps {
+  /**
+   * Phase E: handler for the mentor `open_topic_study` effect.
+   *
+   * Wired from `app/page.tsx` via `applyOpenTopicStudyEffect` so the
+   * mentor feature itself stays free of `@/features/progression`
+   * imports. The overlay dispatches this callback after dismissing the
+   * current dialog so the open-study transition reads cleanly.
+   *
+   * Optional: omitting it makes `open_topic_study` choices a no-op
+   * (still dismisses the dialog), which keeps storybook/test mounts
+   * runnable without progression-store wiring.
+   */
+  onOpenTopicStudy?: (params: { subjectId: string; topicId: string }) => void;
 }
 
 /**
  * Renders the mentor dialog when one is active. Subscribes to `mentorStore`:
  * if `currentDialog` is null and the queue has items, pops the head. Telemetry,
  * typewriter reveal, Web Speech narration, choice routing, and the
- * `open_discovery` effect all live here. Mounted near the other modals in
- * `app/page.tsx`.
+ * `open_discovery` / `open_generation_hud` / `open_topic_study` / `dismiss`
+ * effects all live here. Mounted near the other modals in `app/page.tsx`.
  */
-export function MentorDialogOverlay() {
+export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayProps = {}) {
   const queueLen = useMentorStore((s) => s.dialogQueue.length);
   const currentDialog = useMentorStore((s) => s.currentDialog);
   const openCurrentFromQueue = useMentorStore((s) => s.openCurrentFromQueue);
@@ -84,19 +67,87 @@ export function MentorDialogOverlay() {
   const markSeen = useMentorStore((s) => s.markSeen);
   const setNarrationEnabled = useMentorStore((s) => s.setNarrationEnabled);
   const setPlayerName = useMentorStore((s) => s.setPlayerName);
+  // Two distinct gates:
+  //  - `isAnyModalOpen` blocks AUTO-OPEN of queued dialogs while ANY blocking
+  //    modal is on screen (discovery, study panel, ritual, study timeline,
+  //    crystal trial, generation progress, global settings). Phase C
+  //    generalization — keeps background queued plans from interrupting
+  //    modal flows the player chose to enter.
+  //  - `isStudyPanelOpen` still drives render / typewriter / speech / auto-
+  //    advance gates because the study panel is the only modal that occupies
+  //    the same bottom-sheet real estate as the dialog overlay; other modals
+  //    sit above and don't visually conflict, so the queue+wait pattern is
+  //    sufficient for them.
+  const isAnyModalOpen = useUIStore(selectIsAnyModalOpen);
   const isStudyPanelOpen = useUIStore((s) => s.isStudyPanelOpen);
 
   const { speak, cancel, enabled: ttsActive } = useMentorSpeech();
   const reducedMotion = useReducedMotion();
 
+  // Phase E: hoisted into a useCallback so it can close over the
+  // `onOpenTopicStudy` prop. The remaining effects continue to read
+  // `useUIStore.getState()` / `useMentorStore.getState()` directly to
+  // avoid pulling additional dependencies into the closure.
+  const applyEffect = useCallback(
+    (effect: MentorEffect | undefined): void => {
+      if (!effect) return;
+      const ui = useUIStore.getState();
+      const mentor = useMentorStore.getState();
+      switch (effect.kind) {
+        case 'open_discovery': {
+          mentor.dismissCurrent();
+          // Defer one rAF so dismiss() state settles before the new modal opens.
+          // Without this the discovery modal animation can stutter under React 18 batching.
+          // The optional `effect.subjectId` carries through to uiStore so
+          // DiscoveryModal can pre-filter to the requested subject (Workstream B's
+          // post-curriculum onboarding flow); undefined preserves the legacy
+          // sessionStorage fallback.
+          const openWithScope = () => ui.openDiscoveryModal(effect.subjectId);
+          if (
+            typeof window !== 'undefined' &&
+            typeof window.requestAnimationFrame === 'function'
+          ) {
+            window.requestAnimationFrame(openWithScope);
+          } else {
+            openWithScope();
+          }
+          return;
+        }
+        case 'open_generation_hud': {
+          mentor.dismissCurrent();
+          ui.openGenerationProgress();
+          return;
+        }
+        case 'open_topic_study': {
+          mentor.dismissCurrent();
+          // Phase E: delegate to the host-provided adapter so the mentor
+          // feature stays presentation-agnostic. Falling through silently
+          // when no host is wired keeps storybook/test mounts safe.
+          onOpenTopicStudy?.({
+            subjectId: effect.subjectId,
+            topicId: effect.topicId,
+          });
+          return;
+        }
+        case 'dismiss': {
+          mentor.dismissCurrent();
+          return;
+        }
+      }
+    },
+    [onOpenTopicStudy],
+  );
+
   // Auto-open: when no dialog is currently shown but the queue has entries,
-  // pop the head. This is what makes mentor.bubble.click while the overlay is
-  // closed re-open the queued head per the plan.
+  // pop the head. Bubble clicks and other explicit user actions route through
+  // `handleMentorTrigger` → enqueue, and this effect fires as soon as the
+  // modal closes so the queued plan opens immediately on close. While a modal
+  // is open the queue stays parked.
   useEffect(() => {
-    if (!isStudyPanelOpen && !currentDialog && queueLen > 0) {
+    if (!isAnyModalOpen && !currentDialog && queueLen > 0) {
       openCurrentFromQueue();
     }
-  }, [currentDialog, isStudyPanelOpen, queueLen, openCurrentFromQueue]);
+  }, [currentDialog, isAnyModalOpen, queueLen, openCurrentFromQueue]);
 
   // Tracks when the active dialog was first shown so completion telemetry can
   // report durationMs. Reset alongside other per-plan state below.
@@ -261,7 +312,7 @@ export function MentorDialogOverlay() {
       const nextIdx = messages.findIndex((m) => m.id === choice.next);
       if (nextIdx >= 0) setMessageIndex(nextIdx);
     },
-    [currentDialog, currentMessage, handleAdvance, messages],
+    [applyEffect, currentDialog, currentMessage, handleAdvance, messages],
   );
 
   const handleNameSubmit = useCallback(() => {

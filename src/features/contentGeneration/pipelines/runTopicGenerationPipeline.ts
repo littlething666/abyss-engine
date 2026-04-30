@@ -2,6 +2,7 @@ import { v4 as uuid } from 'uuid';
 
 import { telemetry } from '@/features/telemetry';
 import { topicRefKey } from '@/lib/topicRef';
+import { appEventBus } from '@/infrastructure/eventBus';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import {
@@ -94,11 +95,51 @@ export async function runTopicGenerationPipeline(
     signal.addEventListener('abort', () => pipelineAc.abort(), { once: true });
   }
 
+  // Topic label used by any terminal lifecycle event this run emits. Falls
+  // back to the topicId until the graph node is resolved; once located it is
+  // replaced with the human-readable title.
+  let topicLabel = topicId;
+
+  // Sole emission point for `topic-content:generation-{completed,failed}`
+  // lifecycle events on this run. Auto-skipped runs (study-ready content
+  // already exists) intentionally produce no event — there is no fresh
+  // result for mentor consumers or telemetry to surface.
+  const finalize = (
+    r: { ok: boolean; pipelineId: string; error?: string; skipped?: boolean },
+  ) => {
+    if (!r.skipped) {
+      if (r.ok) {
+        appEventBus.emit('topic-content:generation-completed', {
+          subjectId,
+          topicId,
+          topicLabel,
+          pipelineId: r.pipelineId,
+          stage,
+        });
+      } else {
+        appEventBus.emit('topic-content:generation-failed', {
+          subjectId,
+          topicId,
+          topicLabel,
+          pipelineId: r.pipelineId,
+          stage,
+          errorMessage: r.error ?? 'Topic content generation failed',
+        });
+      }
+    }
+    return r;
+  };
+
   const graph = await deckRepository.getSubjectGraph(subjectId);
   const node = graph.nodes.find((n) => n.topicId === topicId);
   if (!node) {
-    return { ok: false, pipelineId, error: `Topic "${topicId}" not found in subject graph` };
+    return finalize({
+      ok: false,
+      pipelineId,
+      error: `Topic "${topicId}" not found in subject graph`,
+    });
   }
+  topicLabel = node.title;
 
   const [details, cards] = await Promise.all([
     deckRepository.getTopicDetails(subjectId, topicId),
@@ -472,5 +513,10 @@ export async function runTopicGenerationPipeline(
     { subjectId, topicId },
   );
 
-  return pipelineResult;
+  return finalize({
+    ok: pipelineResult.ok,
+    pipelineId: pipelineResult.pipelineId,
+    ...(!pipelineResult.ok ? { error: pipelineResult.error } : {}),
+    skipped: false,
+  });
 }

@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { toast } from '@/infrastructure/toast';
 
 import { Button } from '@/components/ui/button';
 import { InfoPopover } from '@/components/InfoPopover';
@@ -38,6 +37,11 @@ export interface IncrementalSubjectModalProps {
  * `eventBusHandlers.subject:generation-pipeline` and is therefore NOT
  * surfaced as a prop here — any entry path that ultimately emits the bus
  * event records the milestone exactly once.
+ *
+ * Phase D: the legacy "Subject generation started…" success toast was
+ * removed; the mentor rule engine surfaces a `subject:generation-started`
+ * dialog (with stage-aware copy) instead, and the generation HUD owns
+ * progress visibility.
  */
 export function IncrementalSubjectModal({ isOpen, onClose }: IncrementalSubjectModalProps) {
   const [topicName, setTopicName] = useState('');
@@ -90,7 +94,6 @@ export function IncrementalSubjectModal({ isOpen, onClose }: IncrementalSubjectM
         learningStyle,
         focusAreas: focusAreas.trim() || undefined,
       });
-      toast.success('Subject generation started — check progress in the HUD.');
       onClose();
     } catch (e) {
       setLocalError(e instanceof Error ? e.message : String(e));

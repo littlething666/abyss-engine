@@ -4,12 +4,23 @@
  * Re-derives all LLM params (messages, model, chat repo) from current DB state
  * rather than replaying snapshots. This ensures retries use the latest data.
  * `enableReasoning` is replayed from the original job's metadata.
+ *
+ * Phase D: toast surfaces have been removed. The generation HUD now owns
+ * retry visibility for the player. Routing-collapse failures (missing
+ * metadata, unsupported kinds, thrown errors inside `retryFailedJob` /
+ * `retryFailedPipeline`) console.error at the diagnostic boundary AND
+ * emit `content-generation:retry-failed` so the mentor adapter can
+ * surface a contextual prod with the matching `open_generation_hud`
+ * choice. Ordinary retried-job/pipeline failures emit fresh terminal
+ * events from the runner under retry — those are NOT routed through
+ * `emitRetryFailed`.
  */
 
 import type { ContentGenerationJob, ContentGenerationJobKind, ContentGenerationPipeline } from '@/types/contentGeneration';
 import type { StudyChecklist } from '@/types/studyChecklist';
 import type { TopicGenerationStage } from './pipelines/topicGenerationStage';
 import { useContentGenerationStore } from './contentGenerationStore';
+import { appEventBus } from '@/infrastructure/eventBus';
 import { deckRepository, deckWriter } from '@/infrastructure/di';
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
 import { runTopicGenerationPipeline } from './pipelines/runTopicGenerationPipeline';
@@ -20,7 +31,9 @@ import {
 } from '@/features/subjectGeneration';
 import { resolveSubjectGraphRetryContextFromJob } from './subjectGenerationPipelineContext';
 import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
-import { toast } from '@/infrastructure/toast';
+
+// Silence unused-import warning while preserving the historical surface.
+type _StudyChecklistKept = StudyChecklist;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,16 +77,34 @@ function isRetryable(status: ContentGenerationJob['status']): boolean {
   return status === 'failed' || status === 'aborted';
 }
 
+/** Emit a terminal `content-generation:retry-failed` for retry routing collapse. */
+function emitRetryFailed(
+  job: ContentGenerationJob,
+  jobLabel: string,
+  errorMessage: string,
+): void {
+  if (!job.subjectId) return;
+  appEventBus.emit('content-generation:retry-failed', {
+    subjectId: job.subjectId,
+    ...(job.topicId ? { topicId: job.topicId } : {}),
+    jobLabel,
+    errorMessage,
+  });
+}
+
+/** Diagnostic-boundary console.error paired with `emitRetryFailed`. */
+function logRetryRoutingCollapse(jobLabel: string, errorMessage: string): void {
+  console.error(`[retryContentGeneration] ${jobLabel}: ${errorMessage}`);
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-/** Whether the given job can be retried. */
 export function canRetryJob(job: ContentGenerationJob): boolean {
   return isRetryable(job.status) && job.subjectId !== null;
 }
 
-/** Whether any job in the pipeline failed/aborted and is eligible for retry. */
 export function canRetryPipeline(
   pipeline: ContentGenerationPipeline,
   allJobs: ContentGenerationJob[],
@@ -83,7 +114,6 @@ export function canRetryPipeline(
   );
 }
 
-/** True when a failed pipeline includes a subject-graph job (manual pipeline retry). */
 export function canRetrySubjectGraphPipeline(
   pipeline: ContentGenerationPipeline,
   allJobs: ContentGenerationJob[],
@@ -98,8 +128,6 @@ export function canRetrySubjectGraphPipeline(
 
 /**
  * Retry a single failed/aborted job.
- * Re-derives params from the current DB state and launches a fresh job
- * with a new ID (linked via `retryOf`).
  */
 export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
   if (!canRetryJob(job)) return;
@@ -109,10 +137,8 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
   const enableReasoning = getEnableReasoningFromJobMetadata(job);
 
   try {
-    // ── Topic pipeline stage ──────────────────────────────────────────
     const stage = JOB_KIND_TO_STAGE[job.kind];
     if (stage && topicId) {
-      toast(`Retrying ${job.label}…`);
       await runTopicGenerationPipeline({
         chat: getChatCompletionsRepositoryForSurface('topicContent'),
         deckRepository,
@@ -127,15 +153,15 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
       return;
     }
 
-    // ── Crystal Trial ───────────────────────────────────────────────
     if (job.kind === 'crystal-trial' && topicId) {
       const trialCurrentLevel = getCrystalTrialCurrentLevel(job);
       if (trialCurrentLevel === null) {
-        toast.error(`Cannot retry crystal-trial: unable to determine current level from job "${job.label}"`);
+        const errorMessage = `Cannot retry crystal-trial: unable to determine current level from job "${job.label}"`;
+        logRetryRoutingCollapse(job.label, errorMessage);
+        emitRetryFailed(job, job.label, errorMessage);
         return;
       }
 
-      toast(`Retrying ${job.label}…`);
       await generateTrialQuestions({
         chat: getChatCompletionsRepositoryForSurface('crystalTrial'),
         deckRepository,
@@ -146,14 +172,14 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
       return;
     }
 
-    // ── Expansion job ─────────────────────────────────────────────────
     if (job.kind === 'topic-expansion-cards' && topicId) {
       const nextLevel = getNextLevel(job);
       if (!nextLevel) {
-        toast.error(`Cannot retry expansion: unable to determine crystal level from job "${job.label}"`);
+        const errorMessage = `Cannot retry expansion: unable to determine crystal level from job "${job.label}"`;
+        logRetryRoutingCollapse(job.label, errorMessage);
+        emitRetryFailed(job, job.label, errorMessage);
         return;
       }
-      toast(`Retrying ${job.label}…`);
       await runExpansionJob({
         chat: getChatCompletionsRepositoryForSurface('topicContent'),
         deckRepository,
@@ -167,13 +193,13 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
       return;
     }
 
-    // ── Subject graph (two-stage: always re-run full pipeline) ────────
     if (job.kind === 'subject-graph-topics' || job.kind === 'subject-graph-edges') {
       const ctx = await resolveSubjectGraphRetryContextFromJob(job);
       if (!ctx) {
-        toast.error(
-          'Cannot retry subject generation: checklist not recoverable from retry metadata, manifest, or label',
-        );
+        const errorMessage =
+          'Cannot retry subject generation: checklist not recoverable from retry metadata, manifest, or label';
+        logRetryRoutingCollapse(job.label, errorMessage);
+        emitRetryFailed(job, job.label, errorMessage);
         return;
       }
       const stageBindings = resolveSubjectGenerationStageBindings();
@@ -186,21 +212,21 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
           retryOf: job.id,
         },
       );
-      toast(`Retrying ${job.label}…`);
       return;
     }
 
-    toast.error(`Cannot retry job: unsupported kind "${job.kind}"`);
+    const unsupportedMessage = `Cannot retry job: unsupported kind "${job.kind}"`;
+    logRetryRoutingCollapse(job.label, unsupportedMessage);
+    emitRetryFailed(job, job.label, unsupportedMessage);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[retryContentGeneration] retryFailedJob error:', msg);
-    toast.error(`Retry failed: ${msg}`);
+    emitRetryFailed(job, job.label, msg);
   }
 }
 
 /**
  * Retry a failed/aborted pipeline from the first failed stage onward.
- * Completed stages are skipped; the pipeline resumes with fresh LLM calls.
  */
 export async function retryFailedPipeline(pipelineId: string): Promise<void> {
   const store = useContentGenerationStore.getState();
@@ -210,7 +236,6 @@ export async function retryFailedPipeline(pipelineId: string): Promise<void> {
 
   if (pipelineJobs.length === 0) return;
 
-  // Find the first failed/aborted job to determine the resume point.
   const failedJob = pipelineJobs.find((j) => isRetryable(j.status));
   if (!failedJob) return;
 
@@ -219,12 +244,11 @@ export async function retryFailedPipeline(pipelineId: string): Promise<void> {
   if (!subjectId) return;
 
   const enableReasoning = getEnableReasoningFromJobMetadata(failedJob);
+  const pipelineLabel = store.pipelines[pipelineId]?.label ?? `pipeline ${pipelineId}`;
 
   try {
-    // ── Topic content pipeline ────────────────────────────────────────
     const resumeStage = JOB_KIND_TO_STAGE[failedJob.kind];
     if (resumeStage && topicId) {
-      toast(`Retrying pipeline from ${resumeStage}…`);
       await runTopicGenerationPipeline({
         chat: getChatCompletionsRepositoryForSurface('topicContent'),
         deckRepository,
@@ -239,16 +263,17 @@ export async function retryFailedPipeline(pipelineId: string): Promise<void> {
       return;
     }
 
-    // ── Subject generation pipeline (topics + edges jobs) ─────────────
     if (failedJob.kind === 'subject-graph-topics' || failedJob.kind === 'subject-graph-edges') {
       await retryFailedJob(failedJob);
       return;
     }
 
-    toast.error('Cannot retry pipeline: unknown job kind');
+    const unknownMessage = 'Cannot retry pipeline: unknown job kind';
+    logRetryRoutingCollapse(pipelineLabel, unknownMessage);
+    emitRetryFailed(failedJob, pipelineLabel, unknownMessage);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[retryContentGeneration] retryFailedPipeline error:', msg);
-    toast.error(`Pipeline retry failed: ${msg}`);
+    emitRetryFailed(failedJob, pipelineLabel, msg);
   }
 }

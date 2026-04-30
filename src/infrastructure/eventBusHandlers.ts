@@ -28,7 +28,6 @@ import {
   useMentorStore,
 } from '@/features/mentor';
 import { pubSubClient } from './pubsub';
-import { toast } from '@/infrastructure/toast';
 
 const g = globalThis as typeof globalThis & {
   __abyssEventBusHandlersRegistered?: boolean;
@@ -184,27 +183,27 @@ if (!g.__abyssEventBusHandlersRegistered) {
     // explicit stage lets the mentor rule engine select stage-specific copy.
     handleMentorTrigger('subject:generation-started', { subjectName, stage: 'topics' });
 
+    // Failure-event emission is now owned by the orchestrator so retry-driven
+    // executions (which bypass this handler) also produce a terminal
+    // `subject-graph:generation-failed` event. The handler chain that turns
+    // that event into a mentor trigger + telemetry is registered below as a
+    // `subject-graph:generation-failed` listener.
     const stageBindings = resolveSubjectGenerationStageBindings();
     const orchestrator = createSubjectGenerationOrchestrator();
-    void orchestrator
-      .execute({ subjectId: e.subjectId, checklist: e.checklist }, { stageBindings, writer: deckWriter })
-      .then((result) => {
-        if (result.ok) return;
-        appEventBus.emit('subject-graph:generation-failed', {
-          subjectId: e.subjectId,
-          subjectName,
-          pipelineId: result.pipelineId,
-          stage: result.stage,
-          error: result.error,
-        });
-      });
+    void orchestrator.execute(
+      { subjectId: e.subjectId, checklist: e.checklist },
+      { stageBindings, writer: deckWriter },
+    );
   });
 
   appEventBus.on('subject-graph:generated', (e) => {
     void (async () => {
       const subjectName = await resolveSubjectDisplayName(e.subjectId);
-      toast.success(`Curriculum generated: ${subjectName}`);
 
+      // Phase D: the success toast is gone; the celebration / onboarding
+      // mentor lines below are the user-facing surface for completed
+      // curricula.
+      //
       // Branch: if no topic from this subject has been unlocked yet, fire the
       // contextual onboarding prod (scoped to this subject so DiscoveryModal
       // pre-filters); otherwise fire the generic celebration line.
@@ -249,14 +248,15 @@ if (!g.__abyssEventBusHandlersRegistered) {
   });
 
   appEventBus.on('subject-graph:generation-failed', (e) => {
-    void (async () => {
-      toast.error(`Curriculum generation needs attention: ${e.subjectName}`);
-      handleMentorTrigger('subject:generation-failed', {
-        subjectName: e.subjectName,
-        stage: e.stage,
-        pipelineId: e.pipelineId,
-      });
-    })();
+    // Phase D: the failure toast is gone. The mentor failure dialog
+    // (priority 82) carries the player-facing surface; the rule engine
+    // always exposes an `open_generation_hud` choice so the player can
+    // jump to retry controls.
+    handleMentorTrigger('subject:generation-failed', {
+      subjectName: e.subjectName,
+      stage: e.stage,
+      pipelineId: e.pipelineId,
+    });
 
     telemetry.log(
       'subject-graph:generation-failed',
@@ -448,6 +448,84 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
   useCrystalTrialStore.subscribe(recomputeTrialAvailability);
   useProgressionStore.subscribe(recomputeTrialAvailability);
+
+  // ---- Phase C: content-generation terminal events → mentor triggers ----
+  //
+  // Runners (`runTopicGenerationPipeline`, `runExpansionJob`,
+  // `generateTrialQuestions`, retry orchestration) own emission of these
+  // terminal events; this section just turns them into mentor side
+  // effects. Topic-ready dedupe (per-pipelineId + 4h per
+  // (subjectId, topicId)) and failure CTA wiring live in the rule engine,
+  // so each handler stays thin.
+
+  appEventBus.on('topic-content:generation-completed', (e) => {
+    // Only the full-pipeline success surfaces the topic-ready prod.
+    // Partial-stage successes (theory / study-cards / mini-games) are
+    // progress signals owned by the generation HUD; surfacing them as
+    // mentor dialogs would create noise the player cannot act on.
+    if (e.stage !== 'full') return;
+    handleMentorTrigger('topic-content:generation-ready', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      topicLabel: e.topicLabel,
+      pipelineId: e.pipelineId,
+    });
+  });
+
+  appEventBus.on('topic-content:generation-failed', (e) => {
+    console.error(
+      `[topic-content:generation-failed] subject=${e.subjectId} topic=${e.topicId} ` +
+        `stage=${e.stage}: ${e.errorMessage}`,
+    );
+    handleMentorTrigger('topic-content:generation-failed', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      topicLabel: e.topicLabel,
+      errorMessage: e.errorMessage,
+    });
+  });
+
+  appEventBus.on('topic-expansion:generation-failed', (e) => {
+    console.error(
+      `[topic-expansion:generation-failed] subject=${e.subjectId} topic=${e.topicId} ` +
+        `level=${e.level}: ${e.errorMessage}`,
+    );
+    handleMentorTrigger('topic-expansion:generation-failed', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      topicLabel: e.topicLabel,
+      level: e.level,
+      errorMessage: e.errorMessage,
+    });
+  });
+
+  appEventBus.on('crystal-trial:generation-failed', (e) => {
+    console.error(
+      `[crystal-trial:generation-failed] subject=${e.subjectId} topic=${e.topicId} ` +
+        `level=${e.level}: ${e.errorMessage}`,
+    );
+    handleMentorTrigger('crystal-trial:generation-failed', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      topicLabel: e.topicLabel,
+      level: e.level,
+      errorMessage: e.errorMessage,
+    });
+  });
+
+  appEventBus.on('content-generation:retry-failed', (e) => {
+    console.error(
+      `[content-generation:retry-failed] subject=${e.subjectId} jobLabel=${e.jobLabel}: ` +
+        `${e.errorMessage}`,
+    );
+    handleMentorTrigger('content-generation:retry-failed', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      topicLabel: e.topicLabel,
+      jobLabel: e.jobLabel,
+      errorMessage: e.errorMessage,
+    });
+  });
 
   // Card pool change detection: invalidate pre-generated trials.
   // Subscribes to the renamed v1 pubsub event `topic-cards:updated` published

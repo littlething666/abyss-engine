@@ -9,6 +9,7 @@ import type {
   IDeckRepository,
   IDeckContentWriter,
 } from '@/types/repository';
+import { appEventBus } from '@/infrastructure/eventBus';
 
 const { surfaceProvidersApi } = vi.hoisted(() => ({
   surfaceProvidersApi: {
@@ -452,5 +453,114 @@ describe('runTopicGenerationPipeline', () => {
       expect(typeof finalPayload.durationMs).toBe('number');
       expect(finalPayload.durationMs).toBeGreaterThanOrEqual(0);
     });
+  });
+
+  // ── Phase B: terminal lifecycle event emission ───────────────────
+  // Each test uses a fresh spy with mockRestore() so emission state never
+  // bleeds across cases.
+
+  it('emits topic-content:generation-completed when full pipeline succeeds', async () => {
+    runContentGenerationJob.mockImplementation(defaultJobOk);
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-completed',
+      expect.objectContaining({
+        subjectId: 'sub-1',
+        topicId: 't-a',
+        topicLabel: 'Topic A',
+        stage: 'full',
+      }),
+    );
+    emitSpy.mockRestore();
+  });
+
+  it('emits topic-content:generation-failed when a stage fails (carries errorMessage)', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: false, error: 'theory boom' });
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.objectContaining({
+        subjectId: 'sub-1',
+        topicId: 't-a',
+        topicLabel: 'Topic A',
+        stage: 'full',
+        errorMessage: 'theory boom',
+      }),
+    );
+    emitSpy.mockRestore();
+  });
+
+  it('does not emit a terminal event when the run is auto-skipped', async () => {
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository({
+        getTopicDetails: vi.fn(async () => readyDetails) as unknown as IDeckRepository['getTopicDetails'],
+        getTopicCards: vi.fn(async () => readyCards) as unknown as IDeckRepository['getTopicCards'],
+      }),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+    });
+
+    expect(emitSpy).not.toHaveBeenCalledWith(
+      'topic-content:generation-completed',
+      expect.anything(),
+    );
+    expect(emitSpy).not.toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.anything(),
+    );
+    emitSpy.mockRestore();
+  });
+
+  it('emits failure with topicLabel = topicId when topic not found in graph', async () => {
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 'missing-topic',
+      enableReasoning: false,
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.objectContaining({
+        topicId: 'missing-topic',
+        topicLabel: 'missing-topic',
+        errorMessage: expect.stringContaining('not found'),
+      }),
+    );
+    emitSpy.mockRestore();
   });
 });

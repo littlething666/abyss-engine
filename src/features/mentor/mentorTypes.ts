@@ -10,6 +10,14 @@ export const MENTOR_TRIGGER_IDS = [
   'subject:generated',
   'subject:generation-failed',
   'mentor-bubble:clicked',
+  // Phase A: terminal triggers for topic / expansion / crystal-trial /
+  // retry pipelines. Cataloged here so the rule engine can build plans,
+  // but no event-bus path emits them yet — wiring lands in Phase B/C.
+  'topic-content:generation-failed',
+  'topic-content:generation-ready',
+  'topic-expansion:generation-failed',
+  'crystal-trial:generation-failed',
+  'content-generation:retry-failed',
 ] as const;
 
 export type MentorTriggerId = (typeof MENTOR_TRIGGER_IDS)[number];
@@ -31,6 +39,12 @@ export type MentorEffect =
       subjectId?: string | '__all_floors__';
     }
   | { kind: 'open_generation_hud' }
+  // open_topic_study is the topic-ready CTA: opens the study panel for a
+  // specific (subjectId, topicId) once the topic content pipeline has
+  // produced study-ready material. The presentation/composition adapter
+  // that fulfills this effect lands in Phase E; until then the catalog
+  // entry exists so dialog plans can carry it through unchanged.
+  | { kind: 'open_topic_study'; subjectId: string; topicId: string }
   | { kind: 'dismiss' };
 
 export interface MentorChoice {
@@ -72,4 +86,15 @@ export interface MentorTriggerPayload {
   to?: number;
   correctRate?: number;
   totalAttempts?: number;
+  // Phase A additions. `topicId` powers the `open_topic_study` effect;
+  // `topicLabel` is the human-readable topic title used in copy
+  // interpolation; `level` is the crystal-band level for expansion jobs;
+  // `jobLabel` is the failed job's label (e.g. "Theory — Topology") used
+  // by retry-failed copy; `errorMessage` is reserved for diagnostic
+  // surfacing (kept blameless in copy by default).
+  topicId?: string;
+  topicLabel?: string;
+  level?: number;
+  jobLabel?: string;
+  errorMessage?: string;
 }

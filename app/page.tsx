@@ -43,6 +43,7 @@ import { useContentGenerationHydration } from '@/hooks/useContentGenerationHydra
 import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifecycle';
 import { topicRefKey } from '@/lib/topicRef';
 import { useTopicCardQueriesForSubjectFilter } from '@/hooks/useTopicCardQueries';
+import { applyOpenTopicStudyEffect } from '@/hooks/openTopicStudyAdapter';
 import { toast } from '@/infrastructure/toast';
 
 const Scene = dynamic(() => import('@/components/Scene'), {
@@ -222,6 +223,23 @@ const HomeContent: React.FC = () => {
     [topicCardsByKey, selectTopic, startTopicStudySession, openStudyPanel],
   );
 
+  // Phase E: bridge the mentor `open_topic_study` effect onto existing
+  // progression + UI actions. The adapter is a pure helper that lives
+  // outside of `@/features/mentor`, so the mentor feature itself stays
+  // free of progression-store imports.
+  const handleOpenTopicStudyFromMentor = useCallback(
+    (params: { subjectId: string; topicId: string }) => {
+      applyOpenTopicStudyEffect(params, {
+        selectTopic,
+        startTopicStudySession,
+        openStudyPanel,
+        getCardsForTopic: (topic) =>
+          topicCardsByKey.get(topicRefKey(topic)) ?? [],
+      });
+    },
+    [topicCardsByKey, selectTopic, startTopicStudySession, openStudyPanel],
+  );
+
   const handleQuickActionWisdomAltar = useCallback(() => { openDiscoveryModal(); }, [openDiscoveryModal]);
   const handleQuickActionCommandPalette = useCallback(() => { setIsCommandPaletteOpen(true); }, []);
   const handleQuickActionSettings = useCallback(() => { openGlobalSettings(); }, [openGlobalSettings]);
@@ -235,7 +253,7 @@ const HomeContent: React.FC = () => {
     setIsIncrementalSubjectOpen(true);
   }, [closeDiscoveryModal]);
 
-  // Quick Actions "🗣️ Mentor" — keyboard-accessible parity with the
+  // Quick Actions "\ud83d\udde3\ufe0f Mentor" — keyboard-accessible parity with the
   // MentorBubble billboard. Both paths route through the contextual entry
   // helper, which encodes the v1 selection rules:
   //   overlay open    → no-op
@@ -396,7 +414,7 @@ const HomeContent: React.FC = () => {
 
       <CrystalTrialModal />
 
-      <MentorDialogOverlay />
+      <MentorDialogOverlay onOpenTopicStudy={handleOpenTopicStudyFromMentor} />
     </div>
   );
 }

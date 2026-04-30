@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const BAND_CAP_XP = 99; // CRYSTAL_XP_PER_LEVEL (100) - 1
 
@@ -6,7 +6,6 @@ const {
   busApi,
   mentorApi,
   orchestratorApi,
-  toastApi,
   telemetryApi,
   deckApi,
   progressionApi,
@@ -68,10 +67,6 @@ const {
     orchestratorApi: {
       execute: vi.fn().mockResolvedValue({ ok: true }),
     },
-    toastApi: {
-      error: vi.fn(),
-      success: vi.fn(),
-    },
     telemetryApi: {
       log: vi.fn(),
     },
@@ -84,12 +79,10 @@ const {
 
 // ---- Heavy-collaborator mocks ---------------------------------------------
 //
-// eventBusHandlers.ts imports a deep tree of LLM, repository and pipeline
-// modules at module init. None of those are exercised by the
-// `crystal-trial:available-for-player` watcher, but their import side-effects
-// (DB constructors, env reads, etc.) would make this test brittle. We stub
-// them all out and only let the real `useCrystalTrialStore`, our hand-rolled
-// progression-store mock, and our `handleMentorTrigger` spy run.
+// Phase D: the legacy `@/infrastructure/toast` mock was dropped along with
+// the `Curriculum generated` / `Curriculum generation needs attention`
+// toast surfaces in eventBusHandlers itself. The mentor failure / success
+// triggers asserted below are the Phase D player-facing surface.
 
 vi.mock('@/features/mentor', () => ({
   handleMentorTrigger: mentorApi.handleMentorTrigger,
@@ -140,9 +133,6 @@ vi.mock('@/features/crystalTrial/generateTrialQuestions', () => ({
 vi.mock('@/features/crystalTrial', () => ({
   resolveCrystalTrialPregenerateLevels: vi.fn(() => null),
   busMayStartTrialPregeneration: vi.fn(() => false),
-  // Reproduce the production semantics here so the test does not depend on
-  // the real selector module: a trial is available iff the store status is
-  // `awaiting_player` AND the per-crystal XP is at the band cap.
   isCrystalTrialAvailableForPlayer: (
     status: string | undefined,
     xp: number,
@@ -173,10 +163,6 @@ vi.mock('@/features/telemetry', () => ({
   telemetry: telemetryApi,
 }));
 
-vi.mock('@/infrastructure/toast', () => ({
-  toast: toastApi,
-}));
-
 vi.mock('../pubsub', () => ({
   pubSubClient: { on: vi.fn(), emit: vi.fn() },
 }));
@@ -191,9 +177,6 @@ import { handleMentorTrigger } from '@/features/mentor';
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 import type { CrystalTrial } from '@/types/crystalTrial';
 
-// Side-effect import: registers all bus handlers (incl. the trial-
-// availability watcher) under the `__abyssEventBusHandlersRegistered`
-// global guard. Done exactly once per test process.
 import '../eventBusHandlers';
 
 const handleMentorTriggerSpy = vi.mocked(handleMentorTrigger);
@@ -217,10 +200,6 @@ function trialFixture(overrides: Partial<CrystalTrial> = {}): CrystalTrial {
 }
 
 beforeEach(() => {
-  // Reset trial store + progression store. The watcher fires on these
-  // resets, but since the previous and next snapshots both result in empty
-  // available sets, no entries dispatch a mentor trigger. We mockReset
-  // afterwards regardless to ignore any noise.
   useCrystalTrialStore.setState({
     trials: {},
     cooldownCardsReviewed: {},
@@ -233,8 +212,6 @@ beforeEach(() => {
   orchestratorApi.execute.mockResolvedValue({ ok: true });
   deckApi.getManifest.mockReset();
   deckApi.getManifest.mockResolvedValue({ subjects: [] });
-  toastApi.error.mockReset();
-  toastApi.success.mockReset();
   telemetryApi.log.mockReset();
   busApi.emit.mockClear();
   handleMentorTriggerSpy.mockReset();
@@ -270,9 +247,6 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
   });
 
   it('does NOT fire when status flips to awaiting_player but XP is below the band cap', () => {
-    // "Prepared but XP-deficient" — the modal would show "Trial Prepared"
-    // and the bus must stay quiet so the mentor does not announce a
-    // trial the player cannot start.
     progressionApi.setActiveCrystals([
       { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP - 50 },
     ]);
@@ -291,7 +265,6 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
   });
 
   it('fires when XP catches up after the trial was already prepared', () => {
-    // Step 1: trial prepared while crystal is XP-deficient — no fire.
     progressionApi.setActiveCrystals([
       { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP - 1 },
     ]);
@@ -306,9 +279,6 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
     expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
     handleMentorTriggerSpy.mockReset();
 
-    // Step 2: progression store reports the player has caught up. The
-    // watcher must observe the false→true transition through the
-    // progression-store subscription and fire exactly once.
     progressionApi.setActiveCrystals([
       { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP },
     ]);
@@ -334,8 +304,6 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
     handleMentorTriggerSpy.mockReset();
 
-    // Unrelated mutations — different XP value still above the cap, fresh
-    // trial entry object identity — must not retrigger.
     progressionApi.setActiveCrystals([
       { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP + 40 },
     ]);
@@ -344,7 +312,7 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
         'subj-1::topic-1': trialFixture({
           status: 'awaiting_player',
           topicId: 'topic-1',
-          score: 0.5, // unrelated field flipped to force a fresh entry object
+          score: 0.5,
         }),
       },
     });
@@ -367,8 +335,6 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
     handleMentorTriggerSpy.mockReset();
 
-    // Status moves to in_progress (modal opened) — falls out of available.
-    // The watcher silently drops the key from the available set; no fire.
     useCrystalTrialStore.setState({
       trials: {
         'subj-1::topic-1': trialFixture({
@@ -379,9 +345,6 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
     });
     expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
 
-    // Status transitions back to awaiting_player (e.g. cooldown→retry); the
-    // key is no longer in the available set, so the false→true edge must
-    // re-fire exactly once.
     useCrystalTrialStore.setState({
       trials: {
         'subj-1::topic-1': trialFixture({
@@ -412,9 +375,6 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
     handleMentorTriggerSpy.mockReset();
 
-    // clearTrial — the trial entry is removed from the store entirely. The
-    // watcher must drop the key from its `availableKeys` set so a freshly
-    // created trial for the same topic re-fires the false→true edge.
     useCrystalTrialStore.setState({ trials: {} });
     expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
 
@@ -451,7 +411,6 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
           topicId: 'topic-2',
         }),
         'subj-1::topic-3': trialFixture({
-          // Prepared but XP-deficient — must not fire.
           status: 'awaiting_player',
           subjectId: 'subj-1',
           topicId: 'topic-3',
@@ -535,8 +494,6 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     });
     await flushMicrotasks();
 
-    // The bus handler always passes stage:'topics' so the rule engine can
-    // select the topics-stage variant pool.
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generation-started', {
       subjectName: 'Calculus',
       stage: 'topics',
@@ -545,8 +502,6 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     expect(telemetryApi.log).toHaveBeenCalledWith(
       'mentor:first-subject-generation-enqueued',
       expect.objectContaining({
-        // Collapsed-onboarding refactor renamed the trigger id to the
-        // canonical colon-namespace `onboarding:pre-first-subject`.
         triggerId: 'onboarding:pre-first-subject',
         voiceId: 'witty-sarcastic',
       }),
@@ -554,12 +509,24 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     );
   });
 
-  it('routes failed subject generation to a generic toast and mentor failure trigger', async () => {
-    orchestratorApi.execute.mockResolvedValueOnce({
-      ok: false,
-      error: 'edges failed',
-      pipelineId: 'pipeline-1',
-      stage: 'edges',
+  it('routes failed subject generation to a mentor failure trigger and telemetry', async () => {
+    // Phase B.2.b contract: emission of `subject-graph:generation-failed`
+    // is owned by the orchestrator. Phase D removed the toast; the mentor
+    // failure dialog is now the player-facing surface.
+    orchestratorApi.execute.mockImplementationOnce(async () => {
+      busApi.emit('subject-graph:generation-failed', {
+        subjectId: 'calculus',
+        subjectName: 'Calculus',
+        pipelineId: 'pipeline-1',
+        stage: 'edges',
+        error: 'edges failed',
+      });
+      return {
+        ok: false,
+        error: 'edges failed',
+        pipelineId: 'pipeline-1',
+        stage: 'edges',
+      };
     });
 
     busApi.emit('subject-graph:generation-requested', {
@@ -568,9 +535,6 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     });
     await flushMicrotasks();
 
-    expect(toastApi.error).toHaveBeenCalledWith(
-      'Curriculum generation needs attention: Calculus',
-    );
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generation-failed', {
       subjectName: 'Calculus',
       stage: 'edges',
@@ -590,9 +554,6 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
   });
 
   it('subject-graph:generated fires subject:generated when the subject already has unlocked topics', async () => {
-    // Use a unique subjectId so the module-scoped firedSubjectUnlockFirstCrystal
-    // dedupe set (which persists across tests because the handlers module is
-    // loaded once per process) does not interfere.
     deckApi.getManifest.mockResolvedValueOnce({
       subjects: [{ id: 'celebrate-subj-1', name: 'Celebration Subject' }],
     });
@@ -611,12 +572,9 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     });
     await flushMicrotasks();
 
-    expect(toastApi.success).toHaveBeenCalledWith('Curriculum generated: Celebration Subject');
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generated', {
       subjectName: 'Celebration Subject',
     });
-    // Onboarding branch must NOT fire when there is at least one unlocked
-    // topic in the subject — the player is past the first-crystal moment.
     expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith(
       'onboarding:subject-unlock-first-crystal',
       expect.anything(),
@@ -627,8 +585,6 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     deckApi.getManifest.mockResolvedValueOnce({
       subjects: [{ id: 'first-crystal-subj-1', name: 'Topology' }],
     });
-    // activeCrystals contains an unrelated subject's crystal — the branch
-    // must scope its check to the just-generated subjectId.
     progressionApi.setActiveCrystals([
       { subjectId: 'unrelated-subj', topicId: 'unrelated-topic', xp: 0 },
     ]);
@@ -648,8 +604,6 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
       'onboarding:subject-unlock-first-crystal',
       { subjectName: 'Topology', subjectId: 'first-crystal-subj-1' },
     );
-    // Generic celebration must NOT fire on the same emit — the branches
-    // are mutually exclusive per the plan.
     expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith(
       'subject:generated',
       expect.anything(),
@@ -657,7 +611,6 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
   });
 
   it('subject-graph:generated dedupes the onboarding trigger per subjectId across regenerates in the same session', async () => {
-    // First emit: no unlocked topics — onboarding fires.
     deckApi.getManifest.mockResolvedValue({
       subjects: [{ id: 'first-crystal-subj-2', name: 'Linear Algebra' }],
     });
@@ -680,9 +633,6 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     );
     handleMentorTriggerSpy.mockReset();
 
-    // Second emit: same subjectId, still no unlocked topics. The dedupe set
-    // already contains this subjectId, so the handler must fall back to the
-    // generic celebration line instead of re-firing the onboarding prod.
     busApi.emit('subject-graph:generated', {
       subjectId: 'first-crystal-subj-2',
       boundModel: 'edges-model',
@@ -699,6 +649,158 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith(
       'onboarding:subject-unlock-first-crystal',
       expect.anything(),
+    );
+  });
+});
+
+describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('topic-content:generation-completed with stage="full" fires topic-content:generation-ready with the full primitive payload', () => {
+    busApi.emit('topic-content:generation-completed', {
+      subjectId: 'subj-c1',
+      topicId: 'topic-c1',
+      topicLabel: 'Limits',
+      pipelineId: 'pipeline-c1',
+      stage: 'full',
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'topic-content:generation-ready',
+      {
+        subjectId: 'subj-c1',
+        topicId: 'topic-c1',
+        topicLabel: 'Limits',
+        pipelineId: 'pipeline-c1',
+      },
+    );
+  });
+
+  it.each(['theory', 'study-cards', 'mini-games'])(
+    'topic-content:generation-completed with partial stage=%s does NOT fire any mentor trigger (HUD-only)',
+    (stage) => {
+      busApi.emit('topic-content:generation-completed', {
+        subjectId: 'subj-c2',
+        topicId: 'topic-c2',
+        topicLabel: 'Derivatives',
+        pipelineId: 'pipeline-c2',
+        stage,
+      });
+
+      expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it('topic-content:generation-failed fires the matching mentor trigger and console.errors at the boundary', () => {
+    busApi.emit('topic-content:generation-failed', {
+      subjectId: 'subj-c3',
+      topicId: 'topic-c3',
+      topicLabel: 'Integrals',
+      pipelineId: 'pipeline-c3',
+      stage: 'theory',
+      errorMessage: 'theory upstream failed',
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      {
+        subjectId: 'subj-c3',
+        topicId: 'topic-c3',
+        topicLabel: 'Integrals',
+        errorMessage: 'theory upstream failed',
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('topic-content:generation-failed'),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('theory upstream failed'));
+  });
+
+  it('topic-expansion:generation-failed forwards the level so the expansion copy can interpolate the band', () => {
+    busApi.emit('topic-expansion:generation-failed', {
+      subjectId: 'subj-c4',
+      topicId: 'topic-c4',
+      topicLabel: 'Series convergence',
+      level: 2,
+      errorMessage: 'expansion at L2 failed',
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'topic-expansion:generation-failed',
+      {
+        subjectId: 'subj-c4',
+        topicId: 'topic-c4',
+        topicLabel: 'Series convergence',
+        level: 2,
+        errorMessage: 'expansion at L2 failed',
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('topic-expansion:generation-failed'),
+    );
+  });
+
+  it('crystal-trial:generation-failed forwards the level so the trial copy can name the band', () => {
+    busApi.emit('crystal-trial:generation-failed', {
+      subjectId: 'subj-c5',
+      topicId: 'topic-c5',
+      topicLabel: 'Eigenvectors',
+      level: 3,
+      errorMessage: 'trial questions empty',
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'crystal-trial:generation-failed',
+      {
+        subjectId: 'subj-c5',
+        topicId: 'topic-c5',
+        topicLabel: 'Eigenvectors',
+        level: 3,
+        errorMessage: 'trial questions empty',
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('crystal-trial:generation-failed'),
+    );
+  });
+
+  it('content-generation:retry-failed forwards jobLabel for retry-routing-collapse copy', () => {
+    busApi.emit('content-generation:retry-failed', {
+      subjectId: 'subj-c6',
+      topicId: 'topic-c6',
+      topicLabel: 'Discrete probability',
+      jobLabel: 'Theory generation',
+      errorMessage: 'missing checklist context',
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'content-generation:retry-failed',
+      {
+        subjectId: 'subj-c6',
+        topicId: 'topic-c6',
+        topicLabel: 'Discrete probability',
+        jobLabel: 'Theory generation',
+        errorMessage: 'missing checklist context',
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('content-generation:retry-failed'),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Theory generation'),
     );
   });
 });
