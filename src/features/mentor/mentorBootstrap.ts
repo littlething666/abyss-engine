@@ -1,5 +1,8 @@
 'use client';
 
+import { appEventBus } from '@/infrastructure/eventBus';
+
+import { useMentorStore } from './mentorStore';
 import { handleMentorTrigger } from './mentorTriggers';
 
 const g = globalThis as typeof globalThis & {
@@ -7,6 +10,7 @@ const g = globalThis as typeof globalThis & {
 };
 
 let onboardingScheduled = false;
+let initialPlayerProfileBroadcast = false;
 
 /**
  * Defer the pre-first-subject onboarding enqueue past two animation frames
@@ -39,8 +43,44 @@ function scheduleOnboardingEnqueue(): void {
 }
 
 /**
+ * Re-broadcast the persisted player name on bootstrap so subscribers
+ * (notably the PostHog bootstrap) receive the current value without
+ * waiting for the next `setPlayerName` call. Deferred via the same
+ * rAF×2 dance as `scheduleOnboardingEnqueue` so the persisted store
+ * has had a chance to rehydrate.
+ *
+ * Subscribers are guaranteed to be registered earlier:
+ * `instrumentation-client.ts` runs `bootstrapPosthog()` before any
+ * React tree mounts, and that function synchronously subscribes to
+ * `player-profile:updated`. Mentor bootstrap is invoked from within
+ * the React tree, then defers two frames — the analytics listener is
+ * always registered first.
+ */
+function scheduleInitialPlayerProfileBroadcast(): void {
+  if (initialPlayerProfileBroadcast) return;
+  initialPlayerProfileBroadcast = true;
+
+  const broadcast = () => {
+    appEventBus.emit('player-profile:updated', {
+      playerName: useMentorStore.getState().playerName,
+    });
+  };
+
+  if (
+    typeof window === 'undefined' ||
+    typeof window.requestAnimationFrame !== 'function'
+  ) {
+    broadcast();
+    return;
+  }
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(broadcast);
+  });
+}
+
+/**
  * Idempotent module-load bootstrap. Schedules the deferred pre-first-subject
- * onboarding enqueue.
+ * onboarding enqueue and the deferred player-profile re-broadcast.
  *
  * Mentor `appEventBus` subscriptions and the crystal-trial transition
  * watcher live in `src/infrastructure/eventBusHandlers.ts` under the
@@ -51,10 +91,12 @@ export function bootstrapMentor(): void {
   g.__abyssMentorBootstrapped = true;
 
   scheduleOnboardingEnqueue();
+  scheduleInitialPlayerProfileBroadcast();
 }
 
 /** Test-only: reset module-level latches so bootstrap can be re-run. */
 export function __resetMentorBootstrapForTests(): void {
   g.__abyssMentorBootstrapped = false;
   onboardingScheduled = false;
+  initialPlayerProfileBroadcast = false;
 }
