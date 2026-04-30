@@ -1,15 +1,21 @@
-Act as an expert curriculum designer. Your task is to propose the topic list and tier placement for a multi-tier curriculum. You are **not** defining prerequisite links in this step—only topics, titles, tiers, and learning objectives.
+Act as an expert curriculum designer. Your task is to propose the topic list and tier placement for a multi-tier curriculum. You are **not** defining prerequisite links in this step—only topics, titles, tiers, learning objectives, and a curated icon name per topic.
 
 Generate JSON (you may wrap it in a single markdown code block if needed, but the JSON must be valid).
 
 Requirements:
 
 1. Produce exactly {{topicCount}} topics divided evenly across {{maxTier}} tiers (exactly {{topicsPerTier}} topics per tier).
-2. Each topic has: `topicId` (lowercase kebab-case), `title`, `tier` (integer 1..{{maxTier}}), `learningObjective` (one non-empty learner-facing sentence, specific—not a repeat of the title).
+2. Each topic has: `topicId` (lowercase kebab-case), `title`, `iconName` (one curated value), `tier` (integer 1..{{maxTier}}), `learningObjective` (one non-empty learner-facing sentence, specific—not a repeat of the title).
 3. Do **not** include a `prerequisites` field. Edges are generated in a later step.
-4. Pedagogy context — audience: {{audience}}
-5. Domain / scope: {{domainDescription}}
-6. The subject identifier for downstream assembly is: {{subjectId}} (theme id matches: {{themeId}}).
+4. `iconName` rules:
+   - Choose exactly one value per topic from the curated allowlist below.
+   - Pick the icon whose visual metaphor most specifically represents the topic title or core concept.
+   - If several icons seem plausible, prefer the icon whose metaphor is most recognizable on small mobile screens.
+   - Do not invent icon names. Names outside the allowlist will be rejected.
+   - Allowed `iconName` values: {{iconAllowlist}}
+5. Pedagogy context — audience: {{audience}}
+6. Domain / scope: {{domainDescription}}
+7. The subject identifier for downstream assembly is: {{subjectId}} (theme id matches: {{themeId}}).
 
 Output valid JSON matching this shape:
 
@@ -18,6 +24,7 @@ Output valid JSON matching this shape:
     {
       "topicId": "example-foundations",
       "title": "Example Foundations",
+      "iconName": "lightbulb",
       "tier": 1,
       "learningObjective": "Learners can explain the core idea in one sentence."
     }

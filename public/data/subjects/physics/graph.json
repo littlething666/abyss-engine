@@ -7,6 +7,7 @@
     {
       "topicId": "entropy",
       "title": "Entropy",
+      "iconName": "atom",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Understand the concept of entropy as a measure of disorder and information theory fundamentals. Learn about the second law of thermodynamics and the role of entropy in energy systems."

@@ -13,6 +13,7 @@ import {
   Subject,
   type TopicRef,
 } from '../types';
+import type { TopicIconName } from '../types/core';
 import {
   calculateLevelFromXP,
   crystalCeremonyStore,
@@ -70,6 +71,11 @@ interface TopicMetadata {
   subjectId: string;
   subjectName?: string;
   topicName?: string;
+  /**
+   * Curated lucide icon name from the topic's graph node, plumbed through
+   * `useTopicMetadata`. Optional during the Phase 2 migration window.
+   */
+  iconName?: TopicIconName;
 }
 
 interface CrystalsProps {
@@ -661,6 +667,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
               <CrystalLabelBillboard
                 topicKey={topicKey}
                 text={topicMeta.topicName}
+                iconName={topicMeta.iconName}
                 opacitiesRef={labelOpacitiesRef}
               />
             )}

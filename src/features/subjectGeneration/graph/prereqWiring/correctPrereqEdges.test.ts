@@ -13,6 +13,7 @@ function fifteenNodeLattice(): TopicLattice {
       title: `T1 ${i}`,
       tier: 1,
       learningObjective: 'o',
+      iconName: 'lightbulb',
     });
   }
   for (let i = 1; i <= 5; i += 1) {
@@ -21,6 +22,7 @@ function fifteenNodeLattice(): TopicLattice {
       title: `T2 ${i}`,
       tier: 2,
       learningObjective: 'o',
+      iconName: 'lightbulb',
     });
   }
   const t3Ids = [
@@ -36,6 +38,7 @@ function fifteenNodeLattice(): TopicLattice {
       title: id,
       tier: 3,
       learningObjective: 'o',
+      iconName: 'lightbulb',
     });
   }
   return { topics };

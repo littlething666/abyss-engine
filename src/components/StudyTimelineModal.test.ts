@@ -559,4 +559,36 @@ describe('StudyTimelineModal', () => {
     });
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('renders the curated topic icon next to the session topic name', () => {
+    renderTimelineModal({
+      isOpen: true,
+      onClose: vi.fn(),
+      timelineNow: now,
+      eventsOverride: [
+        telemetryEvent('study-card:reviewed', {
+          cardId: 'card-icon',
+          rating: 3,
+          isCorrect: true,
+          difficulty: 2,
+          timeTakenMs: 1500,
+          buffMultiplier: 1,
+        }, {
+          topicId: 'topic-a',
+          sessionId: 'session-icon',
+          timestamp: now - 1 * 60 * 60 * 1000,
+        }),
+      ],
+      topicMetadata: {
+        'topic-a': { topicName: 'Topic A', iconName: 'rocket' },
+      },
+    });
+
+    drillIntoFirstBucket();
+
+    const sessionGroup = document.querySelector('[data-session-group="session-icon"]');
+    expect(sessionGroup).not.toBeNull();
+    expect(sessionGroup?.querySelector('[data-topic-icon="rocket"]')).not.toBeNull();
+    expect(sessionGroup?.textContent).toContain('Topic A');
+  });
 });

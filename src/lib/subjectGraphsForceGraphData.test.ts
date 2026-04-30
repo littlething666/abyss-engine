@@ -28,6 +28,7 @@ describe('buildSubjectGraphsForceGraphData', () => {
             tier: 1,
             prerequisites: [],
             learningObjective: 'o',
+            iconName: 'lightbulb',
           },
         ],
       },
@@ -43,6 +44,7 @@ describe('buildSubjectGraphsForceGraphData', () => {
             tier: 1,
             prerequisites: [],
             learningObjective: 'o',
+            iconName: 'lightbulb',
           },
         ],
       },
@@ -73,6 +75,7 @@ describe('buildSubjectGraphsForceGraphData', () => {
             tier: 1,
             prerequisites: [],
             learningObjective: 'a',
+            iconName: 'lightbulb',
           },
           {
             topicId: 'calculus',
@@ -80,6 +83,7 @@ describe('buildSubjectGraphsForceGraphData', () => {
             tier: 2,
             prerequisites: ['algebra'],
             learningObjective: 'c',
+            iconName: 'lightbulb',
           },
         ],
       },
@@ -110,6 +114,7 @@ describe('buildSubjectGraphsForceGraphData', () => {
             tier: 2,
             prerequisites: ['missing-prereq'],
             learningObjective: 'x',
+            iconName: 'lightbulb',
           },
         ],
       },
@@ -134,6 +139,7 @@ describe('computeTopicGraphBfsDistances', () => {
           tier: 1,
           prerequisites: [],
           learningObjective: '',
+          iconName: 'lightbulb',
         },
         {
           topicId: 'b',
@@ -141,6 +147,7 @@ describe('computeTopicGraphBfsDistances', () => {
           tier: 2,
           prerequisites: ['a'],
           learningObjective: '',
+          iconName: 'lightbulb',
         },
         {
           topicId: 'c',
@@ -148,6 +155,7 @@ describe('computeTopicGraphBfsDistances', () => {
           tier: 3,
           prerequisites: ['b'],
           learningObjective: '',
+          iconName: 'lightbulb',
         },
       ],
     },
@@ -181,8 +189,8 @@ describe('computeTopicGraphBfsDistances', () => {
         themeId: 's',
         maxTier: 1,
         nodes: [
-          { topicId: 'x', title: 'X', tier: 1, prerequisites: [], learningObjective: '' },
-          { topicId: 'y', title: 'Y', tier: 1, prerequisites: [], learningObjective: '' },
+          { topicId: 'x', title: 'X', tier: 1, prerequisites: [], learningObjective: '', iconName: 'lightbulb' },
+          { topicId: 'y', title: 'Y', tier: 1, prerequisites: [], learningObjective: '', iconName: 'lightbulb' },
         ],
       },
     ];
@@ -200,7 +208,7 @@ describe('computeTopicGraphBfsDistances', () => {
         themeId: 't',
         maxTier: 1,
         nodes: [
-          { topicId: 'shared', title: 'In A', tier: 1, prerequisites: [], learningObjective: '' },
+          { topicId: 'shared', title: 'In A', tier: 1, prerequisites: [], learningObjective: '', iconName: 'lightbulb' },
         ],
       },
       {
@@ -209,7 +217,7 @@ describe('computeTopicGraphBfsDistances', () => {
         themeId: 't',
         maxTier: 1,
         nodes: [
-          { topicId: 'shared', title: 'In B', tier: 1, prerequisites: [], learningObjective: '' },
+          { topicId: 'shared', title: 'In B', tier: 1, prerequisites: [], learningObjective: '', iconName: 'lightbulb' },
         ],
       },
     ];
@@ -228,9 +236,9 @@ describe('filterSubjectGraphsForceGraphDataByMaxHop', () => {
       themeId: 'math',
       maxTier: 3,
       nodes: [
-        { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: '' },
-        { topicId: 'b', title: 'B', tier: 2, prerequisites: ['a'], learningObjective: '' },
-        { topicId: 'c', title: 'C', tier: 3, prerequisites: ['b'], learningObjective: '' },
+        { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: '', iconName: 'lightbulb' },
+        { topicId: 'b', title: 'B', tier: 2, prerequisites: ['a'], learningObjective: '', iconName: 'lightbulb' },
+        { topicId: 'c', title: 'C', tier: 3, prerequisites: ['b'], learningObjective: '', iconName: 'lightbulb' },
       ],
     },
   ];
@@ -268,6 +276,7 @@ describe('resolveEffectiveTopicGraphDistances', () => {
             tier: 1,
             prerequisites: [],
             learningObjective: '',
+            iconName: 'lightbulb',
           },
           {
             topicId: 'advanced',
@@ -275,6 +284,7 @@ describe('resolveEffectiveTopicGraphDistances', () => {
             tier: 2,
             prerequisites: ['intro'],
             learningObjective: '',
+            iconName: 'lightbulb',
           },
         ],
       },
@@ -303,6 +313,7 @@ describe('resolveEffectiveTopicGraphDistances', () => {
             tier: 1,
             prerequisites: [],
             learningObjective: '',
+            iconName: 'lightbulb',
           },
           {
             topicId: 'advanced',
@@ -310,6 +321,7 @@ describe('resolveEffectiveTopicGraphDistances', () => {
             tier: 2,
             prerequisites: ['intro'],
             learningObjective: '',
+            iconName: 'lightbulb',
           },
         ],
       },
@@ -335,6 +347,7 @@ describe('resolveEffectiveTopicGraphDistances', () => {
             tier: 1,
             prerequisites: [],
             learningObjective: '',
+            iconName: 'lightbulb',
           },
           {
             topicId: 'advanced',
@@ -342,6 +355,7 @@ describe('resolveEffectiveTopicGraphDistances', () => {
             tier: 2,
             prerequisites: ['intro'],
             learningObjective: '',
+            iconName: 'lightbulb',
           },
         ],
       },
