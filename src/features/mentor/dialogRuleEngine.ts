@@ -21,11 +21,17 @@ interface TriggerSpec {
   trigger: MentorTriggerId;
   priority: number;
   cooldownMs?: number;
+  /**
+   * Reserved for future trigger configurations that need single-fire
+   * semantics. No current spec sets this; if/when one does, enforcement
+   * should route through the mentor store's existing `seenTriggers` /
+   * `markSeen` pair rather than introducing a parallel state field.
+   */
   oneShot?: boolean;
   /**
-   * Optional gate beyond cooldown / oneShot. The third argument is the
-   * effective `nowMs` from `EvaluateContext`, exposed so per-trigger
-   * cooldowns that are not modeled in the persisted store (e.g. the
+   * Optional gate beyond cooldown. The third argument is the effective
+   * `nowMs` from `EvaluateContext`, exposed so per-trigger cooldowns that
+   * are not modeled in the persisted store (e.g. the
    * `topic-content:generation-ready` (subjectId,topicId) cooldown) can be
    * enforced inline without a second clock read.
    */
@@ -399,10 +405,11 @@ export function interpolate(
 /**
  * Evaluate a trigger against the current mentor store snapshot. Returns a
  * fully-built `DialogPlan` ready for enqueue, or `null` if the trigger is
- * suppressed by oneShot / cooldown / `isApplicable`.
+ * suppressed by cooldown or `isApplicable`.
  *
- * The mentor store's variant cursor is advanced as a side effect when a
- * plan is produced.
+ * Variant selection delegates to the store's `nextVariantIndex` API, which
+ * both picks the next index and advances the persisted cursor using
+ * Fisher-Yates with a reshuffle-avoiding-head-equals-tail rotation.
  */
 export function evaluateTrigger(
   trigger: MentorTriggerId,
@@ -414,8 +421,6 @@ export function evaluateTrigger(
 
   const nowMs = ctx.nowMs ?? Date.now();
   const store = useMentorStore.getState();
-
-  if (spec.oneShot && store.oneShotsFired[trigger]) return null;
 
   const lastFiredAt = store.cooldowns[trigger];
   if (
@@ -429,8 +434,7 @@ export function evaluateTrigger(
   if (spec.isApplicable && !spec.isApplicable(store, payload, nowMs)) return null;
 
   const variantCount = VARIANT_COUNTS[trigger] ?? 1;
-  const variantIndex = store.variantCursors[trigger] ?? 0;
-  const safeIndex = ((variantIndex % variantCount) + variantCount) % variantCount;
+  const safeIndex = store.nextVariantIndex(trigger, variantCount, ctx.rng);
 
   const rawText = spec.resolveVariantText
     ? spec.resolveVariantText(payload, store, safeIndex)
@@ -458,9 +462,6 @@ export function evaluateTrigger(
     cooldownMs: spec.cooldownMs,
     oneShot: spec.oneShot,
   };
-
-  // Advance the variant cursor for next time so repeated firings rotate.
-  store.advanceVariantCursor(trigger, variantCount);
 
   // Record per-trigger side effects (topic-ready dedupe state). Failure
   // triggers intentionally have no side-effect tracking — each genuine
