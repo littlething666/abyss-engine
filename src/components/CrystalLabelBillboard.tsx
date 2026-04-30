@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
+import type { TopicIconName } from '@/types/core';
 import {
   createCrystalLabelTexture,
   type CrystalLabelTextureResult,
@@ -20,6 +21,12 @@ import {
 interface CrystalLabelBillboardProps {
   topicKey: string;
   text: string;
+  /**
+   * Optional Lucide icon glyph rendered to the left of the text. Vector
+   * data flows from the build-time-generated `topicIconNodes.ts`; runtime
+   * never imports lucide / lucide-react.
+   */
+  iconName?: TopicIconName;
   /** Per-frame-updated opacity ref, keyed by topicKey. 0 hides the mesh. */
   opacitiesRef: React.MutableRefObject<Map<string, number>>;
   /** Override the default local Y offset. */
@@ -34,12 +41,13 @@ interface CrystalLabelBillboardProps {
 export const CrystalLabelBillboard: React.FC<CrystalLabelBillboardProps> = ({
   topicKey,
   text,
+  iconName,
   opacitiesRef,
   localY = LABEL_LOCAL_Y,
 }) => {
   const textureResult = useMemo<CrystalLabelTextureResult>(
-    () => createCrystalLabelTexture(text),
-    [text],
+    () => createCrystalLabelTexture(text, iconName),
+    [text, iconName],
   );
   const materialHandles = useMemo<CrystalLabelMaterialHandles>(
     () => createCrystalLabelMaterial(textureResult.texture),
