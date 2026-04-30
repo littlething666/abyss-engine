@@ -555,11 +555,24 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
   });
 
   it('routes failed subject generation to a generic toast and mentor failure trigger', async () => {
-    orchestratorApi.execute.mockResolvedValueOnce({
-      ok: false,
-      error: 'edges failed',
-      pipelineId: 'pipeline-1',
-      stage: 'edges',
+    // Phase B.2.b contract: emission of `subject-graph:generation-failed`
+    // is now owned by the orchestrator itself — the bus handler only
+    // listens. Mirror that here so the downstream toast / mentor /
+    // telemetry chain still gets exercised end-to-end.
+    orchestratorApi.execute.mockImplementationOnce(async () => {
+      busApi.emit('subject-graph:generation-failed', {
+        subjectId: 'calculus',
+        subjectName: 'Calculus',
+        pipelineId: 'pipeline-1',
+        stage: 'edges',
+        error: 'edges failed',
+      });
+      return {
+        ok: false,
+        error: 'edges failed',
+        pipelineId: 'pipeline-1',
+        stage: 'edges',
+      };
     });
 
     busApi.emit('subject-graph:generation-requested', {
