@@ -1,4 +1,5 @@
 import { parseCardRefKey } from '@/lib/topicRef';
+import type { TopicIconName } from '@/types/core';
 
 import { type TelemetryEvent } from './types';
 
@@ -12,9 +13,19 @@ export interface TimelineMetric {
   value: string;
 }
 
+/**
+ * Per-topic display hints injected by callers when constructing timeline
+ * entries. Keyed by topicId.
+ *
+ * `iconName` is the curated lucide name and should mirror the topic's graph
+ * node. It is optional during the Phase 2 migration window so callers can
+ * adopt incrementally; once the study-panel and timeline call sites all
+ * populate it, callers should pass it for every topic.
+ */
 export interface TimelineTopicMetadata {
   [topicId: string]: {
     topicName?: string;
+    iconName?: TopicIconName;
   };
 }
 
@@ -25,6 +36,8 @@ export interface StudyTimelineEntry {
   subjectId?: string;
   topicId: string;
   topicName: string;
+  /** Curated icon name when supplied via `topicMetadata`. */
+  iconName?: TopicIconName;
   sessionId: string;
   timestamp: number;
   occurredAt: number;
@@ -69,6 +82,13 @@ function getTopicName(topicId: string, topicMetadata?: TimelineTopicMetadata): s
   return topicMetadata?.[topicId]?.topicName || topicId;
 }
 
+function getTopicIconName(
+  topicId: string,
+  topicMetadata?: TimelineTopicMetadata,
+): TopicIconName | undefined {
+  return topicMetadata?.[topicId]?.iconName;
+}
+
 function sanitizeDurationMs(rawValue: unknown): number {
   if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) {
     return 0;
@@ -96,6 +116,7 @@ function buildStudySessionEntry(
     type: 'study-session:completed',
     topicId,
     topicName: getTopicName(topicId, topicMetadata),
+    iconName: getTopicIconName(topicId, topicMetadata),
     sessionId,
     timestamp: event.timestamp,
     occurredAt: event.timestamp,
@@ -147,6 +168,7 @@ function buildStudyCardReviewedEntry(
     subjectId,
     topicId,
     topicName: getTopicName(topicId, topicMetadata),
+    iconName: getTopicIconName(topicId, topicMetadata),
     sessionId,
     timestamp: event.timestamp,
     occurredAt: event.timestamp,
@@ -198,6 +220,7 @@ function buildRitualEntry(
     type: 'attunement-ritual:submitted',
     topicId,
     topicName: getTopicName(topicId, topicMetadata),
+    iconName: getTopicIconName(topicId, topicMetadata),
     sessionId,
     timestamp: event.timestamp,
     occurredAt: event.timestamp,
@@ -248,6 +271,8 @@ const SUPPORTED_EVENT_TYPES: ReadonlyArray<TimelineEntryType> = [
 export interface StudyTimelineSessionGroup {
   sessionId: string;
   topicName: string;
+  /** Curated icon name copied from the first review entry of the session. */
+  iconName?: TopicIconName;
   totalDurationMs: number;
   entries: StudyTimelineEntry[];
 }
@@ -296,12 +321,16 @@ export function groupTimelineEntriesBySession(
     if (existing) {
       existing.entries.push(entry);
       existing.totalDurationMs += duration;
+      if (!existing.iconName && entry.iconName) {
+        existing.iconName = entry.iconName;
+      }
       return;
     }
 
     groups.set(entry.sessionId, {
       sessionId: entry.sessionId,
       topicName: entry.topicName,
+      iconName: entry.iconName,
       totalDurationMs: duration,
       entries: [entry],
     });
