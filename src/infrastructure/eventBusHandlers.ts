@@ -184,20 +184,17 @@ if (!g.__abyssEventBusHandlersRegistered) {
     // explicit stage lets the mentor rule engine select stage-specific copy.
     handleMentorTrigger('subject:generation-started', { subjectName, stage: 'topics' });
 
+    // Failure-event emission is now owned by the orchestrator so retry-driven
+    // executions (which bypass this handler) also produce a terminal
+    // `subject-graph:generation-failed` event. The handler chain that turns
+    // that event into a toast + mentor trigger + telemetry is registered
+    // below as a `subject-graph:generation-failed` listener.
     const stageBindings = resolveSubjectGenerationStageBindings();
     const orchestrator = createSubjectGenerationOrchestrator();
-    void orchestrator
-      .execute({ subjectId: e.subjectId, checklist: e.checklist }, { stageBindings, writer: deckWriter })
-      .then((result) => {
-        if (result.ok) return;
-        appEventBus.emit('subject-graph:generation-failed', {
-          subjectId: e.subjectId,
-          subjectName,
-          pipelineId: result.pipelineId,
-          stage: result.stage,
-          error: result.error,
-        });
-      });
+    void orchestrator.execute(
+      { subjectId: e.subjectId, checklist: e.checklist },
+      { stageBindings, writer: deckWriter },
+    );
   });
 
   appEventBus.on('subject-graph:generated', (e) => {
