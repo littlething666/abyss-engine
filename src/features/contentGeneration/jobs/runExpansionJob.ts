@@ -1,3 +1,4 @@
+import { appEventBus } from '@/infrastructure/eventBus';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import {
@@ -42,6 +43,8 @@ export async function runExpansionJob(
 
   // UPDATED: was (nextLevel < 2 || nextLevel > 3), now L1 through L3.
   // L1 level-up creates difficulty 2, L2 creates diff 3, L3 creates diff 4.
+  // Out-of-range runs are silently skipped — no terminal event is emitted
+  // because no work was attempted for mentor consumers to react to.
   if (nextLevel < 1 || nextLevel > 3) {
     return { ok: true, skipped: true };
   }
@@ -56,8 +59,22 @@ export async function runExpansionJob(
   ]);
   const bucketKey = difficulty as 2 | 3 | 4;
   const bucket = details.coreQuestionsByDifficulty?.[bucketKey];
+
+  // Resolve a stable topicLabel for any terminal lifecycle event we emit.
+  // We start from `details.title` (always present, no extra fetch) and
+  // upgrade to the graph node title once we fetch the graph below.
+  let topicLabel = details.title || topicId;
+
   if (!bucket?.length) {
-    return { ok: false, error: `No syllabus questions for difficulty bucket ${bucketKey}` };
+    const error = `No syllabus questions for difficulty bucket ${bucketKey}`;
+    appEventBus.emit('topic-expansion:generation-failed', {
+      subjectId,
+      topicId,
+      topicLabel,
+      level: nextLevel,
+      errorMessage: error,
+    });
+    return { ok: false, error };
   }
   const existingRegistry = buildExistingConceptRegistry(existingCards);
 
@@ -69,6 +86,7 @@ export async function runExpansionJob(
   const graph = await deckRepository.getSubjectGraph(subjectId);
   const node = graph.nodes.find((n) => n.topicId === topicId);
   const topicTitle = node?.title ?? details.title;
+  topicLabel = topicTitle || topicLabel;
   const model = resolveModelForSurface('topicContent');
   const enableStreaming = resolveEnableStreamingForSurface('topicContent');
 
@@ -126,6 +144,23 @@ export async function runExpansionJob(
       await writer.appendTopicCards(subjectId, topicId, normalized);
     },
   });
+
+  if (result.ok) {
+    appEventBus.emit('topic-expansion:generation-completed', {
+      subjectId,
+      topicId,
+      topicLabel,
+      level: nextLevel,
+    });
+  } else {
+    appEventBus.emit('topic-expansion:generation-failed', {
+      subjectId,
+      topicId,
+      topicLabel,
+      level: nextLevel,
+      errorMessage: result.error ?? 'Topic expansion job failed',
+    });
+  }
 
   return { ok: result.ok, jobId: result.jobId, error: result.error };
 }
