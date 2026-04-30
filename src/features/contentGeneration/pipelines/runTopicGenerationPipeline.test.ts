@@ -25,6 +25,7 @@ import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import type { Card, SubjectGraph, TopicDetails } from '@/types/core';
 
+import { appEventBus } from '@/infrastructure/eventBus';
 import { useContentGenerationStore } from '../contentGenerationStore';
 import { runTopicGenerationPipeline } from './runTopicGenerationPipeline';
 
@@ -237,7 +238,7 @@ describe('runTopicGenerationPipeline', () => {
     expect(runContentGenerationJob).not.toHaveBeenCalled();
   });
 
-  // ── resumeFromStage tests ────────────────────────────────────────────────
+  // ── resumeFromStage tests ───────────────────────────────
 
   it('does not auto-skip when resumeFromStage is set even if content is ready', async () => {
     runContentGenerationJob.mockResolvedValue({ ok: true });
@@ -351,5 +352,111 @@ describe('runTopicGenerationPipeline', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('theory not available');
     expect(runContentGenerationJob).not.toHaveBeenCalled();
+  });
+
+  // ── Phase B: terminal lifecycle event emission ───────────────────
+  // Each test uses a fresh spy with mockRestore() so emission state never
+  // bleeds across cases.
+
+  it('emits topic-content:generation-completed when full pipeline succeeds', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: true });
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-completed',
+      expect.objectContaining({
+        subjectId: 'sub-1',
+        topicId: 't-a',
+        topicLabel: 'Topic A',
+        stage: 'full',
+      }),
+    );
+    emitSpy.mockRestore();
+  });
+
+  it('emits topic-content:generation-failed when a stage fails (carries errorMessage)', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: false, error: 'theory boom' });
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.objectContaining({
+        subjectId: 'sub-1',
+        topicId: 't-a',
+        topicLabel: 'Topic A',
+        stage: 'full',
+        errorMessage: 'theory boom',
+      }),
+    );
+    emitSpy.mockRestore();
+  });
+
+  it('does not emit a terminal event when the run is auto-skipped', async () => {
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+    });
+
+    expect(emitSpy).not.toHaveBeenCalledWith(
+      'topic-content:generation-completed',
+      expect.anything(),
+    );
+    expect(emitSpy).not.toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.anything(),
+    );
+    emitSpy.mockRestore();
+  });
+
+  it('emits failure with topicLabel = topicId when topic not found in graph', async () => {
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 'missing-topic',
+      enableReasoning: false,
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.objectContaining({
+        topicId: 'missing-topic',
+        topicLabel: 'missing-topic',
+        errorMessage: expect.stringContaining('not found'),
+      }),
+    );
+    emitSpy.mockRestore();
   });
 });
