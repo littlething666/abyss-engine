@@ -94,6 +94,50 @@ const readyCards = Array.from({ length: 6 }).map((_, i) => ({
   answer: 'a',
 }));
 
+/**
+ * Theory payload fixture used by the faithful `runContentGenerationJob`
+ * mock when emulating the topic-theory stage. Mirrors the production
+ * `ParsedTopicTheoryPayload` shape so `runTopicGenerationPipeline`'s
+ * `resolveTheoryData()` returns this and downstream stages run as in
+ * production.
+ */
+const FIXTURE_THEORY_DATA = {
+  coreConcept: 'cc',
+  theory: 'theory body',
+  keyTakeaways: ['k1', 'k2', 'k3', 'k4'],
+  coreQuestionsByDifficulty: {
+    1: ['q1', 'q2', 'q3'],
+    2: ['q1', 'q2', 'q3'],
+    3: ['q1', 'q2', 'q3'],
+    4: ['q1', 'q2', 'q3'],
+  },
+  groundingSources: [],
+  miniGameAffordances: { categorySets: [], orderedSequences: [], connectionPairs: [] },
+};
+
+/**
+ * Faithful default for the `runContentGenerationJob` mock: invokes
+ * `persistOutput` with realistic per-stage data before resolving ok.
+ * The earlier `mockResolvedValue({ ok: true })` shortcut left
+ * `theoryData` undefined inside the pipeline, so `resolveTheoryData()`
+ * fell back to `loadTheoryPayloadFromTopicDetails(details = null)` and
+ * threw — aborting the run after the theory stage. Honoring the real
+ * `persistOutput` contract here exercises the same data flow
+ * production does.
+ */
+async function defaultJobOk(
+  args: { kind: string; persistOutput?: (data: unknown) => Promise<void> },
+): Promise<{ ok: true }> {
+  if (args?.persistOutput) {
+    if (args.kind === 'topic-theory') {
+      await args.persistOutput(FIXTURE_THEORY_DATA);
+    } else if (args.kind === 'topic-study-cards' || args.kind === 'topic-mini-games') {
+      await args.persistOutput([]);
+    }
+  }
+  return { ok: true };
+}
+
 function makeDeckRepository(overrides: Partial<IDeckRepository> = {}): IDeckRepository {
   return {
     getSubjectGraph: vi.fn(async () => graph),
@@ -139,11 +183,16 @@ describe('runTopicGenerationPipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     telemetryApi.log.mockReset();
+    // `vi.clearAllMocks()` clears call history but NOT the queued
+    // implementations of mockResolvedValueOnce / mockImplementationOnce.
+    // We therefore reset the implementation explicitly each test to
+    // prevent any leftover queue from bleeding into the next case.
+    runContentGenerationJob.mockReset();
     resetStore();
   });
 
   it('runs the full pipeline by default and marks topic-unlock celebration on success', async () => {
-    runContentGenerationJob.mockResolvedValue({ ok: true });
+    runContentGenerationJob.mockImplementation(defaultJobOk);
     const writer = makeWriter();
 
     const result = await runTopicGenerationPipeline({
@@ -197,7 +246,7 @@ describe('runTopicGenerationPipeline', () => {
 
   describe('telemetry emissions', () => {
     it('emits the canonical lifecycle order for a successful full pipeline', async () => {
-      runContentGenerationJob.mockResolvedValue({ ok: true });
+      runContentGenerationJob.mockImplementation(defaultJobOk);
 
       await runTopicGenerationPipeline({
         chat: {} as IChatCompletionsRepository,
@@ -244,9 +293,21 @@ describe('runTopicGenerationPipeline', () => {
     });
 
     it('emits stage-failed with the raw job error and stops the pipeline', async () => {
-      runContentGenerationJob
-        .mockResolvedValueOnce({ ok: true }) // theory
-        .mockResolvedValueOnce({ ok: false, error: 'study cards LLM 503' }); // study-cards
+      // Counter-based impl avoids `mockResolvedValueOnce` queue leakage:
+      // an unconsumed Once entry from a failing test would otherwise be
+      // dequeued by the next test's first call to the mock, masking real
+      // failures in unrelated tests. `mockReset()` in `beforeEach`
+      // clears any prior implementation; the counter is local to this
+      // closure.
+      let calls = 0;
+      runContentGenerationJob.mockImplementation(async (args: {
+        kind: string;
+        persistOutput?: (data: unknown) => Promise<void>;
+      }) => {
+        calls += 1;
+        if (calls === 1) return defaultJobOk(args);
+        return { ok: false, error: 'study cards LLM 503' };
+      });
 
       const result = await runTopicGenerationPipeline({
         chat: {} as IChatCompletionsRepository,
@@ -317,7 +378,7 @@ describe('runTopicGenerationPipeline', () => {
     });
 
     it('emits only the stages actually executed when resumeFromStage is set', async () => {
-      runContentGenerationJob.mockResolvedValue({ ok: true });
+      runContentGenerationJob.mockImplementation(defaultJobOk);
 
       await runTopicGenerationPipeline({
         chat: {} as IChatCompletionsRepository,
@@ -346,7 +407,7 @@ describe('runTopicGenerationPipeline', () => {
     });
 
     it('emits stage-completed durationMs as a non-negative number', async () => {
-      runContentGenerationJob.mockResolvedValue({ ok: true });
+      runContentGenerationJob.mockImplementation(defaultJobOk);
 
       await runTopicGenerationPipeline({
         chat: {} as IChatCompletionsRepository,
