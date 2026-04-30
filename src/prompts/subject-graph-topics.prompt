@@ -4,18 +4,18 @@ Generate JSON (you may wrap it in a single markdown code block if needed, but th
 
 Requirements:
 
-1. Produce exactly topicCount topics divided evenly across maxTier tiers (exactly topicsPerTier topics per tier).
-2. Each topic has: `topicId` (lowercase kebab-case), `title`, `iconName` (one curated value), `tier` (integer 1..maxTier), `learningObjective` (one non-empty learner-facing sentence, specific—not a repeat of the title).
+1. Produce exactly [[topicCount]] topics divided evenly across [[maxTier]] tiers (exactly [[topicsPerTier]] topics per tier).
+2. Each topic has: `topicId` (lowercase kebab-case), `title`, `iconName` (one curated value), `tier` (integer 1..[[maxTier]]), `learningObjective` (one non-empty learner-facing sentence, specific—not a repeat of the title).
 3. Do **not** include a `prerequisites` field. Edges are generated in a later step.
 4. `iconName` rules:
    - Choose exactly one value per topic from the curated allowlist below.
    - Pick the icon whose visual metaphor most specifically represents the topic title or core concept.
    - If several icons seem plausible, prefer the icon whose metaphor is most recognizable on small mobile screens.
    - Do not invent icon names. Names outside the allowlist will be rejected.
-   - Allowed `iconName` values: iconAllowlist
-5. Pedagogy context — audience: audience
-6. Domain / scope: domainDescription
-7. The subject identifier for downstream assembly is: subjectId (theme id matches: themeId).
+   - Allowed `iconName` values: [[iconAllowlist]]
+5. Pedagogy context — audience: [[audience]]
+6. Domain / scope: [[domainDescription]]
+7. The subject identifier for downstream assembly is: [[subjectId]] (theme id matches: [[themeId]]).
 
 Output valid JSON matching this shape:
 
@@ -31,4 +31,4 @@ Output valid JSON matching this shape:
   ]
 }
 
-There must be exactly topicCount objects in `topics`, with tiers ranging from 1 through maxTier and counts per tier exactly topicsPerTier each.
+There must be exactly [[topicCount]] objects in `topics`, with tiers ranging from 1 through [[maxTier]] and counts per tier exactly [[topicsPerTier]] each.
