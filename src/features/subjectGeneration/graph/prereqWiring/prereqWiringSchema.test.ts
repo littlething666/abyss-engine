@@ -12,6 +12,7 @@ function fifteenNodeLattice(): TopicLattice {
       title: `T1 ${i}`,
       tier: 1,
       learningObjective: 'o',
+      iconName: 'lightbulb',
     });
   }
   for (let i = 1; i <= 5; i += 1) {
@@ -20,6 +21,7 @@ function fifteenNodeLattice(): TopicLattice {
       title: `T2 ${i}`,
       tier: 2,
       learningObjective: 'o',
+      iconName: 'lightbulb',
     });
   }
   const t3Ids = [
@@ -35,6 +37,7 @@ function fifteenNodeLattice(): TopicLattice {
       title: id,
       tier: 3,
       learningObjective: 'o',
+      iconName: 'lightbulb',
     });
   }
   return { topics };
@@ -103,14 +106,15 @@ describe('buildPrereqEdgesSchema', () => {
         title: `T1 ${i}`,
         tier: 1,
         learningObjective: 'o',
+        iconName: 'lightbulb',
       });
     }
     topics.push(
-      { topicId: 't2-1', title: 'T2 1', tier: 2, learningObjective: 'o' },
-      { topicId: 't2-2', title: 'T2 2', tier: 2, learningObjective: 'o' },
-      { topicId: 't2-3', title: 'T2 3', tier: 2, learningObjective: 'o' },
-      { topicId: 'magnitude-and-phase-spectra', title: 'Mag', tier: 2, learningObjective: 'o' },
-      { topicId: 'dft-mathematical-definition', title: 'DFT', tier: 2, learningObjective: 'o' },
+      { topicId: 't2-1', title: 'T2 1', tier: 2, learningObjective: 'o', iconName: 'lightbulb' },
+      { topicId: 't2-2', title: 'T2 2', tier: 2, learningObjective: 'o', iconName: 'lightbulb' },
+      { topicId: 't2-3', title: 'T2 3', tier: 2, learningObjective: 'o', iconName: 'lightbulb' },
+      { topicId: 'magnitude-and-phase-spectra', title: 'Mag', tier: 2, learningObjective: 'o', iconName: 'lightbulb' },
+      { topicId: 'dft-mathematical-definition', title: 'DFT', tier: 2, learningObjective: 'o', iconName: 'lightbulb' },
     );
     for (let i = 1; i <= 5; i += 1) {
       topics.push({
@@ -118,6 +122,7 @@ describe('buildPrereqEdgesSchema', () => {
         title: `T3 ${i}`,
         tier: 3,
         learningObjective: 'o',
+        iconName: 'lightbulb',
       });
     }
     const lattice: TopicLattice = { topics };

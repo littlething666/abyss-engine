@@ -7,6 +7,7 @@
     {
       "topicId": "linear-algebra-fundamentals",
       "title": "Linear Algebra Fundamentals",
+      "iconName": "sigma",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Master the principles of vectors, matrices, and linear transformations essential for manipulating high-dimensional data spaces."
@@ -14,6 +15,7 @@
     {
       "topicId": "calculus-for-data-science",
       "title": "Calculus for Data Science",
+      "iconName": "function-square",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Understand limits, derivatives, and partial differentiation to model rates of change and navigate loss landscapes."
@@ -21,6 +23,7 @@
     {
       "topicId": "basic-probability",
       "title": "Basic Probability",
+      "iconName": "sigma",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Grasp the foundational laws of probability, discrete and continuous random variables, and core probability distributions."
@@ -28,6 +31,7 @@
     {
       "topicId": "descriptive-statistics",
       "title": "Descriptive Statistics",
+      "iconName": "chart-line",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Learn to summarize, visualize, and mathematically interpret the central tendencies and dispersions of complex data sets."
@@ -35,6 +39,7 @@
     {
       "topicId": "discrete-mathematics",
       "title": "Discrete Mathematics",
+      "iconName": "binary",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Develop a solid foundation in logic, set theory, and combinatorics to enable rigorous algorithmic thinking."
@@ -42,6 +47,7 @@
     {
       "topicId": "matrix-factorization-pca",
       "title": "Matrix Factorization and PCA",
+      "iconName": "sigma",
       "tier": 2,
       "prerequisites": [
         "linear-algebra-fundamentals",
@@ -52,6 +58,7 @@
     {
       "topicId": "optimization-theory",
       "title": "Optimization Theory",
+      "iconName": "function-square",
       "tier": 2,
       "prerequisites": [
         "calculus-for-data-science",
@@ -62,6 +69,7 @@
     {
       "topicId": "statistical-inference",
       "title": "Statistical Inference",
+      "iconName": "chart-line",
       "tier": 2,
       "prerequisites": [
         "basic-probability",
@@ -72,6 +80,7 @@
     {
       "topicId": "regression-analysis",
       "title": "Regression Analysis",
+      "iconName": "chart-line",
       "tier": 2,
       "prerequisites": [
         "linear-algebra-fundamentals",
@@ -83,6 +92,7 @@
     {
       "topicId": "stochastic-processes",
       "title": "Stochastic Processes",
+      "iconName": "sigma",
       "tier": 2,
       "prerequisites": [
         "basic-probability",
@@ -93,6 +103,7 @@
     {
       "topicId": "machine-learning-algorithms",
       "title": "Machine Learning Algorithms",
+      "iconName": "brain",
       "tier": 3,
       "prerequisites": [
         "optimization-theory",
@@ -104,6 +115,7 @@
     {
       "topicId": "bayesian-statistics-inference",
       "title": "Bayesian Statistics and Inference",
+      "iconName": "sigma",
       "tier": 3,
       "prerequisites": [
         "statistical-inference",
@@ -114,6 +126,7 @@
     {
       "topicId": "deep-learning-mathematics",
       "title": "Deep Learning Mathematics",
+      "iconName": "brain",
       "tier": 3,
       "prerequisites": [
         "optimization-theory",
@@ -125,6 +138,7 @@
     {
       "topicId": "time-series-analysis",
       "title": "Time Series Analysis",
+      "iconName": "chart-line",
       "tier": 3,
       "prerequisites": [
         "regression-analysis",
@@ -135,6 +149,7 @@
     {
       "topicId": "causal-inference",
       "title": "Causal Inference",
+      "iconName": "network",
       "tier": 3,
       "prerequisites": [
         "statistical-inference",

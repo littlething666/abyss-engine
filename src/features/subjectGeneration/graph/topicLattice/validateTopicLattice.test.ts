@@ -19,6 +19,7 @@ describe('validateTopicLattice', () => {
         title: `T1 ${i}`,
         tier: 1,
         learningObjective: 'Obj.',
+        iconName: 'lightbulb',
       });
     }
     for (let i = 1; i <= 5; i += 1) {
@@ -27,6 +28,7 @@ describe('validateTopicLattice', () => {
         title: `T2 ${i}`,
         tier: 2,
         learningObjective: 'Obj.',
+        iconName: 'lightbulb',
       });
     }
     for (let i = 1; i <= 5; i += 1) {
@@ -35,6 +37,7 @@ describe('validateTopicLattice', () => {
         title: `T3 ${i}`,
         tier: 3,
         learningObjective: 'Obj.',
+        iconName: 'lightbulb',
       });
     }
     expect(validateTopicLattice(makeLattice(topics), expectations)).toEqual({ ok: true });
@@ -42,7 +45,7 @@ describe('validateTopicLattice', () => {
 
   it('rejects wrong total count', () => {
     const topics: TopicLattice['topics'] = [
-      { topicId: 'a', title: 'A', tier: 1, learningObjective: 'x' },
+      { topicId: 'a', title: 'A', tier: 1, learningObjective: 'x', iconName: 'lightbulb' },
     ];
     const r = validateTopicLattice(makeLattice(topics), expectations);
     expect(r.ok).toBe(false);
@@ -52,13 +55,13 @@ describe('validateTopicLattice', () => {
   it('rejects duplicate topic ids', () => {
     const topics: TopicLattice['topics'] = [];
     for (let i = 1; i <= 5; i += 1) {
-      topics.push({ topicId: 'dup-id', title: 'x', tier: 1, learningObjective: 'o' });
+      topics.push({ topicId: 'dup-id', title: 'x', tier: 1, learningObjective: 'o', iconName: 'lightbulb' });
     }
     for (let i = 1; i <= 5; i += 1) {
-      topics.push({ topicId: `t2-${i}`, title: 'x', tier: 2, learningObjective: 'o' });
+      topics.push({ topicId: `t2-${i}`, title: 'x', tier: 2, learningObjective: 'o', iconName: 'lightbulb' });
     }
     for (let i = 1; i <= 5; i += 1) {
-      topics.push({ topicId: `t3-${i}`, title: 'x', tier: 3, learningObjective: 'o' });
+      topics.push({ topicId: `t3-${i}`, title: 'x', tier: 3, learningObjective: 'o', iconName: 'lightbulb' });
     }
     const r = validateTopicLattice(makeLattice(topics), expectations);
     expect(r.ok).toBe(false);
@@ -68,13 +71,13 @@ describe('validateTopicLattice', () => {
   it('rejects wrong per-tier counts', () => {
     const topics: TopicLattice['topics'] = [];
     for (let i = 1; i <= 6; i += 1) {
-      topics.push({ topicId: `t1-${i}`, title: 'x', tier: 1, learningObjective: 'o' });
+      topics.push({ topicId: `t1-${i}`, title: 'x', tier: 1, learningObjective: 'o', iconName: 'lightbulb' });
     }
     for (let i = 1; i <= 4; i += 1) {
-      topics.push({ topicId: `t2-${i}`, title: 'x', tier: 2, learningObjective: 'o' });
+      topics.push({ topicId: `t2-${i}`, title: 'x', tier: 2, learningObjective: 'o', iconName: 'lightbulb' });
     }
     for (let i = 1; i <= 5; i += 1) {
-      topics.push({ topicId: `t3-${i}`, title: 'x', tier: 3, learningObjective: 'o' });
+      topics.push({ topicId: `t3-${i}`, title: 'x', tier: 3, learningObjective: 'o', iconName: 'lightbulb' });
     }
     const r = validateTopicLattice(makeLattice(topics), expectations);
     expect(r.ok).toBe(false);

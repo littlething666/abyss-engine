@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { KeyRound, List, Lock, Unlock } from 'lucide-react';
+import { CheckCircle2, KeyRound, List, Lock, LockKeyhole, Unlock } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -38,6 +38,7 @@ import { triggerTopicGenerationPipeline } from '@/features/contentGeneration';
 import { useContentGenerationStore } from '@/features/contentGeneration/contentGenerationStore';
 import type { ContentGenerationJobKind } from '@/types/contentGeneration';
 import { TopicDetailsPopup } from './TopicDetailsPopup';
+import { TopicIcon } from './topicIcons/TopicIcon';
 import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '@/store/uiStore';
 
@@ -148,6 +149,13 @@ function DiscoveryTopicTile({
   topic: TieredTopic;
   onSelect: (topic: TieredTopic) => void;
 }) {
+  const topicIconClass = topic.isLocked
+    ? 'mt-0.5 size-5 shrink-0 text-muted-foreground opacity-50'
+    : 'mt-0.5 size-5 shrink-0 text-primary';
+  const topicTitleClass = topic.isLocked
+    ? 'truncate text-sm font-semibold text-muted-foreground'
+    : 'truncate text-sm font-semibold text-primary';
+
   return (
     <Button
       type="button"
@@ -160,15 +168,10 @@ function DiscoveryTopicTile({
           : 'border-border/70 bg-secondary/30 hover:border-secondary'
       }`}
     >
-      <div className="flex w-full items-start justify-between">
+      <div className="flex w-full items-start gap-2">
+        <TopicIcon iconName={topic.iconName} className={topicIconClass} />
         <div className="min-w-0 flex-1">
-          <h4
-            className={`truncate text-sm font-semibold ${
-              topic.isLocked ? 'text-muted-foreground' : 'text-primary'
-            }`}
-          >
-            {topic.name}
-          </h4>
+          <h4 className={topicTitleClass}>{topic.name}</h4>
           <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">{topic.description}</p>
           {topic.contentStatus === 'generating' && (
             <p className="text-primary mt-2 text-xs">⏳ Generating…</p>
@@ -177,8 +180,24 @@ function DiscoveryTopicTile({
             <p className="text-accent-foreground mt-2 text-xs">📦 Content not available yet</p>
           )}
         </div>
-        {topic.isLocked && <span className="text-muted-foreground ml-2 text-lg">🔒</span>}
-        {topic.isUnlocked && <span className="text-accent-foreground ml-2 text-lg">✅</span>}
+        {topic.isLocked && (
+          <span
+            data-testid="discovery-topic-lock-badge"
+            aria-label="Locked"
+            className="ml-2 inline-flex shrink-0 items-center"
+          >
+            <LockKeyhole aria-hidden className="size-4 text-muted-foreground" />
+          </span>
+        )}
+        {topic.isUnlocked && (
+          <span
+            data-testid="discovery-topic-unlock-badge"
+            aria-label="Unlocked"
+            className="ml-2 inline-flex shrink-0 items-center"
+          >
+            <CheckCircle2 aria-hidden className="size-4 text-accent-foreground" />
+          </span>
+        )}
       </div>
     </Button>
   );

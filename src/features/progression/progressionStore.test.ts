@@ -57,6 +57,7 @@ const topicGraphs: SubjectGraph[] = [
         tier: 1,
         prerequisites: [],
         learningObjective: 'Base',
+        iconName: 'lightbulb',
       },
       {
         topicId: 'topic-b',
@@ -64,6 +65,7 @@ const topicGraphs: SubjectGraph[] = [
         tier: 2,
         prerequisites: ['topic-a'],
         learningObjective: 'Depends on A',
+        iconName: 'lightbulb',
       },
     ],
   },

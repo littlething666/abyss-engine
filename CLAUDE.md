@@ -49,6 +49,12 @@ Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural
 - **Lifecycle & Timers**: `THREE.Clock` is deprecated. Implement all timing logic using `THREE.Timer`. Leverage the R3F v10 standalone scheduler to decouple frame loops and execute them outside the `<Canvas>` tree for UI synchronization when necessary.
 - **Lighting & Scene Graph**: Cameras are automatically attached to the scene graph; do not manually attach objects to cameras. WebGPU shadow precision requires decreasing or removing legacy WebGL shadow biases. Recalibrate exposures if using `RoomEnvironment` (PMREM positioning changed) or `Sky`/`SkyMesh` (legacy gamma removed).
 
+### Lucide icon imports
+- Topic icon glyphs are the only Lucide usage in the app. 2D surfaces render through `src/components/topicIcons/TopicIcon.tsx`; 3D crystal labels render through the build-time-generated `src/graphics/labels/generated/topicIconNodes.ts`. The runtime label path never imports `lucide` or `lucide-react`.
+- Outside `src/components/topicIcons/`, only static **named** imports from `lucide-react` are allowed. Wildcard `import * as ... from 'lucide-react'` and deep imports (`from 'lucide-react/...'`) are forbidden everywhere except `src/components/topicIcons/**`.
+- The non-react `lucide` package is a `devDependency` consumed only by `scripts/generate-topic-icon-nodes.ts`. Never import it from runtime code.
+- The boundary is enforced by `src/components/topicIcons/lucideImportBoundary.test.ts` (runs as part of `pnpm test:unit:run`).
+
 ## Mandatory Project Rules
 - **Prioritize Strategic Programming over Tactical fixes.** You are strictly forbidden from implementing 'Workarounds,' 'Kludges,' 'Band-aids,' or 'Stopgaps' that introduce Architectural Erosion (e.g., leaking abstractions, breaking encapsulation, or creating brittle error handling) without my explicit consent.
   - **Standard Operating Procedure:**

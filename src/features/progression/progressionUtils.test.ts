@@ -76,8 +76,8 @@ describe('progressionUtils', () => {
         themeId: 't1',
         maxTier: 2,
         nodes: [
-          { topicId: 'a', title: 'A', tier: 1, learningObjective: '', prerequisites: [] },
-          { topicId: 'b', title: 'B', tier: 2, learningObjective: '', prerequisites: ['a'] },
+          { topicId: 'a', title: 'A', tier: 1, learningObjective: '', prerequisites: [], iconName: 'lightbulb' },
+          { topicId: 'b', title: 'B', tier: 2, learningObjective: '', prerequisites: ['a'], iconName: 'lightbulb' },
         ],
       },
     ];
@@ -112,13 +112,14 @@ describe('progressionUtils', () => {
           themeId: 't1',
           maxTier: 2,
           nodes: [
-            { topicId: 'a', title: 'A', tier: 1, learningObjective: '', prerequisites: [] },
+            { topicId: 'a', title: 'A', tier: 1, learningObjective: '', prerequisites: [], iconName: 'lightbulb' },
             {
               topicId: 'b',
               title: 'B',
               tier: 2,
               learningObjective: '',
               prerequisites: [{ topicId: 'a', minLevel: 2 }],
+              iconName: 'lightbulb',
             },
           ],
         },
@@ -147,8 +148,8 @@ describe('progressionUtils', () => {
         themeId: 's',
         maxTier: 2,
         nodes: [
-          { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: 'o' },
-          { topicId: 'b', title: 'B', tier: 2, prerequisites: ['a'], learningObjective: 'o' },
+          { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: 'o', iconName: 'lightbulb' },
+          { topicId: 'b', title: 'B', tier: 2, prerequisites: ['a'], learningObjective: 'o', iconName: 'lightbulb' },
         ],
       };
     }
@@ -174,9 +175,9 @@ describe('progressionUtils', () => {
         themeId: 's',
         maxTier: 2,
         nodes: [
-          { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: 'o' },
-          { topicId: 'x', title: 'X', tier: 1, prerequisites: [], learningObjective: 'o' },
-          { topicId: 'b', title: 'B', tier: 2, prerequisites: ['a', 'x'], learningObjective: 'o' },
+          { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: 'o', iconName: 'lightbulb' },
+          { topicId: 'x', title: 'X', tier: 1, prerequisites: [], learningObjective: 'o', iconName: 'lightbulb' },
+          { topicId: 'b', title: 'B', tier: 2, prerequisites: ['a', 'x'], learningObjective: 'o', iconName: 'lightbulb' },
         ],
       };
       expect(getVisibleTopicIds(g, [createActiveCrystal('x', 0, 's')]).has('b')).toBe(true);
@@ -193,8 +194,8 @@ describe('progressionUtils', () => {
           themeId: 's',
           maxTier: 2,
           nodes: [
-            { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: 'o' },
-            { topicId: 'b', title: 'B', tier: 2, prerequisites: ['a'], learningObjective: 'o' },
+            { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: 'o', iconName: 'lightbulb' },
+            { topicId: 'b', title: 'B', tier: 2, prerequisites: ['a'], learningObjective: 'o', iconName: 'lightbulb' },
           ],
         },
       ];
@@ -218,9 +219,9 @@ describe('progressionUtils', () => {
         themeId: 's',
         maxTier: 1,
         nodes: [
-          { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: 'o' },
-          { topicId: 'b', title: 'B', tier: 1, prerequisites: [], learningObjective: 'o' },
-          { topicId: 'c', title: 'C', tier: 1, prerequisites: [], learningObjective: 'o' },
+          { topicId: 'a', title: 'A', tier: 1, prerequisites: [], learningObjective: 'o', iconName: 'lightbulb' },
+          { topicId: 'b', title: 'B', tier: 1, prerequisites: [], learningObjective: 'o', iconName: 'lightbulb' },
+          { topicId: 'c', title: 'C', tier: 1, prerequisites: [], learningObjective: 'o', iconName: 'lightbulb' },
         ],
       },
     ];

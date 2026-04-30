@@ -5,7 +5,7 @@
     "dev": "next dev",
     "build": "NODE_ENV=production next build",
     "serve": "npx serve out",
-    "check:compile": "tsc --noEmit",
+    "check:compile": "next typegen && tsc --noEmit",
     "test:e2e": "node scripts/run-playwright.mjs --project=chromium-headful",
     "test:e2e:headful": "node scripts/run-playwright.mjs --project=chromium-headful",
     "test:e2e:headless": "node scripts/run-playwright.mjs --project=chromium-headless-ci",
@@ -16,7 +16,9 @@
     "test:e2e:ui": "node scripts/run-playwright.mjs --project=chromium-headful --ui",
     "test:unit": "vitest",
     "test:unit:run": "vitest run",
-    "test:unit:coverage": "vitest run --coverage"
+    "test:unit:coverage": "vitest run --coverage",
+    "generate:topic-icons": "tsx scripts/generate-topic-icon-nodes.ts",
+    "check:topic-icons": "pnpm generate:topic-icons && git diff --exit-code -- src/graphics/labels/generated/topicIconNodes.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -58,10 +60,12 @@
     "autoprefixer": "^10.5.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.0.2",
+    "lucide": "^1.11.0",
     "postcss": "^8.5.10",
     "raw-loader": "^4.0.2",
     "serve": "^14.2.6",
     "tailwindcss": "^4.2.4",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   },

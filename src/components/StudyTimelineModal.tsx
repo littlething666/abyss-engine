@@ -38,6 +38,8 @@ import {
   useStudyTimelineLayers,
 } from '@/features/telemetry';
 
+import { TopicIcon } from './topicIcons/TopicIcon';
+
 export interface StudyTimelineOpenStudyPayload {
   subjectId: string;
   topicId: string;
@@ -357,7 +359,15 @@ function SessionDetailStrip({
           className="w-full min-w-0 rounded-md border border-border/50 bg-card/20"
         >
           <div className="px-2 py-1.5 border-b border-border/40 text-xs text-muted-foreground space-y-0.5">
-            <span className="block w-full min-w-0 truncate text-foreground/90">{session.topicName}</span>
+            <span className="flex w-full min-w-0 items-center gap-1.5 text-foreground/90">
+              {session.iconName ? (
+                <TopicIcon
+                  iconName={session.iconName}
+                  className="size-3.5 shrink-0 text-foreground/80"
+                />
+              ) : null}
+              <span className="min-w-0 flex-1 truncate">{session.topicName}</span>
+            </span>
             <span className="block w-full min-w-0 truncate tabular-nums">
               {formatSessionHeaderTimeRange(session.entries, session.totalDurationMs)}
             </span>
