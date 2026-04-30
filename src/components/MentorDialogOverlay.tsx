@@ -16,7 +16,7 @@ import {
 } from '@/features/mentor/overlayController';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { cn } from '@/lib/utils';
-import { useUIStore } from '@/store/uiStore';
+import { selectIsAnyModalOpen, useUIStore } from '@/store/uiStore';
 
 const MENTOR_TYPE_CHARS_PER_SECOND = 60;
 
@@ -84,19 +84,33 @@ export function MentorDialogOverlay() {
   const markSeen = useMentorStore((s) => s.markSeen);
   const setNarrationEnabled = useMentorStore((s) => s.setNarrationEnabled);
   const setPlayerName = useMentorStore((s) => s.setPlayerName);
+  // Two distinct gates:
+  //  - `isAnyModalOpen` blocks AUTO-OPEN of queued dialogs while ANY blocking
+  //    modal is on screen (discovery, study panel, ritual, study timeline,
+  //    crystal trial, generation progress, global settings). Phase C
+  //    generalization — keeps background queued plans from interrupting
+  //    modal flows the player chose to enter.
+  //  - `isStudyPanelOpen` still drives render / typewriter / speech / auto-
+  //    advance gates because the study panel is the only modal that occupies
+  //    the same bottom-sheet real estate as the dialog overlay; other modals
+  //    sit above and don't visually conflict, so the queue+wait pattern is
+  //    sufficient for them.
+  const isAnyModalOpen = useUIStore(selectIsAnyModalOpen);
   const isStudyPanelOpen = useUIStore((s) => s.isStudyPanelOpen);
 
   const { speak, cancel, enabled: ttsActive } = useMentorSpeech();
   const reducedMotion = useReducedMotion();
 
   // Auto-open: when no dialog is currently shown but the queue has entries,
-  // pop the head. This is what makes mentor.bubble.click while the overlay is
-  // closed re-open the queued head per the plan.
+  // pop the head. Bubble clicks and other explicit user actions route through
+  // `handleMentorTrigger` → enqueue, and this effect fires as soon as the
+  // modal closes so the queued plan opens immediately on close. While a modal
+  // is open the queue stays parked.
   useEffect(() => {
-    if (!isStudyPanelOpen && !currentDialog && queueLen > 0) {
+    if (!isAnyModalOpen && !currentDialog && queueLen > 0) {
       openCurrentFromQueue();
     }
-  }, [currentDialog, isStudyPanelOpen, queueLen, openCurrentFromQueue]);
+  }, [currentDialog, isAnyModalOpen, queueLen, openCurrentFromQueue]);
 
   // Tracks when the active dialog was first shown so completion telemetry can
   // report durationMs. Reset alongside other per-plan state below.

@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid';
 
 import { topicRefKey } from '@/lib/topicRef';
+import { appEventBus } from '@/infrastructure/eventBus';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import {
@@ -89,11 +90,51 @@ export async function runTopicGenerationPipeline(
     signal.addEventListener('abort', () => pipelineAc.abort(), { once: true });
   }
 
+  // Topic label used by any terminal lifecycle event this run emits. Falls
+  // back to the topicId until the graph node is resolved; once located it is
+  // replaced with the human-readable title.
+  let topicLabel = topicId;
+
+  // Sole emission point for `topic-content:generation-{completed,failed}`
+  // lifecycle events on this run. Auto-skipped runs (study-ready content
+  // already exists) intentionally produce no event — there is no fresh
+  // result for mentor consumers or telemetry to surface.
+  const finalize = (
+    r: { ok: boolean; pipelineId: string; error?: string; skipped?: boolean },
+  ) => {
+    if (!r.skipped) {
+      if (r.ok) {
+        appEventBus.emit('topic-content:generation-completed', {
+          subjectId,
+          topicId,
+          topicLabel,
+          pipelineId: r.pipelineId,
+          stage,
+        });
+      } else {
+        appEventBus.emit('topic-content:generation-failed', {
+          subjectId,
+          topicId,
+          topicLabel,
+          pipelineId: r.pipelineId,
+          stage,
+          errorMessage: r.error ?? 'Topic content generation failed',
+        });
+      }
+    }
+    return r;
+  };
+
   const graph = await deckRepository.getSubjectGraph(subjectId);
   const node = graph.nodes.find((n) => n.topicId === topicId);
   if (!node) {
-    return { ok: false, pipelineId, error: `Topic "${topicId}" not found in subject graph` };
+    return finalize({
+      ok: false,
+      pipelineId,
+      error: `Topic "${topicId}" not found in subject graph`,
+    });
   }
+  topicLabel = node.title;
 
   const [details, cards] = await Promise.all([
     deckRepository.getTopicDetails(subjectId, topicId),
@@ -103,7 +144,7 @@ export async function runTopicGenerationPipeline(
   const shouldAutoSkip =
     !forceRegenerate && stage === 'full' && !resumeFromStage && topicStudyContentReady(details, cards);
   if (shouldAutoSkip) {
-    return { ok: true, pipelineId: '', skipped: true };
+    return finalize({ ok: true, pipelineId: '', skipped: true });
   }
 
   const manifest = await deckRepository.getManifest({ includePregeneratedCurriculums: true });
@@ -304,7 +345,9 @@ export async function runTopicGenerationPipeline(
   try {
     if (stage === 'theory') {
       const t = await runTheoryJob();
-      return t.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: t.error };
+      return t.ok
+        ? finalize({ ok: true, pipelineId })
+        : finalize({ ok: false, pipelineId, error: t.error });
     }
 
     if (stage === 'study-cards') {
@@ -313,10 +356,12 @@ export async function runTopicGenerationPipeline(
         theory = loadTheoryPayloadFromTopicDetails(details);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
-        return { ok: false, pipelineId, error: message };
+        return finalize({ ok: false, pipelineId, error: message });
       }
       const s = await runStudyJob(theory);
-      return s.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: s.error };
+      return s.ok
+        ? finalize({ ok: true, pipelineId })
+        : finalize({ ok: false, pipelineId, error: s.error });
     }
 
     if (stage === 'mini-games') {
@@ -325,13 +370,15 @@ export async function runTopicGenerationPipeline(
         theory = loadTheoryPayloadFromTopicDetails(details);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
-        return { ok: false, pipelineId, error: message };
+        return finalize({ ok: false, pipelineId, error: message });
       }
       const m = await runMiniJob(theory);
-      return m.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: m.error };
+      return m.ok
+        ? finalize({ ok: true, pipelineId })
+        : finalize({ ok: false, pipelineId, error: m.error });
     }
 
-    // ── full pipeline (with optional resume) ──────────────────────────
+    // ── full pipeline (with optional resume) ──────────────────
     const resumeIdx = resumeFromStage && resumeFromStage !== 'full'
       ? FULL_PIPELINE_STAGES.indexOf(resumeFromStage)
       : 0;
@@ -341,7 +388,7 @@ export async function runTopicGenerationPipeline(
     if (startIdx <= 0) {
       const theoryStep = await runTheoryJob();
       if (!theoryStep.ok) {
-        return { ok: false, pipelineId, error: theoryStep.error };
+        return finalize({ ok: false, pipelineId, error: theoryStep.error });
       }
     }
 
@@ -351,14 +398,18 @@ export async function runTopicGenerationPipeline(
       theory = resolveTheoryData();
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      return { ok: false, pipelineId, error: `Cannot resume — theory not available: ${message}` };
+      return finalize({
+        ok: false,
+        pipelineId,
+        error: `Cannot resume — theory not available: ${message}`,
+      });
     }
 
     // Stage 1: study-cards
     if (startIdx <= 1) {
       const studyStep = await runStudyJob(theory);
       if (!studyStep.ok) {
-        return { ok: false, pipelineId, error: studyStep.error };
+        return finalize({ ok: false, pipelineId, error: studyStep.error });
       }
     }
 
@@ -366,7 +417,7 @@ export async function runTopicGenerationPipeline(
     if (startIdx <= 2) {
       const miniStep = await runMiniJob(theory);
       if (!miniStep.ok) {
-        return { ok: false, pipelineId, error: miniStep.error };
+        return finalize({ ok: false, pipelineId, error: miniStep.error });
       }
     }
 
@@ -376,9 +427,9 @@ export async function runTopicGenerationPipeline(
         .markPendingFromFullTopicUnlock(topicRefKey({ subjectId, topicId }));
     }
 
-    return { ok: true, pipelineId };
+    return finalize({ ok: true, pipelineId });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    return { ok: false, pipelineId, error: message };
+    return finalize({ ok: false, pipelineId, error: message });
   }
 }

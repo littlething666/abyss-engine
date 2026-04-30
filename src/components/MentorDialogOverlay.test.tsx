@@ -40,6 +40,18 @@ function renderOverlay(): { root: Root; container: HTMLDivElement } {
   return { root, container };
 }
 
+function enqueueFixturePlan(id = 'queued-start'): void {
+  useMentorStore.getState().enqueue({
+    id,
+    trigger: 'subject:generation-started',
+    priority: 72,
+    enqueuedAt: 1,
+    messages: [{ id: 'm1', text: 'Generating Calculus.', mood: 'hint' }],
+    source: 'canned',
+    voiceId: 'witty-sarcastic',
+  });
+}
+
 beforeEach(() => {
   useMentorStore.setState({
     ...DEFAULT_PERSISTED_STATE,
@@ -69,15 +81,7 @@ afterEach(() => {
 
 describe('MentorDialogOverlay', () => {
   it('does not auto-open queued dialogs while the study panel is open, then opens after study closes', async () => {
-    useMentorStore.getState().enqueue({
-      id: 'queued-start',
-      trigger: 'subject:generation-started',
-      priority: 72,
-      enqueuedAt: 1,
-      messages: [{ id: 'm1', text: 'Generating Calculus.', mood: 'hint' }],
-      source: 'canned',
-      voiceId: 'witty-sarcastic',
-    });
+    enqueueFixturePlan();
     uiStore.setState({ isStudyPanelOpen: true });
 
     const { root } = renderOverlay();
@@ -92,6 +96,107 @@ describe('MentorDialogOverlay', () => {
 
     expect(useMentorStore.getState().currentDialog?.id).toBe('queued-start');
     expect(document.body.querySelector('[data-testid="mentor-dialog-overlay"]')).not.toBeNull();
+
+    root.unmount();
+  });
+
+  // Phase C.2 generalization: the auto-open gate moved from `isStudyPanelOpen`
+  // alone to `selectIsAnyModalOpen`, so any of these blocking modals must
+  // also defer the queue. Parametrised so each new modal flag added to
+  // `selectIsAnyModalOpen` upstream gets equivalent coverage by appending
+  // a single row.
+  it.each([
+    ['isRitualModalOpen', 'isRitualModalOpen'] as const,
+    ['isCrystalTrialOpen', 'isCrystalTrialOpen'] as const,
+    ['isGenerationProgressOpen', 'isGenerationProgressOpen'] as const,
+    ['isStudyTimelineOpen', 'isStudyTimelineOpen'] as const,
+    ['isDiscoveryModalOpen', 'isDiscoveryModalOpen'] as const,
+    ['isGlobalSettingsOpen', 'isGlobalSettingsOpen'] as const,
+  ])(
+    'does not auto-open queued dialogs while %s is true, opens after it clears',
+    async (_label, flag) => {
+      enqueueFixturePlan(`queued-${flag}`);
+      uiStore.setState({ [flag]: true } as Partial<
+        Parameters<typeof uiStore.setState>[0]
+      >);
+
+      const { root } = renderOverlay();
+
+      // Modal is open — the queued plan must stay parked.
+      expect(useMentorStore.getState().currentDialog).toBeNull();
+      expect(document.body.querySelector('[data-testid="mentor-dialog-overlay"]')).toBeNull();
+
+      await act(async () => {
+        uiStore.setState({ [flag]: false } as Partial<
+          Parameters<typeof uiStore.setState>[0]
+        >);
+        await Promise.resolve();
+      });
+
+      // After the modal closes, the auto-open effect pops the head exactly
+      // once and the overlay renders.
+      expect(useMentorStore.getState().currentDialog?.id).toBe(`queued-${flag}`);
+      expect(
+        document.body.querySelector('[data-testid="mentor-dialog-overlay"]'),
+      ).not.toBeNull();
+
+      root.unmount();
+    },
+  );
+
+  it('keeps the queue parked while ANY of multiple modals is open, opens only after all close', async () => {
+    enqueueFixturePlan('queued-multi-modal');
+    uiStore.setState({
+      isRitualModalOpen: true,
+      isGenerationProgressOpen: true,
+    });
+
+    const { root } = renderOverlay();
+
+    expect(useMentorStore.getState().currentDialog).toBeNull();
+
+    // Closing one modal but leaving another open must NOT pop the queue —
+    // proves the gate is the OR-across-flags `selectIsAnyModalOpen`, not
+    // a single-flag check that would race on the most-recent transition.
+    await act(async () => {
+      uiStore.setState({ isRitualModalOpen: false });
+      await Promise.resolve();
+    });
+    expect(useMentorStore.getState().currentDialog).toBeNull();
+
+    // Closing the last remaining modal must finally pop the head.
+    await act(async () => {
+      uiStore.setState({ isGenerationProgressOpen: false });
+      await Promise.resolve();
+    });
+    expect(useMentorStore.getState().currentDialog?.id).toBe('queued-multi-modal');
+
+    root.unmount();
+  });
+
+  it('explicit openCurrentFromQueue() bypasses the gate even while a modal is open', async () => {
+    // Bubble click and explicit user actions route through
+    // `openCurrentFromQueue()` (or `handleMentorTrigger` followed by an
+    // explicit pop). The gate suppresses background auto-open only — it
+    // must not block explicit user-driven pops.
+    enqueueFixturePlan('queued-bypass');
+    uiStore.setState({ isRitualModalOpen: true });
+
+    const { root } = renderOverlay();
+    expect(useMentorStore.getState().currentDialog).toBeNull();
+
+    await act(async () => {
+      useMentorStore.getState().openCurrentFromQueue();
+      await Promise.resolve();
+    });
+
+    expect(useMentorStore.getState().currentDialog?.id).toBe('queued-bypass');
+    // (Render-side: with isStudyPanelOpen=false the dialog is still
+    // rendered; isRitualModalOpen does NOT gate render per Phase C.2's
+    // locked scope.)
+    expect(
+      document.body.querySelector('[data-testid="mentor-dialog-overlay"]'),
+    ).not.toBeNull();
 
     root.unmount();
   });

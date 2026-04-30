@@ -18,12 +18,18 @@ export const APP_EVENT_NAMES = [
   'study-panel:history-applied',
   'study-panel:opened',
   'topic-content:generation-requested',
+  'topic-content:generation-completed',
+  'topic-content:generation-failed',
+  'topic-expansion:generation-completed',
+  'topic-expansion:generation-failed',
   'subject-graph:generation-requested',
   'subject-graph:generated',
   'subject-graph:generation-failed',
   'subject-graph:validation-failed',
   'crystal-trial:pregeneration-requested',
   'crystal-trial:completed',
+  'crystal-trial:generation-failed',
+  'content-generation:retry-failed',
 ] as const;
 
 export type AppEventName = (typeof APP_EVENT_NAMES)[number];
@@ -96,6 +102,48 @@ export type AppEventMap = {
     /** Defaults to `full` in the runner when omitted. */
     stage?: 'theory' | 'study-cards' | 'mini-games' | 'full';
   };
+  /**
+   * Terminal event emitted by `runTopicGenerationPipeline` when a stage or full
+   * pipeline completes successfully. Mentor consumers gate "topic ready" copy on
+   * `stage === 'full'`; partial-stage success emits with the stage that ran.
+   */
+  'topic-content:generation-completed': {
+    subjectId: string;
+    topicId: string;
+    topicLabel: string;
+    pipelineId: string;
+    stage: 'theory' | 'study-cards' | 'mini-games' | 'full';
+  };
+  /**
+   * Terminal event emitted by `runTopicGenerationPipeline` when a stage or full
+   * pipeline fails. `stage` indicates which stage was being executed at the
+   * failure boundary (or the requested stage for a single-stage run).
+   */
+  'topic-content:generation-failed': {
+    subjectId: string;
+    topicId: string;
+    topicLabel: string;
+    pipelineId: string;
+    stage: 'theory' | 'study-cards' | 'mini-games' | 'full';
+    errorMessage: string;
+  };
+  /** Terminal event emitted by `runExpansionJob` on successful crystal-level expansion. */
+  'topic-expansion:generation-completed': {
+    subjectId: string;
+    topicId: string;
+    topicLabel: string;
+    /** The `nextLevel` produced (1, 2, or 3). */
+    level: number;
+  };
+  /** Terminal event emitted by `runExpansionJob` when expansion fails. */
+  'topic-expansion:generation-failed': {
+    subjectId: string;
+    topicId: string;
+    topicLabel: string;
+    /** The `nextLevel` that was being generated. */
+    level: number;
+    errorMessage: string;
+  };
   'subject-graph:generation-requested': {
     subjectId: string;
     checklist: StudyChecklist;
@@ -117,7 +165,12 @@ export type AppEventMap = {
       added: Array<{ topicId: string; prereqId: string; kind: 'filler-tier1' | 'filler-tier2' }>;
     };
   };
-  /** Emitted when a subject-generation pipeline terminates in a failed or aborted stage. */
+  /**
+   * Emitted when a subject-generation pipeline terminates in a failed or aborted
+   * stage. Sole emitter is `subjectGenerationOrchestrator` (validation failures
+   * funnel here too via the resulting job failure). Downstream handlers must
+   * not re-emit.
+   */
   'subject-graph:generation-failed': {
     subjectId: string;
     subjectName: string;
@@ -151,6 +204,29 @@ export type AppEventMap = {
     passed: boolean;
     score: number;
     trialId: string;
+  };
+  /** Terminal event emitted by `generateTrialQuestions` when trial generation fails. */
+  'crystal-trial:generation-failed': {
+    subjectId: string;
+    topicId: string;
+    topicLabel: string;
+    /** The trial's `targetLevel` (the level the player was attempting to unlock). */
+    level: number;
+    errorMessage: string;
+  };
+  /**
+   * Emitted by retry orchestration (`retryFailedJob` / `retryFailedPipeline`) when
+   * the retry could not be dispatched: routing collapse (missing level / missing
+   * checklist / unsupported kind) or thrown errors inside the orchestration
+   * itself. Ordinary retried jobs whose runner subsequently fails emit fresh
+   * terminal runner events instead.
+   */
+  'content-generation:retry-failed': {
+    subjectId: string;
+    topicId?: string;
+    topicLabel?: string;
+    jobLabel: string;
+    errorMessage: string;
   };
 };
 
