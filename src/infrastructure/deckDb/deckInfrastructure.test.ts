@@ -7,7 +7,7 @@ import { resetDeckIndexedDbDebugSyncForTests } from './deckDbDebugLog';
 import { primeDeckDbForTests } from './deckTestFixtures';
 import { resetDeckInfrastructureForTests } from './deckSeed';
 
-import type { Card } from '../../types/core';
+import type { Card, SubjectGraph } from '../../types/core';
 
 const subjectRow = {
   id: 'sub-a',
@@ -18,12 +18,12 @@ const subjectRow = {
   contentSource: 'generated' as const,
 };
 
-const graph = {
+const graph: SubjectGraph = {
   subjectId: 'sub-a',
   title: 'Subject A',
   themeId: 'sub-a',
   maxTier: 1,
-  nodes: [{ topicId: 'top-1', title: 'T1', tier: 0, prerequisites: [], learningObjective: '' }],
+  nodes: [{ topicId: 'top-1', title: 'T1', tier: 0, prerequisites: [], learningObjective: '', iconName: 'lightbulb' }],
 };
 
 const topicDetails = {

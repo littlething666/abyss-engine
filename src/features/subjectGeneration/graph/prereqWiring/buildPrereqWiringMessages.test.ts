@@ -22,18 +22,20 @@ describe('buildPrereqWiringMessages', () => {
           title: 'a',
           tier: 1,
           learningObjective: 'o',
+          iconName: 'lightbulb' as const,
         })),
         ...Array.from({ length: 5 }, (_, i) => ({
           topicId: `b-${i}`,
           title: 'b',
           tier: 2,
           learningObjective: 'o',
+          iconName: 'lightbulb' as const,
         })),
-        { topicId: 'third-a', title: 'x', tier: 3, learningObjective: 'o' },
-        { topicId: 'third-b', title: 'y', tier: 3, learningObjective: 'o' },
-        { topicId: 'third-c', title: 'z', tier: 3, learningObjective: 'o' },
-        { topicId: 'third-d', title: 'w', tier: 3, learningObjective: 'o' },
-        { topicId: 'third-e', title: 'v', tier: 3, learningObjective: 'o' },
+        { topicId: 'third-a', title: 'x', tier: 3, learningObjective: 'o', iconName: 'lightbulb' },
+        { topicId: 'third-b', title: 'y', tier: 3, learningObjective: 'o', iconName: 'lightbulb' },
+        { topicId: 'third-c', title: 'z', tier: 3, learningObjective: 'o', iconName: 'lightbulb' },
+        { topicId: 'third-d', title: 'w', tier: 3, learningObjective: 'o', iconName: 'lightbulb' },
+        { topicId: 'third-e', title: 'v', tier: 3, learningObjective: 'o', iconName: 'lightbulb' },
       ],
     };
     const msgs = buildPrereqWiringMessages('sid', 'My subject', strategy, lattice);
@@ -48,9 +50,9 @@ describe('buildPrereqWiringMessages', () => {
   it('uses abstract negative example when fewer than two tier-3 topics', () => {
     const lattice: TopicLattice = {
       topics: [
-        { topicId: 'a1', title: 'a', tier: 1, learningObjective: 'o' },
-        { topicId: 'b1', title: 'b', tier: 2, learningObjective: 'o' },
-        { topicId: 'c1', title: 'c', tier: 3, learningObjective: 'o' },
+        { topicId: 'a1', title: 'a', tier: 1, learningObjective: 'o', iconName: 'lightbulb' },
+        { topicId: 'b1', title: 'b', tier: 2, learningObjective: 'o', iconName: 'lightbulb' },
+        { topicId: 'c1', title: 'c', tier: 3, learningObjective: 'o', iconName: 'lightbulb' },
       ],
     };
     const msgs = buildPrereqWiringMessages('sid', 'S', { ...strategy, totalTiers: 3, topicsPerTier: 1 }, lattice);

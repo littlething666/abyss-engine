@@ -7,12 +7,12 @@ import { parsePrereqWiringResponse } from './parsePrereqWiringResponse';
 function miniLattice(): TopicLattice {
   return {
     topics: [
-      { topicId: 'a1', title: 'A1', tier: 1, learningObjective: 'o' },
-      { topicId: 'a2', title: 'A2', tier: 1, learningObjective: 'o' },
-      { topicId: 'b1', title: 'B1', tier: 2, learningObjective: 'o' },
-      { topicId: 'b2', title: 'B2', tier: 2, learningObjective: 'o' },
-      { topicId: 'c1', title: 'C1', tier: 3, learningObjective: 'o' },
-      { topicId: 'c2', title: 'C2', tier: 3, learningObjective: 'o' },
+      { topicId: 'a1', title: 'A1', tier: 1, learningObjective: 'o', iconName: 'lightbulb' },
+      { topicId: 'a2', title: 'A2', tier: 1, learningObjective: 'o', iconName: 'lightbulb' },
+      { topicId: 'b1', title: 'B1', tier: 2, learningObjective: 'o', iconName: 'lightbulb' },
+      { topicId: 'b2', title: 'B2', tier: 2, learningObjective: 'o', iconName: 'lightbulb' },
+      { topicId: 'c1', title: 'C1', tier: 3, learningObjective: 'o', iconName: 'lightbulb' },
+      { topicId: 'c2', title: 'C2', tier: 3, learningObjective: 'o', iconName: 'lightbulb' },
     ],
   };
 }
