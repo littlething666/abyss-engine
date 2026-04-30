@@ -446,6 +446,84 @@ if (!g.__abyssEventBusHandlersRegistered) {
   useCrystalTrialStore.subscribe(recomputeTrialAvailability);
   useProgressionStore.subscribe(recomputeTrialAvailability);
 
+  // ---- Phase C: content-generation terminal events → mentor triggers ----
+  //
+  // Runners (`runTopicGenerationPipeline`, `runExpansionJob`,
+  // `generateTrialQuestions`, retry orchestration) own emission of these
+  // terminal events; this section just turns them into mentor side
+  // effects. Topic-ready dedupe (per-pipelineId + 4h per
+  // (subjectId, topicId)) and failure CTA wiring live in the rule engine,
+  // so each handler stays thin.
+
+  appEventBus.on('topic-content:generation-completed', (e) => {
+    // Only the full-pipeline success surfaces the topic-ready prod.
+    // Partial-stage successes (theory / study-cards / mini-games) are
+    // progress signals owned by the generation HUD; surfacing them as
+    // mentor dialogs would create noise the player cannot act on.
+    if (e.stage !== 'full') return;
+    handleMentorTrigger('topic-content:generation-ready', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      topicLabel: e.topicLabel,
+      pipelineId: e.pipelineId,
+    });
+  });
+
+  appEventBus.on('topic-content:generation-failed', (e) => {
+    console.error(
+      `[topic-content:generation-failed] subject=${e.subjectId} topic=${e.topicId} ` +
+        `stage=${e.stage}: ${e.errorMessage}`,
+    );
+    handleMentorTrigger('topic-content:generation-failed', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      topicLabel: e.topicLabel,
+      errorMessage: e.errorMessage,
+    });
+  });
+
+  appEventBus.on('topic-expansion:generation-failed', (e) => {
+    console.error(
+      `[topic-expansion:generation-failed] subject=${e.subjectId} topic=${e.topicId} ` +
+        `level=${e.level}: ${e.errorMessage}`,
+    );
+    handleMentorTrigger('topic-expansion:generation-failed', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      topicLabel: e.topicLabel,
+      level: e.level,
+      errorMessage: e.errorMessage,
+    });
+  });
+
+  appEventBus.on('crystal-trial:generation-failed', (e) => {
+    console.error(
+      `[crystal-trial:generation-failed] subject=${e.subjectId} topic=${e.topicId} ` +
+        `level=${e.level}: ${e.errorMessage}`,
+    );
+    handleMentorTrigger('crystal-trial:generation-failed', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      topicLabel: e.topicLabel,
+      level: e.level,
+      errorMessage: e.errorMessage,
+    });
+  });
+
+  appEventBus.on('content-generation:retry-failed', (e) => {
+    console.error(
+      `[content-generation:retry-failed] subject=${e.subjectId} jobLabel=${e.jobLabel}: ` +
+        `${e.errorMessage}`,
+    );
+    handleMentorTrigger('content-generation:retry-failed', {
+      subjectId: e.subjectId,
+      topicId: e.topicId,
+      topicLabel: e.topicLabel,
+      jobLabel: e.jobLabel,
+      errorMessage: e.errorMessage,
+    });
+  });
+
   // Card pool change detection: invalidate pre-generated trials.
   // Subscribes to the renamed v1 pubsub event `topic-cards:updated` published
   // by `deckContentWriter.persistTopicContentBundle(...)`.
