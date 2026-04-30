@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { appEventBus } from '@/infrastructure/eventBus';
+
 import {
   type DialogPlan,
   type MentorTriggerId,
@@ -198,7 +200,15 @@ export const useMentorStore = create<MentorState>()(
       ...DEFAULT_PERSISTED_STATE,
       ...DEFAULT_EPHEMERAL_STATE,
 
-      setPlayerName: (name) => set({ playerName: name }),
+      setPlayerName: (name) => {
+        set({ playerName: name });
+        // Mentor → infrastructure boundary. The PostHog bootstrap
+        // (see `src/infrastructure/posthog/bootstrapPosthog.ts`)
+        // subscribes to this event and enriches the payload with
+        // analytics deployment metadata (appVersion, buildMode,
+        // timestamps); feature code only carries `playerName`.
+        appEventBus.emit('player-profile:updated', { playerName: name });
+      },
       setNarrationEnabled: (enabled) => set({ narrationEnabled: enabled }),
 
       enqueue: (plan) => {

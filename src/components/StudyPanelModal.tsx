@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { CoarseChoice, Rating, type CoarseRatingResult } from '../types';
 import { useProgressionStore as useStudyStore } from '../features/progression';
@@ -106,6 +106,49 @@ export function StudyPanelModal({
     canvasRef: feedbackCanvasRef,
     cardRef: studyCardContainerRef,
   });
+
+  /**
+   * Phase 4: emit `study-session:abandoned` when the panel closes mid
+   * session. Detection contract:
+   *   - a session exists in the progression store
+   *   - the user submitted at least one card (`attempts.length > 0`)
+   *   - the session has not naturally completed
+   *     (`attempts.length < totalCards`); the completion path already
+   *     emits `study-session:completed` via the `session:completed`
+   *     bus event in eventBusHandlers.ts.
+   *
+   * Reading from `useStudyStore.getState()` rather than the subscribed
+   * `currentSession` value avoids stale-closure hazards if the user
+   * closes during a render in which the store has just settled.
+   */
+  const handleClose = useCallback(() => {
+    const session = useStudyStore.getState().currentSession;
+    if (session) {
+      const attemptsCompleted = session.attempts?.length ?? 0;
+      const sessionTotalCards = session.totalCards ?? 0;
+      const isAbandoned = attemptsCompleted > 0 && attemptsCompleted < sessionTotalCards;
+      if (isAbandoned) {
+        const startedAt = session.startedAt ?? Date.now();
+        telemetry.log(
+          'study-session:abandoned',
+          {
+            sessionId: session.sessionId,
+            subjectId: session.subjectId,
+            topicId: session.topicId,
+            attemptsCompleted,
+            totalCards: sessionTotalCards,
+            sessionDurationMs: Math.max(0, Date.now() - startedAt),
+          },
+          {
+            sessionId: session.sessionId,
+            subjectId: session.subjectId,
+            topicId: session.topicId,
+          },
+        );
+      }
+    }
+    onClose();
+  }, [onClose]);
 
   const applySubmissionStateFromSession = () => {
     const currentCardKey = currentSession?.currentCardId;
@@ -232,7 +275,7 @@ export function StudyPanelModal({
     <Dialog
       modal={false}
       open={isOpen}
-      onOpenChange={(open) => { if (!open) onClose(); }}
+      onOpenChange={(open) => { if (!open) handleClose(); }}
     >
       <DialogContent className="max-h-[95vh] flex flex-col">
         <DialogHeader>
@@ -278,7 +321,7 @@ export function StudyPanelModal({
             resolvedTopicTheory={model.resolvedTopicTheory}
             resolvedTopic={model.resolvedTopic}
             topicSystemPrompt={model.topicSystemPrompt}
-            onClose={onClose}
+            onClose={handleClose}
             onSystemPromptSelect={handleSelectSystemPrompt}
             systemPromptRef={systemPromptRef}
           />

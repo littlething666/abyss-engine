@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 
+import { telemetry } from '@/features/telemetry';
 import { topicRefKey } from '@/lib/topicRef';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
@@ -63,6 +64,10 @@ const FULL_PIPELINE_STAGES: Exclude<TopicGenerationStage, 'full'>[] = [
   'mini-games',
 ];
 
+type PipelineSettlement =
+  | { ok: true; pipelineId: string }
+  | { ok: false; pipelineId: string; error: string };
+
 export async function runTopicGenerationPipeline(
   params: RunTopicGenerationPipelineParams,
 ): Promise<{ ok: boolean; pipelineId: string; error?: string; skipped?: boolean }> {
@@ -103,6 +108,10 @@ export async function runTopicGenerationPipeline(
   const shouldAutoSkip =
     !forceRegenerate && stage === 'full' && !resumeFromStage && topicStudyContentReady(details, cards);
   if (shouldAutoSkip) {
+    // Auto-skip is intentionally telemetry-free: no work was performed.
+    // The bus event `topic-content:generation-requested` already accounts
+    // for the request side, so skip rate is computable as
+    // (requested − generation-started).
     return { ok: true, pipelineId: '', skipped: true };
   }
 
@@ -125,6 +134,65 @@ export async function runTopicGenerationPipeline(
     },
     pipelineAc,
   );
+
+  // ── Phase 3 telemetry: pipeline lifecycle starts here ────────────────
+  // `runTopicGenerationPipeline` is the canonical stage source —
+  // analytics never infers stage transitions from downstream LLM-job
+  // events. Every stage transition flows through `wrapStage` below.
+  const pipelineStartedAt = Date.now();
+  telemetry.log(
+    'topic-content:generation-started',
+    {
+      pipelineId,
+      subjectId,
+      topicId,
+      stage,
+      forceRegenerate,
+      ...(resumeFromStage ? { resumeFromStage } : {}),
+    },
+    { subjectId, topicId },
+  );
+
+  /**
+   * Wraps a single stage execution with telemetry start/end emit and
+   * timing. Error strings from failed stages are forwarded raw — no
+   * heuristic parsing — per the Phase 3 plan ("Capture raw emitted
+   * error messages for first internal milestone").
+   */
+  const wrapStage = async (
+    stageName: 'theory' | 'study-cards' | 'mini-games',
+    run: () => Promise<{ ok: true } | { ok: false; error: string }>,
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const stageStartedAt = Date.now();
+    telemetry.log(
+      'topic-content:stage-started',
+      { pipelineId, subjectId, topicId, stage: stageName },
+      { subjectId, topicId },
+    );
+    const result = await run();
+    const durationMs = Date.now() - stageStartedAt;
+    if (result.ok) {
+      telemetry.log(
+        'topic-content:stage-completed',
+        { pipelineId, subjectId, topicId, stage: stageName, durationMs },
+        { subjectId, topicId },
+      );
+    } else {
+      telemetry.log(
+        'topic-content:stage-failed',
+        {
+          pipelineId,
+          subjectId,
+          topicId,
+          stage: stageName,
+          error: result.error,
+          durationMs,
+        },
+        { subjectId, topicId },
+      );
+    }
+    return result;
+  };
 
   let theoryData: ParsedTopicTheoryPayload | undefined;
 
@@ -301,84 +369,108 @@ export async function runTopicGenerationPipeline(
     return loadTheoryPayloadFromTopicDetails(details);
   };
 
-  try {
-    if (stage === 'theory') {
-      const t = await runTheoryJob();
-      return t.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: t.error };
-    }
-
-    if (stage === 'study-cards') {
-      let theory: ParsedTopicTheoryPayload;
-      try {
-        theory = loadTheoryPayloadFromTopicDetails(details);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        return { ok: false, pipelineId, error: message };
-      }
-      const s = await runStudyJob(theory);
-      return s.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: s.error };
-    }
-
-    if (stage === 'mini-games') {
-      let theory: ParsedTopicTheoryPayload;
-      try {
-        theory = loadTheoryPayloadFromTopicDetails(details);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        return { ok: false, pipelineId, error: message };
-      }
-      const m = await runMiniJob(theory);
-      return m.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: m.error };
-    }
-
-    // ── full pipeline (with optional resume) ──────────────────────────
-    const resumeIdx = resumeFromStage && resumeFromStage !== 'full'
-      ? FULL_PIPELINE_STAGES.indexOf(resumeFromStage)
-      : 0;
-    const startIdx = Math.max(0, resumeIdx);
-
-    // Stage 0: theory
-    if (startIdx <= 0) {
-      const theoryStep = await runTheoryJob();
-      if (!theoryStep.ok) {
-        return { ok: false, pipelineId, error: theoryStep.error };
-      }
-    }
-
-    // Resolve theory data (either from runTheoryJob or loaded from DB for resume)
-    let theory: ParsedTopicTheoryPayload;
+  // Run the body inside an inner async IIFE so every exit path funnels
+  // through a single `pipelineResult` value — that makes the
+  // `topic-content:generation-completed` emission the only return-time
+  // side effect, regardless of which stage path the pipeline took.
+  const pipelineResult: PipelineSettlement = await (async (): Promise<PipelineSettlement> => {
     try {
-      theory = resolveTheoryData();
+      if (stage === 'theory') {
+        const t = await wrapStage('theory', runTheoryJob);
+        return t.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: t.error };
+      }
+
+      if (stage === 'study-cards') {
+        let theory: ParsedTopicTheoryPayload;
+        try {
+          theory = loadTheoryPayloadFromTopicDetails(details);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          return { ok: false, pipelineId, error: message };
+        }
+        const s = await wrapStage('study-cards', () => runStudyJob(theory));
+        return s.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: s.error };
+      }
+
+      if (stage === 'mini-games') {
+        let theory: ParsedTopicTheoryPayload;
+        try {
+          theory = loadTheoryPayloadFromTopicDetails(details);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          return { ok: false, pipelineId, error: message };
+        }
+        const m = await wrapStage('mini-games', () => runMiniJob(theory));
+        return m.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: m.error };
+      }
+
+      // ── full pipeline (with optional resume) ──────────────────────────
+      const resumeIdx = resumeFromStage && resumeFromStage !== 'full'
+        ? FULL_PIPELINE_STAGES.indexOf(resumeFromStage)
+        : 0;
+      const startIdx = Math.max(0, resumeIdx);
+
+      // Stage 0: theory
+      if (startIdx <= 0) {
+        const theoryStep = await wrapStage('theory', runTheoryJob);
+        if (!theoryStep.ok) {
+          return { ok: false, pipelineId, error: theoryStep.error };
+        }
+      }
+
+      // Resolve theory data (either from runTheoryJob or loaded from DB for resume)
+      let theory: ParsedTopicTheoryPayload;
+      try {
+        theory = resolveTheoryData();
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { ok: false, pipelineId, error: `Cannot resume — theory not available: ${message}` };
+      }
+
+      // Stage 1: study-cards
+      if (startIdx <= 1) {
+        const studyStep = await wrapStage('study-cards', () => runStudyJob(theory));
+        if (!studyStep.ok) {
+          return { ok: false, pipelineId, error: studyStep.error };
+        }
+      }
+
+      // Stage 2: mini-games
+      if (startIdx <= 2) {
+        const miniStep = await wrapStage('mini-games', () => runMiniJob(theory));
+        if (!miniStep.ok) {
+          return { ok: false, pipelineId, error: miniStep.error };
+        }
+      }
+
+      if (stage === 'full') {
+        useCrystalContentCelebrationStore
+          .getState()
+          .markPendingFromFullTopicUnlock(topicRefKey({ subjectId, topicId }));
+      }
+
+      return { ok: true, pipelineId };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      return { ok: false, pipelineId, error: `Cannot resume — theory not available: ${message}` };
+      return { ok: false, pipelineId, error: message };
     }
+  })();
 
-    // Stage 1: study-cards
-    if (startIdx <= 1) {
-      const studyStep = await runStudyJob(theory);
-      if (!studyStep.ok) {
-        return { ok: false, pipelineId, error: studyStep.error };
-      }
-    }
+  // ── Phase 3 telemetry: lifecycle close-out ───────────────────────────
+  const totalDurationMs = Date.now() - pipelineStartedAt;
+  telemetry.log(
+    'topic-content:generation-completed',
+    {
+      pipelineId,
+      subjectId,
+      topicId,
+      stage,
+      ok: pipelineResult.ok,
+      durationMs: totalDurationMs,
+      ...(pipelineResult.ok ? {} : { error: pipelineResult.error }),
+    },
+    { subjectId, topicId },
+  );
 
-    // Stage 2: mini-games
-    if (startIdx <= 2) {
-      const miniStep = await runMiniJob(theory);
-      if (!miniStep.ok) {
-        return { ok: false, pipelineId, error: miniStep.error };
-      }
-    }
-
-    if (stage === 'full') {
-      useCrystalContentCelebrationStore
-        .getState()
-        .markPendingFromFullTopicUnlock(topicRefKey({ subjectId, topicId }));
-    }
-
-    return { ok: true, pipelineId };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    return { ok: false, pipelineId, error: message };
-  }
+  return pipelineResult;
 }

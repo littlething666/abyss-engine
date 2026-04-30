@@ -24,6 +24,7 @@ export const APP_EVENT_NAMES = [
   'subject-graph:validation-failed',
   'crystal-trial:pregeneration-requested',
   'crystal-trial:completed',
+  'player-profile:updated',
 ] as const;
 
 export type AppEventName = (typeof APP_EVENT_NAMES)[number];
@@ -151,6 +152,15 @@ export type AppEventMap = {
     passed: boolean;
     score: number;
     trialId: string;
+  };
+  /**
+   * Mentor → infrastructure boundary. Carries only `playerName`; PostHog
+   * bootstrap (see `src/infrastructure/posthog/bootstrapPosthog.ts`)
+   * enriches each emission with `appVersion`, `buildMode`, and analytics
+   * timestamps so feature code does not learn analytics deployment details.
+   */
+  'player-profile:updated': {
+    playerName: string | null;
   };
 };
 
