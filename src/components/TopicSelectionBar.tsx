@@ -29,6 +29,7 @@ import { useUIStore } from '@/store/uiStore';
 
 import { LevelProgressCompact } from './LevelProgressCompact';
 import { TopicDetailsPopup } from './TopicDetailsPopup';
+import { TopicIcon } from './topicIcons/TopicIcon';
 
 interface TopicSelectionBarProps {
   onStartTopicStudySession?: (ref: { subjectId: string; topicId: string }, cards: Card[]) => void;
@@ -296,7 +297,15 @@ export default function TopicSelectionBar({
         <div className="inline-flex w-full max-w-lg flex-row flex-nowrap items-center gap-2 rounded-lg border border-border bg-card/80 px-2 py-1.5 shadow-sm backdrop-blur-sm sm:w-auto">
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between gap-x-2 gap-y-0.5">
-              <span className="truncate text-xs font-semibold text-foreground">{topicName}</span>
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                {selectedTieredTopic ? (
+                  <TopicIcon
+                    iconName={selectedTieredTopic.iconName}
+                    className="size-3.5 shrink-0 text-primary"
+                  />
+                ) : null}
+                <span className="truncate text-xs font-semibold text-foreground">{topicName}</span>
+              </span>
               <span className="inline-flex shrink-0 items-center gap-2">
                 <span
                   className="inline-flex shrink-0 items-center gap-0.5 text-[10px] tabular-nums text-primary"
