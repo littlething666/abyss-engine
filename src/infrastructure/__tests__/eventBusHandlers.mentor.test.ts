@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const BAND_CAP_XP = 99; // CRYSTAL_XP_PER_LEVEL (100) - 1
 
@@ -712,6 +712,161 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith(
       'onboarding:subject-unlock-first-crystal',
       expect.anything(),
+    );
+  });
+});
+
+describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', () => {
+  // Silence the diagnostic boundary console.error()s the failure handlers
+  // emit. Spy is restored after each test so unrelated logs in other suites
+  // are unaffected.
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('topic-content:generation-completed with stage="full" fires topic-content:generation-ready with the full primitive payload', () => {
+    busApi.emit('topic-content:generation-completed', {
+      subjectId: 'subj-c1',
+      topicId: 'topic-c1',
+      topicLabel: 'Limits',
+      pipelineId: 'pipeline-c1',
+      stage: 'full',
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'topic-content:generation-ready',
+      {
+        subjectId: 'subj-c1',
+        topicId: 'topic-c1',
+        topicLabel: 'Limits',
+        pipelineId: 'pipeline-c1',
+      },
+    );
+  });
+
+  it.each(['theory', 'study-cards', 'mini-games'])(
+    'topic-content:generation-completed with partial stage=%s does NOT fire any mentor trigger (HUD-only)',
+    (stage) => {
+      busApi.emit('topic-content:generation-completed', {
+        subjectId: 'subj-c2',
+        topicId: 'topic-c2',
+        topicLabel: 'Derivatives',
+        pipelineId: 'pipeline-c2',
+        stage,
+      });
+
+      expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it('topic-content:generation-failed fires the matching mentor trigger and console.errors at the boundary', () => {
+    busApi.emit('topic-content:generation-failed', {
+      subjectId: 'subj-c3',
+      topicId: 'topic-c3',
+      topicLabel: 'Integrals',
+      pipelineId: 'pipeline-c3',
+      stage: 'theory',
+      errorMessage: 'theory upstream failed',
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      {
+        subjectId: 'subj-c3',
+        topicId: 'topic-c3',
+        topicLabel: 'Integrals',
+        errorMessage: 'theory upstream failed',
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('topic-content:generation-failed'),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('theory upstream failed'));
+  });
+
+  it('topic-expansion:generation-failed forwards the level so the expansion copy can interpolate the band', () => {
+    busApi.emit('topic-expansion:generation-failed', {
+      subjectId: 'subj-c4',
+      topicId: 'topic-c4',
+      topicLabel: 'Series convergence',
+      level: 2,
+      errorMessage: 'expansion at L2 failed',
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'topic-expansion:generation-failed',
+      {
+        subjectId: 'subj-c4',
+        topicId: 'topic-c4',
+        topicLabel: 'Series convergence',
+        level: 2,
+        errorMessage: 'expansion at L2 failed',
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('topic-expansion:generation-failed'),
+    );
+  });
+
+  it('crystal-trial:generation-failed forwards the level so the trial copy can name the band', () => {
+    busApi.emit('crystal-trial:generation-failed', {
+      subjectId: 'subj-c5',
+      topicId: 'topic-c5',
+      topicLabel: 'Eigenvectors',
+      level: 3,
+      errorMessage: 'trial questions empty',
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'crystal-trial:generation-failed',
+      {
+        subjectId: 'subj-c5',
+        topicId: 'topic-c5',
+        topicLabel: 'Eigenvectors',
+        level: 3,
+        errorMessage: 'trial questions empty',
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('crystal-trial:generation-failed'),
+    );
+  });
+
+  it('content-generation:retry-failed forwards jobLabel for retry-routing-collapse copy', () => {
+    busApi.emit('content-generation:retry-failed', {
+      subjectId: 'subj-c6',
+      topicId: 'topic-c6',
+      topicLabel: 'Discrete probability',
+      jobLabel: 'Theory generation',
+      errorMessage: 'missing checklist context',
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'content-generation:retry-failed',
+      {
+        subjectId: 'subj-c6',
+        topicId: 'topic-c6',
+        topicLabel: 'Discrete probability',
+        jobLabel: 'Theory generation',
+        errorMessage: 'missing checklist context',
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('content-generation:retry-failed'),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Theory generation'),
     );
   });
 });
