@@ -10,7 +10,14 @@ import { TOPIC_ICON_COMPONENTS, TopicIcon } from './TopicIcon';
 describe('TOPIC_ICON_COMPONENTS', () => {
   it('exposes a defined component for every curated TopicIconName', () => {
     for (const name of TOPIC_ICON_NAMES) {
-      expect(typeof TOPIC_ICON_COMPONENTS[name]).toBe('function');
+      const component = TOPIC_ICON_COMPONENTS[name];
+      // Lucide icons are `React.forwardRef(...)` components, which are
+      // objects (with a `$$typeof` symbol), not functions. Accept either
+      // shape; both are valid React element types and the render tests
+      // below confirm each icon actually renders.
+      expect(component).toBeDefined();
+      expect(component).not.toBeNull();
+      expect(['function', 'object']).toContain(typeof component);
     }
   });
 
