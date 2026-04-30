@@ -27,6 +27,11 @@ export const TelemetryEventTypeSchema = z.enum([
   'mentor-choice:selected',
   'mentor-onboarding:completed',
   'mentor:first-subject-generation-enqueued',
+  'topic-content:generation-started',
+  'topic-content:stage-started',
+  'topic-content:stage-completed',
+  'topic-content:stage-failed',
+  'topic-content:generation-completed',
 ]);
 
 export type TelemetryEventType = z.infer<typeof TelemetryEventTypeSchema>;
@@ -287,6 +292,75 @@ export type MentorFirstSubjectGenerationEnqueuedPayload = z.infer<
   typeof MentorFirstSubjectGenerationEnqueuedPayloadSchema
 >;
 
+// === Topic content generation pipeline (Phase 3) ===
+// Canonical lifecycle telemetry emitted from `runTopicGenerationPipeline`
+// (see `src/features/contentGeneration/pipelines/runTopicGenerationPipeline.ts`).
+// The pipeline is the single source of truth for stage transitions —
+// analytics never infers stage from downstream LLM-job events. Error
+// messages are forwarded raw (no heuristic parsing) per the Phase 3 plan.
+
+export const TopicContentStageSchema = z.enum([
+  'theory',
+  'study-cards',
+  'mini-games',
+  'full',
+]);
+export type TopicContentStage = z.infer<typeof TopicContentStageSchema>;
+
+/** Stages that correspond to a single LLM job (excludes the `full` aggregate). */
+const TopicContentInnerStageSchema = z.enum(['theory', 'study-cards', 'mini-games']);
+
+const TopicContentBaseSchema = z.object({
+  pipelineId: z.string(),
+  subjectId: z.string(),
+  topicId: z.string(),
+});
+
+export const TopicContentGenerationStartedPayloadSchema = TopicContentBaseSchema.extend({
+  stage: TopicContentStageSchema,
+  forceRegenerate: z.boolean(),
+  resumeFromStage: TopicContentStageSchema.optional(),
+});
+export type TopicContentGenerationStartedPayload = z.infer<
+  typeof TopicContentGenerationStartedPayloadSchema
+>;
+
+export const TopicContentStageStartedPayloadSchema = TopicContentBaseSchema.extend({
+  stage: TopicContentInnerStageSchema,
+});
+export type TopicContentStageStartedPayload = z.infer<
+  typeof TopicContentStageStartedPayloadSchema
+>;
+
+export const TopicContentStageCompletedPayloadSchema = TopicContentBaseSchema.extend({
+  stage: TopicContentInnerStageSchema,
+  durationMs: z.number().nonnegative(),
+});
+export type TopicContentStageCompletedPayload = z.infer<
+  typeof TopicContentStageCompletedPayloadSchema
+>;
+
+export const TopicContentStageFailedPayloadSchema = TopicContentBaseSchema.extend({
+  stage: TopicContentInnerStageSchema,
+  /** Raw emitted error message — no heuristic parsing per the Phase 3 plan. */
+  error: z.string(),
+  durationMs: z.number().nonnegative(),
+});
+export type TopicContentStageFailedPayload = z.infer<
+  typeof TopicContentStageFailedPayloadSchema
+>;
+
+export const TopicContentGenerationCompletedPayloadSchema = TopicContentBaseSchema.extend({
+  stage: TopicContentStageSchema,
+  ok: z.boolean(),
+  /** Raw error string forwarded only when `ok === false`. */
+  error: z.string().optional(),
+  durationMs: z.number().nonnegative(),
+});
+export type TopicContentGenerationCompletedPayload = z.infer<
+  typeof TopicContentGenerationCompletedPayloadSchema
+>;
+
 export const TelemetryEventPayloadSchema = z.object({
   id: z.string().uuid(),
   version: telemetryVersionSchema,
@@ -325,4 +399,9 @@ export const TelemetryEventMap: Record<TelemetryEventType, z.ZodSchema<unknown>>
   'mentor-choice:selected': MentorChoiceSelectedPayloadSchema,
   'mentor-onboarding:completed': MentorOnboardingCompletedPayloadSchema,
   'mentor:first-subject-generation-enqueued': MentorFirstSubjectGenerationEnqueuedPayloadSchema,
+  'topic-content:generation-started': TopicContentGenerationStartedPayloadSchema,
+  'topic-content:stage-started': TopicContentStageStartedPayloadSchema,
+  'topic-content:stage-completed': TopicContentStageCompletedPayloadSchema,
+  'topic-content:stage-failed': TopicContentStageFailedPayloadSchema,
+  'topic-content:generation-completed': TopicContentGenerationCompletedPayloadSchema,
 };

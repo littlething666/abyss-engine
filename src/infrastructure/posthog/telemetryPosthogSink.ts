@@ -142,6 +142,30 @@ export const TELEMETRY_TO_POSTHOG = {
     posthogEvent: 'mentor:first-subject-generation-enqueued',
     properties: defaultProperties,
   },
+  // ── Phase 3: topic-content pipeline lifecycle ─────────────────────
+  // Disjoint from `topic-content:generation-requested` in
+  // APP_BUS_TO_POSTHOG; the bus event captures user intent (request
+  // phase), these telemetry events capture actual pipeline execution.
+  'topic-content:generation-started': {
+    posthogEvent: 'topic-content:generation-started',
+    properties: defaultProperties,
+  },
+  'topic-content:stage-started': {
+    posthogEvent: 'topic-content:stage-started',
+    properties: defaultProperties,
+  },
+  'topic-content:stage-completed': {
+    posthogEvent: 'topic-content:stage-completed',
+    properties: defaultProperties,
+  },
+  'topic-content:stage-failed': {
+    posthogEvent: 'topic-content:stage-failed',
+    properties: defaultProperties,
+  },
+  'topic-content:generation-completed': {
+    posthogEvent: 'topic-content:generation-completed',
+    properties: defaultProperties,
+  },
 } satisfies Record<TelemetryEventType, PosthogMapping>;
 
 /**
