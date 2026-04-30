@@ -1,5 +1,8 @@
 import type { TopicIconName } from '@/types/core';
-import { GENERATED_TOPIC_ICON_NODES } from './generated/topicIconNodes';
+import {
+  GENERATED_TOPIC_ICON_NODES,
+  type GeneratedTopicIconPrimitive,
+} from './generated/topicIconNodes';
 
 function numberValue(value: string | number): number {
   return typeof value === 'number' ? value : Number.parseFloat(value);
@@ -35,7 +38,15 @@ export function drawTopicIcon(
   size: number,
   color: string,
 ): void {
-  const nodes = GENERATED_TOPIC_ICON_NODES[iconName];
+  // Widen at consumption so per-tag narrowing inside the loop sees the full
+  // primitive union — including `fill?: string` (uniform across variants,
+  // consumed by `shouldFill`) and the currently-unused `polyline`/`polygon`
+  // branches reserved for future icon additions. The generated record
+  // intentionally keeps `as const satisfies …` to validate emitted data
+  // against the union at write time; this annotation only relaxes the
+  // consumer's view, not the validation.
+  const nodes: readonly GeneratedTopicIconPrimitive[] =
+    GENERATED_TOPIC_ICON_NODES[iconName];
 
   ctx.save();
   ctx.translate(x, y);
