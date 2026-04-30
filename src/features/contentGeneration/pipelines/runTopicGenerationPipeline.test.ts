@@ -115,11 +115,13 @@ function makeWriter(): IDeckContentWriter {
 }
 
 function resetStore() {
+  // ContentGenerationState shape: { jobs, pipelines, abortControllers,
+  // pipelineAbortControllers }. There is no `pipelineOrder` / `jobOrder`.
   useContentGenerationStore.setState({
-    pipelines: {},
     jobs: {},
-    pipelineOrder: [],
-    jobOrder: [],
+    pipelines: {},
+    abortControllers: {},
+    pipelineAbortControllers: {},
   });
 }
 
