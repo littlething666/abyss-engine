@@ -16,6 +16,58 @@ export const CRYSTAL_BASE_SHAPES: readonly CrystalBaseShape[] = [
 
 export const DEFAULT_CRYSTAL_BASE_SHAPE: CrystalBaseShape = 'icosahedron';
 
+/**
+ * Curated Lucide icon name attached to every curriculum topic. Mirrors the
+ * runtime allowlist `TOPIC_ICON_NAMES` declared in
+ * `src/features/subjectGeneration/graph/topicIcons/topicIconAllowlist.ts`.
+ *
+ * Mirroring (rather than re-exporting from `features/`) keeps `src/types`
+ * framework-free and avoids `features/` imports. A bidirectional coverage test
+ * (`topicIconAllowlist.test.ts`) asserts the runtime list and this union remain
+ * in sync; failing CI signals a missing edit.
+ */
+export type TopicIconName =
+  | 'atom'
+  | 'beaker'
+  | 'binary'
+  | 'book-open'
+  | 'brain'
+  | 'calculator'
+  | 'chart-line'
+  | 'cloud'
+  | 'code-xml'
+  | 'compass'
+  | 'cpu'
+  | 'database'
+  | 'dna'
+  | 'flask-conical'
+  | 'function-square'
+  | 'globe'
+  | 'graduation-cap'
+  | 'hammer'
+  | 'handshake'
+  | 'heart-pulse'
+  | 'landmark'
+  | 'languages'
+  | 'leaf'
+  | 'lightbulb'
+  | 'map'
+  | 'microscope'
+  | 'music'
+  | 'network'
+  | 'palette'
+  | 'pen-tool'
+  | 'puzzle'
+  | 'rocket'
+  | 'ruler'
+  | 'scale'
+  | 'server'
+  | 'shield'
+  | 'sigma'
+  | 'telescope'
+  | 'users'
+  | 'wrench';
+
 export interface SubjectGeometry {
   gridTile: GeometryType;
 }
@@ -42,6 +94,7 @@ export type GraphPrerequisiteEntry = string | { topicId: string; minLevel: numbe
 export interface GraphNode {
   topicId: string;
   title: string;
+  iconName: TopicIconName;
   tier: number;
   prerequisites: GraphPrerequisiteEntry[];
   learningObjective: string;

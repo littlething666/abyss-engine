@@ -15,6 +15,7 @@ describe('parseGraphResponse', () => {
         tier: 1,
         prerequisites: [],
         learningObjective: 'Learn the thing.',
+        iconName: 'lightbulb',
       },
     ],
   };

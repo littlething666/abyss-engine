@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runTopicGenerationPipeline } from './runTopicGenerationPipeline';
 import { useContentGenerationStore } from '../contentGenerationStore';
 import { topicRefKey } from '@/lib/topicRef';
+import type { Card, SubjectGraph, TopicDetails } from '@/types/core';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type {
   IDeckRepository,
@@ -53,22 +54,24 @@ vi.mock('../runContentGenerationJob', () => ({
   runContentGenerationJob: (...args: unknown[]) => runContentGenerationJob(...args),
 }));
 
-const graph = {
+const graph: SubjectGraph = {
   subjectId: 'sub-1',
   title: 'Subject',
+  themeId: 'th',
+  maxTier: 1,
   nodes: [
     {
       topicId: 't-a',
       title: 'Topic A',
+      tier: 1,
+      prerequisites: [],
       learningObjective: 'objective',
-      level: 1,
-      prerequisiteTopicIds: [],
+      iconName: 'lightbulb',
     },
   ],
-  edges: [],
 };
 
-const readyDetails = {
+const readyDetails: TopicDetails = {
   topicId: 't-a',
   title: 'Topic A',
   subjectId: 'sub-1',
@@ -82,16 +85,18 @@ const readyDetails = {
     4: ['q1', 'q2', 'q3'],
   },
   groundingSources: [],
-  miniGameAffordances: [],
+  miniGameAffordances: {
+    categorySets: [],
+    orderedSequences: [],
+    connectionPairs: [],
+  },
 };
 
-const readyCards = Array.from({ length: 6 }).map((_, i) => ({
+const readyCards: Card[] = Array.from({ length: 6 }, (_, i) => ({
   id: `c-${i}`,
-  topicId: 't-a',
+  type: 'FLASHCARD',
   difficulty: 1,
-  kind: 'study' as const,
-  prompt: 'p',
-  answer: 'a',
+  content: { front: 'f', back: 'b' },
 }));
 
 /**
@@ -144,7 +149,16 @@ function makeDeckRepository(overrides: Partial<IDeckRepository> = {}): IDeckRepo
     getTopicDetails: vi.fn(async () => null),
     getTopicCards: vi.fn(async () => []),
     getManifest: vi.fn(async () => ({
-      subjects: [{ id: 'sub-1', name: 'Subject', metadata: {} }],
+      subjects: [
+        {
+          id: 'sub-1',
+          name: 'Subject',
+          description: '',
+          color: '#000',
+          geometry: { gridTile: 'box' },
+          metadata: {},
+        },
+      ],
     })),
     ...overrides,
   } as unknown as IDeckRepository;

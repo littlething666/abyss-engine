@@ -64,6 +64,7 @@ describe('applyGraphToStorage', () => {
           tier: 1,
           prerequisites: [],
           learningObjective: 'Obj',
+          iconName: 'lightbulb',
         },
       ],
     };

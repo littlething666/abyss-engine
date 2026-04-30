@@ -3,7 +3,14 @@ import type { GraphStrategy } from '@/types/generationStrategy';
 import subjectGraphTopicsPrompt from '@/prompts/subject-graph-topics.prompt';
 import { interpolatePromptTemplate } from '@/lib/interpolatePromptTemplate';
 
-export function buildTopicLatticeMessages(subjectId: string, strategy: GraphStrategy): ChatMessage[] {
+import { TOPIC_ICON_NAMES } from '../topicIcons/topicIconAllowlist';
+
+const ICON_ALLOWLIST_STRING = TOPIC_ICON_NAMES.join(', ');
+
+export function buildTopicLatticeMessages(
+  subjectId: string,
+  strategy: GraphStrategy,
+): ChatMessage[] {
   const topicCount = strategy.totalTiers * strategy.topicsPerTier;
   const systemContent = interpolatePromptTemplate(subjectGraphTopicsPrompt, {
     subjectId,
@@ -14,6 +21,7 @@ export function buildTopicLatticeMessages(subjectId: string, strategy: GraphStra
     topicsPerTier: String(strategy.topicsPerTier),
     audience: strategy.audienceBrief,
     domainDescription: strategy.domainBrief,
+    iconAllowlist: ICON_ALLOWLIST_STRING,
   });
 
   const userContent = strategy.focusConstraints.trim()

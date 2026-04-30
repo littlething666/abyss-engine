@@ -7,6 +7,7 @@
     {
       "topicId": "distributed-systems-fundamentals",
       "title": "Distributed Systems Fundamentals",
+      "iconName": "server",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Master the core principles of scalability, fault tolerance, and consensus in distributed architectural design."
@@ -14,6 +15,7 @@
     {
       "topicId": "robot-kinematics-dynamics",
       "title": "Robot Kinematics and Dynamics",
+      "iconName": "cpu",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Analyze the mathematical foundations of motion, including spatial transformations and manipulator Jacobian matrices."
@@ -21,6 +23,7 @@
     {
       "topicId": "molecular-biology-basics",
       "title": "Molecular Biology for Engineers",
+      "iconName": "dna",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Understand cellular structures, genetic coding, and protein synthesis as biological information systems."
@@ -28,6 +31,7 @@
     {
       "topicId": "sensor-fusion-theory",
       "title": "Sensor Fusion Theory",
+      "iconName": "network",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Apply probabilistic methods to integrate data from heterogeneous sensors for state estimation."
@@ -35,6 +39,7 @@
     {
       "topicId": "embedded-systems-real-time",
       "title": "Embedded Systems and RTOS",
+      "iconName": "cpu",
       "tier": 1,
       "prerequisites": [],
       "learningObjective": "Design low-latency software architectures for deterministic control of physical hardware."
@@ -42,6 +47,7 @@
     {
       "topicId": "bio-robotic-interfacing",
       "title": "Bio-Robotic Interfacing",
+      "iconName": "dna",
       "tier": 2,
       "prerequisites": [
         "robot-kinematics-dynamics",
@@ -52,6 +58,7 @@
     {
       "topicId": "autonomous-navigation-systems",
       "title": "Autonomous Navigation Systems",
+      "iconName": "map",
       "tier": 2,
       "prerequisites": [
         "robot-kinematics-dynamics",
@@ -62,6 +69,7 @@
     {
       "topicId": "microfluidics-architectures",
       "title": "Microfluidic System Architectures",
+      "iconName": "flask-conical",
       "tier": 2,
       "prerequisites": [
         "molecular-biology-basics",
@@ -72,6 +80,7 @@
     {
       "topicId": "edge-computing-robotics",
       "title": "Edge Computing for Robotics",
+      "iconName": "server",
       "tier": 2,
       "prerequisites": [
         "distributed-systems-fundamentals",
@@ -82,6 +91,7 @@
     {
       "topicId": "biometric-data-pipelines",
       "title": "Biometric Data Pipelines",
+      "iconName": "database",
       "tier": 2,
       "prerequisites": [
         "distributed-systems-fundamentals",
@@ -92,6 +102,7 @@
     {
       "topicId": "synthetic-biology-automation",
       "title": "Synthetic Biology Automation",
+      "iconName": "dna",
       "tier": 3,
       "prerequisites": [
         "bio-robotic-interfacing",
@@ -102,6 +113,7 @@
     {
       "topicId": "swarm-robotics-bio-logistics",
       "title": "Swarm Robotics for Bio-Logistics",
+      "iconName": "network",
       "tier": 3,
       "prerequisites": [
         "autonomous-navigation-systems",
@@ -112,6 +124,7 @@
     {
       "topicId": "neural-prosthetic-design",
       "title": "Neural Prosthetic Design",
+      "iconName": "dna",
       "tier": 3,
       "prerequisites": [
         "bio-robotic-interfacing",
@@ -122,6 +135,7 @@
     {
       "topicId": "ai-driven-bioprocess-control",
       "title": "AI-Driven Bioprocess Control",
+      "iconName": "brain",
       "tier": 3,
       "prerequisites": [
         "biometric-data-pipelines",
@@ -132,13 +146,14 @@
     {
       "topicId": "tele-surgical-robotics-architecture",
       "title": "Tele-Surgical Robotics Architecture",
+      "iconName": "heart-pulse",
       "tier": 3,
       "prerequisites": [
         "autonomous-navigation-systems",
         "edge-computing-robotics",
         "bio-robotic-interfacing"
       ],
-      "learningObjective": "Engineer ultra-reliable,low-latency architectures for remote surgical intervention and haptic feedback."
+      "learningObjective": "Engineer ultra-reliable, low-latency architectures for remote surgical intervention and haptic feedback."
     }
   ]
 }

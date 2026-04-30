@@ -21,6 +21,8 @@ import {
 } from '@/features/contentGeneration';
 import { useTopicDetails } from '@/hooks/useDeckData';
 
+import { TopicIcon } from './topicIcons/TopicIcon';
+
 const GENERATION_STEPS: readonly TopicGenerationStage[] = [
   'theory',
   'study-cards',
@@ -93,7 +95,10 @@ export function TopicDetailsPopup({
     >
       <DialogContent className="flex max-h-[95vh] min-h-0 w-[min(95%,30rem)] flex-col overflow-hidden rounded-[20px] border border-border bg-card p-3 shadow-2xl sm:p-6">
         <DialogHeader>
-          <DialogTitle>{topic.name}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <TopicIcon iconName={topic.iconName} className="size-5 shrink-0 text-primary" />
+            <span className="min-w-0 truncate">{topic.name}</span>
+          </DialogTitle>
           <DialogDescription>{topic.subjectName}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto">

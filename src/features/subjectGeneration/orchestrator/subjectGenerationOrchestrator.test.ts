@@ -24,6 +24,7 @@ function validFifteenNodeGraph(subjectId: string): SubjectGraph {
       tier: 1,
       prerequisites: [],
       learningObjective: 'Objective one.',
+      iconName: 'lightbulb',
     });
   }
   for (let i = 1; i <= 5; i += 1) {
@@ -33,6 +34,7 @@ function validFifteenNodeGraph(subjectId: string): SubjectGraph {
       tier: 2,
       prerequisites: [`t1-${i}`],
       learningObjective: 'Objective two.',
+      iconName: 'lightbulb',
     });
   }
   for (let i = 1; i <= 5; i += 1) {
@@ -42,6 +44,7 @@ function validFifteenNodeGraph(subjectId: string): SubjectGraph {
       tier: 3,
       prerequisites: [`t2-${i}`, `t1-${i}`],
       learningObjective: 'Objective three.',
+      iconName: 'lightbulb',
     });
   }
   return {
@@ -55,11 +58,12 @@ function validFifteenNodeGraph(subjectId: string): SubjectGraph {
 
 function latticeJsonFromGraph(graph: SubjectGraph): string {
   return JSON.stringify({
-    topics: graph.nodes.map(({ topicId, title, tier, learningObjective }) => ({
+    topics: graph.nodes.map(({ topicId, title, tier, learningObjective, iconName }) => ({
       topicId,
       title,
       tier,
       learningObjective,
+      iconName,
     })),
   });
 }

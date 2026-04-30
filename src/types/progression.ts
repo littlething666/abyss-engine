@@ -1,4 +1,4 @@
-import type { ActiveCrystal, Card, TopicRef } from './core';
+import type { ActiveCrystal, Card, TopicIconName, TopicRef } from './core';
 import type { SubjectGraph } from './core';
 
 /** Study-ready content state for a topic (IndexedDB + generation jobs). */
@@ -205,6 +205,12 @@ export interface ProgressionActions {
       description: string;
       subjectId: string;
       subjectName: string;
+      /**
+       * Curated lucide icon name copied from the topic's graph node. Mirrors
+       * `TieredTopic.iconName` from `progressionUtils.ts`; consumed by
+       * `<TopicIcon />` and the 3D crystal label texture.
+       */
+      iconName: TopicIconName;
       contentStatus: TopicContentStatus;
       isLocked: boolean;
       isUnlocked: boolean;

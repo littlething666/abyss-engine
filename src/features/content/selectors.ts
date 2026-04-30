@@ -2,7 +2,14 @@ import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 
 import { topicRefKey } from '@/lib/topicRef';
-import { Subject, SubjectGraph, TopicDetails, Card, TopicRef } from '../../types/core';
+import {
+  Subject,
+  SubjectGraph,
+  TopicDetails,
+  Card,
+  TopicRef,
+} from '../../types/core';
+import type { GraphNode, TopicIconName } from '../../types/core';
 import { useSubjects, useSubjectGraphs } from './contentQueries';
 import { deckRepository } from '../../infrastructure/di';
 
@@ -10,6 +17,14 @@ export interface TopicMetadata {
   subjectId: string;
   subjectName: string;
   topicName: string;
+  /**
+   * Curated lucide icon name copied from the topic's graph node.
+   *
+   * Optional during the Phase 2 migration window. Becomes required once
+   * timeline + study-panel callers all populate it (see Notion plan,
+   * "start optional; required after timeline migration").
+   */
+  iconName?: TopicIconName;
   theory?: string;
 }
 
@@ -40,19 +55,32 @@ export function useTopicMetadata(refs: TopicRef[]) {
     return map;
   }, [subjects]);
 
+  const graphNodeByRefKey = useMemo(() => {
+    const map = new Map<string, GraphNode>();
+    for (const graph of graphs as SubjectGraph[]) {
+      for (const node of graph.nodes) {
+        const k = topicRefKey({ subjectId: graph.subjectId, topicId: node.topicId });
+        map.set(k, node);
+      }
+    }
+    return map;
+  }, [graphs]);
+
   const topicMetadataBase = useMemo(() => {
     const base: Record<string, TopicMetadata> = {};
     for (const ref of deduped) {
       const k = topicRefKey(ref);
       const subjectName = subjectMap.get(ref.subjectId) ?? '';
+      const node = graphNodeByRefKey.get(k);
       base[k] = {
         subjectId: ref.subjectId,
         subjectName,
-        topicName: '',
+        topicName: node?.title ?? '',
+        iconName: node?.iconName,
       };
     }
     return base;
-  }, [subjectMap, deduped]);
+  }, [subjectMap, deduped, graphNodeByRefKey]);
 
   const topicDetailsQueries = useQueries({
     queries: deduped.map((ref) => ({
