@@ -44,6 +44,7 @@ import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifec
 import { topicRefKey } from '@/lib/topicRef';
 import { useTopicCardQueriesForSubjectFilter } from '@/hooks/useTopicCardQueries';
 import { applyOpenTopicStudyEffect } from '@/hooks/openTopicStudyAdapter';
+import type { Card } from '@/types/core';
 import { toast } from '@/infrastructure/toast';
 
 const Scene = dynamic(() => import('@/components/Scene'), {
@@ -229,12 +230,19 @@ const HomeContent: React.FC = () => {
   // free of progression-store imports.
   const handleOpenTopicStudyFromMentor = useCallback(
     (params: { subjectId: string; topicId: string }) => {
+      const startStudyWithMutableCards = (
+        topic: { subjectId: string; topicId: string },
+        cards: readonly Card[],
+      ) => {
+        startTopicStudySession(topic, [...cards]);
+      };
+      const getCardsForTopic = (topic: { subjectId: string; topicId: string }) =>
+        topicCardsByKey.get(topicRefKey(topic)) ?? [];
       applyOpenTopicStudyEffect(params, {
         selectTopic,
-        startTopicStudySession,
+        startTopicStudySession: startStudyWithMutableCards,
         openStudyPanel,
-        getCardsForTopic: (topic) =>
-          topicCardsByKey.get(topicRefKey(topic)) ?? [],
+        getCardsForTopic,
       });
     },
     [topicCardsByKey, selectTopic, startTopicStudySession, openStudyPanel],

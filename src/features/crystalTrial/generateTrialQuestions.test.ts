@@ -46,6 +46,7 @@ const graph: SubjectGraph = {
       tier: 1,
       prerequisites: [],
       learningObjective: 'learn',
+      iconName: 'lightbulb',
     },
   ],
 };
