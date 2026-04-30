@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid';
 
 import { topicRefKey } from '@/lib/topicRef';
+import { appEventBus } from '@/infrastructure/eventBus';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import {
@@ -89,11 +90,51 @@ export async function runTopicGenerationPipeline(
     signal.addEventListener('abort', () => pipelineAc.abort(), { once: true });
   }
 
+  // Topic label used by any terminal lifecycle event this run emits. Falls
+  // back to the topicId until the graph node is resolved; once located it is
+  // replaced with the human-readable title.
+  let topicLabel = topicId;
+
+  // Sole emission point for `topic-content:generation-{completed,failed}`
+  // lifecycle events on this run. Auto-skipped runs (study-ready content
+  // already exists) intentionally produce no event — there is no fresh
+  // result for mentor consumers or telemetry to surface.
+  const finalize = (
+    r: { ok: boolean; pipelineId: string; error?: string; skipped?: boolean },
+  ) => {
+    if (!r.skipped) {
+      if (r.ok) {
+        appEventBus.emit('topic-content:generation-completed', {
+          subjectId,
+          topicId,
+          topicLabel,
+          pipelineId: r.pipelineId,
+          stage,
+        });
+      } else {
+        appEventBus.emit('topic-content:generation-failed', {
+          subjectId,
+          topicId,
+          topicLabel,
+          pipelineId: r.pipelineId,
+          stage,
+          errorMessage: r.error ?? 'Topic content generation failed',
+        });
+      }
+    }
+    return r;
+  };
+
   const graph = await deckRepository.getSubjectGraph(subjectId);
   const node = graph.nodes.find((n) => n.topicId === topicId);
   if (!node) {
-    return { ok: false, pipelineId, error: `Topic "${topicId}" not found in subject graph` };
+    return finalize({
+      ok: false,
+      pipelineId,
+      error: `Topic "${topicId}" not found in subject graph`,
+    });
   }
+  topicLabel = node.title;
 
   const [details, cards] = await Promise.all([
     deckRepository.getTopicDetails(subjectId, topicId),
@@ -103,282 +144,7 @@ export async function runTopicGenerationPipeline(
   const shouldAutoSkip =
     !forceRegenerate && stage === 'full' && !resumeFromStage && topicStudyContentReady(details, cards);
   if (shouldAutoSkip) {
-    return { ok: true, pipelineId: '', skipped: true };
+    return finalize({ ok: true, pipelineId: '', skipped: true });
   }
 
-  const manifest = await deckRepository.getManifest({ includePregeneratedCurriculums: true });
-  const subject = manifest.subjects.find((s) => s.id === subjectId);
-  const subjectTitle = subject?.name ?? graph.title;
-  const contentStrategy = subject?.metadata?.strategy?.content;
-  const contentBrief = contentStrategy?.contentBrief?.trim() || undefined;
-
-  const pipelineLabel = resumeFromStage
-    ? `Retry · ${pipelineShellLabel(stage, node.title)}`
-    : pipelineShellLabel(stage, node.title);
-
-  store.registerPipeline(
-    {
-      id: pipelineId,
-      label: pipelineLabel,
-      createdAt: Date.now(),
-      retryOf: retryOf ?? null,
-    },
-    pipelineAc,
-  );
-
-  let theoryData: ParsedTopicTheoryPayload | undefined;
-
-  const runTheoryJob = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const theoryResult = await runContentGenerationJob({
-      kind: 'topic-theory',
-      label: `Theory — ${node.title}`,
-      pipelineId,
-      subjectId,
-      topicId,
-      llmSurfaceId: 'topicContent',
-      chat,
-      model,
-      messages: buildTopicTheoryMessages({
-        subjectTitle,
-        topicId,
-        topicTitle: node.title,
-        learningObjective: node.learningObjective,
-        contentBrief,
-      }),
-      enableReasoning,
-      enableStreaming,
-      tools: buildOpenRouterWebSearchTools(FIRECRAWL_TOPIC_GROUNDING_POLICY),
-      externalSignal: pipelineAc.signal,
-      parseOutput: async (raw, job) => {
-        const providerMetadata = job.metadata?.provider as Record<string, unknown> | undefined;
-        const parsed = parseTopicTheoryPayload(raw, {
-          groundingPolicy: FIRECRAWL_TOPIC_GROUNDING_POLICY,
-          providerMetadata,
-          validateGroundingSources,
-        });
-        if (!parsed.ok) {
-          return { ok: false, error: parsed.error, parseError: parsed.error };
-        }
-        useContentGenerationStore.getState().mergeJobMetadata(job.id, {
-          grounding: {
-            sourceCount: parsed.data.groundingSources.length,
-            sources: parsed.data.groundingSources,
-          },
-        });
-        return { ok: true, data: parsed.data };
-      },
-      persistOutput: async (data) => {
-        theoryData = data;
-        await writer.upsertTopicDetails({
-          topicId,
-          title: node.title,
-          subjectId,
-          coreConcept: data.coreConcept,
-          theory: data.theory,
-          keyTakeaways: data.keyTakeaways,
-          coreQuestionsByDifficulty: data.coreQuestionsByDifficulty,
-          groundingSources: data.groundingSources,
-          miniGameAffordances: data.miniGameAffordances,
-        });
-      },
-    });
-
-    if (!theoryResult.ok) {
-      return { ok: false, error: theoryResult.error ?? 'Theory job failed' };
-    }
-    return { ok: true };
-  };
-
-  const runStudyJob = async (theory: ParsedTopicTheoryPayload): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const targetDifficulty = 1;
-
-    const studyResult = await runContentGenerationJob({
-      kind: 'topic-study-cards',
-      label: `Study cards — ${node.title}`,
-      pipelineId,
-      subjectId,
-      topicId,
-      llmSurfaceId: 'topicContent',
-      chat,
-      model,
-      messages: buildTopicStudyCardsMessages({
-        topicId,
-        topicTitle: node.title,
-        theory: theory.theory,
-        targetDifficulty,
-        syllabusQuestions: theory.coreQuestionsByDifficulty[targetDifficulty],
-        contentStrategy,
-        groundingSources: theory.groundingSources,
-        contentBrief,
-      }),
-      enableReasoning,
-      enableStreaming,
-      externalSignal: pipelineAc.signal,
-      parseOutput: async (raw, job) => {
-        const parsed = parseTopicCardsPayload(raw, {
-          groundingSources: theory.groundingSources,
-        });
-        if (parsed.qualityReport) {
-          useContentGenerationStore.getState().mergeJobMetadata(job.id, {
-            qualityReport: parsed.qualityReport,
-            validationFailures: parsed.qualityReport.failures,
-          });
-        }
-        if (!parsed.ok) {
-          return { ok: false, error: parsed.error, parseError: parsed.error };
-        }
-        return { ok: true, data: parsed.cards };
-      },
-      persistOutput: async (c) => {
-        await writer.upsertTopicCards(subjectId, topicId, c);
-      },
-    });
-
-    if (!studyResult.ok) {
-      return { ok: false, error: studyResult.error ?? 'Study cards job failed' };
-    }
-    return { ok: true };
-  };
-
-  const runMiniJob = async (theory: ParsedTopicTheoryPayload): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const targetDifficulty = 1;
-
-    const miniResult = await runContentGenerationJob({
-      kind: 'topic-mini-games',
-      label: `Mini-games — ${node.title}`,
-      pipelineId,
-      subjectId,
-      topicId,
-      llmSurfaceId: 'topicContent',
-      chat,
-      model,
-      messages: buildTopicMiniGameCardsMessages({
-        topicId,
-        topicTitle: node.title,
-        theory: theory.theory,
-        targetDifficulty,
-        syllabusQuestions: theory.coreQuestionsByDifficulty[targetDifficulty],
-        contentStrategy,
-        groundingSources: theory.groundingSources,
-        miniGameAffordances: theory.miniGameAffordances,
-        contentBrief,
-      }),
-      enableReasoning,
-      enableStreaming,
-      externalSignal: pipelineAc.signal,
-      parseOutput: async (raw, job) => {
-        const parsed = parseTopicCardsPayload(raw, {
-          groundingSources: theory.groundingSources,
-        });
-        if (parsed.qualityReport) {
-          useContentGenerationStore.getState().mergeJobMetadata(job.id, {
-            qualityReport: parsed.qualityReport,
-            validationFailures: parsed.qualityReport.failures,
-          });
-        }
-        if (!parsed.ok) {
-          return { ok: false, error: parsed.error, parseError: parsed.error };
-        }
-        return { ok: true, data: parsed.cards };
-      },
-      persistOutput: async (c) => {
-        await writer.appendTopicCards(subjectId, topicId, c);
-      },
-    });
-
-    if (!miniResult.ok) {
-      return { ok: false, error: miniResult.error ?? 'Mini-games job failed' };
-    }
-    return { ok: true };
-  };
-
-  /**
-   * Loads theory data from the DB (for pipeline resume when theory stage was skipped).
-   * Falls back to theoryData if it was already produced by runTheoryJob in this run.
-   */
-  const resolveTheoryData = (): ParsedTopicTheoryPayload => {
-    if (theoryData) return theoryData;
-    return loadTheoryPayloadFromTopicDetails(details);
-  };
-
-  try {
-    if (stage === 'theory') {
-      const t = await runTheoryJob();
-      return t.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: t.error };
-    }
-
-    if (stage === 'study-cards') {
-      let theory: ParsedTopicTheoryPayload;
-      try {
-        theory = loadTheoryPayloadFromTopicDetails(details);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        return { ok: false, pipelineId, error: message };
-      }
-      const s = await runStudyJob(theory);
-      return s.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: s.error };
-    }
-
-    if (stage === 'mini-games') {
-      let theory: ParsedTopicTheoryPayload;
-      try {
-        theory = loadTheoryPayloadFromTopicDetails(details);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        return { ok: false, pipelineId, error: message };
-      }
-      const m = await runMiniJob(theory);
-      return m.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: m.error };
-    }
-
-    // ── full pipeline (with optional resume) ──────────────────────────
-    const resumeIdx = resumeFromStage && resumeFromStage !== 'full'
-      ? FULL_PIPELINE_STAGES.indexOf(resumeFromStage)
-      : 0;
-    const startIdx = Math.max(0, resumeIdx);
-
-    // Stage 0: theory
-    if (startIdx <= 0) {
-      const theoryStep = await runTheoryJob();
-      if (!theoryStep.ok) {
-        return { ok: false, pipelineId, error: theoryStep.error };
-      }
-    }
-
-    // Resolve theory data (either from runTheoryJob or loaded from DB for resume)
-    let theory: ParsedTopicTheoryPayload;
-    try {
-      theory = resolveTheoryData();
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      return { ok: false, pipelineId, error: `Cannot resume — theory not available: ${message}` };
-    }
-
-    // Stage 1: study-cards
-    if (startIdx <= 1) {
-      const studyStep = await runStudyJob(theory);
-      if (!studyStep.ok) {
-        return { ok: false, pipelineId, error: studyStep.error };
-      }
-    }
-
-    // Stage 2: mini-games
-    if (startIdx <= 2) {
-      const miniStep = await runMiniJob(theory);
-      if (!miniStep.ok) {
-        return { ok: false, pipelineId, error: miniStep.error };
-      }
-    }
-
-    if (stage === 'full') {
-      useCrystalContentCelebrationStore
-        .getState()
-        .markPendingFromFullTopicUnlock(topicRefKey({ subjectId, topicId }));
-    }
-
-    return { ok: true, pipelineId };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    return { ok: false, pipelineId, error: message };
-  }
-}
+  const manif
