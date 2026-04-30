@@ -21,7 +21,7 @@ const TEST_CONFIG: PosthogResolvedConfig = {
   enableSessionRecording: true,
   autocapture: {
     dom_event_allowlist: ['click', 'submit', 'change'],
-    element_allowlist: ['button', 'a', 'input', '[role="button"]'],
+    element_allowlist: ['button', 'a', 'input'],
   },
 };
 
