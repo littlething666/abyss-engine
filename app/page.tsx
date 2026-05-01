@@ -43,6 +43,8 @@ import { useContentGenerationHydration } from '@/hooks/useContentGenerationHydra
 import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifecycle';
 import { topicRefKey } from '@/lib/topicRef';
 import { useTopicCardQueriesForSubjectFilter } from '@/hooks/useTopicCardQueries';
+import { applyOpenTopicStudyEffect } from '@/hooks/openTopicStudyAdapter';
+import type { Card } from '@/types/core';
 import { toast } from '@/infrastructure/toast';
 
 const Scene = dynamic(() => import('@/components/Scene'), {
@@ -222,6 +224,30 @@ const HomeContent: React.FC = () => {
     [topicCardsByKey, selectTopic, startTopicStudySession, openStudyPanel],
   );
 
+  // Phase E: bridge the mentor `open_topic_study` effect onto existing
+  // progression + UI actions. The adapter is a pure helper that lives
+  // outside of `@/features/mentor`, so the mentor feature itself stays
+  // free of progression-store imports.
+  const handleOpenTopicStudyFromMentor = useCallback(
+    (params: { subjectId: string; topicId: string }) => {
+      const startStudyWithMutableCards = (
+        topic: { subjectId: string; topicId: string },
+        cards: readonly Card[],
+      ) => {
+        startTopicStudySession(topic, [...cards]);
+      };
+      const getCardsForTopic = (topic: { subjectId: string; topicId: string }) =>
+        topicCardsByKey.get(topicRefKey(topic)) ?? [];
+      applyOpenTopicStudyEffect(params, {
+        selectTopic,
+        startTopicStudySession: startStudyWithMutableCards,
+        openStudyPanel,
+        getCardsForTopic,
+      });
+    },
+    [topicCardsByKey, selectTopic, startTopicStudySession, openStudyPanel],
+  );
+
   const handleQuickActionWisdomAltar = useCallback(() => { openDiscoveryModal(); }, [openDiscoveryModal]);
   const handleQuickActionCommandPalette = useCallback(() => { setIsCommandPaletteOpen(true); }, []);
   const handleQuickActionSettings = useCallback(() => { openGlobalSettings(); }, [openGlobalSettings]);
@@ -235,7 +261,7 @@ const HomeContent: React.FC = () => {
     setIsIncrementalSubjectOpen(true);
   }, [closeDiscoveryModal]);
 
-  // Quick Actions "🗣️ Mentor" — keyboard-accessible parity with the
+  // Quick Actions "\ud83d\udde3\ufe0f Mentor" — keyboard-accessible parity with the
   // MentorBubble billboard. Both paths route through the contextual entry
   // helper, which encodes the v1 selection rules:
   //   overlay open    → no-op
@@ -243,23 +269,26 @@ const HomeContent: React.FC = () => {
   //   else            → resolve trigger from live context, enqueue.
   const entryContext = useMentorEntryContext();
   const {
-    subjectGenerationPhase,
+    subjectGraphActiveStage,
     subjectGenerationLabel,
     playerName,
     firstSubjectGenerationEnqueuedAt,
+    mentorFailureEntry,
   } = entryContext;
   const handleQuickActionMentor = useCallback(() => {
     tryEnqueueMentorEntry({
-      subjectGenerationPhase,
+      subjectGraphActiveStage,
       subjectGenerationLabel,
       playerName,
       firstSubjectGenerationEnqueuedAt,
+      mentorFailureEntry,
     });
   }, [
-    subjectGenerationPhase,
+    subjectGraphActiveStage,
     subjectGenerationLabel,
     playerName,
     firstSubjectGenerationEnqueuedAt,
+    mentorFailureEntry,
   ]);
 
   const TOP_LEFT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', left: 'calc(0.75rem + env(safe-area-inset-left))' };
@@ -396,7 +425,7 @@ const HomeContent: React.FC = () => {
 
       <CrystalTrialModal />
 
-      <MentorDialogOverlay />
+      <MentorDialogOverlay onOpenTopicStudy={handleOpenTopicStudyFromMentor} />
     </div>
   );
 }

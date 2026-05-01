@@ -43,6 +43,8 @@ describe('contentGenerationStore', () => {
       pipelines: {},
       abortControllers: {},
       pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
     });
     vi.mocked(clearPersistedLogs).mockClear();
   });
@@ -76,10 +78,65 @@ describe('contentGenerationStore', () => {
       pipelines: {},
       abortControllers: {},
       pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
     });
     useContentGenerationStore.getState().clearCompletedJobs();
     expect(Object.keys(useContentGenerationStore.getState().jobs)).toHaveLength(0);
     expect(clearPersistedLogs).toHaveBeenCalledTimes(1);
+  });
+
+  it('acknowledgeFailureKey marks the key and registerJob with retryOf acknowledges the prior job', () => {
+    const prevId = 'prev-failed';
+    useContentGenerationStore.getState().registerJob(
+      {
+        id: prevId,
+        pipelineId: null,
+        kind: 'topic-theory',
+        status: 'failed',
+        label: 'L',
+        subjectId: 's',
+        topicId: 't',
+        createdAt: 1,
+        startedAt: 1,
+        finishedAt: 2,
+        inputMessages: null,
+        rawOutput: '',
+        reasoningText: null,
+        error: 'e',
+        parseError: null,
+        retryOf: null,
+        metadata: null,
+      },
+      new AbortController(),
+    );
+    const fk = `cg:job:${prevId}`;
+    expect(useContentGenerationStore.getState().sessionAcknowledgedFailureKeys[fk]).toBeUndefined();
+    useContentGenerationStore.getState().registerJob(
+      {
+        id: 'new-job',
+        pipelineId: null,
+        kind: 'topic-theory',
+        status: 'pending',
+        label: 'L2',
+        subjectId: 's',
+        topicId: 't',
+        createdAt: 2,
+        startedAt: null,
+        finishedAt: null,
+        inputMessages: null,
+        rawOutput: '',
+        reasoningText: null,
+        error: null,
+        parseError: null,
+        retryOf: prevId,
+        metadata: null,
+      },
+      new AbortController(),
+    );
+    expect(useContentGenerationStore.getState().sessionAcknowledgedFailureKeys[fk]).toBe(true);
+    useContentGenerationStore.getState().acknowledgeFailureKey('cg:job:new-job');
+    expect(useContentGenerationStore.getState().sessionAcknowledgedFailureKeys['cg:job:new-job']).toBe(true);
   });
 
   it('pruneCompletedJobs caps in-memory terminal logs', () => {
@@ -92,7 +149,14 @@ describe('contentGenerationStore', () => {
         finishedAt: 1000 + i,
       });
     }
-    useContentGenerationStore.setState({ jobs, pipelines: {}, abortControllers: {}, pipelineAbortControllers: {} });
+    useContentGenerationStore.setState({
+      jobs,
+      pipelines: {},
+      abortControllers: {},
+      pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
+    });
     useContentGenerationStore.getState().pruneCompletedJobs();
     expect(Object.keys(useContentGenerationStore.getState().jobs).length).toBe(MAX_PERSISTED_LOGS);
   });

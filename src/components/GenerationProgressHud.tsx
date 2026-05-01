@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ListTree, RotateCcw } from 'lucide-react';
+import { Copy, ListTree, RotateCcw } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import {
   retryFailedPipeline,
 } from '@/features/contentGeneration';
 import type { ContentGenerationJob, ContentGenerationJobStatus } from '@/types/contentGeneration';
+import type { ContentGenerationAbortReason } from '@/types/contentGenerationAbort';
 import type { GeneratedCardQualityReport, GeneratedCardValidationFailure } from '@/types/contentQuality';
 import { useUIStore } from '@/store/uiStore';
 
@@ -120,6 +121,10 @@ function isValidationFailureArray(value: unknown): value is GeneratedCardValidat
   });
 }
 
+function isNonEmptyDebugMarkdown(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 function isQualityReport(value: unknown): value is GeneratedCardQualityReport {
   if (!value || typeof value !== 'object') return false;
   const maybe = value as { emittedCount?: unknown; invalidCount?: unknown; duplicateConceptCount?: unknown };
@@ -134,6 +139,15 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
   const input = job.inputMessages ?? '';
   const raw = job.rawOutput;
   const reasoning = job.reasoningText ?? '';
+  const debugMarkdown =
+    job.status === 'failed' && isNonEmptyDebugMarkdown(job.metadata?.debugMarkdown)
+      ? job.metadata.debugMarkdown
+      : null;
+
+  const handleCopyFailureReport = useCallback(() => {
+    if (!debugMarkdown) return;
+    void navigator.clipboard.writeText(debugMarkdown);
+  }, [debugMarkdown]);
   const modelName =
     typeof job.metadata?.model === 'string'
       ? job.metadata.model
@@ -156,6 +170,20 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
         <p className="text-destructive text-xs" role="alert">
           Parse: {job.parseError}
         </p>
+      ) : null}
+      {debugMarkdown ? (
+        <div className="mt-2 flex flex-col gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full gap-1.5 text-xs"
+            onClick={handleCopyFailureReport}
+          >
+            <Copy className="size-3 shrink-0" aria-hidden />
+            Copy failure report (markdown)
+          </Button>
+        </div>
       ) : null}
       {job.retryOf ? (
         <p className="text-muted-foreground text-[11px]">
@@ -240,6 +268,8 @@ export function GenerationProgressHud() {
   const abortJob = useContentGenerationStore((s) => s.abortJob);
   const abortPipeline = useContentGenerationStore((s) => s.abortPipeline);
   const clearCompletedJobs = useContentGenerationStore((s) => s.clearCompletedJobs);
+  const hudJobAbortReason: ContentGenerationAbortReason = { kind: 'user', source: 'hud-job' };
+  const hudPipelineAbortReason: ContentGenerationAbortReason = { kind: 'user', source: 'hud-pipeline' };
   const open = useUIStore((s) => s.isGenerationProgressOpen);
   const openGenerationProgress = useUIStore((s) => s.openGenerationProgress);
   const setGenerationProgressOpen = useUIStore((s) => s.setGenerationProgressOpen);
@@ -364,7 +394,7 @@ export function GenerationProgressHud() {
                               Pipeline: {agg === 'active' ? pipelineSummaryLabel(groupJobs) : agg}
                             </p>
                           </div>
-                          <Button type="button" variant="outline" size="sm" onClick={() => abortPipeline(pid)}>
+                          <Button type="button" variant="outline" size="sm" onClick={() => abortPipeline(pid, hudPipelineAbortReason)}>
                             Abort pipeline
                           </Button>
                         </div>
@@ -407,7 +437,7 @@ export function GenerationProgressHud() {
                           variant="outline"
                           size="sm"
                           className="w-full shrink-0 sm:w-auto"
-                          onClick={() => abortJob(j.id)}
+                          onClick={() => abortJob(j.id, hudJobAbortReason)}
                         >
                           Abort
                         </Button>

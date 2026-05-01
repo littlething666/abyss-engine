@@ -39,10 +39,12 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-/.cursor/plans/
+.cursor/plans/
 
-/public/hdri/
+public/hdri/
 
 .wrangler/
 workers/
 .github/workflows/deploy-worker.yml
+
+.tmp/

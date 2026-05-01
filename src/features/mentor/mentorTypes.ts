@@ -1,18 +1,9 @@
+import type { MentorTriggerId } from '@/types/mentorTriggers';
+
 export type MentorVoiceId = 'witty-sarcastic';
 
-export const MENTOR_TRIGGER_IDS = [
-  'onboarding:pre-first-subject',
-  'onboarding:subject-unlock-first-crystal',
-  'session:completed',
-  'crystal:leveled',
-  'crystal-trial:available-for-player',
-  'subject:generation-started',
-  'subject:generated',
-  'subject:generation-failed',
-  'mentor-bubble:clicked',
-] as const;
-
-export type MentorTriggerId = (typeof MENTOR_TRIGGER_IDS)[number];
+export { MENTOR_TRIGGER_IDS } from '@/types/mentorTriggers';
+export type { MentorTriggerId } from '@/types/mentorTriggers';
 
 export type MentorMood =
   | 'neutral'
@@ -31,6 +22,12 @@ export type MentorEffect =
       subjectId?: string | '__all_floors__';
     }
   | { kind: 'open_generation_hud' }
+  // open_topic_study is the topic-ready CTA: opens the study panel for a
+  // specific (subjectId, topicId) once the topic content pipeline has
+  // produced study-ready material. The presentation/composition adapter
+  // that fulfills this effect lands in Phase E; until then the catalog
+  // entry exists so dialog plans can carry it through unchanged.
+  | { kind: 'open_topic_study'; subjectId: string; topicId: string }
   | { kind: 'dismiss' };
 
 export interface MentorChoice {
@@ -53,6 +50,8 @@ export interface MentorMessage {
 export interface DialogPlan {
   id: string;
   trigger: MentorTriggerId;
+  /** Original trigger payload (identity for failure acknowledgement). */
+  payload: MentorTriggerPayload;
   priority: number;
   enqueuedAt: number;
   messages: MentorMessage[];
@@ -66,10 +65,24 @@ export interface MentorTriggerPayload {
   topic?: string;
   subjectId?: string;
   subjectName?: string;
-  stage?: 'topics' | 'edges';
+  stage?: 'topics' | 'edges' | 'theory' | 'study-cards' | 'mini-games' | 'full';
   pipelineId?: string;
   from?: number;
   to?: number;
   correctRate?: number;
   totalAttempts?: number;
+  // Phase A additions. `topicId` powers the `open_topic_study` effect;
+  // `topicLabel` is the human-readable topic title used in copy
+  // interpolation; `level` is the crystal-band level for expansion jobs;
+  // `jobLabel` is the failed job's label (e.g. "Theory — Topology") used
+  // by retry-failed copy; `errorMessage` is reserved for diagnostic
+  // surfacing (kept blameless in copy by default).
+  topicId?: string;
+  topicLabel?: string;
+  level?: number;
+  jobLabel?: string;
+  errorMessage?: string;
+  jobId?: string;
+  failureKey?: string;
+  failureInstanceId?: string;
 }

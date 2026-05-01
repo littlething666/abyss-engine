@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { studySettingsStore } from '@/store/studySettingsStore';
-import { resolveEnableReasoningForSurface, resolveIncludeOpenRouterReasoningParam } from './llmInferenceSurfaceProviders';
+import {
+  resolveEnableReasoningForSurface,
+  resolveIncludeOpenRouterReasoningParam,
+  resolveOpenRouterStructuredChatExtrasForJob,
+} from './llmInferenceSurfaceProviders';
 
 describe('llmInferenceSurfaceProviders', () => {
   beforeEach(() => {
@@ -51,5 +55,117 @@ describe('llmInferenceSurfaceProviders', () => {
     });
     expect(resolveIncludeOpenRouterReasoningParam('studyQuestionExplain')).toBe(false);
     expect(resolveEnableReasoningForSurface('studyQuestionExplain')).toBe(false);
+  });
+
+  const dummyJsonSchemaFormat = {
+    type: 'json_schema' as const,
+    json_schema: {
+      name: 'topic_theory_syllabus',
+      strict: true,
+      schema: { type: 'object' },
+    },
+  };
+
+  it('selects JSON Schema response_format when structured_outputs is supported', () => {
+    studySettingsStore.setState({
+      ...studySettingsStore.getState(),
+      openRouterConfigs: [
+        {
+          id: 'schema-capable',
+          label: 'Schema',
+          model: 'org/model',
+          enableReasoning: false,
+          enableStreaming: true,
+          supportedParameters: ['response_format', 'structured_outputs'],
+        },
+      ],
+      surfaceProviders: {
+        ...studySettingsStore.getState().surfaceProviders,
+        topicContent: { provider: 'openrouter', openRouterConfigId: 'schema-capable' },
+      },
+    });
+
+    const out = resolveOpenRouterStructuredChatExtrasForJob('topicContent', {
+      jsonSchemaResponseFormat: dummyJsonSchemaFormat,
+    });
+    expect(out?.responseFormat).toEqual(dummyJsonSchemaFormat);
+    expect(out?.forceNonStreaming).toBe(true);
+  });
+
+  it('attaches response-healing plugin for JSON Schema mode when OpenRouter healing is enabled', () => {
+    studySettingsStore.setState({
+      ...studySettingsStore.getState(),
+      openRouterResponseHealing: true,
+      openRouterConfigs: [
+        {
+          id: 'schema-capable',
+          label: 'Schema',
+          model: 'org/model',
+          enableReasoning: false,
+          enableStreaming: true,
+          supportedParameters: ['response_format', 'structured_outputs'],
+        },
+      ],
+      surfaceProviders: {
+        ...studySettingsStore.getState().surfaceProviders,
+        topicContent: { provider: 'openrouter', openRouterConfigId: 'schema-capable' },
+      },
+    });
+
+    const out = resolveOpenRouterStructuredChatExtrasForJob('topicContent', {
+      jsonSchemaResponseFormat: dummyJsonSchemaFormat,
+    });
+    expect(out?.plugins).toEqual([{ id: 'response-healing' }]);
+  });
+
+  it('falls back to json_object when structured_outputs is absent but response_format is supported', () => {
+    studySettingsStore.setState({
+      ...studySettingsStore.getState(),
+      openRouterConfigs: [
+        {
+          id: 'json-only',
+          label: 'JSON',
+          model: 'org/model',
+          enableReasoning: false,
+          enableStreaming: true,
+          supportedParameters: ['response_format'],
+        },
+      ],
+      surfaceProviders: {
+        ...studySettingsStore.getState().surfaceProviders,
+        topicContent: { provider: 'openrouter', openRouterConfigId: 'json-only' },
+      },
+    });
+
+    const out = resolveOpenRouterStructuredChatExtrasForJob('topicContent', {
+      jsonSchemaResponseFormat: dummyJsonSchemaFormat,
+    });
+    expect(out?.responseFormat).toEqual({ type: 'json_object' });
+  });
+
+  it('returns null for structured extras when response_format is not a supported parameter', () => {
+    studySettingsStore.setState({
+      ...studySettingsStore.getState(),
+      openRouterConfigs: [
+        {
+          id: 'no-response-format',
+          label: 'Bare',
+          model: 'org/model',
+          enableReasoning: false,
+          enableStreaming: true,
+          supportedParameters: ['tools'],
+        },
+      ],
+      surfaceProviders: {
+        ...studySettingsStore.getState().surfaceProviders,
+        topicContent: { provider: 'openrouter', openRouterConfigId: 'no-response-format' },
+      },
+    });
+
+    expect(
+      resolveOpenRouterStructuredChatExtrasForJob('topicContent', {
+        jsonSchemaResponseFormat: dummyJsonSchemaFormat,
+      }),
+    ).toBeNull();
   });
 });

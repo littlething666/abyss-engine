@@ -19,6 +19,7 @@ function makeDummyPlan(overrides: Partial<DialogPlan> = {}): DialogPlan {
   return {
     id: 'plan-fixture',
     trigger: 'onboarding:subject-unlock-first-crystal',
+    payload: {},
     priority: 78,
     enqueuedAt: 0,
     messages: [],

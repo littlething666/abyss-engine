@@ -1,4 +1,6 @@
-You generate **mini-game** cards only for the topic. Each card is a JSON object with **exactly four top-level keys** — no others:
+You generate **mini-game** cards only for the topic, for **one** game type: **{{expectedGameType}}**.
+
+Each card is a JSON object with **exactly four top-level keys** — no others:
 
 `"id"`, `"type": "MINI_GAME"`, `"difficulty": {{targetDifficulty}}`, `"content": { ... }`
 
@@ -14,36 +16,33 @@ Output **one JSON object**: `{ "cards": [ ... ] }`.
   "type": "MINI_GAME",
   "difficulty": {{targetDifficulty}},
   "content": {
-    "gameType": "CATEGORY_SORT",
+    "gameType": "{{expectedGameType}}",
     "prompt": "…",
     "explanation": "…"
   }
 }
 ```
 
-Replace the `content` object with one of the shapes below (keep `gameType` inside `content`).
+Replace the `content` object with the canonical shape for **{{expectedGameType}}** below.
 
-**Wrong (rejected):** `"type":"MINI_GAME","gameType":"CATEGORY_SORT","prompt":"…"` — missing `content` wrapper.
+**Wrong (rejected):** `"type":"MINI_GAME","gameType":"{{expectedGameType}}","prompt":"…"` — missing `content` wrapper.
 
-**Right:** `"type":"MINI_GAME","content":{"gameType":"CATEGORY_SORT","prompt":"…",…}`
+**Right:** `"type":"MINI_GAME","content":{"gameType":"{{expectedGameType}}","prompt":"…",…}`
 
-### `content` shapes (canonical field names)
+---
 
-**CATEGORY_SORT** — `categoryId` on each item must equal one of `categories[].id`.
+{{gameTypeRules}}
 
-**SEQUENCE_BUILD** — `correctPosition` is 0-based integer index.
-
-**CONNECTION_WEB** — `pairs` use `left` / `right`; optional `distractors` as objects with `id`, `side` (`"left"` or `"right"`), `label`.
-
-The server may normalize common aliases (`item`, `text`, `term`/`definition`, string `categories`, etc.) into the canonical shape, but you should still emit the **`content`** wrapper and prefer canonical names.
+---
 
 ### Requirements
 
-- Generate **2–3** cards; vary `content.gameType` when possible.
+- Generate exactly **1** card; it must use `content.gameType` = **{{expectedGameType}}** only.
 - Unique `id` per card, kebab-case, prefix `{{topicId}}-mg-`.
 - Difficulty **{{targetDifficulty}}** for all cards.
-- Ground content in the theory, accepted grounding sources, structured mini-game affordances, and target difficulty questions.
-- Prefer the supplied structured mini-game affordances over inventing fresh category, sequence, or pair sets.
+- Ground every card in the theory markdown, accepted grounding sources, target-difficulty syllabus questions, and the content strategy. Invent categories, sequences, or pairs that faithfully reflect the theory (no separate anchor payload is provided).
+- Use stable local ids in the canonical examples (`cat-0`…`cat-2`, `it-0`…`it-5`, `s-0`…, `p-0`…) as patterns for your own ids: every id field MUST be a non-empty string.
+- Do **not** rely on undocumented server-side repair of invalid shapes — emit valid JSON matching the canonical examples above.
 
 ### JSON strings and LaTeX
 
@@ -52,15 +51,13 @@ Inside JSON string values, use **doubled** backslashes for LaTeX: `$\\theta$`, `
 Topic id: {{topicId}}
 Topic title: {{topicTitle}}
 Target difficulty: {{targetDifficulty}}
+Expected mini-game type: {{expectedGameType}}
 
 Content strategy:
 {{contentStrategyBlock}}
 
 Accepted grounding sources:
 {{groundingSourcesBlock}}
-
-Structured mini-game affordances:
-{{miniGameAffordancesBlock}}
 
 Theory (markdown):
 ---

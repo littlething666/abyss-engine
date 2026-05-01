@@ -77,6 +77,44 @@ const en: LineCatalog = {
       "Yes, hello. Yes, I'm still here. Yes, that's the joke.",
     ],
   },
+  // Phase A: terminal-event copy for the new content-generation triggers.
+  // Tone matches the witty-sarcastic mentor voice; copy stays blameless
+  // and points the player at the generation HUD or the study panel as
+  // appropriate. 3 variants per failure trigger; 2 for topic-ready.
+  'topic-content:generation-failed': {
+    'witty-sarcastic': [
+      "{topicLabel} stalled mid-generation. The HUD's logs are intact; open background generation if you want the gory details.",
+      'The apparatus declined {topicLabel}. Polite about it, but firm. Open the generation HUD to inspect or retry.',
+      "Generation hiccupped on {topicLabel}. Nothing's lost — the HUD is keeping the receipts.",
+    ],
+  },
+  'topic-content:generation-ready': {
+    'witty-sarcastic': [
+      '{topicLabel} is ready to study. Crack it open before the abyss reorganizes its filing cabinet again.',
+      'The questions for {topicLabel} are warmed up. Shall we put them to work?',
+    ],
+  },
+  'topic-expansion:generation-failed': {
+    'witty-sarcastic': [
+      "{topicLabel}'s level {level} expansion stalled. The HUD has the breakdown if you want to peek.",
+      'Expansion to level {level} for {topicLabel} hit a snag. Retry from the generation HUD whenever the abyss is in a better mood.',
+      "Couldn't quite plant the level {level} cards for {topicLabel}. The retry lever lives in the generation HUD.",
+    ],
+  },
+  'crystal-trial:generation-failed': {
+    'witty-sarcastic': [
+      "{topicLabel}'s trial questions failed to compile. The HUD has the failed job; another attempt is one click away.",
+      'Trial generation for {topicLabel} fizzled. Open the generation HUD if you want to coax it again.',
+      'The abyss declined to author this round of trial questions for {topicLabel}. Try again from the generation HUD.',
+    ],
+  },
+  'content-generation:retry-failed': {
+    'witty-sarcastic': [
+      "Retry routing collapsed on {jobLabel}. The HUD has the trail if you want to tell me which knob to turn.",
+      "{jobLabel} ran out of retry runway. Open the generation HUD; I'll wait here, judging quietly.",
+      "We pushed every retry button {jobLabel} had. The HUD knows what's left to try.",
+    ],
+  },
 };
 
 // Mentor-private greet pools for `onboarding:pre-first-subject`. Distinct

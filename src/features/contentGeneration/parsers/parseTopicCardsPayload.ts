@@ -1,5 +1,5 @@
 import { extractJsonString, logJsonParseError } from '@/lib/llmResponseText';
-import type { Card } from '@/types/core';
+import type { Card, CardType, MiniGameContent, MiniGameType } from '@/types/core';
 import type {
   ExistingConceptRegistry,
   GeneratedCardQualityReport,
@@ -22,6 +22,10 @@ export interface ParseTopicCardsOptions {
   groundingSources?: GroundingSource[];
   invalidCardRatioThreshold?: number;
   duplicateRatioThreshold?: number;
+  /** When set, only these card types may appear in the output (others become critical failures). */
+  allowedCardTypes?: readonly CardType[];
+  /** When set, `MINI_GAME` cards must use one of these `content.gameType` values. */
+  allowedMiniGameTypes?: readonly MiniGameType[];
 }
 
 const DEFAULT_INVALID_RATIO_THRESHOLD = 0.2;
@@ -74,6 +78,35 @@ export function parseTopicCardsPayload(
     if (!validation.ok) {
       failures.push(...validation.failures);
       continue;
+    }
+
+    if (options.allowedCardTypes && !options.allowedCardTypes.includes(validation.card.type)) {
+      failures.push({
+        cardId: validation.card.id,
+        index,
+        code: 'card_type_mismatch',
+        message: `Expected card types [${options.allowedCardTypes.join(', ')}]; got ${validation.card.type}`,
+        severity: 'critical',
+      });
+      continue;
+    }
+
+    if (
+      options.allowedMiniGameTypes &&
+      validation.card.type === 'MINI_GAME'
+    ) {
+      const miniContent = validation.card.content as MiniGameContent;
+      const gt = miniContent.gameType;
+      if (!options.allowedMiniGameTypes.includes(gt)) {
+        failures.push({
+          cardId: validation.card.id,
+          index,
+          code: 'mini_game_type_mismatch',
+          message: `Expected mini-game types [${options.allowedMiniGameTypes.join(', ')}]; got ${gt}`,
+          severity: 'critical',
+        });
+        continue;
+      }
     }
 
     const id = validation.card.id;

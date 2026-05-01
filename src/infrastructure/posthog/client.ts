@@ -36,6 +36,17 @@ export function createPosthogSink(
     ui_host: config.uiHost,
     defaults: config.defaults,
     person_profiles: config.personProfiles,
+    /**
+     * Exception autocapture (incl. `console.error`) is intentionally enabled so
+     * `[abyss:pipeline-failed]` markdown from content-generation can reach
+     * PostHog for remote diagnosis. See `logPipelineFailure` in
+     * `src/features/contentGeneration/debug/logPipelineFailure.ts`.
+     */
+    capture_exceptions: {
+      capture_unhandled_errors: true,
+      capture_unhandled_rejections: true,
+      capture_console_errors: true,
+    },
     autocapture: {
       dom_event_allowlist: [...config.autocapture.dom_event_allowlist],
       element_allowlist: [...config.autocapture.element_allowlist],

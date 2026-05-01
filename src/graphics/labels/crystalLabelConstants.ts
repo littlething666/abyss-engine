@@ -6,10 +6,10 @@ export const LABEL_PADDING_Y = 0;
 export const LABEL_WORLD_HEIGHT = 0.32;
 export const LABEL_LOCAL_Y = 0.65;
 export const LABEL_OCCLUSION_FADE_BAND = 0.5;
-export const LABEL_TEXT_COLOR = '#f8fafc';
-export const LABEL_BG_COLOR = 'rgba(15, 23, 42, 0.72)';
+export const LABEL_TEXT_COLOR = '#ffffff';
+export const LABEL_BG_COLOR = 'rgba(15, 23, 42, 0.9)';
 export const LABEL_BORDER_COLOR = 'rgba(148, 163, 184, 0.55)';
-export const LABEL_CORNER_RADIUS = 8;
+export const LABEL_CORNER_RADIUS = 0;
 export const LABEL_RENDER_ORDER = 10;
 /** World-space height of the crystal unicode notification sprite (emoji billboard). */
 export const CRYSTAL_NOTIFICATION_WORLD_HEIGHT = 0.26;

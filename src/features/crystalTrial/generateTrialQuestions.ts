@@ -1,17 +1,24 @@
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckRepository } from '@/types/repository';
 import type { TopicRef } from '@/types/core';
+import type { CrystalTrialScenarioQuestion } from '@/types/crystalTrial';
 import {
   resolveEnableReasoningForSurface,
   resolveEnableStreamingForSurface,
   resolveModelForSurface,
 } from '@/infrastructure/llmInferenceSurfaceProviders';
+import { appEventBus } from '@/infrastructure/eventBus';
+import { PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION } from '@/types/pipelineFailureDebug';
 import { runContentGenerationJob } from '@/features/contentGeneration/runContentGenerationJob';
+import { failureKeyForJob } from '@/features/contentGeneration/failureKeys';
 import {
   buildCrystalTrialMessages,
   serializeCardsForPrompt,
 } from '@/features/contentGeneration/messages/buildCrystalTrialMessages';
 import { parseCrystalTrialPayload } from '@/features/contentGeneration/parsers/parseCrystalTrialPayload';
+import { buildShellPipelineFailureBundle } from '@/features/contentGeneration/debug/buildPipelineFailureDebugBundle';
+import { formatPipelineFailureMarkdown } from '@/features/contentGeneration/debug/formatPipelineFailureMarkdown';
+import { logPipelineFailure } from '@/features/contentGeneration/debug/logPipelineFailure';
 import { useCrystalTrialStore } from './crystalTrialStore';
 import { computeCardPoolHash } from './cardPoolHash';
 import { MAX_CARD_DIFFICULTY, TRIAL_QUESTION_COUNT } from './crystalTrialConfig';
@@ -22,6 +29,8 @@ export interface GenerateTrialQuestionsParams {
   subjectId: string;
   topicId: string;
   currentLevel: number;
+  /** If this job is a retry, the ID of the original job. */
+  retryOf?: string;
   /** Optional hook after questions are written (status is `awaiting_player`). */
   onQuestionsPersisted?: (ref: TopicRef) => void;
 }
@@ -29,13 +38,16 @@ export interface GenerateTrialQuestionsParams {
 export async function generateTrialQuestions(
   params: GenerateTrialQuestionsParams,
 ): Promise<{ ok: boolean; jobId?: string; error?: string }> {
-  const { chat, deckRepository, subjectId, topicId, currentLevel, onQuestionsPersisted } = params;
+  const { chat, deckRepository, subjectId, topicId, currentLevel, onQuestionsPersisted, retryOf } = params;
   const ref: TopicRef = { subjectId, topicId };
   const trialStore = useCrystalTrialStore.getState();
   const existingTrial = trialStore.getCurrentTrial(ref);
 
+  // Lifted out so failure events can reference the trial's targetLevel even
+  // when an existing trial is in flight (otherwise targetLevel was scoped to
+  // the start-pregeneration branch only).
+  const targetLevel = existingTrial?.targetLevel ?? currentLevel + 1;
   if (!existingTrial || existingTrial.status === 'failed') {
-    const targetLevel = existingTrial?.targetLevel ?? currentLevel + 1;
     trialStore.startPregeneration({ subjectId, topicId, targetLevel });
   }
 
@@ -57,7 +69,31 @@ export async function generateTrialQuestions(
   }
   if (levelCards.length === 0) {
     trialStore.setTrialGenerationFailed(ref);
-    return { ok: false, error: `No cards at difficulty ${targetDifficulty}` };
+    const error = `No cards at difficulty ${targetDifficulty}`;
+    const shellStartedAt = Date.now();
+    const shellBundle = buildShellPipelineFailureBundle({
+      schemaVersion: PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION,
+      pipelineId: null,
+      subjectId,
+      topicId,
+      topicLabel: topicTitle,
+      pipelineStage: 'crystal-trial',
+      failedStage: null,
+      retryOf: null,
+      pipelineRetryOf: null,
+      startedAt: shellStartedAt,
+      finishedAt: Date.now(),
+      error,
+    });
+    logPipelineFailure(formatPipelineFailureMarkdown(shellBundle));
+    appEventBus.emit('crystal-trial:generation-failed', {
+      subjectId,
+      topicId,
+      topicLabel: topicTitle,
+      level: targetLevel,
+      errorMessage: error,
+    });
+    return { ok: false, error };
   }
 
   // 3. Compute card pool hash for invalidation detection
@@ -78,13 +114,18 @@ export async function generateTrialQuestions(
   const enableReasoning = resolveEnableReasoningForSurface('crystalTrial');
   const enableStreaming = resolveEnableStreamingForSurface('crystalTrial');
 
-  const result = await runContentGenerationJob({
+  const result = await runContentGenerationJob<CrystalTrialScenarioQuestion[]>({
     kind: 'crystal-trial',
     label: `Crystal Trial L${currentLevel + 1} — ${topicTitle}`,
     pipelineId: null,
     subjectId,
     topicId,
     llmSurfaceId: 'crystalTrial',
+    failureDebugContext: {
+      topicLabel: topicTitle,
+      pipelineStage: 'crystal-trial',
+      failedStage: 'trial-questions',
+    },
     chat,
     model,
     messages: buildCrystalTrialMessages({
@@ -97,6 +138,7 @@ export async function generateTrialQuestions(
     }),
     enableReasoning,
     enableStreaming,
+    retryOf: retryOf ?? undefined,
     parseOutput: async (raw) => {
       const parsed = parseCrystalTrialPayload(raw);
       if (!parsed.ok) {
@@ -115,6 +157,15 @@ export async function generateTrialQuestions(
 
   if (!result.ok) {
     trialStore.setTrialGenerationFailed(ref);
+    const jobId = result.jobId;
+    appEventBus.emit('crystal-trial:generation-failed', {
+      subjectId,
+      topicId,
+      topicLabel: topicTitle,
+      level: targetLevel,
+      errorMessage: result.error ?? 'Crystal trial generation failed',
+      ...(jobId ? { jobId, failureKey: failureKeyForJob(jobId) } : {}),
+    });
   }
   return { ok: result.ok, jobId: result.jobId, error: result.error };
 }

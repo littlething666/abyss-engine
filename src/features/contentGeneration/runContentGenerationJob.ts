@@ -1,14 +1,22 @@
 import { v4 as uuid } from 'uuid';
 
-import type { ChatCompletionTool, ChatMessage, IChatCompletionsRepository } from '@/types/llm';
+import type { ChatCompletionTool, ChatMessage, ChatResponseFormat, IChatCompletionsRepository } from '@/types/llm';
 import type { ContentGenerationJob, ContentGenerationJobKind } from '@/types/contentGeneration';
 import type { InferenceSurfaceId } from '@/types/llmInference';
+import { isContentGenerationAbortReason } from '@/types/contentGenerationAbort';
 import {
   resolveIncludeOpenRouterReasoningParam,
-  resolveOpenRouterStructuredJsonChatExtras,
+  resolveOpenRouterStructuredChatExtrasForJob,
 } from '@/infrastructure/llmInferenceSurfaceProviders';
 
+import { buildPipelineFailureDebugBundle } from './debug/buildPipelineFailureDebugBundle';
+import type { PipelineFailureDebugContext } from './debug/buildPipelineFailureDebugBundle';
+import { formatPipelineFailureMarkdown } from './debug/formatPipelineFailureMarkdown';
+import { logPipelineFailure } from './debug/logPipelineFailure';
+import { countManualRetryDepth } from './countManualRetryDepth';
 import { useContentGenerationStore } from './contentGenerationStore';
+
+export type { PipelineFailureDebugContext } from './debug/buildPipelineFailureDebugBundle';
 
 export interface ContentGenerationJobParams<TParsed = unknown> {
   kind: ContentGenerationJobKind;
@@ -29,6 +37,12 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
   /** Forwarded to OpenRouter-compatible providers when set. */
   tools?: ChatCompletionTool[];
 
+  /**
+   * When set with `type: 'json_schema'`, passed to {@link resolveOpenRouterStructuredChatExtrasForJob}
+   * so JSON Schema mode is used only when the bound model declares `structured_outputs`.
+   */
+  responseFormatOverride?: ChatResponseFormat;
+
   parseOutput: (
     raw: string,
     job: ContentGenerationJob,
@@ -43,6 +57,23 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
 
   /** Extra key–value pairs stored on the job for retry context. */
   metadata?: Record<string, unknown>;
+
+  /** HUD / markdown debug: human topic title and pipeline stage labels. */
+  failureDebugContext?: PipelineFailureDebugContext;
+}
+
+function finalizeJobFailedWithDebug(
+  jobId: string,
+  ctx: PipelineFailureDebugContext | undefined,
+): void {
+  const st = useContentGenerationStore.getState();
+  const job = st.jobs[jobId];
+  if (!job) return;
+  const bundle = buildPipelineFailureDebugBundle(job, ctx);
+  const debugMarkdown = formatPipelineFailureMarkdown(bundle);
+  st.mergeJobMetadata(jobId, { debugBundle: bundle, debugMarkdown });
+  st.finishJob(jobId, 'failed');
+  logPipelineFailure(debugMarkdown);
 }
 
 export async function runContentGenerationJob<TParsed>(
@@ -52,6 +83,8 @@ export async function runContentGenerationJob<TParsed>(
   const jobId = uuid();
   const ac = new AbortController();
 
+  const retryChainDepth = countManualRetryDepth(params.retryOf ?? undefined, store.jobs);
+
   if (params.externalSignal) {
     if (params.externalSignal.aborted) {
       ac.abort();
@@ -59,6 +92,37 @@ export async function runContentGenerationJob<TParsed>(
       params.externalSignal.addEventListener('abort', () => ac.abort(), { once: true });
     }
   }
+
+  const structured = resolveOpenRouterStructuredChatExtrasForJob(params.llmSurfaceId, {
+    jsonSchemaResponseFormat:
+      params.responseFormatOverride?.type === 'json_schema'
+        ? params.responseFormatOverride
+        : undefined,
+  });
+  const includeOpenRouterReasoning = resolveIncludeOpenRouterReasoningParam(params.llmSurfaceId);
+  const enableStreamingForJob =
+    structured?.forceNonStreaming ? false : params.enableStreaming;
+
+  const initialMetadata: Record<string, unknown> = {
+    model: params.model,
+    enableReasoning: params.enableReasoning,
+    llmSurfaceId: params.llmSurfaceId,
+    includeOpenRouterReasoning,
+    enableStreaming: enableStreamingForJob,
+    retryCount: retryChainDepth,
+    ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
+    ...(structured?.responseFormat?.type === 'json_schema'
+      ? {
+          structuredOutputMode: 'json_schema' as const,
+          structuredOutputSchemaName: structured.responseFormat.json_schema.name,
+          responseHealingEnabled: Boolean(structured.plugins && structured.plugins.length > 0),
+        }
+      : {}),
+    ...(structured?.responseFormat ? { responseFormat: structured.responseFormat } : {}),
+    ...(structured?.plugins ? { plugins: structured.plugins } : {}),
+    ...(params.tools ? { tools: params.tools } : {}),
+    ...(params.metadata ?? {}),
+  };
 
   const job: ContentGenerationJob = {
     id: jobId,
@@ -77,11 +141,7 @@ export async function runContentGenerationJob<TParsed>(
     error: null,
     parseError: null,
     retryOf: params.retryOf ?? null,
-    metadata: {
-      model: params.model,
-      enableReasoning: params.enableReasoning,
-      ...(params.metadata ?? {}),
-    },
+    metadata: initialMetadata,
   };
 
   store.registerJob(job, ac);
@@ -89,21 +149,19 @@ export async function runContentGenerationJob<TParsed>(
   const updatedJob = (): ContentGenerationJob | undefined =>
     useContentGenerationStore.getState().jobs[jobId];
 
+  const debugCtx = params.failureDebugContext;
+
   try {
     const t0 = Date.now();
     store.updateJobStatus(jobId, 'streaming');
     store.setJobStartedAt(jobId, t0);
 
-    const structured = resolveOpenRouterStructuredJsonChatExtras(params.llmSurfaceId);
-    const enableStreaming =
-      structured?.forceNonStreaming ? false : params.enableStreaming;
-
     for await (const chunk of params.chat.streamChat({
       model: params.model,
       messages: params.messages,
-      includeOpenRouterReasoning: resolveIncludeOpenRouterReasoningParam(params.llmSurfaceId),
+      includeOpenRouterReasoning,
       enableReasoning: params.enableReasoning,
-      enableStreaming,
+      enableStreaming: enableStreamingForJob,
       signal: ac.signal,
       ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
       ...(structured
@@ -139,8 +197,17 @@ export async function runContentGenerationJob<TParsed>(
       if (parsed.parseError) {
         store.setJobParseError(jobId, parsed.parseError);
       }
+      if (structured?.responseFormat?.type === 'json_schema') {
+        const rf = structured.responseFormat;
+        store.mergeJobMetadata(jobId, {
+          structuredOutputContractViolation: true,
+          structuredOutputMode: 'json_schema',
+          structuredOutputSchemaName: rf.json_schema.name,
+          localParserError: parsed.parseError ?? parsed.error,
+        });
+      }
       store.setJobError(jobId, parsed.error);
-      store.finishJob(jobId, 'failed');
+      finalizeJobFailedWithDebug(jobId, debugCtx);
       return { ok: false, jobId, error: parsed.error };
     }
 
@@ -155,12 +222,16 @@ export async function runContentGenerationJob<TParsed>(
     return { ok: true, jobId };
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
+      const reason = ac.signal.reason;
+      if (isContentGenerationAbortReason(reason)) {
+        store.mergeJobMetadata(jobId, { abortReason: reason });
+      }
       store.finishJob(jobId, 'aborted');
       return { ok: false, jobId, error: 'Aborted' };
     }
     const msg = e instanceof Error ? e.message : String(e);
     store.setJobError(jobId, msg);
-    store.finishJob(jobId, 'failed');
+    finalizeJobFailedWithDebug(jobId, debugCtx);
     return { ok: false, jobId, error: msg };
   }
 }

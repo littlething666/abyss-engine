@@ -195,6 +195,82 @@ describe('parseTopicCardsPayload', () => {
     expect(c2.items[0].label).toBe('Step one');
   });
 
+  it('rejects CATEGORY_SORT when a declared category has no items (unused_category)', () => {
+    const raw = JSON.stringify({
+      cards: [
+        {
+          id: 't-mg-cat-unused',
+          type: 'MINI_GAME',
+          difficulty: 1,
+          content: {
+            gameType: 'CATEGORY_SORT',
+            prompt: 'Sort into buckets.',
+            explanation: 'Unused category reproduces upstream structural failure.',
+            categories: [
+              { id: 'cat-a', label: 'A' },
+              { id: 'cat-b', label: 'B' },
+              { id: 'cat-no-equilibrium', label: 'No equilibrium' },
+            ],
+            items: [
+              { id: 'i0', label: 'a0', categoryId: 'cat-a' },
+              { id: 'i1', label: 'a1', categoryId: 'cat-a' },
+              { id: 'i2', label: 'b0', categoryId: 'cat-b' },
+              { id: 'i3', label: 'b1', categoryId: 'cat-b' },
+              { id: 'i4', label: 'b2', categoryId: 'cat-b' },
+              { id: 'i5', label: 'a2', categoryId: 'cat-a' },
+            ],
+          },
+        },
+      ],
+    });
+    const r = parseTopicCardsPayload(raw, {
+      allowedCardTypes: ['MINI_GAME'],
+      allowedMiniGameTypes: ['CATEGORY_SORT'],
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    const unused = r.qualityReport?.failures.filter((f) => f.code === 'unused_category') ?? [];
+    expect(unused.length).toBeGreaterThan(0);
+    expect(unused.some((f) => f.message.includes('cat-no-equilibrium'))).toBe(true);
+  });
+
+  it('accepts CATEGORY_SORT with 3 categories, 6 items, and every category referenced', () => {
+    const raw = JSON.stringify({
+      cards: [
+        {
+          id: 't-mg-cat-valid',
+          type: 'MINI_GAME',
+          difficulty: 1,
+          content: {
+            gameType: 'CATEGORY_SORT',
+            prompt: 'Sort.',
+            explanation: 'ex',
+            categories: [
+              { id: 'c0', label: 'C0' },
+              { id: 'c1', label: 'C1' },
+              { id: 'c2', label: 'C2' },
+            ],
+            items: [
+              { id: 'i0', label: 'l0', categoryId: 'c0' },
+              { id: 'i1', label: 'l1', categoryId: 'c0' },
+              { id: 'i2', label: 'l2', categoryId: 'c1' },
+              { id: 'i3', label: 'l3', categoryId: 'c1' },
+              { id: 'i4', label: 'l4', categoryId: 'c2' },
+              { id: 'i5', label: 'l5', categoryId: 'c2' },
+            ],
+          },
+        },
+      ],
+    });
+    const r = parseTopicCardsPayload(raw, {
+      allowedCardTypes: ['MINI_GAME'],
+      allowedMiniGameTypes: ['CATEGORY_SORT'],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.cards).toHaveLength(1);
+  });
+
   it('topic-mini-game prompt template keeps JSON example braces after interpolation', () => {
     const topicMiniGameCardsTemplate = `Output \`{ "cards": [ ... ] }\`.
 Topic id: {{topicId}}

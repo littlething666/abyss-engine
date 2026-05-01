@@ -8,6 +8,9 @@ export type ContentGenerationJobKind =
   | 'topic-theory'
   | 'topic-study-cards'
   | 'topic-mini-games'
+  | 'topic-mini-game-category-sort'
+  | 'topic-mini-game-sequence-build'
+  | 'topic-mini-game-connection-web'
   | 'topic-expansion-cards'
   | 'subject-graph-topics'
   | 'subject-graph-edges'
@@ -67,12 +70,20 @@ export interface ContentGenerationJob {
    * - `model` (string) — exact model identifier used for this job.
    * - `enableReasoning` (boolean) — whether OpenRouter `reasoning` was enabled for this job.
    * - `nextLevel` (number) — for expansion jobs, the crystal level that triggered expansion.
- * - `provider` (object) — normalized provider metadata such as usage, citations, or annotations.
- * - `grounding` (object) — accepted source counts and source snapshots for grounded topic theory.
- * - `qualityReport` (object) — card validation counts, duplicate rates, and grounding coverage.
- * - `validationFailures` (array) — detailed card-level validation failures surfaced in the HUD.
+   * - `provider` (object) — normalized provider metadata such as usage, citations, or annotations.
+   * - `grounding` (object) — accepted source counts, optional authoritative-primary flag, and source snapshots.
+   * - `abortReason` (object) — typed {@link import('./contentGenerationAbort').ContentGenerationAbortReason} when status is `aborted`.
+   * - `qualityReport` (object) — card validation counts, duplicate rates, and grounding coverage.
+   * - `validationFailures` (array) — detailed card-level validation failures surfaced in the HUD.
+   * - `debugBundle` (object) — allowlisted `PipelineFailureDebugBundle` when a job fails.
+   * - `debugMarkdown` (string) — copy-ready markdown mirror of `debugBundle` for HUD / console.
    * - `prereqEdgesCorrection` (object) — when edges output was deterministically repaired
    *   (`removed` / `added` entries); see `correctPrereqEdges`.
+   * - `structuredOutputMode` (string) — e.g. `json_schema` when structured output was requested.
+   * - `structuredOutputSchemaName` (string) — OpenRouter `json_schema.name` when applicable.
+   * - `responseHealingEnabled` (boolean) — whether `response-healing` plugin was attached.
+   * - `structuredOutputContractViolation` (boolean) — true when `json_schema` was used and local parsing failed.
+   * - `localParserError` (string) — parse error text when `structuredOutputContractViolation` is set.
    */
   metadata: Record<string, unknown> | null;
 }
@@ -82,6 +93,29 @@ export interface ContentGenerationPipeline {
   id: string;
   label: string;
   createdAt: number;
-  /** If this pipeline is a retry, the ID of the original pipeline it was retried from. */
+  /**
+   * If this pipeline is a retry, the ID of the original **pipeline** it was retried from.
+   * Job-level retry lineage lives on {@link ContentGenerationJob.retryOf} only.
+   */
   retryOf: string | null;
 }
+
+/** Per-stage outcome when a `full` topic pipeline exits with `ok: false` after partial persistence. */
+export type TopicContentPipelinePartialCompletion = {
+  theory: 'completed' | 'failed' | 'skipped';
+  studyCards: 'completed' | 'failed' | 'skipped';
+  miniGames: 'completed' | 'failed' | 'skipped';
+};
+
+/** Stages inside the topic unlock pipeline that can carry per-job retry lineage. */
+export type TopicPipelineRetryStage = 'theory' | 'study-cards' | 'mini-games';
+
+/**
+ * Split retry lineage: pipeline vs per-stage job IDs.
+ * `pipelineRetryOf` is stored on {@link ContentGenerationPipeline.retryOf}.
+ * `jobRetryOfByStage[stage]` is passed as {@link ContentGenerationJob.retryOf} for that stage's LLM job.
+ */
+export type TopicPipelineRetryContext = {
+  pipelineRetryOf: string | null;
+  jobRetryOfByStage: Partial<Record<TopicPipelineRetryStage, string>>;
+};

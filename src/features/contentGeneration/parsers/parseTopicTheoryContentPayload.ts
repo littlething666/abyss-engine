@@ -1,6 +1,5 @@
 import { extractJsonString, logJsonParseError } from '@/lib/llmResponseText';
 import type { CoreQuestionsByDifficulty } from '@/types/core';
-import type { MiniGameAffordanceSet } from '@/types/contentQuality';
 import type { GroundingSearchPolicy, GroundingSource } from '@/types/grounding';
 import { z } from 'zod';
 
@@ -11,32 +10,14 @@ const syllabusKeysSchema = z.object({
   '4': z.array(z.string()).min(1),
 });
 
-const miniGameAffordancesSchema = z.object({
-  categorySets: z.array(z.object({
-    label: z.string().min(1),
-    categories: z.array(z.string().min(1)).min(3),
-    candidateItems: z.array(z.string().min(1)).min(6),
-  })).default([]),
-  orderedSequences: z.array(z.object({
-    label: z.string().min(1),
-    steps: z.array(z.string().min(1)).min(3),
-  })).default([]),
-  connectionPairs: z.array(z.object({
-    label: z.string().min(1),
-    pairs: z.array(z.object({
-      left: z.string().min(1),
-      right: z.string().min(1),
-    })).min(3),
-  })).default([]),
-});
-
-const theoryPayloadSchema = z.object({
-  coreConcept: z.string().min(1),
-  theory: z.string().min(1),
-  keyTakeaways: z.array(z.string()).min(4),
-  coreQuestionsByDifficulty: syllabusKeysSchema,
-  miniGameAffordances: miniGameAffordancesSchema,
-});
+const theoryContentPayloadSchema = z
+  .object({
+    coreConcept: z.string().min(1),
+    theory: z.string().min(1),
+    keyTakeaways: z.array(z.string()).min(4),
+    coreQuestionsByDifficulty: syllabusKeysSchema,
+  })
+  .strict();
 
 function extractGroundingSourcesFromProviderMetadata(
   providerMetadata: Record<string, unknown> | undefined,
@@ -68,20 +49,19 @@ function extractGroundingSourcesFromProviderMetadata(
   return sources;
 }
 
-export type ParsedTopicTheoryPayload = {
+export type ParsedTopicTheoryContentPayload = {
   coreConcept: string;
   theory: string;
   keyTakeaways: string[];
   coreQuestionsByDifficulty: CoreQuestionsByDifficulty;
   groundingSources: GroundingSource[];
-  miniGameAffordances: MiniGameAffordanceSet;
 };
 
-export type ParseTopicTheoryResult =
-  | { ok: true; data: ParsedTopicTheoryPayload }
+export type ParseTopicTheoryContentResult =
+  | { ok: true; data: ParsedTopicTheoryContentPayload }
   | { ok: false; error: string };
 
-export function parseTopicTheoryPayload(
+export function parseTopicTheoryContentPayload(
   raw: string,
   options?: {
     groundingPolicy?: GroundingSearchPolicy;
@@ -98,7 +78,7 @@ export function parseTopicTheoryPayload(
       errors: string[];
     };
   },
-): ParseTopicTheoryResult {
+): ParseTopicTheoryContentResult {
   const jsonStr = extractJsonString(raw);
   if (!jsonStr) {
     return { ok: false, error: 'No JSON found in assistant response' };
@@ -108,11 +88,11 @@ export function parseTopicTheoryPayload(
   try {
     parsed = JSON.parse(jsonStr) as unknown;
   } catch (e) {
-    logJsonParseError('parseTopicTheoryPayload', e, jsonStr);
+    logJsonParseError('parseTopicTheoryContentPayload', e, jsonStr);
     return { ok: false, error: 'Assistant response is not valid JSON' };
   }
 
-  const result = theoryPayloadSchema.safeParse(parsed);
+  const result = theoryContentPayloadSchema.safeParse(parsed);
   if (!result.success) {
     const issue = result.error.issues[0];
     const path = issue?.path?.length ? issue.path.join('.') : 'root';
@@ -152,7 +132,6 @@ export function parseTopicTheoryPayload(
       keyTakeaways: result.data.keyTakeaways,
       coreQuestionsByDifficulty,
       groundingSources,
-      miniGameAffordances: result.data.miniGameAffordances,
     },
   };
 }

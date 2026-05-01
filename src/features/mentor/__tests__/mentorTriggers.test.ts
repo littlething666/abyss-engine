@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { MENTOR_TRIGGER_IDS } from '../mentorTypes';
+import { MENTOR_TRIGGER_IDS } from '@/types/mentorTriggers';
 
 describe('MENTOR_TRIGGER_IDS', () => {
-  it('contains exactly the v1 canonical colon-namespace triggers', () => {
+  it('contains exactly the canonical colon-namespace triggers (Phase A inclusive)', () => {
     expect([...MENTOR_TRIGGER_IDS].sort()).toEqual(
       [
+        'content-generation:retry-failed',
         'crystal-trial:available-for-player',
+        'crystal-trial:generation-failed',
         'crystal:leveled',
         'mentor-bubble:clicked',
         'onboarding:pre-first-subject',
@@ -15,6 +17,9 @@ describe('MENTOR_TRIGGER_IDS', () => {
         'subject:generated',
         'subject:generation-failed',
         'subject:generation-started',
+        'topic-content:generation-failed',
+        'topic-content:generation-ready',
+        'topic-expansion:generation-failed',
       ].sort(),
     );
   });

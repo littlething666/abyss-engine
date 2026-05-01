@@ -1,4 +1,3 @@
-import type { MiniGameAffordanceSet } from './contentQuality';
 import type { GenerationStrategy } from './generationStrategy';
 import type { GroundingSource } from './grounding';
 import type { StudyChecklist } from './studyChecklist';
@@ -126,7 +125,6 @@ export interface TopicDetails {
   /** Populated after on-demand generation; drives background difficulty expansion. */
   coreQuestionsByDifficulty?: Partial<CoreQuestionsByDifficulty>;
   groundingSources?: GroundingSource[];
-  miniGameAffordances?: MiniGameAffordanceSet;
 }
 
 export type CardType = 'FLASHCARD' | 'SINGLE_CHOICE' | 'MULTI_CHOICE' | 'MINI_GAME';

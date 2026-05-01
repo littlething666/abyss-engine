@@ -196,6 +196,36 @@ describe('HttpChatCompletionsRepository', () => {
     expect(body.plugins).toEqual([{ id: 'response-healing' }]);
   });
 
+  it('forwards json_schema response_format unchanged on completeChat when provided', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{}' } }] }),
+    })) as unknown as typeof fetch;
+
+    const schemaFormat = {
+      type: 'json_schema' as const,
+      json_schema: {
+        name: 'topic_theory_syllabus',
+        strict: true,
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { coreConcept: { type: 'string' } },
+        },
+      },
+    };
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat', 'm');
+    await repo.completeChat({
+      model: 'm',
+      messages: [{ role: 'user', content: 'a' }],
+      responseFormat: schemaFormat,
+    });
+    const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]!;
+    const body = JSON.parse(init.body as string);
+    expect(body.response_format).toEqual(schemaFormat);
+  });
+
   it('includes tools and exposes provider metadata on completeChat', async () => {
     globalThis.fetch = vi.fn(async () => ({
       ok: true,

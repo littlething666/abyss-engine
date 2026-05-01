@@ -14,6 +14,9 @@ const CRYSTAL_CONTENT_JOB_KINDS = new Set<ContentGenerationJobKind>([
   'topic-theory',
   'topic-study-cards',
   'topic-mini-games',
+  'topic-mini-game-category-sort',
+  'topic-mini-game-sequence-build',
+  'topic-mini-game-connection-web',
   'topic-expansion-cards',
 ]);
 
