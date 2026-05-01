@@ -2,6 +2,7 @@ import { v4 as uuid } from 'uuid';
 
 import { telemetry } from '@/features/telemetry';
 import { topicRefKey } from '@/lib/topicRef';
+import { PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION } from '@/types/pipelineFailureDebug';
 import { appEventBus } from '@/infrastructure/eventBus';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
@@ -18,6 +19,9 @@ import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
 import { parseTopicTheoryPayload, type ParsedTopicTheoryPayload } from '../parsers/parseTopicTheoryPayload';
 import { FIRECRAWL_TOPIC_GROUNDING_POLICY, buildOpenRouterWebSearchTools } from '../grounding/groundingPolicy';
 import { validateGroundingSources } from '../grounding/validateGroundingSources';
+import { buildShellPipelineFailureBundle } from '../debug/buildPipelineFailureDebugBundle';
+import { formatPipelineFailureMarkdown } from '../debug/formatPipelineFailureMarkdown';
+import { logPipelineFailure } from '../debug/logPipelineFailure';
 import { runContentGenerationJob } from '../runContentGenerationJob';
 import { useContentGenerationStore } from '../contentGenerationStore';
 import { topicStudyContentReady } from '../topicStudyContentReady';
@@ -133,6 +137,21 @@ export async function runTopicGenerationPipeline(
   const graph = await deckRepository.getSubjectGraph(subjectId);
   const node = graph.nodes.find((n) => n.topicId === topicId);
   if (!node) {
+    const shellStartedAt = Date.now();
+    const shellBundle = buildShellPipelineFailureBundle({
+      schemaVersion: PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION,
+      pipelineId,
+      subjectId,
+      topicId,
+      topicLabel: topicId,
+      pipelineStage: stage,
+      failedStage: null,
+      retryOf: retryOf ?? null,
+      startedAt: shellStartedAt,
+      finishedAt: Date.now(),
+      error: `Topic "${topicId}" not found in subject graph`,
+    });
+    logPipelineFailure(formatPipelineFailureMarkdown(shellBundle));
     return finalize({
       ok: false,
       pipelineId,
@@ -245,6 +264,11 @@ export async function runTopicGenerationPipeline(
       subjectId,
       topicId,
       llmSurfaceId: 'topicContent',
+      failureDebugContext: {
+        topicLabel: node.title,
+        pipelineStage: stage,
+        failedStage: 'theory',
+      },
       chat,
       model,
       messages: buildTopicTheoryMessages({
@@ -308,6 +332,11 @@ export async function runTopicGenerationPipeline(
       subjectId,
       topicId,
       llmSurfaceId: 'topicContent',
+      failureDebugContext: {
+        topicLabel: node.title,
+        pipelineStage: stage,
+        failedStage: 'study-cards',
+      },
       chat,
       model,
       messages: buildTopicStudyCardsMessages({
@@ -359,6 +388,11 @@ export async function runTopicGenerationPipeline(
       subjectId,
       topicId,
       llmSurfaceId: 'topicContent',
+      failureDebugContext: {
+        topicLabel: node.title,
+        pipelineStage: stage,
+        failedStage: 'mini-games',
+      },
       chat,
       model,
       messages: buildTopicMiniGameCardsMessages({

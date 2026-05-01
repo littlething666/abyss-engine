@@ -76,6 +76,8 @@ describe('runContentGenerationJob', () => {
   });
 
   it('marks job failed when parseOutput returns ok: false', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
     const streamChat = vi.fn(async function* stream() {
       yield { type: 'content' as const, text: 'bad' };
     });
@@ -100,9 +102,21 @@ describe('runContentGenerationJob', () => {
     const j = Object.values(useContentGenerationStore.getState().jobs)[0];
     expect(j?.status).toBe('failed');
     expect(j?.parseError).toBe('parse failed');
+    expect(typeof j?.metadata?.debugMarkdown).toBe('string');
+    expect(String(j?.metadata?.debugMarkdown)).toContain('# Abyss Pipeline Failure');
+    expect(String(j?.metadata?.debugMarkdown)).toContain('parse failed');
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const first = String(consoleSpy.mock.calls[0]?.[0] ?? '');
+    expect(first).toContain('[abyss:pipeline-failed]');
+    expect(first).toContain('# Abyss Pipeline Failure');
+
+    consoleSpy.mockRestore();
   });
 
   it('finishes aborted when external signal aborts', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
     const ac = new AbortController();
     ac.abort();
 
@@ -130,6 +144,11 @@ describe('runContentGenerationJob', () => {
     expect(result.ok).toBe(false);
     const j = Object.values(useContentGenerationStore.getState().jobs)[0];
     expect(j?.status).toBe('aborted');
+    const pipelineFailedLogged = consoleSpy.mock.calls.some((c) =>
+      String(c[0]).includes('[abyss:pipeline-failed]'),
+    );
+    expect(pipelineFailedLogged).toBe(false);
+    consoleSpy.mockRestore();
   });
 
   it('preserves requested reasoning in structured OpenRouter requests', async () => {

@@ -1,26 +1,9 @@
+import type { MentorTriggerId } from '@/types/mentorTriggers';
+
 export type MentorVoiceId = 'witty-sarcastic';
 
-export const MENTOR_TRIGGER_IDS = [
-  'onboarding:pre-first-subject',
-  'onboarding:subject-unlock-first-crystal',
-  'session:completed',
-  'crystal:leveled',
-  'crystal-trial:available-for-player',
-  'subject:generation-started',
-  'subject:generated',
-  'subject:generation-failed',
-  'mentor-bubble:clicked',
-  // Phase A: terminal triggers for topic / expansion / crystal-trial /
-  // retry pipelines. Cataloged here so the rule engine can build plans,
-  // but no event-bus path emits them yet — wiring lands in Phase B/C.
-  'topic-content:generation-failed',
-  'topic-content:generation-ready',
-  'topic-expansion:generation-failed',
-  'crystal-trial:generation-failed',
-  'content-generation:retry-failed',
-] as const;
-
-export type MentorTriggerId = (typeof MENTOR_TRIGGER_IDS)[number];
+export { MENTOR_TRIGGER_IDS } from '@/types/mentorTriggers';
+export type { MentorTriggerId } from '@/types/mentorTriggers';
 
 export type MentorMood =
   | 'neutral'

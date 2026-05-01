@@ -201,8 +201,14 @@ describe('createSubjectGenerationOrchestrator', () => {
         chat,
         model: 'test-model',
         enableReasoning: false,
+        enableStreaming: true,
         externalSignal: expect.any(AbortSignal),
-        metadata: { checklist: { topicName: 'Orch test' } },
+        failureDebugContext: {
+          topicLabel: 'Orch test',
+          pipelineStage: 'subject-graph',
+          failedStage: 'topics',
+        },
+        metadata: { checklist: { topicName: 'Orch test' }, retryCount: 0 },
       }),
     );
     expect(runContentGenerationJob).toHaveBeenNthCalledWith(
@@ -214,6 +220,12 @@ describe('createSubjectGenerationOrchestrator', () => {
         llmSurfaceId: 'subjectGenerationEdges',
         model: 'test-model',
         temperature: 0.1,
+        failureDebugContext: {
+          topicLabel: 'Orch test',
+          pipelineStage: 'subject-graph',
+          failedStage: 'edges',
+        },
+        metadata: { checklist: { topicName: 'Orch test' }, retryCount: 0 },
       }),
     );
 

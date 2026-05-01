@@ -2,7 +2,7 @@ export { useContentGenerationStore, MAX_PERSISTED_LOGS } from './contentGenerati
 export type { ContentGenerationState } from './contentGenerationStore';
 
 export { runContentGenerationJob } from './runContentGenerationJob';
-export type { ContentGenerationJobParams } from './runContentGenerationJob';
+export type { ContentGenerationJobParams, PipelineFailureDebugContext } from './runContentGenerationJob';
 
 export { runTopicGenerationPipeline } from './pipelines/runTopicGenerationPipeline';
 export type { RunTopicGenerationPipelineParams, TopicGenerationStage } from './pipelines/runTopicGenerationPipeline';

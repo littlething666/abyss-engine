@@ -1,4 +1,9 @@
 import { appEventBus } from '@/infrastructure/eventBus';
+import { PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION } from '@/types/pipelineFailureDebug';
+
+import { buildShellPipelineFailureBundle } from '../debug/buildPipelineFailureDebugBundle';
+import { formatPipelineFailureMarkdown } from '../debug/formatPipelineFailureMarkdown';
+import { logPipelineFailure } from '../debug/logPipelineFailure';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import {
@@ -67,6 +72,21 @@ export async function runExpansionJob(
 
   if (!bucket?.length) {
     const error = `No syllabus questions for difficulty bucket ${bucketKey}`;
+    const shellStartedAt = Date.now();
+    const shellBundle = buildShellPipelineFailureBundle({
+      schemaVersion: PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION,
+      pipelineId: null,
+      subjectId,
+      topicId,
+      topicLabel,
+      pipelineStage: 'topic-expansion',
+      failedStage: null,
+      retryOf: retryOf ?? null,
+      startedAt: shellStartedAt,
+      finishedAt: Date.now(),
+      error,
+    });
+    logPipelineFailure(formatPipelineFailureMarkdown(shellBundle));
     appEventBus.emit('topic-expansion:generation-failed', {
       subjectId,
       topicId,
@@ -104,6 +124,11 @@ export async function runExpansionJob(
     subjectId,
     topicId,
     llmSurfaceId: 'topicContent',
+    failureDebugContext: {
+      topicLabel,
+      pipelineStage: 'topic-expansion',
+      failedStage: 'expansion-cards',
+    },
     chat,
     model,
     messages: buildTopicExpansionCardsMessages({

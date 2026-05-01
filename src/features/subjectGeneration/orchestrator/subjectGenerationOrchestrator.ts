@@ -102,6 +102,11 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       subjectId: request.subjectId,
       topicId: null,
       llmSurfaceId: 'subjectGenerationTopics',
+      failureDebugContext: {
+        topicLabel: subjectName,
+        pipelineStage: 'subject-graph',
+        failedStage: 'topics',
+      },
       chat: stageBindings.topics.chat,
       model: stageBindings.topics.model,
       messages: buildTopicLatticeMessages(request.subjectId, strategy.graph),
@@ -110,6 +115,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       externalSignal: pipelineAc.signal,
       metadata: {
         checklist: request.checklist,
+        retryCount: retryDepth,
       },
       retryOf: deps.retryOf,
       parseOutput: async (raw, job) => {
@@ -177,6 +183,11 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       subjectId: request.subjectId,
       topicId: null,
       llmSurfaceId: 'subjectGenerationEdges',
+      failureDebugContext: {
+        topicLabel: subjectName,
+        pipelineStage: 'subject-graph',
+        failedStage: 'edges',
+      },
       chat: stageBindings.edges.chat,
       model: stageBindings.edges.model,
       messages: buildPrereqWiringMessages(request.subjectId, topicName, strategy.graph, resolvedLattice),
@@ -186,6 +197,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       externalSignal: pipelineAc.signal,
       metadata: {
         checklist: request.checklist,
+        retryCount: retryDepth,
       },
       retryOf: deps.retryOf,
       parseOutput: async (raw, job) => {

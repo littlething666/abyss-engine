@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ListTree, RotateCcw } from 'lucide-react';
+import { Copy, ListTree, RotateCcw } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -120,6 +120,10 @@ function isValidationFailureArray(value: unknown): value is GeneratedCardValidat
   });
 }
 
+function isNonEmptyDebugMarkdown(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 function isQualityReport(value: unknown): value is GeneratedCardQualityReport {
   if (!value || typeof value !== 'object') return false;
   const maybe = value as { emittedCount?: unknown; invalidCount?: unknown; duplicateConceptCount?: unknown };
@@ -134,6 +138,15 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
   const input = job.inputMessages ?? '';
   const raw = job.rawOutput;
   const reasoning = job.reasoningText ?? '';
+  const debugMarkdown =
+    job.status === 'failed' && isNonEmptyDebugMarkdown(job.metadata?.debugMarkdown)
+      ? job.metadata.debugMarkdown
+      : null;
+
+  const handleCopyFailureReport = useCallback(() => {
+    if (!debugMarkdown) return;
+    void navigator.clipboard.writeText(debugMarkdown);
+  }, [debugMarkdown]);
   const modelName =
     typeof job.metadata?.model === 'string'
       ? job.metadata.model
@@ -156,6 +169,20 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
         <p className="text-destructive text-xs" role="alert">
           Parse: {job.parseError}
         </p>
+      ) : null}
+      {debugMarkdown ? (
+        <div className="mt-2 flex flex-col gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full gap-1.5 text-xs"
+            onClick={handleCopyFailureReport}
+          >
+            <Copy className="size-3 shrink-0" aria-hidden />
+            Copy failure report (markdown)
+          </Button>
+        </div>
       ) : null}
       {job.retryOf ? (
         <p className="text-muted-foreground text-[11px]">

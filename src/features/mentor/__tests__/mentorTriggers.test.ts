@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MENTOR_TRIGGER_IDS } from '../mentorTypes';
+import { MENTOR_TRIGGER_IDS } from '@/types/mentorTriggers';
 
 describe('MENTOR_TRIGGER_IDS', () => {
   it('contains exactly the canonical colon-namespace triggers (Phase A inclusive)', () => {

@@ -131,7 +131,7 @@ export function readPosthogConfig(
 ): PosthogResolvedConfig | null {
   if (typeof window === 'undefined') return null;
   if (isAnalyticsKillSwitchActive()) return null;
-  if (isLocalhostOrigin()) return null;
+  // if (isLocalhostOrigin()) return null;
 
   const token = env.token?.trim();
   if (!token) return null;

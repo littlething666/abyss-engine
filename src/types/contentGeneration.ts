@@ -71,6 +71,8 @@ export interface ContentGenerationJob {
  * - `grounding` (object) — accepted source counts and source snapshots for grounded topic theory.
  * - `qualityReport` (object) — card validation counts, duplicate rates, and grounding coverage.
  * - `validationFailures` (array) — detailed card-level validation failures surfaced in the HUD.
+ * - `debugBundle` (object) — allowlisted `PipelineFailureDebugBundle` when a job fails.
+ * - `debugMarkdown` (string) — copy-ready markdown mirror of `debugBundle` for HUD / console.
    * - `prereqEdgesCorrection` (object) — when edges output was deterministically repaired
    *   (`removed` / `added` entries); see `correctPrereqEdges`.
    */

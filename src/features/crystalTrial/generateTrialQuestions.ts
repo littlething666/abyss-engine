@@ -7,12 +7,16 @@ import {
   resolveModelForSurface,
 } from '@/infrastructure/llmInferenceSurfaceProviders';
 import { appEventBus } from '@/infrastructure/eventBus';
+import { PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION } from '@/types/pipelineFailureDebug';
 import { runContentGenerationJob } from '@/features/contentGeneration/runContentGenerationJob';
 import {
   buildCrystalTrialMessages,
   serializeCardsForPrompt,
 } from '@/features/contentGeneration/messages/buildCrystalTrialMessages';
 import { parseCrystalTrialPayload } from '@/features/contentGeneration/parsers/parseCrystalTrialPayload';
+import { buildShellPipelineFailureBundle } from '@/features/contentGeneration/debug/buildPipelineFailureDebugBundle';
+import { formatPipelineFailureMarkdown } from '@/features/contentGeneration/debug/formatPipelineFailureMarkdown';
+import { logPipelineFailure } from '@/features/contentGeneration/debug/logPipelineFailure';
 import { useCrystalTrialStore } from './crystalTrialStore';
 import { computeCardPoolHash } from './cardPoolHash';
 import { MAX_CARD_DIFFICULTY, TRIAL_QUESTION_COUNT } from './crystalTrialConfig';
@@ -62,6 +66,21 @@ export async function generateTrialQuestions(
   if (levelCards.length === 0) {
     trialStore.setTrialGenerationFailed(ref);
     const error = `No cards at difficulty ${targetDifficulty}`;
+    const shellStartedAt = Date.now();
+    const shellBundle = buildShellPipelineFailureBundle({
+      schemaVersion: PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION,
+      pipelineId: null,
+      subjectId,
+      topicId,
+      topicLabel: topicTitle,
+      pipelineStage: 'crystal-trial',
+      failedStage: null,
+      retryOf: null,
+      startedAt: shellStartedAt,
+      finishedAt: Date.now(),
+      error,
+    });
+    logPipelineFailure(formatPipelineFailureMarkdown(shellBundle));
     appEventBus.emit('crystal-trial:generation-failed', {
       subjectId,
       topicId,
@@ -97,6 +116,11 @@ export async function generateTrialQuestions(
     subjectId,
     topicId,
     llmSurfaceId: 'crystalTrial',
+    failureDebugContext: {
+      topicLabel: topicTitle,
+      pipelineStage: 'crystal-trial',
+      failedStage: 'trial-questions',
+    },
     chat,
     model,
     messages: buildCrystalTrialMessages({

@@ -8,7 +8,13 @@ import {
   resolveOpenRouterStructuredJsonChatExtras,
 } from '@/infrastructure/llmInferenceSurfaceProviders';
 
+import { buildPipelineFailureDebugBundle } from './debug/buildPipelineFailureDebugBundle';
+import type { PipelineFailureDebugContext } from './debug/buildPipelineFailureDebugBundle';
+import { formatPipelineFailureMarkdown } from './debug/formatPipelineFailureMarkdown';
+import { logPipelineFailure } from './debug/logPipelineFailure';
 import { useContentGenerationStore } from './contentGenerationStore';
+
+export type { PipelineFailureDebugContext } from './debug/buildPipelineFailureDebugBundle';
 
 export interface ContentGenerationJobParams<TParsed = unknown> {
   kind: ContentGenerationJobKind;
@@ -43,6 +49,23 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
 
   /** Extra key–value pairs stored on the job for retry context. */
   metadata?: Record<string, unknown>;
+
+  /** HUD / markdown debug: human topic title and pipeline stage labels. */
+  failureDebugContext?: PipelineFailureDebugContext;
+}
+
+function finalizeJobFailedWithDebug(
+  jobId: string,
+  ctx: PipelineFailureDebugContext | undefined,
+): void {
+  const st = useContentGenerationStore.getState();
+  const job = st.jobs[jobId];
+  if (!job) return;
+  const bundle = buildPipelineFailureDebugBundle(job, ctx);
+  const debugMarkdown = formatPipelineFailureMarkdown(bundle);
+  st.mergeJobMetadata(jobId, { debugBundle: bundle, debugMarkdown });
+  st.finishJob(jobId, 'failed');
+  logPipelineFailure(debugMarkdown);
 }
 
 export async function runContentGenerationJob<TParsed>(
@@ -59,6 +82,24 @@ export async function runContentGenerationJob<TParsed>(
       params.externalSignal.addEventListener('abort', () => ac.abort(), { once: true });
     }
   }
+
+  const structured = resolveOpenRouterStructuredJsonChatExtras(params.llmSurfaceId);
+  const includeOpenRouterReasoning = resolveIncludeOpenRouterReasoningParam(params.llmSurfaceId);
+  const enableStreamingForJob =
+    structured?.forceNonStreaming ? false : params.enableStreaming;
+
+  const initialMetadata: Record<string, unknown> = {
+    model: params.model,
+    enableReasoning: params.enableReasoning,
+    llmSurfaceId: params.llmSurfaceId,
+    includeOpenRouterReasoning,
+    enableStreaming: enableStreamingForJob,
+    ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
+    ...(structured?.responseFormat ? { responseFormat: structured.responseFormat } : {}),
+    ...(structured?.plugins ? { plugins: structured.plugins } : {}),
+    ...(params.tools ? { tools: params.tools } : {}),
+    ...(params.metadata ?? {}),
+  };
 
   const job: ContentGenerationJob = {
     id: jobId,
@@ -77,11 +118,7 @@ export async function runContentGenerationJob<TParsed>(
     error: null,
     parseError: null,
     retryOf: params.retryOf ?? null,
-    metadata: {
-      model: params.model,
-      enableReasoning: params.enableReasoning,
-      ...(params.metadata ?? {}),
-    },
+    metadata: initialMetadata,
   };
 
   store.registerJob(job, ac);
@@ -89,21 +126,19 @@ export async function runContentGenerationJob<TParsed>(
   const updatedJob = (): ContentGenerationJob | undefined =>
     useContentGenerationStore.getState().jobs[jobId];
 
+  const debugCtx = params.failureDebugContext;
+
   try {
     const t0 = Date.now();
     store.updateJobStatus(jobId, 'streaming');
     store.setJobStartedAt(jobId, t0);
 
-    const structured = resolveOpenRouterStructuredJsonChatExtras(params.llmSurfaceId);
-    const enableStreaming =
-      structured?.forceNonStreaming ? false : params.enableStreaming;
-
     for await (const chunk of params.chat.streamChat({
       model: params.model,
       messages: params.messages,
-      includeOpenRouterReasoning: resolveIncludeOpenRouterReasoningParam(params.llmSurfaceId),
+      includeOpenRouterReasoning,
       enableReasoning: params.enableReasoning,
-      enableStreaming,
+      enableStreaming: enableStreamingForJob,
       signal: ac.signal,
       ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
       ...(structured
@@ -140,7 +175,7 @@ export async function runContentGenerationJob<TParsed>(
         store.setJobParseError(jobId, parsed.parseError);
       }
       store.setJobError(jobId, parsed.error);
-      store.finishJob(jobId, 'failed');
+      finalizeJobFailedWithDebug(jobId, debugCtx);
       return { ok: false, jobId, error: parsed.error };
     }
 
@@ -160,7 +195,7 @@ export async function runContentGenerationJob<TParsed>(
     }
     const msg = e instanceof Error ? e.message : String(e);
     store.setJobError(jobId, msg);
-    store.finishJob(jobId, 'failed');
+    finalizeJobFailedWithDebug(jobId, debugCtx);
     return { ok: false, jobId, error: msg };
   }
 }
