@@ -28,6 +28,7 @@ import { logPipelineFailure } from '../debug/logPipelineFailure';
 import { runContentGenerationJob } from '../runContentGenerationJob';
 import { useContentGenerationStore } from '../contentGenerationStore';
 import { topicStudyContentReady } from '../topicStudyContentReady';
+import { topicTheoryStructuredOutputResponseFormat } from '../schemas/topicTheoryResponseFormat';
 import { useCrystalContentCelebrationStore } from '@/store/crystalContentCelebrationStore';
 import { loadTheoryPayloadFromTopicDetails } from './loadTheoryPayloadFromTopicDetails';
 import type { TopicGenerationStage } from './topicGenerationStage';
@@ -330,6 +331,7 @@ export async function runTopicGenerationPipeline(
       enableReasoning,
       enableStreaming,
       tools: buildOpenRouterWebSearchTools(FIRECRAWL_TOPIC_GROUNDING_POLICY),
+      responseFormatOverride: topicTheoryStructuredOutputResponseFormat,
       externalSignal: pipelineAc.signal,
       retryOf: jobRetryOfForStage(retryContext, 'theory'),
       parseOutput: async (raw, job) => {

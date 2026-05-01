@@ -175,4 +175,38 @@ describe('parseTopicTheoryPayload', () => {
       expect(result.error).toContain('accepted grounding sources');
     }
   });
+
+  it('rejects category-sort anchors with only two categories', () => {
+    const twoCategoryPayload = {
+      ...validPayload,
+      miniGameAffordances: {
+        ...validPayload.miniGameAffordances,
+        categorySets: [
+          {
+            label: 'Normal vs extensive',
+            categories: [
+              { id: 'c-nf', label: 'Normal Form' },
+              { id: 'c-ef', label: 'Extensive Form' },
+            ],
+            items: [
+              { id: 'i0', label: 'a', categoryId: 'c-nf' },
+              { id: 'i1', label: 'b', categoryId: 'c-nf' },
+              { id: 'i2', label: 'c', categoryId: 'c-ef' },
+              { id: 'i3', label: 'd', categoryId: 'c-ef' },
+              { id: 'i4', label: 'e', categoryId: 'c-ef' },
+              { id: 'i5', label: 'f', categoryId: 'c-nf' },
+            ],
+          },
+        ],
+      },
+    };
+
+    const result = parseTopicTheoryPayload(JSON.stringify(twoCategoryPayload));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('miniGameAffordances.categorySets');
+      expect(result.error).toContain('categories');
+      expect(result.error).toContain('Too small');
+    }
+  });
 });

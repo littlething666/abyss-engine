@@ -11,6 +11,7 @@ import type {
 } from '@/types/repository';
 import { appEventBus } from '@/infrastructure/eventBus';
 import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
+import { topicTheoryStructuredOutputResponseFormat } from '../schemas/topicTheoryResponseFormat';
 
 const { surfaceProvidersApi } = vi.hoisted(() => ({
   surfaceProvidersApi: {
@@ -320,6 +321,37 @@ describe('runTopicGenerationPipeline', () => {
     expect(celebrationApi.markPendingFromFullTopicUnlock).toHaveBeenCalledWith(
       topicRefKey({ subjectId: 'sub-1', topicId: 't-a' }),
     );
+  });
+
+  it('passes topic-theory JSON Schema responseFormatOverride into the theory job only', async () => {
+    runContentGenerationJob.mockImplementation(defaultJobOk);
+    const writer = makeWriter();
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer,
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    const theoryArgs = runContentGenerationJob.mock.calls.map((c) => c[0] as { kind: string }).find(
+      (a) => a.kind === 'topic-theory',
+    );
+    expect(theoryArgs).toMatchObject({
+      responseFormatOverride: topicTheoryStructuredOutputResponseFormat,
+    });
+
+    const nonTheory = runContentGenerationJob.mock.calls
+      .map((c) => c[0] as { kind: string })
+      .filter((a) => a.kind !== 'topic-theory');
+    expect(nonTheory.length).toBeGreaterThan(0);
+    for (const job of nonTheory) {
+      expect(job).not.toHaveProperty('responseFormatOverride');
+    }
   });
 
   it('auto-skips when ready content already exists', async () => {

@@ -1,12 +1,12 @@
 import { v4 as uuid } from 'uuid';
 
-import type { ChatCompletionTool, ChatMessage, IChatCompletionsRepository } from '@/types/llm';
+import type { ChatCompletionTool, ChatMessage, ChatResponseFormat, IChatCompletionsRepository } from '@/types/llm';
 import type { ContentGenerationJob, ContentGenerationJobKind } from '@/types/contentGeneration';
 import type { InferenceSurfaceId } from '@/types/llmInference';
 import { isContentGenerationAbortReason } from '@/types/contentGenerationAbort';
 import {
   resolveIncludeOpenRouterReasoningParam,
-  resolveOpenRouterStructuredJsonChatExtras,
+  resolveOpenRouterStructuredChatExtrasForJob,
 } from '@/infrastructure/llmInferenceSurfaceProviders';
 
 import { buildPipelineFailureDebugBundle } from './debug/buildPipelineFailureDebugBundle';
@@ -36,6 +36,12 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
   temperature?: number;
   /** Forwarded to OpenRouter-compatible providers when set. */
   tools?: ChatCompletionTool[];
+
+  /**
+   * When set with `type: 'json_schema'`, passed to {@link resolveOpenRouterStructuredChatExtrasForJob}
+   * so JSON Schema mode is used only when the bound model declares `structured_outputs`.
+   */
+  responseFormatOverride?: ChatResponseFormat;
 
   parseOutput: (
     raw: string,
@@ -87,7 +93,12 @@ export async function runContentGenerationJob<TParsed>(
     }
   }
 
-  const structured = resolveOpenRouterStructuredJsonChatExtras(params.llmSurfaceId);
+  const structured = resolveOpenRouterStructuredChatExtrasForJob(params.llmSurfaceId, {
+    jsonSchemaResponseFormat:
+      params.responseFormatOverride?.type === 'json_schema'
+        ? params.responseFormatOverride
+        : undefined,
+  });
   const includeOpenRouterReasoning = resolveIncludeOpenRouterReasoningParam(params.llmSurfaceId);
   const enableStreamingForJob =
     structured?.forceNonStreaming ? false : params.enableStreaming;

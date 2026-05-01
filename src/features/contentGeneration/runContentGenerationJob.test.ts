@@ -8,7 +8,7 @@ import { runContentGenerationJob } from './runContentGenerationJob';
 const { surfaceProvidersApi } = vi.hoisted(() => ({
   surfaceProvidersApi: {
     resolveIncludeOpenRouterReasoningParam: vi.fn(),
-    resolveOpenRouterStructuredJsonChatExtras: vi.fn(),
+    resolveOpenRouterStructuredChatExtrasForJob: vi.fn(),
   },
 }));
 
@@ -21,7 +21,7 @@ vi.mock('@/infrastructure/repositories/contentGenerationLogRepository', () => ({
 
 vi.mock('@/infrastructure/llmInferenceSurfaceProviders', () => ({
   resolveIncludeOpenRouterReasoningParam: surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam,
-  resolveOpenRouterStructuredJsonChatExtras: surfaceProvidersApi.resolveOpenRouterStructuredJsonChatExtras,
+  resolveOpenRouterStructuredChatExtrasForJob: surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob,
 }));
 
 function resetStore(): void {
@@ -38,8 +38,8 @@ describe('runContentGenerationJob', () => {
     resetStore();
     surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam.mockReset();
     surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam.mockReturnValue(false);
-    surfaceProvidersApi.resolveOpenRouterStructuredJsonChatExtras.mockReset();
-    surfaceProvidersApi.resolveOpenRouterStructuredJsonChatExtras.mockReturnValue(null);
+    surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReset();
+    surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue(null);
   });
 
   it('runs pending → streaming → parsing → saving → completed', async () => {
@@ -153,7 +153,7 @@ describe('runContentGenerationJob', () => {
 
   it('preserves requested reasoning in structured OpenRouter requests', async () => {
     surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam.mockReturnValue(true);
-    surfaceProvidersApi.resolveOpenRouterStructuredJsonChatExtras.mockReturnValue({
+    surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue({
       responseFormat: { type: 'json_object' },
       plugins: [{ id: 'response-healing' }],
       forceNonStreaming: true,
@@ -186,6 +186,90 @@ describe('runContentGenerationJob', () => {
       responseFormat: { type: 'json_object' },
       plugins: [{ id: 'response-healing' }],
     }));
+  });
+
+  it('forwards JSON Schema override to the structured extras resolver', async () => {
+    surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue(null);
+
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: '{}' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    const schemaFormat = {
+      type: 'json_schema' as const,
+      json_schema: {
+        name: 'topic_theory_syllabus',
+        strict: true,
+        schema: { type: 'object' },
+      },
+    };
+
+    await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'Theory — T',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      llmSurfaceId: 'topicContent',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableReasoning: false,
+      responseFormatOverride: schemaFormat,
+      parseOutput: async () => ({ ok: true, data: 42 }),
+      persistOutput: vi.fn(),
+    });
+
+    expect(surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob).toHaveBeenCalledWith(
+      'topicContent',
+      { jsonSchemaResponseFormat: schemaFormat },
+    );
+  });
+
+  it('passes JSON Schema response_format to streamChat when the resolver selects it', async () => {
+    const schemaFormat = {
+      type: 'json_schema' as const,
+      json_schema: {
+        name: 'topic_theory_syllabus',
+        strict: true,
+        schema: { type: 'object', additionalProperties: true },
+      },
+    };
+
+    surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue({
+      responseFormat: schemaFormat,
+      plugins: undefined,
+      forceNonStreaming: true,
+    });
+
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: '{}' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'Theory — T',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      llmSurfaceId: 'topicContent',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableReasoning: false,
+      responseFormatOverride: schemaFormat,
+      parseOutput: async () => ({ ok: true, data: 42 }),
+      persistOutput: vi.fn(),
+    });
+
+    expect(streamChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        responseFormat: schemaFormat,
+        enableStreaming: false,
+      }),
+    );
   });
 
   it('keeps reasoning enabled for non-structured requests when requested', async () => {

@@ -4,7 +4,7 @@ import type {
   ChatCompletionTool,
   ChatMessage,
   ChatCompletionProviderMetadata,
-  ChatResponseFormatJsonObject,
+  ChatResponseFormat,
   ChatStreamChunk,
   IChatCompletionsRepository,
 } from '../../types/llm';
@@ -161,7 +161,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     enableReasoning?: boolean;
     signal?: AbortSignal;
     temperature?: number;
-    responseFormat?: ChatResponseFormatJsonObject;
+    responseFormat?: ChatResponseFormat;
     plugins?: Array<{ id: string }>;
     tools?: ChatCompletionTool[];
   }): Promise<ChatCompletionResult> {
