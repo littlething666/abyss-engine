@@ -20,7 +20,10 @@ export interface PipelineFailureDebugBundle {
   pipelineStage: string | null;
   /** Inner LLM stage (e.g. `study-cards`) or job-level stage label. */
   failedStage: string | null;
+  /** Job-level manual retry lineage (always another job id when set). */
   retryOf: string | null;
+  /** Pipeline-level retry lineage when this job belongs to a retried pipeline. */
+  pipelineRetryOf: string | null;
   retryChainDepth: number;
   startedAt: number | null;
   finishedAt: number | null;
@@ -48,6 +51,7 @@ export interface PipelineFailureShellDebugInput {
   pipelineStage: string | null;
   failedStage: string | null;
   retryOf: string | null;
+  pipelineRetryOf: string | null;
   startedAt: number | null;
   finishedAt: number | null;
   error: string;

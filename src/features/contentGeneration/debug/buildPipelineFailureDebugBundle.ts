@@ -9,6 +9,7 @@ import {
   type PipelineFailureShellDebugInput,
 } from '@/types/pipelineFailureDebug';
 
+import { countManualRetryDepth } from '../countManualRetryDepth';
 import { useContentGenerationStore } from '../contentGenerationStore';
 
 export interface PipelineFailureDebugContext {
@@ -45,14 +46,7 @@ function isQualityReport(value: unknown): value is GeneratedCardQualityReport {
 }
 
 function retryChainDepth(job: ContentGenerationJob, jobs: Record<string, ContentGenerationJob>): number {
-  let depth = 0;
-  let cur: ContentGenerationJob | undefined = job;
-  while (cur?.retryOf) {
-    depth += 1;
-    cur = jobs[cur.retryOf];
-    if (depth > 50) break;
-  }
-  return depth;
+  return countManualRetryDepth(job.retryOf ?? undefined, jobs);
 }
 
 function parseMessagesJson(raw: string | null): unknown {
@@ -114,6 +108,7 @@ export function buildPipelineFailureDebugBundle(
 ): PipelineFailureDebugBundle {
   const meta = (job.metadata ?? null) as Record<string, unknown> | null;
   const jobs = useContentGenerationStore.getState().jobs;
+  const pipelines = useContentGenerationStore.getState().pipelines;
   const { summary: groundingSummary, sources: groundingSources } = groundingParts(meta);
 
   const validationFailures = meta && isValidationFailures(meta.validationFailures)
@@ -128,6 +123,9 @@ export function buildPipelineFailureDebugBundle(
 
   const model = meta && typeof meta.model === 'string' ? meta.model : null;
 
+  const pipelineRetryOf =
+    job.pipelineId && pipelines[job.pipelineId] ? pipelines[job.pipelineId]!.retryOf : null;
+
   return {
     schemaVersion: PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION,
     pipelineId: job.pipelineId,
@@ -140,6 +138,7 @@ export function buildPipelineFailureDebugBundle(
     pipelineStage: context?.pipelineStage ?? null,
     failedStage: context?.failedStage ?? null,
     retryOf: job.retryOf,
+    pipelineRetryOf,
     retryChainDepth: retryChainDepth(job, jobs),
     startedAt,
     finishedAt,
@@ -178,6 +177,7 @@ export function buildShellPipelineFailureBundle(
     pipelineStage: input.pipelineStage,
     failedStage: input.failedStage,
     retryOf: input.retryOf,
+    pipelineRetryOf: input.pipelineRetryOf,
     retryChainDepth: 0,
     startedAt: input.startedAt,
     finishedAt,

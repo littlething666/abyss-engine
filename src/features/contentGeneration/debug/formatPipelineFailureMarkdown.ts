@@ -1,3 +1,7 @@
+import type {
+  GeneratedCardQualityReport,
+  GeneratedCardValidationFailure,
+} from '@/types/contentQuality';
 import type { PipelineFailureDebugBundle } from '@/types/pipelineFailureDebug';
 
 function longestConsecutiveBacktickRun(s: string): number {
@@ -18,8 +22,44 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? 'null';
 }
 
+/** HUD-equivalent quality summary from the same `qualityReport` metadata shape. */
+function formatGeneratedCardQualitySummaryMd(report: GeneratedCardQualityReport | null): string {
+  if (!report) {
+    return '_(no quality report in job metadata)_';
+  }
+  const lines: string[] = [];
+  lines.push(`- ${report.validCount}/${report.emittedCount} cards valid`);
+  lines.push(`- ${report.invalidCount} invalid`);
+  lines.push(`- ${report.duplicateConceptCount} duplicate concepts`);
+  if (report.groundingSourceCount > 0) {
+    lines.push(
+      `- Grounding: ${report.groundingSourceCount} source${report.groundingSourceCount === 1 ? '' : 's'}${
+        report.hasAuthoritativePrimarySource ? ', includes authoritative primary source' : ''
+      }`,
+    );
+  }
+  return lines.join('\n');
+}
+
+/** HUD-equivalent validation list from `validationFailures` / quality failures. */
+function formatGeneratedCardValidationIssuesMd(failures: GeneratedCardValidationFailure[] | null): string {
+  if (!failures?.length) {
+    return '_(none)_';
+  }
+  return failures
+    .map(
+      (f, i) =>
+        `${i + 1}. \`${f.cardId ?? 'unknown-id'}\` — \`${f.code}\`: ${f.message}`,
+    )
+    .join('\n');
+}
+
 function sectionBodies(bundle: PipelineFailureDebugBundle): string {
+  const qualityHuman = formatGeneratedCardQualitySummaryMd(bundle.qualityReport);
+  const validationHuman = formatGeneratedCardValidationIssuesMd(bundle.validationFailures);
   const parts: string[] = [
+    qualityHuman,
+    validationHuman,
     bundle.error ?? '',
     bundle.parseError ?? '',
     stableStringify({
@@ -74,6 +114,9 @@ export function formatPipelineFailureMarkdown(bundle: PipelineFailureDebugBundle
   const groundingSummaryBody = stableStringify(bundle.groundingSummary);
   const groundingSourcesBody = stableStringify(bundle.groundingSources);
 
+  const qualitySummaryMd = formatGeneratedCardQualitySummaryMd(bundle.qualityReport);
+  const validationIssuesMd = formatGeneratedCardValidationIssuesMd(bundle.validationFailures);
+
   const lines: string[] = [
     '# Abyss Pipeline Failure',
     '',
@@ -89,11 +132,20 @@ export function formatPipelineFailureMarkdown(bundle: PipelineFailureDebugBundle
     `- **Topic Label:** \`${bundle.topicLabel ?? 'null'}\``,
     `- **Stage:** \`${bundle.pipelineStage ?? 'null'}\``,
     `- **Failed Stage:** \`${bundle.failedStage ?? 'null'}\``,
-    `- **Retry Of:** \`${bundle.retryOf ?? 'null'}\``,
+    `- **Job Retry Of:** \`${bundle.retryOf ?? 'null'}\``,
+    `- **Pipeline Retry Of:** \`${bundle.pipelineRetryOf ?? 'null'}\``,
     `- **Retry Chain Depth:** \`${bundle.retryChainDepth}\``,
     `- **Started At:** \`${bundle.startedAt !== null ? new Date(bundle.startedAt).toISOString() : 'null'}\``,
     `- **Finished At:** \`${bundle.finishedAt !== null ? new Date(bundle.finishedAt).toISOString() : 'null'}\``,
     `- **Duration Ms:** \`${bundle.durationMs ?? 'null'}\``,
+    '',
+    '## Generated Card Quality Summary',
+    '',
+    qualitySummaryMd,
+    '',
+    '## Generated Card Validation Issues',
+    '',
+    validationIssuesMd,
     '',
     '## Error',
     '',

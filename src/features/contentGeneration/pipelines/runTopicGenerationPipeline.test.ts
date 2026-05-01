@@ -10,6 +10,7 @@ import type {
   IDeckContentWriter,
 } from '@/types/repository';
 import { appEventBus } from '@/infrastructure/eventBus';
+import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
 
 const { surfaceProvidersApi } = vi.hoisted(() => ({
   surfaceProvidersApi: {
@@ -121,6 +122,91 @@ const FIXTURE_THEORY_DATA = {
   miniGameAffordances: { categorySets: [], orderedSequences: [], connectionPairs: [] },
 };
 
+function stubMiniCardsForJobKind(kind: string): Card[] {
+  const wrap = (cards: unknown[]) => JSON.stringify({ cards });
+  if (kind === 'topic-mini-game-category-sort') {
+    const r = parseTopicCardsPayload(
+      wrap([
+        {
+          id: 't-a-stub-cat',
+          type: 'MINI_GAME',
+          difficulty: 1,
+          content: {
+            gameType: 'CATEGORY_SORT',
+            prompt: 'Sort',
+            explanation: 'E',
+            categories: [
+              { id: 'a', label: 'A' },
+              { id: 'b', label: 'B' },
+              { id: 'c', label: 'C' },
+            ],
+            items: [
+              { id: 'i0', label: 'l0', categoryId: 'a' },
+              { id: 'i1', label: 'l1', categoryId: 'a' },
+              { id: 'i2', label: 'l2', categoryId: 'b' },
+              { id: 'i3', label: 'l3', categoryId: 'b' },
+              { id: 'i4', label: 'l4', categoryId: 'c' },
+              { id: 'i5', label: 'l5', categoryId: 'c' },
+            ],
+          },
+        },
+      ]),
+      { allowedCardTypes: ['MINI_GAME'], allowedMiniGameTypes: ['CATEGORY_SORT'] },
+    );
+    if (!r.ok) throw new Error(r.error);
+    return r.cards;
+  }
+  if (kind === 'topic-mini-game-sequence-build') {
+    const r = parseTopicCardsPayload(
+      wrap([
+        {
+          id: 't-a-stub-seq',
+          type: 'MINI_GAME',
+          difficulty: 1,
+          content: {
+            gameType: 'SEQUENCE_BUILD',
+            prompt: 'Order',
+            explanation: 'E',
+            items: [
+              { id: 's0', label: 'a', correctPosition: 0 },
+              { id: 's1', label: 'b', correctPosition: 1 },
+              { id: 's2', label: 'c', correctPosition: 2 },
+            ],
+          },
+        },
+      ]),
+      { allowedCardTypes: ['MINI_GAME'], allowedMiniGameTypes: ['SEQUENCE_BUILD'] },
+    );
+    if (!r.ok) throw new Error(r.error);
+    return r.cards;
+  }
+  if (kind === 'topic-mini-game-connection-web') {
+    const r = parseTopicCardsPayload(
+      wrap([
+        {
+          id: 't-a-stub-web',
+          type: 'MINI_GAME',
+          difficulty: 1,
+          content: {
+            gameType: 'CONNECTION_WEB',
+            prompt: 'Match',
+            explanation: 'E',
+            pairs: [
+              { id: 'p0', left: 'L0', right: 'R0' },
+              { id: 'p1', left: 'L1', right: 'R1' },
+              { id: 'p2', left: 'L2', right: 'R2' },
+            ],
+          },
+        },
+      ]),
+      { allowedCardTypes: ['MINI_GAME'], allowedMiniGameTypes: ['CONNECTION_WEB'] },
+    );
+    if (!r.ok) throw new Error(r.error);
+    return r.cards;
+  }
+  throw new Error(`unexpected mini job kind ${kind}`);
+}
+
 /**
  * Faithful default for the `runContentGenerationJob` mock: invokes
  * `persistOutput` with realistic per-stage data before resolving ok.
@@ -137,7 +223,15 @@ async function defaultJobOk(
   if (args?.persistOutput) {
     if (args.kind === 'topic-theory') {
       await args.persistOutput(FIXTURE_THEORY_DATA);
-    } else if (args.kind === 'topic-study-cards' || args.kind === 'topic-mini-games') {
+    } else if (args.kind === 'topic-study-cards') {
+      await args.persistOutput([]);
+    } else if (
+      args.kind === 'topic-mini-game-category-sort' ||
+      args.kind === 'topic-mini-game-sequence-build' ||
+      args.kind === 'topic-mini-game-connection-web'
+    ) {
+      await args.persistOutput(stubMiniCardsForJobKind(args.kind));
+    } else if (args.kind === 'topic-mini-games') {
       await args.persistOutput([]);
     }
   }
@@ -222,7 +316,7 @@ describe('runTopicGenerationPipeline', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(runContentGenerationJob).toHaveBeenCalledTimes(3);
+    expect(runContentGenerationJob).toHaveBeenCalledTimes(5);
     expect(celebrationApi.markPendingFromFullTopicUnlock).toHaveBeenCalledWith(
       topicRefKey({ subjectId: 'sub-1', topicId: 't-a' }),
     );

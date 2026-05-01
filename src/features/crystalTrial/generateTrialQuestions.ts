@@ -1,6 +1,7 @@
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckRepository } from '@/types/repository';
 import type { TopicRef } from '@/types/core';
+import type { CrystalTrialScenarioQuestion } from '@/types/crystalTrial';
 import {
   resolveEnableReasoningForSurface,
   resolveEnableStreamingForSurface,
@@ -27,6 +28,8 @@ export interface GenerateTrialQuestionsParams {
   subjectId: string;
   topicId: string;
   currentLevel: number;
+  /** If this job is a retry, the ID of the original job. */
+  retryOf?: string;
   /** Optional hook after questions are written (status is `awaiting_player`). */
   onQuestionsPersisted?: (ref: TopicRef) => void;
 }
@@ -34,7 +37,7 @@ export interface GenerateTrialQuestionsParams {
 export async function generateTrialQuestions(
   params: GenerateTrialQuestionsParams,
 ): Promise<{ ok: boolean; jobId?: string; error?: string }> {
-  const { chat, deckRepository, subjectId, topicId, currentLevel, onQuestionsPersisted } = params;
+  const { chat, deckRepository, subjectId, topicId, currentLevel, onQuestionsPersisted, retryOf } = params;
   const ref: TopicRef = { subjectId, topicId };
   const trialStore = useCrystalTrialStore.getState();
   const existingTrial = trialStore.getCurrentTrial(ref);
@@ -76,6 +79,7 @@ export async function generateTrialQuestions(
       pipelineStage: 'crystal-trial',
       failedStage: null,
       retryOf: null,
+      pipelineRetryOf: null,
       startedAt: shellStartedAt,
       finishedAt: Date.now(),
       error,
@@ -109,7 +113,7 @@ export async function generateTrialQuestions(
   const enableReasoning = resolveEnableReasoningForSurface('crystalTrial');
   const enableStreaming = resolveEnableStreamingForSurface('crystalTrial');
 
-  const result = await runContentGenerationJob({
+  const result = await runContentGenerationJob<CrystalTrialScenarioQuestion[]>({
     kind: 'crystal-trial',
     label: `Crystal Trial L${currentLevel + 1} — ${topicTitle}`,
     pipelineId: null,
@@ -133,6 +137,7 @@ export async function generateTrialQuestions(
     }),
     enableReasoning,
     enableStreaming,
+    retryOf: retryOf ?? undefined,
     parseOutput: async (raw) => {
       const parsed = parseCrystalTrialPayload(raw);
       if (!parsed.ok) {

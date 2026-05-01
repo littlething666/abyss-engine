@@ -18,18 +18,38 @@ const validPayload = {
     categorySets: [
       {
         label: 'Kinds',
-        categories: ['A', 'B', 'C'],
-        candidateItems: ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'],
+        categories: [
+          { id: 'cat-a', label: 'A' },
+          { id: 'cat-b', label: 'B' },
+          { id: 'cat-c', label: 'C' },
+        ],
+        items: [
+          { id: 'it-0', label: 'a1', categoryId: 'cat-a' },
+          { id: 'it-1', label: 'a2', categoryId: 'cat-a' },
+          { id: 'it-2', label: 'b1', categoryId: 'cat-b' },
+          { id: 'it-3', label: 'b2', categoryId: 'cat-b' },
+          { id: 'it-4', label: 'c1', categoryId: 'cat-c' },
+          { id: 'it-5', label: 'c2', categoryId: 'cat-c' },
+        ],
       },
     ],
-    orderedSequences: [{ label: 'Flow', steps: ['one', 'two', 'three'] }],
+    orderedSequences: [
+      {
+        label: 'Flow',
+        items: [
+          { id: 's-0', label: 'one', correctPosition: 0 },
+          { id: 's-1', label: 'two', correctPosition: 1 },
+          { id: 's-2', label: 'three', correctPosition: 2 },
+        ],
+      },
+    ],
     connectionPairs: [
       {
         label: 'Terms',
         pairs: [
-          { left: 'A', right: 'Alpha' },
-          { left: 'B', right: 'Beta' },
-          { left: 'C', right: 'Gamma' },
+          { id: 'p-0', left: 'A', right: 'Alpha' },
+          { id: 'p-1', left: 'B', right: 'Beta' },
+          { id: 'p-2', left: 'C', right: 'Gamma' },
         ],
       },
     ],
@@ -57,6 +77,48 @@ const validProviderMetadata = {
 };
 
 describe('parseTopicTheoryPayload', () => {
+  it('migrates legacy miniGameAffordances shapes before validation', () => {
+    const legacy = {
+      ...validPayload,
+      miniGameAffordances: {
+        categorySets: [
+          {
+            label: 'Kinds',
+            categories: ['A', 'B', 'C'],
+            candidateItems: ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'],
+          },
+        ],
+        orderedSequences: [{ label: 'Flow', steps: ['one', 'two', 'three'] }],
+        connectionPairs: [
+          {
+            label: 'Terms',
+            pairs: [
+              { left: 'A', right: 'Alpha' },
+              { left: 'B', right: 'Beta' },
+              { left: 'C', right: 'Gamma' },
+            ],
+          },
+        ],
+      },
+    };
+    const result = parseTopicTheoryPayload(JSON.stringify(legacy), {
+      groundingPolicy: FIRECRAWL_TOPIC_GROUNDING_POLICY,
+      providerMetadata: validProviderMetadata,
+      retrievedAt: '2026-04-26T00:00:00.000Z',
+      validateGroundingSources,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.miniGameAffordances.categorySets[0]?.items).toHaveLength(6);
+      expect(result.data.miniGameAffordances.orderedSequences[0]?.items).toHaveLength(3);
+      expect(result.data.miniGameAffordances.connectionPairs[0]?.pairs[0]).toMatchObject({
+        id: 'pair-0',
+        left: 'A',
+        right: 'Alpha',
+      });
+    }
+  });
+
   it('requires difficulty 4 and validates annotation-derived grounding sources', () => {
     const result = parseTopicTheoryPayload(JSON.stringify(validPayload), {
       groundingPolicy: FIRECRAWL_TOPIC_GROUNDING_POLICY,

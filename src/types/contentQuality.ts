@@ -18,16 +18,16 @@ export type ForbiddenContentPattern =
 export interface MiniGameAffordanceSet {
   categorySets: Array<{
     label: string;
-    categories: string[];
-    candidateItems: string[];
+    categories: Array<{ id: string; label: string }>;
+    items: Array<{ id: string; label: string; categoryId: string }>;
   }>;
   orderedSequences: Array<{
     label: string;
-    steps: string[];
+    items: Array<{ id: string; label: string; correctPosition: number }>;
   }>;
   connectionPairs: Array<{
     label: string;
-    pairs: Array<{ left: string; right: string }>;
+    pairs: Array<{ id: string; left: string; right: string }>;
   }>;
 }
 

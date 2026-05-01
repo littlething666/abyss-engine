@@ -1,6 +1,9 @@
 import type { TopicDetails } from '@/types/core';
+import type { MiniGameAffordanceSet } from '@/types/contentQuality';
 
 import type { ParsedTopicTheoryPayload } from '../parsers/parseTopicTheoryPayload';
+import { miniGameAffordancesSchema } from '../parsers/parseTopicTheoryPayload';
+import { migrateMiniGameAffordancesInput } from '../parsers/migrateMiniGameAffordancesInput';
 
 /**
  * Builds theory prompt input from persisted topic details for study / mini-game-only runs.
@@ -31,6 +34,21 @@ export function loadTheoryPayloadFromTopicDetails(details: TopicDetails): Parsed
       ? kt.slice(0, 4)
       : [...kt, ...Array.from({ length: Math.max(0, 4 - kt.length) }, () => '—')].slice(0, 4);
 
+  const rawAffordances = details.miniGameAffordances ?? {
+    categorySets: [],
+    orderedSequences: [],
+    connectionPairs: [],
+  };
+  const migratedAffordances = migrateMiniGameAffordancesInput(rawAffordances);
+  const affordanceParse = miniGameAffordancesSchema.safeParse(migratedAffordances);
+  if (!affordanceParse.success) {
+    const issue = affordanceParse.error.issues[0];
+    const path = issue?.path?.length ? issue.path.join('.') : 'root';
+    throw new Error(
+      `Stored mini-game affordances are invalid at ${path}: ${issue?.message ?? 'unknown'}. Re-run theory generation to refresh anchors.`,
+    );
+  }
+
   return {
     coreConcept: details.coreConcept.trim() || '—',
     theory,
@@ -42,10 +60,6 @@ export function loadTheoryPayloadFromTopicDetails(details: TopicDetails): Parsed
       4: q4,
     },
     groundingSources: details.groundingSources ?? [],
-    miniGameAffordances: details.miniGameAffordances ?? {
-      categorySets: [],
-      orderedSequences: [],
-      connectionPairs: [],
-    },
+    miniGameAffordances: affordanceParse.data as MiniGameAffordanceSet,
   };
 }

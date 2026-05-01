@@ -25,6 +25,7 @@ import {
   retryFailedPipeline,
 } from '@/features/contentGeneration';
 import type { ContentGenerationJob, ContentGenerationJobStatus } from '@/types/contentGeneration';
+import type { ContentGenerationAbortReason } from '@/types/contentGenerationAbort';
 import type { GeneratedCardQualityReport, GeneratedCardValidationFailure } from '@/types/contentQuality';
 import { useUIStore } from '@/store/uiStore';
 
@@ -267,6 +268,8 @@ export function GenerationProgressHud() {
   const abortJob = useContentGenerationStore((s) => s.abortJob);
   const abortPipeline = useContentGenerationStore((s) => s.abortPipeline);
   const clearCompletedJobs = useContentGenerationStore((s) => s.clearCompletedJobs);
+  const hudJobAbortReason: ContentGenerationAbortReason = { kind: 'user', source: 'hud-job' };
+  const hudPipelineAbortReason: ContentGenerationAbortReason = { kind: 'user', source: 'hud-pipeline' };
   const open = useUIStore((s) => s.isGenerationProgressOpen);
   const openGenerationProgress = useUIStore((s) => s.openGenerationProgress);
   const setGenerationProgressOpen = useUIStore((s) => s.setGenerationProgressOpen);
@@ -391,7 +394,7 @@ export function GenerationProgressHud() {
                               Pipeline: {agg === 'active' ? pipelineSummaryLabel(groupJobs) : agg}
                             </p>
                           </div>
-                          <Button type="button" variant="outline" size="sm" onClick={() => abortPipeline(pid)}>
+                          <Button type="button" variant="outline" size="sm" onClick={() => abortPipeline(pid, hudPipelineAbortReason)}>
                             Abort pipeline
                           </Button>
                         </div>
@@ -434,7 +437,7 @@ export function GenerationProgressHud() {
                           variant="outline"
                           size="sm"
                           className="w-full shrink-0 sm:w-auto"
-                          onClick={() => abortJob(j.id)}
+                          onClick={() => abortJob(j.id, hudJobAbortReason)}
                         >
                           Abort
                         </Button>

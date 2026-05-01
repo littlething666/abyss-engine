@@ -15,6 +15,7 @@ import {
 import { buildTopicExpansionCardsMessages } from '../messages/buildTopicExpansionCardsMessages';
 import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
 import { buildExistingConceptRegistry } from '../quality/buildExistingConceptRegistry';
+import { buildGroundingJobMetadataSnapshot } from '../grounding/buildGroundingJobMetadata';
 import { runContentGenerationJob } from '../runContentGenerationJob';
 import { useContentGenerationStore } from '../contentGenerationStore';
 
@@ -81,7 +82,8 @@ export async function runExpansionJob(
       topicLabel,
       pipelineStage: 'topic-expansion',
       failedStage: null,
-      retryOf: retryOf ?? null,
+      retryOf: null,
+      pipelineRetryOf: null,
       startedAt: shellStartedAt,
       finishedAt: Date.now(),
       error,
@@ -147,7 +149,10 @@ export async function runExpansionJob(
     enableStreaming,
     externalSignal: signal,
     retryOf,
-    metadata: { nextLevel },
+    metadata: {
+      nextLevel,
+      ...buildGroundingJobMetadataSnapshot(details.groundingSources ?? []),
+    },
     parseOutput: async (raw, job) => {
       const parsed = parseTopicCardsPayload(raw, {
         existingRegistry,

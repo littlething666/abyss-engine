@@ -4,7 +4,7 @@ import type { Subject, SubjectGraph } from '@/types/core';
 import type { ContentGenerationJob } from '@/types/contentGeneration';
 import type { SubjectGenerationRequest, SubjectGenerationResult } from '@/types/generationOrchestrator';
 import type { TopicLattice } from '@/types/topicLattice';
-import { runContentGenerationJob, useContentGenerationStore } from '@/features/contentGeneration';
+import { countManualRetryDepth, runContentGenerationJob, useContentGenerationStore } from '@/features/contentGeneration';
 import { appEventBus } from '@/infrastructure/eventBus';
 import { resolveStrategy } from '../strategies/strategyResolver';
 import { applyGraphToStorage } from '../graph/applyGraphToStorage';
@@ -16,7 +16,6 @@ import { buildPrereqWiringMessages } from '../graph/prereqWiring/buildPrereqWiri
 import { parsePrereqWiringResponse } from '../graph/prereqWiring/parsePrereqWiringResponse';
 import { validateGraph } from '../graph/validateGraph';
 import type { PrereqEdgesCorrectionLog } from '../graph/prereqWiring/correctPrereqEdges';
-import { countManualRetryDepth } from './countManualRetryDepth';
 import type { GenerationDependencies } from './types';
 
 export interface SubjectGenerationOrchestrator {

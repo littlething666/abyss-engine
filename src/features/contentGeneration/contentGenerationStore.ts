@@ -65,8 +65,8 @@ export interface ContentGenerationState {
   setJobParseError: (jobId: string, parseError: string) => void;
   mergeJobMetadata: (jobId: string, patch: Record<string, unknown>) => void;
   finishJob: (jobId: string, status: 'completed' | 'failed' | 'aborted') => void;
-  abortJob: (jobId: string) => void;
-  abortPipeline: (pipelineId: string) => void;
+  abortJob: (jobId: string, reason?: unknown) => void;
+  abortPipeline: (pipelineId: string, reason?: unknown) => void;
 
   pruneCompletedJobs: () => void;
   hydrateFromPersisted: (jobs: ContentGenerationJob[], pipelines: ContentGenerationPipeline[]) => void;
@@ -200,12 +200,12 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
     });
   },
 
-  abortJob: (jobId) => {
-    get().abortControllers[jobId]?.abort();
+  abortJob: (jobId, reason) => {
+    get().abortControllers[jobId]?.abort(reason);
   },
 
-  abortPipeline: (pipelineId) => {
-    get().pipelineAbortControllers[pipelineId]?.abort();
+  abortPipeline: (pipelineId, reason) => {
+    get().pipelineAbortControllers[pipelineId]?.abort(reason);
   },
 
   pruneCompletedJobs: () =>

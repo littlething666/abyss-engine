@@ -4,6 +4,8 @@ import type { MiniGameAffordanceSet } from '@/types/contentQuality';
 import type { GroundingSearchPolicy, GroundingSource } from '@/types/grounding';
 import { z } from 'zod';
 
+import { migrateMiniGameAffordancesInput } from './migrateMiniGameAffordancesInput';
+
 const syllabusKeysSchema = z.object({
   '1': z.array(z.string()).min(1),
   '2': z.array(z.string()).min(1),
@@ -11,23 +13,79 @@ const syllabusKeysSchema = z.object({
   '4': z.array(z.string()).min(1),
 });
 
-const miniGameAffordancesSchema = z.object({
-  categorySets: z.array(z.object({
+const categoryRowSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+});
+
+const categorySetItemSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  categoryId: z.string().min(1),
+});
+
+const categorySetSchema = z
+  .object({
     label: z.string().min(1),
-    categories: z.array(z.string().min(1)).min(3),
-    candidateItems: z.array(z.string().min(1)).min(6),
-  })).default([]),
-  orderedSequences: z.array(z.object({
+    categories: z.array(categoryRowSchema).min(3),
+    items: z.array(categorySetItemSchema).min(6),
+  })
+  .superRefine((val, ctx) => {
+    const catIds = new Set(val.categories.map((c) => c.id));
+    for (const it of val.items) {
+      if (!catIds.has(it.categoryId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `item "${it.id}" references unknown categoryId "${it.categoryId}"`,
+          path: ['items'],
+        });
+      }
+    }
+  });
+
+const sequenceItemSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  correctPosition: z.number().int().min(0),
+});
+
+const orderedSequenceSchema = z
+  .object({
     label: z.string().min(1),
-    steps: z.array(z.string().min(1)).min(3),
-  })).default([]),
-  connectionPairs: z.array(z.object({
-    label: z.string().min(1),
-    pairs: z.array(z.object({
-      left: z.string().min(1),
-      right: z.string().min(1),
-    })).min(3),
-  })).default([]),
+    items: z.array(sequenceItemSchema).min(3),
+  })
+  .superRefine((val, ctx) => {
+    const n = val.items.length;
+    const positions = val.items.map((i) => i.correctPosition).sort((a, b) => a - b);
+    if (positions.length !== n) return;
+    for (let i = 0; i < n; i++) {
+      if (positions[i] !== i) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'SEQUENCE_BUILD items must use contiguous correctPosition values 0..n-1',
+          path: ['items'],
+        });
+        return;
+      }
+    }
+  });
+
+const connectionPairSchema = z.object({
+  id: z.string().min(1),
+  left: z.string().min(1),
+  right: z.string().min(1),
+});
+
+const connectionPairsSetSchema = z.object({
+  label: z.string().min(1),
+  pairs: z.array(connectionPairSchema).min(3),
+});
+
+/** Exported for `loadTheoryPayloadFromTopicDetails` — same contract as theory LLM output after migration. */
+export const miniGameAffordancesSchema = z.object({
+  categorySets: z.array(categorySetSchema).default([]),
+  orderedSequences: z.array(orderedSequenceSchema).default([]),
+  connectionPairs: z.array(connectionPairsSetSchema).default([]),
 });
 
 const theoryPayloadSchema = z.object({
@@ -110,6 +168,14 @@ export function parseTopicTheoryPayload(
   } catch (e) {
     logJsonParseError('parseTopicTheoryPayload', e, jsonStr);
     return { ok: false, error: 'Assistant response is not valid JSON' };
+  }
+
+  if (parsed && typeof parsed === 'object' && 'miniGameAffordances' in parsed) {
+    const row = parsed as Record<string, unknown>;
+    parsed = {
+      ...row,
+      miniGameAffordances: migrateMiniGameAffordancesInput(row.miniGameAffordances),
+    };
   }
 
   const result = theoryPayloadSchema.safeParse(parsed);

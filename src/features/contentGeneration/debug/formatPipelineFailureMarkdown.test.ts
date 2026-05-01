@@ -17,6 +17,7 @@ function minimalBundle(overrides: Partial<PipelineFailureDebugBundle>): Pipeline
     pipelineStage: 'full',
     failedStage: 'study-cards',
     retryOf: null,
+    pipelineRetryOf: null,
     retryChainDepth: 0,
     startedAt: 1_700_000_000_000,
     finishedAt: 1_700_000_012_345,
@@ -50,6 +51,8 @@ describe('formatPipelineFailureMarkdown', () => {
     const md = formatPipelineFailureMarkdown(minimalBundle({}));
     expect(md).toContain('# Abyss Pipeline Failure');
     expect(md).toContain('## Summary');
+    expect(md).toContain('## Generated Card Quality Summary');
+    expect(md).toContain('## Generated Card Validation Issues');
     expect(md).toContain('## Validation Failures');
     expect(md).toContain('correct_answer_not_in_options');
     expect(md).toContain('## Model & Request Params');

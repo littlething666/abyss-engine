@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import type { ChatCompletionTool, ChatMessage, IChatCompletionsRepository } from '@/types/llm';
 import type { ContentGenerationJob, ContentGenerationJobKind } from '@/types/contentGeneration';
 import type { InferenceSurfaceId } from '@/types/llmInference';
+import { isContentGenerationAbortReason } from '@/types/contentGenerationAbort';
 import {
   resolveIncludeOpenRouterReasoningParam,
   resolveOpenRouterStructuredJsonChatExtras,
@@ -12,6 +13,7 @@ import { buildPipelineFailureDebugBundle } from './debug/buildPipelineFailureDeb
 import type { PipelineFailureDebugContext } from './debug/buildPipelineFailureDebugBundle';
 import { formatPipelineFailureMarkdown } from './debug/formatPipelineFailureMarkdown';
 import { logPipelineFailure } from './debug/logPipelineFailure';
+import { countManualRetryDepth } from './countManualRetryDepth';
 import { useContentGenerationStore } from './contentGenerationStore';
 
 export type { PipelineFailureDebugContext } from './debug/buildPipelineFailureDebugBundle';
@@ -75,6 +77,8 @@ export async function runContentGenerationJob<TParsed>(
   const jobId = uuid();
   const ac = new AbortController();
 
+  const retryChainDepth = countManualRetryDepth(params.retryOf ?? undefined, store.jobs);
+
   if (params.externalSignal) {
     if (params.externalSignal.aborted) {
       ac.abort();
@@ -94,6 +98,7 @@ export async function runContentGenerationJob<TParsed>(
     llmSurfaceId: params.llmSurfaceId,
     includeOpenRouterReasoning,
     enableStreaming: enableStreamingForJob,
+    retryCount: retryChainDepth,
     ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
     ...(structured?.responseFormat ? { responseFormat: structured.responseFormat } : {}),
     ...(structured?.plugins ? { plugins: structured.plugins } : {}),
@@ -190,6 +195,10 @@ export async function runContentGenerationJob<TParsed>(
     return { ok: true, jobId };
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
+      const reason = ac.signal.reason;
+      if (isContentGenerationAbortReason(reason)) {
+        store.mergeJobMetadata(jobId, { abortReason: reason });
+      }
       store.finishJob(jobId, 'aborted');
       return { ok: false, jobId, error: 'Aborted' };
     }

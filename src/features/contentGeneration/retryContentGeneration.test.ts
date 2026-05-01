@@ -155,7 +155,8 @@ describe('retryFailedJob', () => {
     const params = mockRunTopicPipeline.mock.calls[0]?.[0];
     expect(params.stage).toBe('theory');
     expect(params.enableReasoning).toBe(true);
-    expect(params.retryOf).toBe('job-1');
+    expect(params.retryContext.pipelineRetryOf).toBeNull();
+    expect(params.retryContext.jobRetryOfByStage.theory).toBe('job-1');
     expect(params.forceRegenerate).toBe(true);
   });
 
@@ -165,6 +166,17 @@ describe('retryFailedJob', () => {
 
     expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
     expect(mockRunTopicPipeline.mock.calls[0]?.[0]?.stage).toBe('study-cards');
+  });
+
+  it('calls runTopicGenerationPipeline for per-type mini-game jobs with override', async () => {
+    const job = makeJob({ id: 'mg-1', kind: 'topic-mini-game-category-sort' });
+    await retryFailedJob(job);
+
+    expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
+    const params = mockRunTopicPipeline.mock.calls[0]?.[0];
+    expect(params.stage).toBe('mini-games');
+    expect(params.miniGameKindsOverride).toEqual(['CATEGORY_SORT']);
+    expect(params.retryContext.jobRetryOfByStage['mini-games']).toBe('mg-1');
   });
 
   it('calls runTopicGenerationPipeline for topic-mini-games jobs', async () => {
@@ -194,6 +206,7 @@ describe('retryFailedJob', () => {
         subjectId: 'sub-1',
         topicId: 'top-1',
         currentLevel: 2,
+        retryOf: 'job-1',
       }),
     );
   });
@@ -393,7 +406,8 @@ describe('retryFailedPipeline', () => {
     const params = mockRunTopicPipeline.mock.calls[0]?.[0];
     expect(params.resumeFromStage).toBe('study-cards');
     expect(params.enableReasoning).toBe(true);
-    expect(params.retryOf).toBe('p1');
+    expect(params.retryContext.pipelineRetryOf).toBe('p1');
+    expect(params.retryContext.jobRetryOfByStage['study-cards']).toBe('j2');
   });
 
   it('does nothing when no jobs exist for pipeline', async () => {

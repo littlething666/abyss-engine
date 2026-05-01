@@ -16,7 +16,13 @@
  * `emitRetryFailed`.
  */
 
-import type { ContentGenerationJob, ContentGenerationJobKind, ContentGenerationPipeline } from '@/types/contentGeneration';
+import type {
+  ContentGenerationJob,
+  ContentGenerationJobKind,
+  ContentGenerationPipeline,
+  TopicPipelineRetryStage,
+} from '@/types/contentGeneration';
+import type { MiniGameType } from '@/types/core';
 import type { StudyChecklist } from '@/types/studyChecklist';
 import type { TopicGenerationStage } from './pipelines/topicGenerationStage';
 import { useContentGenerationStore } from './contentGenerationStore';
@@ -44,6 +50,15 @@ const JOB_KIND_TO_STAGE: Partial<Record<ContentGenerationJobKind, Exclude<TopicG
   'topic-theory': 'theory',
   'topic-study-cards': 'study-cards',
   'topic-mini-games': 'mini-games',
+  'topic-mini-game-category-sort': 'mini-games',
+  'topic-mini-game-sequence-build': 'mini-games',
+  'topic-mini-game-connection-web': 'mini-games',
+};
+
+const MINI_GAME_KIND_TO_TYPE: Partial<Record<ContentGenerationJobKind, MiniGameType>> = {
+  'topic-mini-game-category-sort': 'CATEGORY_SORT',
+  'topic-mini-game-sequence-build': 'SEQUENCE_BUILD',
+  'topic-mini-game-connection-web': 'CONNECTION_WEB',
 };
 
 function getEnableReasoningFromJobMetadata(job: ContentGenerationJob): boolean {
@@ -139,6 +154,8 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
   try {
     const stage = JOB_KIND_TO_STAGE[job.kind];
     if (stage && topicId) {
+      const jobRetryOfByStage: Partial<Record<TopicPipelineRetryStage, string>> = { [stage]: job.id };
+      const miniRedo = MINI_GAME_KIND_TO_TYPE[job.kind];
       await runTopicGenerationPipeline({
         chat: getChatCompletionsRepositoryForSurface('topicContent'),
         deckRepository,
@@ -148,7 +165,11 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         enableReasoning,
         forceRegenerate: true,
         stage,
-        retryOf: job.id,
+        retryContext: {
+          pipelineRetryOf: null,
+          jobRetryOfByStage,
+        },
+        ...(miniRedo ? { miniGameKindsOverride: [miniRedo] } : {}),
       });
       return;
     }
@@ -168,6 +189,7 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         subjectId,
         topicId,
         currentLevel: trialCurrentLevel,
+        retryOf: job.id,
       });
       return;
     }
@@ -258,7 +280,10 @@ export async function retryFailedPipeline(pipelineId: string): Promise<void> {
         enableReasoning,
         forceRegenerate: true,
         resumeFromStage: resumeStage,
-        retryOf: pipelineId,
+        retryContext: {
+          pipelineRetryOf: pipelineId,
+          jobRetryOfByStage: { [resumeStage]: failedJob.id },
+        },
       });
       return;
     }

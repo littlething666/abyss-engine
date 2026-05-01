@@ -5,13 +5,14 @@ export { runContentGenerationJob } from './runContentGenerationJob';
 export type { ContentGenerationJobParams, PipelineFailureDebugContext } from './runContentGenerationJob';
 
 export { runTopicGenerationPipeline } from './pipelines/runTopicGenerationPipeline';
-export type { RunTopicGenerationPipelineParams, TopicGenerationStage } from './pipelines/runTopicGenerationPipeline';
+export type { RunTopicGenerationPipelineParams, TopicGenerationStage, TopicPipelineRetryContext } from './pipelines/runTopicGenerationPipeline';
 export { triggerTopicGenerationPipeline } from './pipelines/triggerTopicGenerationPipeline';
 
 export { runExpansionJob } from './jobs/runExpansionJob';
 export type { RunExpansionJobParams } from './jobs/runExpansionJob';
 
 export { topicStudyContentReady } from './topicStudyContentReady';
+export { countManualRetryDepth } from './countManualRetryDepth';
 export {
   activeTopicGenerationLabel,
   activeTopicContentGenerationLabel,

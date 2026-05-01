@@ -7,6 +7,7 @@ import { crystalCeremonyStore } from '@/features/progression/crystalCeremonyStor
 import { deckRepository, deckWriter } from './di';
 import { getChatCompletionsRepositoryForSurface } from './llmInferenceRegistry';
 import { runExpansionJob } from '@/features/contentGeneration/jobs/runExpansionJob';
+import type { ContentGenerationAbortReason } from '@/types/contentGenerationAbort';
 import { runTopicGenerationPipeline } from '@/features/contentGeneration/pipelines/runTopicGenerationPipeline';
 import {
   createSubjectGenerationOrchestrator,
@@ -28,6 +29,11 @@ import {
   useMentorStore,
 } from '@/features/mentor';
 import { pubSubClient } from './pubsub';
+
+const expansionSupersededAbortReason: ContentGenerationAbortReason = {
+  kind: 'superseded',
+  source: 'expansion-replaced',
+};
 
 const g = globalThis as typeof globalThis & {
   __abyssEventBusHandlersRegistered?: boolean;
@@ -317,7 +323,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
     const expansionKey = topicRefKey({ subjectId: e.subjectId, topicId: e.topicId });
     if (e.to >= 1 && e.to <= 3) {
       const prev = activeExpansionJobs.get(expansionKey);
-      prev?.abort();
+      prev?.abort(expansionSupersededAbortReason);
       const ac = new AbortController();
       activeExpansionJobs.set(expansionKey, ac);
       void runExpansionJob({
