@@ -3,7 +3,10 @@ import type {
   LlmInferenceProviderId,
   OpenRouterModelConfig,
 } from '../types/llmInference';
-import type { ChatResponseFormatJsonObject } from '../types/llm';
+import type {
+  ChatResponseFormat,
+  ChatResponseFormatJsonSchema,
+} from '../types/llm';
 import type { StudySettingsState } from '../store/studySettingsStore';
 import {
   getLocalModelId,
@@ -64,17 +67,18 @@ export function resolveOpenRouterReasoningChatOptions(
 }
 
 /**
- * OpenRouter-only: `response_format: json_object` for structured generation jobs.
- * When response healing is enabled in settings, includes the OpenRouter `response-healing` plugin
- * (non-streaming; callers should set `enableStreaming: false` when this is non-null).
+ * OpenRouter-only: structured generation extras (`response_format`, optional `plugins`,
+ * non-streaming). When the bound model declares `structured_outputs` and the caller
+ * supplies {@link OpenRouterStructuredChatExtrasOptions.jsonSchemaResponseFormat},
+ * uses JSON Schema mode; otherwise uses `json_object` when `response_format` is supported.
+ *
+ * Returns null when the surface is not OpenRouter or the bound config does not list
+ * `response_format` among supported parameters (existing no-`response_format` behavior).
  */
-export function resolveOpenRouterStructuredJsonChatExtras(
+export function resolveOpenRouterStructuredChatExtrasForJob(
   surfaceId: InferenceSurfaceId,
-): {
-  responseFormat: ChatResponseFormatJsonObject;
-  plugins: Array<{ id: string }> | undefined;
-  forceNonStreaming: boolean;
-} | null {
+  options?: OpenRouterStructuredChatExtrasOptions,
+): OpenRouterStructuredChatExtras | null {
   if (inferenceProviderForSurface(surfaceId) !== 'openrouter') {
     return null;
   }
@@ -83,11 +87,39 @@ export function resolveOpenRouterStructuredJsonChatExtras(
     return null;
   }
   const healing = studySettingsStore.getState().openRouterResponseHealing;
+  const jsonSchemaResponseFormat = options?.jsonSchemaResponseFormat;
+  const useJsonSchema =
+    jsonSchemaResponseFormat !== undefined
+    && openRouterConfigSupportsParameter(config, 'structured_outputs');
+
+  const responseFormat: ChatResponseFormat = useJsonSchema
+    ? jsonSchemaResponseFormat
+    : { type: 'json_object' };
+
   return {
-    responseFormat: { type: 'json_object' },
+    responseFormat,
     plugins: healing ? [{ id: 'response-healing' }] : undefined,
     forceNonStreaming: true,
   };
+}
+
+export type OpenRouterStructuredChatExtrasOptions = {
+  jsonSchemaResponseFormat?: ChatResponseFormatJsonSchema;
+};
+
+export type OpenRouterStructuredChatExtras = {
+  responseFormat: ChatResponseFormat;
+  plugins: Array<{ id: string }> | undefined;
+  forceNonStreaming: boolean;
+};
+
+/**
+ * @deprecated Prefer {@link resolveOpenRouterStructuredChatExtrasForJob} with explicit options.
+ */
+export function resolveOpenRouterStructuredJsonChatExtras(
+  surfaceId: InferenceSurfaceId,
+): OpenRouterStructuredChatExtras | null {
+  return resolveOpenRouterStructuredChatExtrasForJob(surfaceId);
 }
 
 function localEnvModel(): string {

@@ -28,6 +28,18 @@ export interface ChatCompletionResult {
 /** OpenAI-compatible `response_format` (used for OpenRouter structured JSON jobs). */
 export type ChatResponseFormatJsonObject = { type: 'json_object' };
 
+/** OpenAI / OpenRouter-style JSON Schema structured output (`response_format`). */
+export type ChatResponseFormatJsonSchema = {
+  type: 'json_schema';
+  json_schema: {
+    name: string;
+    strict: boolean;
+    schema: Record<string, unknown>;
+  };
+};
+
+export type ChatResponseFormat = ChatResponseFormatJsonObject | ChatResponseFormatJsonSchema;
+
 export type OpenRouterWebSearchTool = {
   type: 'openrouter:web_search';
   parameters: {
@@ -61,7 +73,7 @@ export interface ChatCompletionStreamInput {
   /** When set, forwarded as `temperature` in the chat-completions JSON body. Omit for provider default. */
   temperature?: number;
   /** When set, included in the chat-completions JSON body (OpenRouter / compatible servers). */
-  responseFormat?: ChatResponseFormatJsonObject;
+  responseFormat?: ChatResponseFormat;
   /** OpenRouter plugins array, e.g. `[{ id: 'response-healing' }]`. */
   plugins?: Array<{ id: string }>;
   /** OpenRouter server tools, e.g. `openrouter:web_search`. */
@@ -77,7 +89,7 @@ export interface IChatCompletionsRepository {
     signal?: AbortSignal;
     /** When set, forwarded as `temperature` in the chat-completions JSON body. Omit for provider default. */
     temperature?: number;
-    responseFormat?: ChatResponseFormatJsonObject;
+    responseFormat?: ChatResponseFormat;
     plugins?: Array<{ id: string }>;
     tools?: ChatCompletionTool[];
   }): Promise<ChatCompletionResult>;

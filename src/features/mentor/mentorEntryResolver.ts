@@ -1,6 +1,20 @@
 import type { MentorTriggerPayload } from './mentorTypes';
 
 /**
+ * Resolved mentor trigger when the player opens the mentor entry point while a
+ * canonical generation failure needs attention.
+ */
+export interface MentorFailureEntryPayload {
+  trigger:
+    | 'subject:generation-failed'
+    | 'topic-content:generation-failed'
+    | 'topic-expansion:generation-failed'
+    | 'crystal-trial:generation-failed'
+    | 'content-generation:retry-failed';
+  payload: MentorTriggerPayload;
+}
+
+/**
  * Plain, mentor-owned context for selecting the right entry-point trigger
  * when the mentor bubble or "Mentor" Quick Action is activated.
  *
@@ -10,14 +24,13 @@ import type { MentorTriggerPayload } from './mentorTypes';
  */
 export interface MentorEntryContext {
   /**
-   * Live phase of the most relevant subject-generation pipeline, derived
-   * from `activeSubjectGenerationStatus` in the contentGeneration feature.
-   * `null` when no subject pipeline is active or recently failed.
+   * Active subject-graph LLM stage for nexus pips / generation-started copy.
+   * `null` when no subject-graph job is actively running.
    */
-  subjectGenerationPhase: 'topics' | 'edges' | 'failed' | null;
+  subjectGraphActiveStage: 'topics' | 'edges' | null;
 
   /**
-   * Cleaned subject label for the active or failed pipeline
+   * Cleaned subject label for the active subject-graph pipeline
    * (no "New subject:" prefix). May be null if the label is unavailable.
    */
   subjectGenerationLabel: string | null;
@@ -30,6 +43,12 @@ export interface MentorEntryContext {
    * generation. Acts as the gate for `onboarding:pre-first-subject`.
    */
   firstSubjectGenerationEnqueuedAt: number | null;
+
+  /**
+   * When set, the nexus bubble is in alert for this failure and a click
+   * should enqueue this trigger (including `failureKey` for acknowledgement).
+   */
+  mentorFailureEntry: MentorFailureEntryPayload | null;
 }
 
 export interface MentorEntryDecision {
@@ -37,6 +56,10 @@ export interface MentorEntryDecision {
     | 'subject:generation-failed'
     | 'subject:generation-started'
     | 'onboarding:pre-first-subject'
+    | 'topic-content:generation-failed'
+    | 'topic-expansion:generation-failed'
+    | 'crystal-trial:generation-failed'
+    | 'content-generation:retry-failed'
     | 'mentor-bubble:clicked';
   payload: MentorTriggerPayload;
 }
@@ -46,28 +69,21 @@ export interface MentorEntryDecision {
  * bubble (or the Quick Actions "Mentor" item) is activated and the overlay
  * is closed with an empty queue.
  *
- * Priority order matches the contextual-entry plan:
- *   1. subject:generation-failed    — a recent pipeline needs attention
- *   2. subject:generation-started   — a pipeline is currently running (topics/edges)
+ * Priority order:
+ *   1. Canonical generation failure (highest-priority unacknowledged surface)
+ *   2. subject:generation-started — subject graph LLM work in flight
  *   3. onboarding:pre-first-subject — the player has not started their first subject
- *   4. mentor-bubble:clicked        — generic chatter fallback
- *
- * Keeping the resolver pure makes it directly unit-testable from plain
- * context, with no zustand/dom dependencies. The caller
- * (`tryEnqueueMentorEntry`) is responsible for the overlay/queue guards.
+ *   4. mentor-bubble:clicked — generic chatter fallback
  */
-export function resolveMentorEntry(
-  context: MentorEntryContext,
-): MentorEntryDecision {
-  const phase = context.subjectGenerationPhase;
-
-  if (phase === 'failed') {
-    const subjectName = context.subjectGenerationLabel ?? '';
+export function resolveMentorEntry(context: MentorEntryContext): MentorEntryDecision {
+  if (context.mentorFailureEntry) {
     return {
-      trigger: 'subject:generation-failed',
-      payload: subjectName ? { subjectName } : {},
+      trigger: context.mentorFailureEntry.trigger,
+      payload: context.mentorFailureEntry.payload,
     };
   }
+
+  const phase = context.subjectGraphActiveStage;
 
   if (phase === 'topics' || phase === 'edges') {
     const subjectName = context.subjectGenerationLabel ?? '';

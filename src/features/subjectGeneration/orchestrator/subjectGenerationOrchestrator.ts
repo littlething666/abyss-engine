@@ -4,7 +4,7 @@ import type { Subject, SubjectGraph } from '@/types/core';
 import type { ContentGenerationJob } from '@/types/contentGeneration';
 import type { SubjectGenerationRequest, SubjectGenerationResult } from '@/types/generationOrchestrator';
 import type { TopicLattice } from '@/types/topicLattice';
-import { runContentGenerationJob, useContentGenerationStore } from '@/features/contentGeneration';
+import { countManualRetryDepth, failureKeyForJob, runContentGenerationJob, useContentGenerationStore } from '@/features/contentGeneration';
 import { appEventBus } from '@/infrastructure/eventBus';
 import { resolveStrategy } from '../strategies/strategyResolver';
 import { applyGraphToStorage } from '../graph/applyGraphToStorage';
@@ -16,7 +16,6 @@ import { buildPrereqWiringMessages } from '../graph/prereqWiring/buildPrereqWiri
 import { parsePrereqWiringResponse } from '../graph/prereqWiring/parsePrereqWiringResponse';
 import { validateGraph } from '../graph/validateGraph';
 import type { PrereqEdgesCorrectionLog } from '../graph/prereqWiring/correctPrereqEdges';
-import { countManualRetryDepth } from './countManualRetryDepth';
 import type { GenerationDependencies } from './types';
 
 export interface SubjectGenerationOrchestrator {
@@ -53,6 +52,11 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
     const { stageBindings } = deps;
     const strategy = resolveStrategy(request.checklist);
     const topicName = request.checklist.topicName;
+    // Display name carried in every terminal `subject-graph:generation-failed`
+    // emission so downstream listeners (toast, mentor, telemetry) need not
+    // re-derive it. Falls back to the subjectId when the checklist topicName
+    // is whitespace.
+    const subjectName = topicName.trim() || request.subjectId;
 
     const retryDepth = countManualRetryDepth(deps.retryOf, useContentGenerationStore.getState().jobs);
 
@@ -97,6 +101,11 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       subjectId: request.subjectId,
       topicId: null,
       llmSurfaceId: 'subjectGenerationTopics',
+      failureDebugContext: {
+        topicLabel: subjectName,
+        pipelineStage: 'subject-graph',
+        failedStage: 'topics',
+      },
       chat: stageBindings.topics.chat,
       model: stageBindings.topics.model,
       messages: buildTopicLatticeMessages(request.subjectId, strategy.graph),
@@ -105,6 +114,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       externalSignal: pipelineAc.signal,
       metadata: {
         checklist: request.checklist,
+        retryCount: retryDepth,
       },
       retryOf: deps.retryOf,
       parseOutput: async (raw, job) => {
@@ -144,9 +154,19 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
     const stageADurationMs = jobDurationMs(jobA);
 
     if (!latticeJob.ok) {
+      const error = latticeJob.error ?? 'Subject topic lattice generation failed';
+      appEventBus.emit('subject-graph:generation-failed', {
+        subjectId: request.subjectId,
+        subjectName,
+        pipelineId,
+        stage: 'topics',
+        error,
+        jobId: latticeJob.jobId,
+        failureKey: failureKeyForJob(latticeJob.jobId),
+      });
       return {
         ok: false,
-        error: latticeJob.error ?? 'Subject topic lattice generation failed',
+        error,
         pipelineId,
         stage: 'topics',
       };
@@ -164,6 +184,11 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       subjectId: request.subjectId,
       topicId: null,
       llmSurfaceId: 'subjectGenerationEdges',
+      failureDebugContext: {
+        topicLabel: subjectName,
+        pipelineStage: 'subject-graph',
+        failedStage: 'edges',
+      },
       chat: stageBindings.edges.chat,
       model: stageBindings.edges.model,
       messages: buildPrereqWiringMessages(request.subjectId, topicName, strategy.graph, resolvedLattice),
@@ -173,6 +198,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       externalSignal: pipelineAc.signal,
       metadata: {
         checklist: request.checklist,
+        retryCount: retryDepth,
       },
       retryOf: deps.retryOf,
       parseOutput: async (raw, job) => {
@@ -259,9 +285,19 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
     });
 
     if (!edgesJob.ok) {
+      const error = edgesJob.error ?? 'Subject prerequisite wiring failed';
+      appEventBus.emit('subject-graph:generation-failed', {
+        subjectId: request.subjectId,
+        subjectName,
+        pipelineId,
+        stage: 'edges',
+        error,
+        jobId: edgesJob.jobId,
+        failureKey: failureKeyForJob(edgesJob.jobId),
+      });
       return {
         ok: false,
-        error: edgesJob.error ?? 'Subject prerequisite wiring failed',
+        error,
         pipelineId,
         stage: 'edges',
       };

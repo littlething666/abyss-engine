@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { MiniGameType } from '@/types/core';
 import { runTopicGenerationPipeline } from './runTopicGenerationPipeline';
 import { useContentGenerationStore } from '../contentGenerationStore';
 import { topicRefKey } from '@/lib/topicRef';
@@ -9,6 +10,11 @@ import type {
   IDeckRepository,
   IDeckContentWriter,
 } from '@/types/repository';
+import { appEventBus } from '@/infrastructure/eventBus';
+import { failureKeyForJob } from '../failureKeys';
+import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
+import { buildTopicMiniGameCardsResponseFormat } from '../schemas/topicMiniGameCardsResponseFormat';
+import { topicTheoryStructuredOutputResponseFormat } from '../schemas/topicTheoryResponseFormat';
 
 const { surfaceProvidersApi } = vi.hoisted(() => ({
   surfaceProvidersApi: {
@@ -77,7 +83,7 @@ const readyDetails: TopicDetails = {
   subjectId: 'sub-1',
   coreConcept: 'cc',
   theory: 'theory body',
-  keyTakeaways: ['k1', 'k2', 'k3'],
+  keyTakeaways: ['k1', 'k2', 'k3', 'k4'],
   coreQuestionsByDifficulty: {
     1: ['q1', 'q2', 'q3'],
     2: ['q1', 'q2', 'q3'],
@@ -85,11 +91,6 @@ const readyDetails: TopicDetails = {
     4: ['q1', 'q2', 'q3'],
   },
   groundingSources: [],
-  miniGameAffordances: {
-    categorySets: [],
-    orderedSequences: [],
-    connectionPairs: [],
-  },
 };
 
 const readyCards: Card[] = Array.from({ length: 6 }, (_, i) => ({
@@ -102,7 +103,7 @@ const readyCards: Card[] = Array.from({ length: 6 }, (_, i) => ({
 /**
  * Theory payload fixture used by the faithful `runContentGenerationJob`
  * mock when emulating the topic-theory stage. Mirrors the production
- * `ParsedTopicTheoryPayload` shape so `runTopicGenerationPipeline`'s
+ * `ParsedTopicTheoryContentPayload` shape so `runTopicGenerationPipeline`'s
  * `resolveTheoryData()` returns this and downstream stages run as in
  * production.
  */
@@ -117,8 +118,92 @@ const FIXTURE_THEORY_DATA = {
     4: ['q1', 'q2', 'q3'],
   },
   groundingSources: [],
-  miniGameAffordances: { categorySets: [], orderedSequences: [], connectionPairs: [] },
 };
+
+function stubMiniCardsForJobKind(kind: string): Card[] {
+  const wrap = (cards: unknown[]) => JSON.stringify({ cards });
+  if (kind === 'topic-mini-game-category-sort') {
+    const r = parseTopicCardsPayload(
+      wrap([
+        {
+          id: 't-a-stub-cat',
+          type: 'MINI_GAME',
+          difficulty: 1,
+          content: {
+            gameType: 'CATEGORY_SORT',
+            prompt: 'Sort',
+            explanation: 'E',
+            categories: [
+              { id: 'a', label: 'A' },
+              { id: 'b', label: 'B' },
+              { id: 'c', label: 'C' },
+            ],
+            items: [
+              { id: 'i0', label: 'l0', categoryId: 'a' },
+              { id: 'i1', label: 'l1', categoryId: 'a' },
+              { id: 'i2', label: 'l2', categoryId: 'b' },
+              { id: 'i3', label: 'l3', categoryId: 'b' },
+              { id: 'i4', label: 'l4', categoryId: 'c' },
+              { id: 'i5', label: 'l5', categoryId: 'c' },
+            ],
+          },
+        },
+      ]),
+      { allowedCardTypes: ['MINI_GAME'], allowedMiniGameTypes: ['CATEGORY_SORT'] },
+    );
+    if (!r.ok) throw new Error(r.error);
+    return r.cards;
+  }
+  if (kind === 'topic-mini-game-sequence-build') {
+    const r = parseTopicCardsPayload(
+      wrap([
+        {
+          id: 't-a-stub-seq',
+          type: 'MINI_GAME',
+          difficulty: 1,
+          content: {
+            gameType: 'SEQUENCE_BUILD',
+            prompt: 'Order',
+            explanation: 'E',
+            items: [
+              { id: 's0', label: 'a', correctPosition: 0 },
+              { id: 's1', label: 'b', correctPosition: 1 },
+              { id: 's2', label: 'c', correctPosition: 2 },
+            ],
+          },
+        },
+      ]),
+      { allowedCardTypes: ['MINI_GAME'], allowedMiniGameTypes: ['SEQUENCE_BUILD'] },
+    );
+    if (!r.ok) throw new Error(r.error);
+    return r.cards;
+  }
+  if (kind === 'topic-mini-game-connection-web') {
+    const r = parseTopicCardsPayload(
+      wrap([
+        {
+          id: 't-a-stub-web',
+          type: 'MINI_GAME',
+          difficulty: 1,
+          content: {
+            gameType: 'CONNECTION_WEB',
+            prompt: 'Match',
+            explanation: 'E',
+            pairs: [
+              { id: 'p0', left: 'L0', right: 'R0' },
+              { id: 'p1', left: 'L1', right: 'R1' },
+              { id: 'p2', left: 'L2', right: 'R2' },
+            ],
+          },
+        },
+      ]),
+      { allowedCardTypes: ['MINI_GAME'], allowedMiniGameTypes: ['CONNECTION_WEB'] },
+    );
+    if (!r.ok) throw new Error(r.error);
+    return r.cards;
+  }
+  throw new Error(`unexpected mini job kind ${kind}`);
+}
 
 /**
  * Faithful default for the `runContentGenerationJob` mock: invokes
@@ -136,7 +221,15 @@ async function defaultJobOk(
   if (args?.persistOutput) {
     if (args.kind === 'topic-theory') {
       await args.persistOutput(FIXTURE_THEORY_DATA);
-    } else if (args.kind === 'topic-study-cards' || args.kind === 'topic-mini-games') {
+    } else if (args.kind === 'topic-study-cards') {
+      await args.persistOutput([]);
+    } else if (
+      args.kind === 'topic-mini-game-category-sort' ||
+      args.kind === 'topic-mini-game-sequence-build' ||
+      args.kind === 'topic-mini-game-connection-web'
+    ) {
+      await args.persistOutput(stubMiniCardsForJobKind(args.kind));
+    } else if (args.kind === 'topic-mini-games') {
       await args.persistOutput([]);
     }
   }
@@ -180,6 +273,8 @@ function resetStore() {
     pipelines: {},
     abortControllers: {},
     pipelineAbortControllers: {},
+    sessionAcknowledgedFailureKeys: {},
+    sessionRetryRoutingFailures: {},
   });
 }
 
@@ -221,10 +316,67 @@ describe('runTopicGenerationPipeline', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(runContentGenerationJob).toHaveBeenCalledTimes(3);
+    expect(runContentGenerationJob).toHaveBeenCalledTimes(5);
     expect(celebrationApi.markPendingFromFullTopicUnlock).toHaveBeenCalledWith(
       topicRefKey({ subjectId: 'sub-1', topicId: 't-a' }),
     );
+    const upsert = writer.upsertTopicDetails as ReturnType<typeof vi.fn>;
+    const detailsArg = upsert.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(detailsArg).toBeDefined();
+    expect(detailsArg).not.toHaveProperty('miniGameAffordances');
+  });
+
+  it('passes JSON Schema responseFormatOverride for theory and per-type mini-game jobs; study cards omit override', async () => {
+    runContentGenerationJob.mockImplementation(defaultJobOk);
+    const writer = makeWriter();
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer,
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    const theoryArgs = runContentGenerationJob.mock.calls.map((c) => c[0] as { kind: string }).find(
+      (a) => a.kind === 'topic-theory',
+    );
+    expect(theoryArgs).toMatchObject({
+      responseFormatOverride: topicTheoryStructuredOutputResponseFormat,
+    });
+
+    const studyArgs = runContentGenerationJob.mock.calls
+      .map((c) => c[0] as { kind: string; responseFormatOverride?: unknown })
+      .find((a) => a.kind === 'topic-study-cards');
+    expect(studyArgs).toBeDefined();
+    expect(studyArgs).not.toHaveProperty('responseFormatOverride');
+
+    const miniJobs: Array<{ kind: string; gameType: MiniGameType }> = [
+      { kind: 'topic-mini-game-category-sort', gameType: 'CATEGORY_SORT' },
+      { kind: 'topic-mini-game-sequence-build', gameType: 'SEQUENCE_BUILD' },
+      { kind: 'topic-mini-game-connection-web', gameType: 'CONNECTION_WEB' },
+    ];
+
+    for (const { kind, gameType } of miniJobs) {
+      const args = runContentGenerationJob.mock.calls
+        .map((c) => c[0] as { kind: string; responseFormatOverride?: unknown })
+        .find((a) => a.kind === kind);
+      expect(args, kind).toBeDefined();
+      expect(args!.responseFormatOverride).toEqual(buildTopicMiniGameCardsResponseFormat(gameType));
+    }
+
+    const knownKinds = new Set([
+      'topic-theory',
+      'topic-study-cards',
+      ...miniJobs.map((m) => m.kind),
+    ]);
+    const otherJobs = runContentGenerationJob.mock.calls
+      .map((c) => c[0] as { kind: string })
+      .filter((a) => !knownKinds.has(a.kind));
+    expect(otherJobs.length).toBe(0);
   });
 
   it('auto-skips when ready content already exists', async () => {
@@ -452,5 +604,177 @@ describe('runTopicGenerationPipeline', () => {
       expect(typeof finalPayload.durationMs).toBe('number');
       expect(finalPayload.durationMs).toBeGreaterThanOrEqual(0);
     });
+  });
+
+  // ── Phase B: terminal lifecycle event emission ───────────────────
+  // Each test uses a fresh spy with mockRestore() so emission state never
+  // bleeds across cases.
+
+  it('emits topic-content:generation-completed when full pipeline succeeds', async () => {
+    runContentGenerationJob.mockImplementation(defaultJobOk);
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-completed',
+      expect.objectContaining({
+        subjectId: 'sub-1',
+        topicId: 't-a',
+        topicLabel: 'Topic A',
+        stage: 'full',
+      }),
+    );
+    emitSpy.mockRestore();
+  });
+
+  it('emits topic-content:generation-failed when a stage fails (carries errorMessage)', async () => {
+    runContentGenerationJob.mockResolvedValue({ ok: false, error: 'theory boom', jobId: 'theory-fail-1' });
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.objectContaining({
+        subjectId: 'sub-1',
+        topicId: 't-a',
+        topicLabel: 'Topic A',
+        stage: 'full',
+        errorMessage: 'theory boom',
+        partialCompletion: {
+          theory: 'failed',
+          studyCards: 'skipped',
+          miniGames: 'skipped',
+        },
+        jobId: 'theory-fail-1',
+        failureKey: failureKeyForJob('theory-fail-1'),
+      }),
+    );
+    emitSpy.mockRestore();
+  });
+
+  it('full pipeline: mini-game failure after theory and study reports partialCompletion and skips merged mini append', async () => {
+    runContentGenerationJob.mockImplementation(
+      async (args: { kind: string; persistOutput?: (d: unknown) => Promise<void> }) => {
+        if (args.kind === 'topic-theory' || args.kind === 'topic-study-cards') {
+          return defaultJobOk(args);
+        }
+        if (args.kind === 'topic-mini-game-category-sort') {
+          return { ok: false, error: 'mini boom', jobId: 'mini-fail-1' };
+        }
+        return defaultJobOk(args);
+      },
+    );
+    const writer = makeWriter();
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    const result = await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer,
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect((writer.upsertTopicDetails as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+    expect((writer.upsertTopicCards as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+    expect((writer.appendTopicCards as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.objectContaining({
+        partialCompletion: {
+          theory: 'completed',
+          studyCards: 'completed',
+          miniGames: 'failed',
+        },
+        jobId: 'mini-fail-1',
+        failureKey: failureKeyForJob('mini-fail-1'),
+      }),
+    );
+
+    const terminalTelemetry = logCalls().filter((c) => c[0] === 'topic-content:generation-completed');
+    const last = terminalTelemetry[terminalTelemetry.length - 1]?.[1] as Record<string, unknown> | undefined;
+    expect(last?.ok).toBe(false);
+    expect(last?.partialCompletion).toEqual({
+      theory: 'completed',
+      studyCards: 'completed',
+      miniGames: 'failed',
+    });
+
+    emitSpy.mockRestore();
+  });
+
+  it('does not emit a terminal event when the run is auto-skipped', async () => {
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository({
+        getTopicDetails: vi.fn(async () => readyDetails) as unknown as IDeckRepository['getTopicDetails'],
+        getTopicCards: vi.fn(async () => readyCards) as unknown as IDeckRepository['getTopicCards'],
+      }),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+    });
+
+    expect(emitSpy).not.toHaveBeenCalledWith(
+      'topic-content:generation-completed',
+      expect.anything(),
+    );
+    expect(emitSpy).not.toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.anything(),
+    );
+    emitSpy.mockRestore();
+  });
+
+  it('emits failure with topicLabel = topicId when topic not found in graph', async () => {
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer: makeWriter(),
+      subjectId: 'sub-1',
+      topicId: 'missing-topic',
+      enableReasoning: false,
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.objectContaining({
+        topicId: 'missing-topic',
+        topicLabel: 'missing-topic',
+        errorMessage: expect.stringContaining('not found'),
+      }),
+    );
+    emitSpy.mockRestore();
   });
 });

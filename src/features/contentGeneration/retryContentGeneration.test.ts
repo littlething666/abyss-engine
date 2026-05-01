@@ -1,11 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ContentGenerationJob, ContentGenerationPipeline } from '@/types/contentGeneration';
 
+import { appEventBus } from '@/infrastructure/eventBus';
 import { useContentGenerationStore } from './contentGenerationStore';
 import { canRetryJob, canRetryPipeline, retryFailedJob, retryFailedPipeline } from './retryContentGeneration';
 
-// ── Mocks ────────────────────────────────────────────────────────────────────
+// ── Mocks ────────────────────────────────────────────
+//
+// Phase D dropped the `@/infrastructure/toast` import from
+// retryContentGeneration entirely; routing-collapse failures now go
+// through console.error + the `content-generation:retry-failed` bus event
+// instead of toasts. We intentionally do NOT mock toast here — importing
+// it would suggest the surface is still wired.
 
 const mockRunTopicPipeline = vi.fn();
 const mockRunExpansionJob = vi.fn();
@@ -55,10 +62,6 @@ vi.mock('@/infrastructure/llmInferenceRegistry', () => ({
   }),
 }));
 
-vi.mock('@/infrastructure/toast', () => ({
-  toast: Object.assign(vi.fn(), { error: vi.fn() }),
-}));
-
 vi.mock('@/infrastructure/repositories/contentGenerationLogRepository', () => ({
   persistTerminalJob: vi.fn().mockResolvedValue(undefined),
   persistPipeline: vi.fn().mockResolvedValue(undefined),
@@ -66,7 +69,7 @@ vi.mock('@/infrastructure/repositories/contentGenerationLogRepository', () => ({
   loadPersistedLogs: vi.fn().mockResolvedValue({ jobs: [], pipelines: [] }),
 }));
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────
 
 function resetStore(): void {
   useContentGenerationStore.setState({
@@ -74,6 +77,8 @@ function resetStore(): void {
     pipelines: {},
     abortControllers: {},
     pipelineAbortControllers: {},
+    sessionAcknowledgedFailureKeys: {},
+    sessionRetryRoutingFailures: {},
   });
 }
 
@@ -100,7 +105,7 @@ function makeJob(overrides: Partial<ContentGenerationJob>): ContentGenerationJob
   };
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+// ── Tests ─────────────────────────────────────────────
 
 describe('canRetryJob', () => {
   it('returns true for failed job with subjectId', () => {
@@ -152,7 +157,8 @@ describe('retryFailedJob', () => {
     const params = mockRunTopicPipeline.mock.calls[0]?.[0];
     expect(params.stage).toBe('theory');
     expect(params.enableReasoning).toBe(true);
-    expect(params.retryOf).toBe('job-1');
+    expect(params.retryContext.pipelineRetryOf).toBeNull();
+    expect(params.retryContext.jobRetryOfByStage.theory).toBe('job-1');
     expect(params.forceRegenerate).toBe(true);
   });
 
@@ -162,6 +168,17 @@ describe('retryFailedJob', () => {
 
     expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
     expect(mockRunTopicPipeline.mock.calls[0]?.[0]?.stage).toBe('study-cards');
+  });
+
+  it('calls runTopicGenerationPipeline for per-type mini-game jobs with override', async () => {
+    const job = makeJob({ id: 'mg-1', kind: 'topic-mini-game-category-sort' });
+    await retryFailedJob(job);
+
+    expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
+    const params = mockRunTopicPipeline.mock.calls[0]?.[0];
+    expect(params.stage).toBe('mini-games');
+    expect(params.miniGameKindsOverride).toEqual(['CATEGORY_SORT']);
+    expect(params.retryContext.jobRetryOfByStage['mini-games']).toBe('mg-1');
   });
 
   it('calls runTopicGenerationPipeline for topic-mini-games jobs', async () => {
@@ -191,6 +208,7 @@ describe('retryFailedJob', () => {
         subjectId: 'sub-1',
         topicId: 'top-1',
         currentLevel: 2,
+        retryOf: 'job-1',
       }),
     );
   });
@@ -382,6 +400,8 @@ describe('retryFailedPipeline', () => {
       pipelines: { p1: { id: 'p1', label: 'P', createdAt: 0, retryOf: null } },
       abortControllers: {},
       pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
     });
 
     await retryFailedPipeline('p1');
@@ -390,7 +410,8 @@ describe('retryFailedPipeline', () => {
     const params = mockRunTopicPipeline.mock.calls[0]?.[0];
     expect(params.resumeFromStage).toBe('study-cards');
     expect(params.enableReasoning).toBe(true);
-    expect(params.retryOf).toBe('p1');
+    expect(params.retryContext.pipelineRetryOf).toBe('p1');
+    expect(params.retryContext.jobRetryOfByStage['study-cards']).toBe('j2');
   });
 
   it('does nothing when no jobs exist for pipeline', async () => {
@@ -399,6 +420,8 @@ describe('retryFailedPipeline', () => {
       pipelines: {},
       abortControllers: {},
       pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
     });
 
     await retryFailedPipeline('nonexistent');
@@ -434,10 +457,193 @@ describe('retryFailedPipeline', () => {
       pipelines: { 'p-subj': { id: 'p-subj', label: 'New subject: Pipeline topic', createdAt: 0, retryOf: null } },
       abortControllers: {},
       pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
     });
 
     await retryFailedPipeline('p-subj');
 
     expect(mockOrchExecute).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('content-generation:retry-failed terminal events', () => {
+  let emitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    resetStore();
+    mockRunTopicPipeline.mockReset();
+    mockRunExpansionJob.mockReset();
+    mockOrchExecute.mockReset();
+    mockGetManifest.mockReset();
+    mockGenerateTrialQuestions.mockReset();
+    emitSpy = vi.spyOn(appEventBus, 'emit');
+  });
+
+  afterEach(() => {
+    emitSpy.mockRestore();
+  });
+
+  it('emits when crystal-trial currentLevel cannot be derived', async () => {
+    const job = makeJob({
+      kind: 'crystal-trial',
+      label: 'Crystal Trial — unparseable',
+      metadata: { enableReasoning: false },
+    });
+    await retryFailedJob(job);
+
+    expect(mockGenerateTrialQuestions).not.toHaveBeenCalled();
+    expect(emitSpy).toHaveBeenCalledWith(
+      'content-generation:retry-failed',
+      expect.objectContaining({
+        subjectId: 'sub-1',
+        topicId: 'top-1',
+        jobLabel: 'Crystal Trial — unparseable',
+        errorMessage: expect.stringContaining('current level'),
+        jobId: 'job-1',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
+      }),
+    );
+  });
+
+  it('emits when expansion nextLevel cannot be derived', async () => {
+    const job = makeJob({
+      kind: 'topic-expansion-cards',
+      label: 'Expansion no-level',
+      metadata: { enableReasoning: false },
+    });
+    await retryFailedJob(job);
+
+    expect(mockRunExpansionJob).not.toHaveBeenCalled();
+    expect(emitSpy).toHaveBeenCalledWith(
+      'content-generation:retry-failed',
+      expect.objectContaining({
+        jobLabel: 'Expansion no-level',
+        errorMessage: expect.stringContaining('crystal level'),
+        jobId: 'job-1',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
+      }),
+    );
+  });
+
+  it('emits when subject-graph retry context cannot be resolved', async () => {
+    mockGetManifest.mockResolvedValue({ subjects: [] });
+
+    const job = makeJob({
+      kind: 'subject-graph-topics',
+      topicId: null,
+      label: 'unparseable label',
+      metadata: { enableReasoning: false },
+    });
+    await retryFailedJob(job);
+
+    expect(mockOrchExecute).not.toHaveBeenCalled();
+    expect(emitSpy).toHaveBeenCalledWith(
+      'content-generation:retry-failed',
+      expect.objectContaining({
+        subjectId: 'sub-1',
+        jobLabel: 'unparseable label',
+        errorMessage: expect.stringContaining('checklist not recoverable'),
+        jobId: 'job-1',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
+      }),
+    );
+  });
+
+  it('emits for unsupported job kind in retryFailedJob', async () => {
+    const job = makeJob({ kind: 'unknown-kind' as never, topicId: null });
+    await retryFailedJob(job);
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'content-generation:retry-failed',
+      expect.objectContaining({
+        errorMessage: expect.stringContaining('unsupported kind'),
+        jobId: 'job-1',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
+      }),
+    );
+  });
+
+  it('emits when retryFailedJob throws', async () => {
+    mockRunTopicPipeline.mockRejectedValueOnce(new Error('pipeline blew up'));
+    const job = makeJob({ kind: 'topic-theory' });
+    await retryFailedJob(job);
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'content-generation:retry-failed',
+      expect.objectContaining({
+        jobLabel: 'Theory — Test',
+        errorMessage: 'pipeline blew up',
+        jobId: 'job-1',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
+      }),
+    );
+  });
+
+  it('emits for unknown pipeline job kind in retryFailedPipeline', async () => {
+    const failed = makeJob({
+      id: 'jx',
+      pipelineId: 'p1',
+      kind: 'unknown-kind' as never,
+      status: 'failed',
+      topicId: null,
+    });
+    useContentGenerationStore.setState({
+      jobs: { jx: failed },
+      pipelines: { p1: { id: 'p1', label: 'New subject: Mystery', createdAt: 0, retryOf: null } },
+      abortControllers: {},
+      pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
+    });
+
+    await retryFailedPipeline('p1');
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'content-generation:retry-failed',
+      expect.objectContaining({
+        jobLabel: 'New subject: Mystery',
+        errorMessage: 'Cannot retry pipeline: unknown job kind',
+        jobId: 'jx',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
+      }),
+    );
+  });
+
+  it('emits when retryFailedPipeline throws', async () => {
+    mockRunTopicPipeline.mockRejectedValueOnce(new Error('pipe boom'));
+    const failed = makeJob({
+      id: 'j2',
+      pipelineId: 'p1',
+      kind: 'topic-theory',
+      status: 'failed',
+    });
+    useContentGenerationStore.setState({
+      jobs: { j2: failed },
+      pipelines: { p1: { id: 'p1', label: 'Pipeline P1', createdAt: 0, retryOf: null } },
+      abortControllers: {},
+      pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
+    });
+
+    await retryFailedPipeline('p1');
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'content-generation:retry-failed',
+      expect.objectContaining({
+        jobLabel: 'Pipeline P1',
+        errorMessage: 'pipe boom',
+        jobId: 'j2',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
+      }),
+    );
   });
 });

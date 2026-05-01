@@ -42,9 +42,15 @@ export { handleMentorTrigger } from './mentorTriggers';
 export { tryEnqueueMentorEntry } from './mentorEntryPoint';
 export { resolveMentorEntry } from './mentorEntryResolver';
 export type {
+  MentorFailureEntryPayload,
   MentorEntryContext,
   MentorEntryDecision,
 } from './mentorEntryResolver';
+export {
+  MENTOR_GENERATION_FAILURE_TRIGGER_IDS,
+  isMentorGenerationFailureTrigger,
+} from './mentorFailureTriggers';
+export type { MentorGenerationFailureTriggerId } from './mentorFailureTriggers';
 export {
   useMentorOverlayController,
   requestAmbientAdvance,

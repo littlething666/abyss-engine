@@ -5,7 +5,7 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
 import { Billboard } from '@react-three/drei/webgpu';
 import {
-  activeSubjectGenerationStatus,
+  generationAttentionSurface,
   useContentGenerationStore,
 } from '@/features/contentGeneration';
 import { useShallow } from 'zustand/react/shallow';
@@ -73,22 +73,18 @@ export const MentorBubble: React.FC = () => {
   const hasMentorActivity = useMentorStore(
     (s) => s.currentDialog !== null || s.dialogQueue.length > 0,
   );
-  const subjectGeneration = useContentGenerationStore(useShallow(activeSubjectGenerationStatus));
+  const attention = useContentGenerationStore(useShallow(generationAttentionSurface));
   const generationMood: MentorMood =
-    subjectGeneration?.phase === 'failed'
+    attention.primaryFailure !== null
       ? 'concern'
-      : subjectGeneration
+      : attention.subjectGraphPips > 0
         ? 'hint'
         : 'neutral';
   const resolvedMood = mood ?? generationMood;
-  const isActive = hasMentorActivity || subjectGeneration !== null;
-  const litPipCount =
-    subjectGeneration?.phase === 'edges' || subjectGeneration?.phase === 'failed'
-      ? 2
-      : subjectGeneration?.phase === 'topics'
-        ? 1
-        : 0;
-  const isAlert = subjectGeneration?.phase === 'failed';
+  const isActive =
+    hasMentorActivity || attention.subjectGraphPips > 0 || attention.primaryFailure !== null;
+  const litPipCount = attention.subjectGraphPips;
+  const isAlert = attention.primaryFailure !== null;
 
   const entryContext = useMentorEntryContext();
 

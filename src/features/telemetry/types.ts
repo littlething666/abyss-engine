@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { MENTOR_TRIGGER_IDS, type MentorTriggerId } from '@/types/mentorTriggers';
+
 export const telemetryVersionSchema = z.literal('v1');
 
 export const TelemetryEventTypeSchema = z.enum([
@@ -259,17 +261,9 @@ export type SubjectGraphValidationFailedPayload = z.infer<typeof SubjectGraphVal
 // contextual entry trigger — fires once per newly generated subject whose
 // topics are still fully locked, opening the Discovery modal scoped to
 // that subject.
-export const MentorTriggerIdSchema = z.enum([
-  'onboarding:pre-first-subject',
-  'onboarding:subject-unlock-first-crystal',
-  'session:completed',
-  'crystal:leveled',
-  'crystal-trial:available-for-player',
-  'subject:generation-started',
-  'subject:generated',
-  'subject:generation-failed',
-  'mentor-bubble:clicked',
-]);
+export const MentorTriggerIdSchema = z.enum(
+  [...MENTOR_TRIGGER_IDS] as [MentorTriggerId, ...MentorTriggerId[]],
+);
 export type MentorTriggerIdLiteral = z.infer<typeof MentorTriggerIdSchema>;
 
 const MentorEventBaseSchema = z.object({
@@ -374,12 +368,20 @@ export type TopicContentStageFailedPayload = z.infer<
   typeof TopicContentStageFailedPayloadSchema
 >;
 
+const TopicContentPipelinePartialCompletionSchema = z.object({
+  theory: z.enum(['completed', 'failed', 'skipped']),
+  studyCards: z.enum(['completed', 'failed', 'skipped']),
+  miniGames: z.enum(['completed', 'failed', 'skipped']),
+});
+
 export const TopicContentGenerationCompletedPayloadSchema = TopicContentBaseSchema.extend({
   stage: TopicContentStageSchema,
   ok: z.boolean(),
   /** Raw error string forwarded only when `ok === false`. */
   error: z.string().optional(),
   durationMs: z.number().nonnegative(),
+  /** When `stage === 'full'` and `ok === false`, which stages had already completed. */
+  partialCompletion: TopicContentPipelinePartialCompletionSchema.optional(),
 });
 export type TopicContentGenerationCompletedPayload = z.infer<
   typeof TopicContentGenerationCompletedPayloadSchema

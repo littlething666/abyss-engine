@@ -1,27 +1,34 @@
 export { useContentGenerationStore, MAX_PERSISTED_LOGS } from './contentGenerationStore';
-export type { ContentGenerationState } from './contentGenerationStore';
+export type { ContentGenerationState, SessionRetryRoutingFailureSurface } from './contentGenerationStore';
+
+export { failureKeyForJob, failureKeyForRetryRoutingInstance } from './failureKeys';
 
 export { runContentGenerationJob } from './runContentGenerationJob';
-export type { ContentGenerationJobParams } from './runContentGenerationJob';
+export type { ContentGenerationJobParams, PipelineFailureDebugContext } from './runContentGenerationJob';
 
 export { runTopicGenerationPipeline } from './pipelines/runTopicGenerationPipeline';
-export type { RunTopicGenerationPipelineParams, TopicGenerationStage } from './pipelines/runTopicGenerationPipeline';
+export type { RunTopicGenerationPipelineParams, TopicGenerationStage, TopicPipelineRetryContext, TopicContentPipelinePartialCompletion } from './pipelines/runTopicGenerationPipeline';
 export { triggerTopicGenerationPipeline } from './pipelines/triggerTopicGenerationPipeline';
 
 export { runExpansionJob } from './jobs/runExpansionJob';
 export type { RunExpansionJobParams } from './jobs/runExpansionJob';
 
 export { topicStudyContentReady } from './topicStudyContentReady';
+export { countManualRetryDepth } from './countManualRetryDepth';
 export {
   activeTopicGenerationLabel,
   activeTopicContentGenerationLabel,
 } from './activeTopicGenerationLabel';
 export {
-  activeSubjectGenerationStatus,
-} from './activeSubjectGenerationStatus';
+  generationAttentionSurface,
+  subjectPipelineLabel,
+} from './generationAttentionSurface';
 export type {
-  ActiveSubjectGenerationStatus,
-} from './activeSubjectGenerationStatus';
+  GenerationAttentionFailureKind,
+  GenerationAttentionPrimaryFailure,
+  GenerationAttentionSelectorState,
+  GenerationAttentionSurface,
+} from './generationAttentionSurface';
 
 export {
   canRetryJob,
@@ -45,8 +52,11 @@ export type { TopicMiniGameCardsPromptParams } from './messages/buildTopicMiniGa
 export { buildTopicExpansionCardsMessages } from './messages/buildTopicExpansionCardsMessages';
 export type { TopicExpansionCardsPromptParams } from './messages/buildTopicExpansionCardsMessages';
 
-export { parseTopicTheoryPayload } from './parsers/parseTopicTheoryPayload';
-export type { ParsedTopicTheoryPayload, ParseTopicTheoryResult } from './parsers/parseTopicTheoryPayload';
+export { parseTopicTheoryContentPayload } from './parsers/parseTopicTheoryContentPayload';
+export type {
+  ParsedTopicTheoryContentPayload,
+  ParseTopicTheoryContentResult,
+} from './parsers/parseTopicTheoryContentPayload';
 export { parseTopicCardsPayload, diagnoseTopicCardsPayload } from './parsers/parseTopicCardsPayload';
 export type { ParseTopicCardsResult } from './parsers/parseTopicCardsPayload';
 export { validateGeneratedCard } from './parsers/validateGeneratedCard';

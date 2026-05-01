@@ -11,6 +11,8 @@ import type {
   ContentGenerationPipeline,
 } from '@/types/contentGeneration';
 
+import { failureKeyForJob } from './failureKeys';
+
 /** Max terminal job logs kept in memory and persisted (completed | failed | aborted). */
 export const MAX_PERSISTED_LOGS = 15;
 
@@ -18,20 +20,37 @@ function isTerminalStatus(status: ContentGenerationJobStatus): boolean {
   return status === 'completed' || status === 'failed' || status === 'aborted';
 }
 
-function pruneTerminalJobsInRecord(jobs: Record<string, ContentGenerationJob>): Record<string, ContentGenerationJob> {
+function pruneAcknowledgementsForRemovedJobIds(
+  ack: Record<string, true>,
+  removedJobIds: readonly string[],
+): Record<string, true> {
+  if (removedJobIds.length === 0) return ack;
+  let next = ack;
+  for (const id of removedJobIds) {
+    const fk = failureKeyForJob(id);
+    if (next[fk]) {
+      if (next === ack) next = { ...ack };
+      delete next[fk];
+    }
+  }
+  return next;
+}
+
+function pruneTerminalJobsInRecord(jobs: Record<string, ContentGenerationJob>): {
+  jobs: Record<string, ContentGenerationJob>;
+  removedJobIds: string[];
+} {
   const terminal = Object.values(jobs).filter((j) => isTerminalStatus(j.status));
   if (terminal.length <= MAX_PERSISTED_LOGS) {
-    return jobs;
+    return { jobs, removedJobIds: [] };
   }
   terminal.sort((a, b) => (a.finishedAt ?? 0) - (b.finishedAt ?? 0));
-  const toRemove = new Set(
-    terminal.slice(0, terminal.length - MAX_PERSISTED_LOGS).map((j) => j.id),
-  );
+  const toRemove = terminal.slice(0, terminal.length - MAX_PERSISTED_LOGS).map((j) => j.id);
   const next = { ...jobs };
   for (const id of toRemove) {
     delete next[id];
   }
-  return next;
+  return { jobs: next, removedJobIds: toRemove };
 }
 
 function pruneOrphanPipelines(
@@ -54,6 +73,17 @@ export interface ContentGenerationState {
   abortControllers: Record<string, AbortController>;
   pipelineAbortControllers: Record<string, AbortController>;
 
+  /** Session-only (not persisted): keys acknowledged via mentor dismiss / retry. */
+  sessionAcknowledgedFailureKeys: Record<string, true>;
+  /**
+   * Retry-routing collapse surfaces (no new job). Keyed by
+   * {@link failureKeyForRetryRoutingInstance}.
+   */
+  sessionRetryRoutingFailures: Record<string, SessionRetryRoutingFailureSurface>;
+
+  acknowledgeFailureKey: (failureKey: string) => void;
+  registerSessionRetryRoutingFailure: (surface: SessionRetryRoutingFailureSurface) => void;
+
   registerPipeline: (pipeline: ContentGenerationPipeline, abortController: AbortController) => void;
   registerJob: (job: ContentGenerationJob, abortController: AbortController) => void;
   updateJobStatus: (jobId: string, status: ContentGenerationJobStatus) => void;
@@ -65,12 +95,24 @@ export interface ContentGenerationState {
   setJobParseError: (jobId: string, parseError: string) => void;
   mergeJobMetadata: (jobId: string, patch: Record<string, unknown>) => void;
   finishJob: (jobId: string, status: 'completed' | 'failed' | 'aborted') => void;
-  abortJob: (jobId: string) => void;
-  abortPipeline: (pipelineId: string) => void;
+  abortJob: (jobId: string, reason?: unknown) => void;
+  abortPipeline: (pipelineId: string, reason?: unknown) => void;
 
   pruneCompletedJobs: () => void;
   hydrateFromPersisted: (jobs: ContentGenerationJob[], pipelines: ContentGenerationPipeline[]) => void;
   clearCompletedJobs: () => void;
+}
+
+export interface SessionRetryRoutingFailureSurface {
+  failureKey: string;
+  failureInstanceId: string;
+  originalJobId: string;
+  subjectId: string;
+  topicId?: string;
+  topicLabel?: string;
+  jobLabel: string;
+  errorMessage: string;
+  createdAt: number;
 }
 
 export const useContentGenerationStore = create<ContentGenerationState>((set, get) => ({
@@ -78,6 +120,25 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
   pipelines: {},
   abortControllers: {},
   pipelineAbortControllers: {},
+  sessionAcknowledgedFailureKeys: {},
+  sessionRetryRoutingFailures: {},
+
+  acknowledgeFailureKey: (failureKey) =>
+    set((s) => {
+      if (s.sessionAcknowledgedFailureKeys[failureKey]) return s;
+      const sessionAcknowledgedFailureKeys = { ...s.sessionAcknowledgedFailureKeys, [failureKey]: true as const };
+      if (!s.sessionRetryRoutingFailures[failureKey]) {
+        return { sessionAcknowledgedFailureKeys };
+      }
+      const sessionRetryRoutingFailures = { ...s.sessionRetryRoutingFailures };
+      delete sessionRetryRoutingFailures[failureKey];
+      return { sessionAcknowledgedFailureKeys, sessionRetryRoutingFailures };
+    }),
+
+  registerSessionRetryRoutingFailure: (surface) =>
+    set((s) => ({
+      sessionRetryRoutingFailures: { ...s.sessionRetryRoutingFailures, [surface.failureKey]: surface },
+    })),
 
   registerPipeline: (pipeline, abortController) =>
     set((s) => ({
@@ -86,10 +147,20 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
     })),
 
   registerJob: (job, ac) =>
-    set((s) => ({
-      jobs: { ...s.jobs, [job.id]: job },
-      abortControllers: job.pipelineId === null ? { ...s.abortControllers, [job.id]: ac } : s.abortControllers,
-    })),
+    set((s) => {
+      let sessionAcknowledgedFailureKeys = s.sessionAcknowledgedFailureKeys;
+      if (job.retryOf) {
+        const k = failureKeyForJob(job.retryOf);
+        if (!sessionAcknowledgedFailureKeys[k]) {
+          sessionAcknowledgedFailureKeys = { ...sessionAcknowledgedFailureKeys, [k]: true as const };
+        }
+      }
+      return {
+        jobs: { ...s.jobs, [job.id]: job },
+        abortControllers: job.pipelineId === null ? { ...s.abortControllers, [job.id]: ac } : s.abortControllers,
+        sessionAcknowledgedFailureKeys,
+      };
+    }),
 
   updateJobStatus: (jobId, status) =>
     set((s) => {
@@ -188,7 +259,12 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
         }
       }
 
-      nextJobs = pruneTerminalJobsInRecord(nextJobs);
+      const pruned = pruneTerminalJobsInRecord(nextJobs);
+      nextJobs = pruned.jobs;
+      const sessionAcknowledgedFailureKeys = pruneAcknowledgementsForRemovedJobIds(
+        s.sessionAcknowledgedFailureKeys,
+        pruned.removedJobIds,
+      );
       const nextPipelines = pruneOrphanPipelines(nextJobs, s.pipelines);
 
       return {
@@ -196,24 +272,30 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
         abortControllers,
         pipelineAbortControllers,
         pipelines: nextPipelines,
+        sessionAcknowledgedFailureKeys,
       };
     });
   },
 
-  abortJob: (jobId) => {
-    get().abortControllers[jobId]?.abort();
+  abortJob: (jobId, reason) => {
+    get().abortControllers[jobId]?.abort(reason);
   },
 
-  abortPipeline: (pipelineId) => {
-    get().pipelineAbortControllers[pipelineId]?.abort();
+  abortPipeline: (pipelineId, reason) => {
+    get().pipelineAbortControllers[pipelineId]?.abort(reason);
   },
 
   pruneCompletedJobs: () =>
     set((s) => {
-      const nextJobs = pruneTerminalJobsInRecord(s.jobs);
+      const pruned = pruneTerminalJobsInRecord(s.jobs);
+      const sessionAcknowledgedFailureKeys = pruneAcknowledgementsForRemovedJobIds(
+        s.sessionAcknowledgedFailureKeys,
+        pruned.removedJobIds,
+      );
       return {
-        jobs: nextJobs,
-        pipelines: pruneOrphanPipelines(nextJobs, s.pipelines),
+        jobs: pruned.jobs,
+        pipelines: pruneOrphanPipelines(pruned.jobs, s.pipelines),
+        sessionAcknowledgedFailureKeys,
       };
     }),
 
@@ -245,6 +327,8 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
         jobs: nextJobs,
         pipelines: nextPipelines,
         abortControllers: nextAbort,
+        sessionAcknowledgedFailureKeys: {},
+        sessionRetryRoutingFailures: {},
       };
     });
   },

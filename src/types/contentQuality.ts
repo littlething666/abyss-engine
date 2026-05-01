@@ -15,22 +15,6 @@ export type ForbiddenContentPattern =
   | 'unsupported-by-sources'
   | 'answer-not-in-options';
 
-export interface MiniGameAffordanceSet {
-  categorySets: Array<{
-    label: string;
-    categories: string[];
-    candidateItems: string[];
-  }>;
-  orderedSequences: Array<{
-    label: string;
-    steps: string[];
-  }>;
-  connectionPairs: Array<{
-    label: string;
-    pairs: Array<{ left: string; right: string }>;
-  }>;
-}
-
 export type GeneratedCardValidationSeverity = 'warning' | 'critical';
 
 export interface GeneratedCardValidationFailure {
