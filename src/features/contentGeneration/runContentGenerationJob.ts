@@ -111,6 +111,13 @@ export async function runContentGenerationJob<TParsed>(
     enableStreaming: enableStreamingForJob,
     retryCount: retryChainDepth,
     ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
+    ...(structured?.responseFormat?.type === 'json_schema'
+      ? {
+          structuredOutputMode: 'json_schema' as const,
+          structuredOutputSchemaName: structured.responseFormat.json_schema.name,
+          responseHealingEnabled: Boolean(structured.plugins && structured.plugins.length > 0),
+        }
+      : {}),
     ...(structured?.responseFormat ? { responseFormat: structured.responseFormat } : {}),
     ...(structured?.plugins ? { plugins: structured.plugins } : {}),
     ...(params.tools ? { tools: params.tools } : {}),
@@ -189,6 +196,15 @@ export async function runContentGenerationJob<TParsed>(
     if (!parsed.ok) {
       if (parsed.parseError) {
         store.setJobParseError(jobId, parsed.parseError);
+      }
+      if (structured?.responseFormat?.type === 'json_schema') {
+        const rf = structured.responseFormat;
+        store.mergeJobMetadata(jobId, {
+          structuredOutputContractViolation: true,
+          structuredOutputMode: 'json_schema',
+          structuredOutputSchemaName: rf.json_schema.name,
+          localParserError: parsed.parseError ?? parsed.error,
+        });
       }
       store.setJobError(jobId, parsed.error);
       finalizeJobFailedWithDebug(jobId, debugCtx);

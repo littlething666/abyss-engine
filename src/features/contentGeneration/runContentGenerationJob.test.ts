@@ -270,6 +270,64 @@ describe('runContentGenerationJob', () => {
         enableStreaming: false,
       }),
     );
+
+    const jobs = Object.values(useContentGenerationStore.getState().jobs);
+    expect(jobs[0]?.metadata).toMatchObject({
+      structuredOutputMode: 'json_schema',
+      structuredOutputSchemaName: 'topic_theory_syllabus',
+      responseHealingEnabled: false,
+    });
+  });
+
+  it('merges structured-output contract violation metadata when json_schema parse fails', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const schemaFormat = {
+      type: 'json_schema' as const,
+      json_schema: {
+        name: 'topic_theory_syllabus',
+        strict: true,
+        schema: { type: 'object', additionalProperties: true },
+      },
+    };
+
+    surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue({
+      responseFormat: schemaFormat,
+      plugins: [{ id: 'response-healing' }],
+      forceNonStreaming: true,
+    });
+
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: '{}' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'Theory — T',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      llmSurfaceId: 'topicContent',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableReasoning: false,
+      responseFormatOverride: schemaFormat,
+      parseOutput: async () => ({ ok: false, error: 'bad parse', parseError: 'bad parse' }),
+      persistOutput: vi.fn(),
+    });
+
+    const j = Object.values(useContentGenerationStore.getState().jobs)[0];
+    expect(j?.metadata).toMatchObject({
+      structuredOutputContractViolation: true,
+      structuredOutputMode: 'json_schema',
+      structuredOutputSchemaName: 'topic_theory_syllabus',
+      localParserError: 'bad parse',
+      responseHealingEnabled: true,
+    });
+
+    consoleSpy.mockRestore();
   });
 
   it('keeps reasoning enabled for non-structured requests when requested', async () => {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildTopicTheoryMessages } from './buildTopicTheoryMessages';
 
 describe('buildTopicTheoryMessages', () => {
-  it('embeds hardened mini-game affordance rules in the system prompt', () => {
+  it('embeds theory-only JSON shape without mini-game affordance scaffolding', () => {
     const messages = buildTopicTheoryMessages({
       subjectTitle: 'S',
       topicId: 't1',
@@ -14,11 +14,10 @@ describe('buildTopicTheoryMessages', () => {
     expect(typeof system).toBe('string');
     const text = system as string;
 
-    expect(text).toContain('exactly 1 valid set per mini-game type');
-    expect(text).toContain('at least 3 categories');
-    expect(text).toContain('at least 6 items');
-    expect(text).toContain('two-category');
-    expect(text).toContain('Normal Form');
-    expect(text).toContain('Extensive Form');
+    expect(text).toContain('"coreConcept"');
+    expect(text).toContain('"coreQuestionsByDifficulty"');
+    expect(text).not.toContain('miniGameAffordances');
+    expect(text).not.toContain('category-sort cardinality');
+    expect(text).toContain('ASCII-only JSON string content');
   });
 });

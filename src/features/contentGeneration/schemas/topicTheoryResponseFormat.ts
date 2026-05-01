@@ -2,153 +2,53 @@ import type { ChatResponseFormatJsonSchema } from '@/types/llm';
 
 /**
  * OpenRouter / OpenAI-style structured output for `topic-theory`.
- * Authoritative validation remains {@link parseTopicTheoryPayload}; this schema
- * tightens generation only (cannot express every Zod cross-field rule).
+ * Authoritative validation remains {@link parseTopicTheoryContentPayload}; this schema
+ * tightens generation only (Zod remains the contract boundary).
  */
-const categoryRowSchema: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['id', 'label'],
-  properties: {
-    id: { type: 'string', minLength: 1 },
-    label: { type: 'string', minLength: 1 },
-  },
-};
-
-const categorySetItemSchema: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['id', 'label', 'categoryId'],
-  properties: {
-    id: { type: 'string', minLength: 1 },
-    label: { type: 'string', minLength: 1 },
-    categoryId: { type: 'string', minLength: 1 },
-  },
-};
-
-const categorySetSchema: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['label', 'categories', 'items'],
-  properties: {
-    label: { type: 'string', minLength: 1 },
-    categories: {
-      type: 'array',
-      minItems: 3,
-      items: categoryRowSchema,
-    },
-    items: {
-      type: 'array',
-      minItems: 6,
-      items: categorySetItemSchema,
-    },
-  },
-};
-
-const sequenceItemSchema: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['id', 'label', 'correctPosition'],
-  properties: {
-    id: { type: 'string', minLength: 1 },
-    label: { type: 'string', minLength: 1 },
-    correctPosition: { type: 'integer', minimum: 0 },
-  },
-};
-
-const orderedSequenceSchema: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['label', 'items'],
-  properties: {
-    label: { type: 'string', minLength: 1 },
-    items: {
-      type: 'array',
-      minItems: 3,
-      items: sequenceItemSchema,
-    },
-  },
-};
-
-const connectionPairSchema: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['id', 'left', 'right'],
-  properties: {
-    id: { type: 'string', minLength: 1 },
-    left: { type: 'string', minLength: 1 },
-    right: { type: 'string', minLength: 1 },
-  },
-};
-
-const connectionPairsSetSchema: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['label', 'pairs'],
-  properties: {
-    label: { type: 'string', minLength: 1 },
-    pairs: {
-      type: 'array',
-      minItems: 3,
-      items: connectionPairSchema,
-    },
-  },
-};
-
 const tierQuestionsSchema: Record<string, unknown> = {
   type: 'array',
-  minItems: 2,
-  maxItems: 4,
-  items: { type: 'string', minLength: 1 },
+  description:
+    'Two to four learner-facing question strings for this difficulty tier. MUST be non-empty strings.',
+  items: {
+    type: 'string',
+    description: 'A single learner-facing question grounded in the theory.',
+  },
 };
 
 const topicTheoryRootSchema: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['coreConcept', 'theory', 'keyTakeaways', 'coreQuestionsByDifficulty', 'miniGameAffordances'],
+  required: ['coreConcept', 'theory', 'keyTakeaways', 'coreQuestionsByDifficulty'],
   properties: {
-    coreConcept: { type: 'string', minLength: 1 },
-    theory: { type: 'string', minLength: 1 },
+    coreConcept: {
+      type: 'string',
+      description: 'The core concept. MUST be non-empty and written as 2-3 clear sentences.',
+    },
+    theory: {
+      type: 'string',
+      description:
+        'Markdown theory body with 3-5 sections and 600-900 words. MUST be non-empty.',
+    },
     keyTakeaways: {
       type: 'array',
-      minItems: 4,
-      maxItems: 6,
-      items: { type: 'string', minLength: 1 },
+      description:
+        'Four to six short takeaway strings. MUST include at least four non-empty strings.',
+      items: {
+        type: 'string',
+        description: 'One concise takeaway string.',
+      },
     },
     coreQuestionsByDifficulty: {
       type: 'object',
       additionalProperties: false,
       required: ['1', '2', '3', '4'],
+      description:
+        'Each tier key MUST be present with 2-4 distinct learner-facing questions grounded in the theory.',
       properties: {
         '1': tierQuestionsSchema,
         '2': tierQuestionsSchema,
         '3': tierQuestionsSchema,
         '4': tierQuestionsSchema,
-      },
-    },
-    miniGameAffordances: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['categorySets', 'orderedSequences', 'connectionPairs'],
-      properties: {
-        categorySets: {
-          type: 'array',
-          minItems: 1,
-          maxItems: 1,
-          items: categorySetSchema,
-        },
-        orderedSequences: {
-          type: 'array',
-          minItems: 1,
-          maxItems: 1,
-          items: orderedSequenceSchema,
-        },
-        connectionPairs: {
-          type: 'array',
-          minItems: 1,
-          maxItems: 1,
-          items: connectionPairsSetSchema,
-        },
       },
     },
   },

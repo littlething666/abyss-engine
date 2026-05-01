@@ -5,7 +5,7 @@ export { runContentGenerationJob } from './runContentGenerationJob';
 export type { ContentGenerationJobParams, PipelineFailureDebugContext } from './runContentGenerationJob';
 
 export { runTopicGenerationPipeline } from './pipelines/runTopicGenerationPipeline';
-export type { RunTopicGenerationPipelineParams, TopicGenerationStage, TopicPipelineRetryContext } from './pipelines/runTopicGenerationPipeline';
+export type { RunTopicGenerationPipelineParams, TopicGenerationStage, TopicPipelineRetryContext, TopicContentPipelinePartialCompletion } from './pipelines/runTopicGenerationPipeline';
 export { triggerTopicGenerationPipeline } from './pipelines/triggerTopicGenerationPipeline';
 
 export { runExpansionJob } from './jobs/runExpansionJob';
@@ -46,8 +46,11 @@ export type { TopicMiniGameCardsPromptParams } from './messages/buildTopicMiniGa
 export { buildTopicExpansionCardsMessages } from './messages/buildTopicExpansionCardsMessages';
 export type { TopicExpansionCardsPromptParams } from './messages/buildTopicExpansionCardsMessages';
 
-export { parseTopicTheoryPayload } from './parsers/parseTopicTheoryPayload';
-export type { ParsedTopicTheoryPayload, ParseTopicTheoryResult } from './parsers/parseTopicTheoryPayload';
+export { parseTopicTheoryContentPayload } from './parsers/parseTopicTheoryContentPayload';
+export type {
+  ParsedTopicTheoryContentPayload,
+  ParseTopicTheoryContentResult,
+} from './parsers/parseTopicTheoryContentPayload';
 export { parseTopicCardsPayload, diagnoseTopicCardsPayload } from './parsers/parseTopicCardsPayload';
 export type { ParseTopicCardsResult } from './parsers/parseTopicCardsPayload';
 export { validateGeneratedCard } from './parsers/validateGeneratedCard';

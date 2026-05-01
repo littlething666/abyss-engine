@@ -92,6 +92,32 @@ describe('llmInferenceSurfaceProviders', () => {
     expect(out?.forceNonStreaming).toBe(true);
   });
 
+  it('attaches response-healing plugin for JSON Schema mode when OpenRouter healing is enabled', () => {
+    studySettingsStore.setState({
+      ...studySettingsStore.getState(),
+      openRouterResponseHealing: true,
+      openRouterConfigs: [
+        {
+          id: 'schema-capable',
+          label: 'Schema',
+          model: 'org/model',
+          enableReasoning: false,
+          enableStreaming: true,
+          supportedParameters: ['response_format', 'structured_outputs'],
+        },
+      ],
+      surfaceProviders: {
+        ...studySettingsStore.getState().surfaceProviders,
+        topicContent: { provider: 'openrouter', openRouterConfigId: 'schema-capable' },
+      },
+    });
+
+    const out = resolveOpenRouterStructuredChatExtrasForJob('topicContent', {
+      jsonSchemaResponseFormat: dummyJsonSchemaFormat,
+    });
+    expect(out?.plugins).toEqual([{ id: 'response-healing' }]);
+  });
+
   it('falls back to json_object when structured_outputs is absent but response_format is supported', () => {
     studySettingsStore.setState({
       ...studySettingsStore.getState(),

@@ -79,6 +79,11 @@ export interface ContentGenerationJob {
    * - `debugMarkdown` (string) — copy-ready markdown mirror of `debugBundle` for HUD / console.
    * - `prereqEdgesCorrection` (object) — when edges output was deterministically repaired
    *   (`removed` / `added` entries); see `correctPrereqEdges`.
+   * - `structuredOutputMode` (string) — e.g. `json_schema` when structured output was requested.
+   * - `structuredOutputSchemaName` (string) — OpenRouter `json_schema.name` when applicable.
+   * - `responseHealingEnabled` (boolean) — whether `response-healing` plugin was attached.
+   * - `structuredOutputContractViolation` (boolean) — true when `json_schema` was used and local parsing failed.
+   * - `localParserError` (string) — parse error text when `structuredOutputContractViolation` is set.
    */
   metadata: Record<string, unknown> | null;
 }
@@ -94,6 +99,13 @@ export interface ContentGenerationPipeline {
    */
   retryOf: string | null;
 }
+
+/** Per-stage outcome when a `full` topic pipeline exits with `ok: false` after partial persistence. */
+export type TopicContentPipelinePartialCompletion = {
+  theory: 'completed' | 'failed' | 'skipped';
+  studyCards: 'completed' | 'failed' | 'skipped';
+  miniGames: 'completed' | 'failed' | 'skipped';
+};
 
 /** Stages inside the topic unlock pipeline that can carry per-job retry lineage. */
 export type TopicPipelineRetryStage = 'theory' | 'study-cards' | 'mini-games';

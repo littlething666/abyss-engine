@@ -3,7 +3,10 @@ import { v4 as uuid } from 'uuid';
 import { telemetry } from '@/features/telemetry';
 import { topicRefKey } from '@/lib/topicRef';
 import type { Card, MiniGameType } from '@/types/core';
-import type { TopicPipelineRetryContext } from '@/types/contentGeneration';
+import type {
+  TopicContentPipelinePartialCompletion,
+  TopicPipelineRetryContext,
+} from '@/types/contentGeneration';
 import { PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION } from '@/types/pipelineFailureDebug';
 import { appEventBus } from '@/infrastructure/eventBus';
 import type { IChatCompletionsRepository } from '@/types/llm';
@@ -18,7 +21,10 @@ import { buildTopicMiniGameCardsMessages } from '../messages/buildTopicMiniGameC
 import { buildTopicStudyCardsMessages } from '../messages/buildTopicStudyCardsMessages';
 import { buildTopicTheoryMessages } from '../messages/buildTopicTheoryMessages';
 import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
-import { parseTopicTheoryPayload, type ParsedTopicTheoryPayload } from '../parsers/parseTopicTheoryPayload';
+import {
+  parseTopicTheoryContentPayload,
+  type ParsedTopicTheoryContentPayload,
+} from '../parsers/parseTopicTheoryContentPayload';
 import { FIRECRAWL_TOPIC_GROUNDING_POLICY, buildOpenRouterWebSearchTools } from '../grounding/groundingPolicy';
 import { validateGroundingSources } from '../grounding/validateGroundingSources';
 import { buildGroundingJobMetadataSnapshot } from '../grounding/buildGroundingJobMetadata';
@@ -36,7 +42,7 @@ import { isDuplicateConceptTarget } from '../quality/compareConceptTargets';
 import { extractConceptTarget } from '../quality/extractConceptTarget';
 
 export type { TopicGenerationStage } from './topicGenerationStage';
-export type { TopicPipelineRetryContext } from '@/types/contentGeneration';
+export type { TopicContentPipelinePartialCompletion, TopicPipelineRetryContext } from '@/types/contentGeneration';
 
 const ALL_MINI_GAME_TYPES: MiniGameType[] = ['CATEGORY_SORT', 'SEQUENCE_BUILD', 'CONNECTION_WEB'];
 
@@ -119,7 +125,12 @@ const FULL_PIPELINE_STAGES: Exclude<TopicGenerationStage, 'full'>[] = [
 
 type PipelineSettlement =
   | { ok: true; pipelineId: string }
-  | { ok: false; pipelineId: string; error: string };
+  | {
+      ok: false;
+      pipelineId: string;
+      error: string;
+      partialCompletion?: TopicContentPipelinePartialCompletion;
+    };
 
 export async function runTopicGenerationPipeline(
   params: RunTopicGenerationPipelineParams,
@@ -157,9 +168,13 @@ export async function runTopicGenerationPipeline(
   // lifecycle events on this run. Auto-skipped runs (study-ready content
   // already exists) intentionally produce no event — there is no fresh
   // result for mentor consumers or telemetry to surface.
-  const finalize = (
-    r: { ok: boolean; pipelineId: string; error?: string; skipped?: boolean },
-  ) => {
+  const finalize = (r: {
+    ok: boolean;
+    pipelineId: string;
+    error?: string;
+    skipped?: boolean;
+    partialCompletion?: TopicContentPipelinePartialCompletion;
+  }) => {
     if (!r.skipped) {
       if (r.ok) {
         appEventBus.emit('topic-content:generation-completed', {
@@ -177,6 +192,7 @@ export async function runTopicGenerationPipeline(
           pipelineId: r.pipelineId,
           stage,
           errorMessage: r.error ?? 'Topic content generation failed',
+          ...(stage === 'full' && r.partialCompletion ? { partialCompletion: r.partialCompletion } : {}),
         });
       }
     }
@@ -304,7 +320,7 @@ export async function runTopicGenerationPipeline(
     return result;
   };
 
-  let theoryData: ParsedTopicTheoryPayload | undefined;
+  let theoryData: ParsedTopicTheoryContentPayload | undefined;
 
   const runTheoryJob = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
     const theoryResult = await runContentGenerationJob({
@@ -336,7 +352,7 @@ export async function runTopicGenerationPipeline(
       retryOf: jobRetryOfForStage(retryContext, 'theory'),
       parseOutput: async (raw, job) => {
         const providerMetadata = job.metadata?.provider as Record<string, unknown> | undefined;
-        const parsed = parseTopicTheoryPayload(raw, {
+        const parsed = parseTopicTheoryContentPayload(raw, {
           groundingPolicy: FIRECRAWL_TOPIC_GROUNDING_POLICY,
           providerMetadata,
           validateGroundingSources,
@@ -364,7 +380,6 @@ export async function runTopicGenerationPipeline(
           keyTakeaways: data.keyTakeaways,
           coreQuestionsByDifficulty: data.coreQuestionsByDifficulty,
           groundingSources: data.groundingSources,
-          miniGameAffordances: data.miniGameAffordances,
         });
       },
     });
@@ -375,7 +390,9 @@ export async function runTopicGenerationPipeline(
     return { ok: true };
   };
 
-  const runStudyJob = async (theory: ParsedTopicTheoryPayload): Promise<{ ok: true } | { ok: false; error: string }> => {
+  const runStudyJob = async (
+    theory: ParsedTopicTheoryContentPayload,
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
     const targetDifficulty = 1;
 
     const studyResult = await runContentGenerationJob({
@@ -434,7 +451,7 @@ export async function runTopicGenerationPipeline(
   };
 
   const runMiniGamesCoordinator = async (
-    theory: ParsedTopicTheoryPayload,
+    theory: ParsedTopicTheoryContentPayload,
   ): Promise<{ ok: true } | { ok: false; error: string }> => {
     const targetDifficulty = 1;
     const kinds: MiniGameType[] =
@@ -466,7 +483,6 @@ export async function runTopicGenerationPipeline(
             syllabusQuestions: theory.coreQuestionsByDifficulty[targetDifficulty],
             contentStrategy,
             groundingSources: theory.groundingSources,
-            miniGameAffordances: theory.miniGameAffordances,
             contentBrief,
             gameType,
           }),
@@ -536,7 +552,7 @@ export async function runTopicGenerationPipeline(
    * Loads theory data from the DB (for pipeline resume when theory stage was skipped).
    * Falls back to theoryData if it was already produced by runTheoryJob in this run.
    */
-  const resolveTheoryData = (): ParsedTopicTheoryPayload => {
+  const resolveTheoryData = (): ParsedTopicTheoryContentPayload => {
     if (theoryData) return theoryData;
     return loadTheoryPayloadFromTopicDetails(details);
   };
@@ -553,7 +569,7 @@ export async function runTopicGenerationPipeline(
       }
 
       if (stage === 'study-cards') {
-        let theory: ParsedTopicTheoryPayload;
+        let theory: ParsedTopicTheoryContentPayload;
         try {
           theory = loadTheoryPayloadFromTopicDetails(details);
         } catch (e) {
@@ -565,7 +581,7 @@ export async function runTopicGenerationPipeline(
       }
 
       if (stage === 'mini-games') {
-        let theory: ParsedTopicTheoryPayload;
+        let theory: ParsedTopicTheoryContentPayload;
         try {
           theory = loadTheoryPayloadFromTopicDetails(details);
         } catch (e) {
@@ -582,28 +598,49 @@ export async function runTopicGenerationPipeline(
         : 0;
       const startIdx = Math.max(0, resumeIdx);
 
+      const partial = (): TopicContentPipelinePartialCompletion => ({
+        theory: 'skipped',
+        studyCards: 'skipped',
+        miniGames: 'skipped',
+      });
+
       // Stage 0: theory
       if (startIdx <= 0) {
         const theoryStep = await wrapStage('theory', runTheoryJob);
         if (!theoryStep.ok) {
-          return { ok: false, pipelineId, error: theoryStep.error };
+          const outcomes = partial();
+          outcomes.theory = 'failed';
+          return { ok: false, pipelineId, error: theoryStep.error, partialCompletion: outcomes };
         }
       }
 
       // Resolve theory data (either from runTheoryJob or loaded from DB for resume)
-      let theory: ParsedTopicTheoryPayload;
+      let theory: ParsedTopicTheoryContentPayload;
       try {
         theory = resolveTheoryData();
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
-        return { ok: false, pipelineId, error: `Cannot resume — theory not available: ${message}` };
+        const outcomes = partial();
+        outcomes.theory = startIdx <= 0 ? 'failed' : 'completed';
+        outcomes.studyCards = 'skipped';
+        outcomes.miniGames = 'skipped';
+        return {
+          ok: false,
+          pipelineId,
+          error: `Cannot resume — theory not available: ${message}`,
+          partialCompletion: outcomes,
+        };
       }
 
       // Stage 1: study-cards
       if (startIdx <= 1) {
         const studyStep = await wrapStage('study-cards', () => runStudyJob(theory));
         if (!studyStep.ok) {
-          return { ok: false, pipelineId, error: studyStep.error };
+          const outcomes = partial();
+          outcomes.theory = 'completed';
+          outcomes.studyCards = 'failed';
+          outcomes.miniGames = 'skipped';
+          return { ok: false, pipelineId, error: studyStep.error, partialCompletion: outcomes };
         }
       }
 
@@ -611,7 +648,11 @@ export async function runTopicGenerationPipeline(
       if (startIdx <= 2) {
         const miniStep = await wrapStage('mini-games', () => runMiniGamesCoordinator(theory));
         if (!miniStep.ok) {
-          return { ok: false, pipelineId, error: miniStep.error };
+          const outcomes = partial();
+          outcomes.theory = 'completed';
+          outcomes.studyCards = 'completed';
+          outcomes.miniGames = 'failed';
+          return { ok: false, pipelineId, error: miniStep.error, partialCompletion: outcomes };
         }
       }
 
@@ -640,6 +681,9 @@ export async function runTopicGenerationPipeline(
       ok: pipelineResult.ok,
       durationMs: totalDurationMs,
       ...(pipelineResult.ok ? {} : { error: pipelineResult.error }),
+      ...(!pipelineResult.ok && pipelineResult.partialCompletion
+        ? { partialCompletion: pipelineResult.partialCompletion }
+        : {}),
     },
     { subjectId, topicId },
   );
@@ -648,6 +692,9 @@ export async function runTopicGenerationPipeline(
     ok: pipelineResult.ok,
     pipelineId: pipelineResult.pipelineId,
     ...(!pipelineResult.ok ? { error: pipelineResult.error } : {}),
+    ...(!pipelineResult.ok && pipelineResult.partialCompletion
+      ? { partialCompletion: pipelineResult.partialCompletion }
+      : {}),
     skipped: false,
   });
 }

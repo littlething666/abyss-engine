@@ -1,10 +1,7 @@
 import { extractJsonString, logJsonParseError } from '@/lib/llmResponseText';
 import type { CoreQuestionsByDifficulty } from '@/types/core';
-import type { MiniGameAffordanceSet } from '@/types/contentQuality';
 import type { GroundingSearchPolicy, GroundingSource } from '@/types/grounding';
 import { z } from 'zod';
-
-import { migrateMiniGameAffordancesInput } from './migrateMiniGameAffordancesInput';
 
 const syllabusKeysSchema = z.object({
   '1': z.array(z.string()).min(1),
@@ -13,88 +10,14 @@ const syllabusKeysSchema = z.object({
   '4': z.array(z.string()).min(1),
 });
 
-const categoryRowSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-});
-
-const categorySetItemSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  categoryId: z.string().min(1),
-});
-
-const categorySetSchema = z
+const theoryContentPayloadSchema = z
   .object({
-    label: z.string().min(1),
-    categories: z.array(categoryRowSchema).min(3),
-    items: z.array(categorySetItemSchema).min(6),
+    coreConcept: z.string().min(1),
+    theory: z.string().min(1),
+    keyTakeaways: z.array(z.string()).min(4),
+    coreQuestionsByDifficulty: syllabusKeysSchema,
   })
-  .superRefine((val, ctx) => {
-    const catIds = new Set(val.categories.map((c) => c.id));
-    for (const it of val.items) {
-      if (!catIds.has(it.categoryId)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `item "${it.id}" references unknown categoryId "${it.categoryId}"`,
-          path: ['items'],
-        });
-      }
-    }
-  });
-
-const sequenceItemSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  correctPosition: z.number().int().min(0),
-});
-
-const orderedSequenceSchema = z
-  .object({
-    label: z.string().min(1),
-    items: z.array(sequenceItemSchema).min(3),
-  })
-  .superRefine((val, ctx) => {
-    const n = val.items.length;
-    const positions = val.items.map((i) => i.correctPosition).sort((a, b) => a - b);
-    if (positions.length !== n) return;
-    for (let i = 0; i < n; i++) {
-      if (positions[i] !== i) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'SEQUENCE_BUILD items must use contiguous correctPosition values 0..n-1',
-          path: ['items'],
-        });
-        return;
-      }
-    }
-  });
-
-const connectionPairSchema = z.object({
-  id: z.string().min(1),
-  left: z.string().min(1),
-  right: z.string().min(1),
-});
-
-const connectionPairsSetSchema = z.object({
-  label: z.string().min(1),
-  pairs: z.array(connectionPairSchema).min(3),
-});
-
-/** Exported for `loadTheoryPayloadFromTopicDetails` — same contract as theory LLM output after migration. */
-export const miniGameAffordancesSchema = z.object({
-  categorySets: z.array(categorySetSchema).default([]),
-  orderedSequences: z.array(orderedSequenceSchema).default([]),
-  connectionPairs: z.array(connectionPairsSetSchema).default([]),
-});
-
-const theoryPayloadSchema = z.object({
-  coreConcept: z.string().min(1),
-  theory: z.string().min(1),
-  keyTakeaways: z.array(z.string()).min(4),
-  coreQuestionsByDifficulty: syllabusKeysSchema,
-  miniGameAffordances: miniGameAffordancesSchema,
-});
+  .strict();
 
 function extractGroundingSourcesFromProviderMetadata(
   providerMetadata: Record<string, unknown> | undefined,
@@ -126,20 +49,19 @@ function extractGroundingSourcesFromProviderMetadata(
   return sources;
 }
 
-export type ParsedTopicTheoryPayload = {
+export type ParsedTopicTheoryContentPayload = {
   coreConcept: string;
   theory: string;
   keyTakeaways: string[];
   coreQuestionsByDifficulty: CoreQuestionsByDifficulty;
   groundingSources: GroundingSource[];
-  miniGameAffordances: MiniGameAffordanceSet;
 };
 
-export type ParseTopicTheoryResult =
-  | { ok: true; data: ParsedTopicTheoryPayload }
+export type ParseTopicTheoryContentResult =
+  | { ok: true; data: ParsedTopicTheoryContentPayload }
   | { ok: false; error: string };
 
-export function parseTopicTheoryPayload(
+export function parseTopicTheoryContentPayload(
   raw: string,
   options?: {
     groundingPolicy?: GroundingSearchPolicy;
@@ -156,7 +78,7 @@ export function parseTopicTheoryPayload(
       errors: string[];
     };
   },
-): ParseTopicTheoryResult {
+): ParseTopicTheoryContentResult {
   const jsonStr = extractJsonString(raw);
   if (!jsonStr) {
     return { ok: false, error: 'No JSON found in assistant response' };
@@ -166,19 +88,11 @@ export function parseTopicTheoryPayload(
   try {
     parsed = JSON.parse(jsonStr) as unknown;
   } catch (e) {
-    logJsonParseError('parseTopicTheoryPayload', e, jsonStr);
+    logJsonParseError('parseTopicTheoryContentPayload', e, jsonStr);
     return { ok: false, error: 'Assistant response is not valid JSON' };
   }
 
-  if (parsed && typeof parsed === 'object' && 'miniGameAffordances' in parsed) {
-    const row = parsed as Record<string, unknown>;
-    parsed = {
-      ...row,
-      miniGameAffordances: migrateMiniGameAffordancesInput(row.miniGameAffordances),
-    };
-  }
-
-  const result = theoryPayloadSchema.safeParse(parsed);
+  const result = theoryContentPayloadSchema.safeParse(parsed);
   if (!result.success) {
     const issue = result.error.issues[0];
     const path = issue?.path?.length ? issue.path.join('.') : 'root';
@@ -218,7 +132,6 @@ export function parseTopicTheoryPayload(
       keyTakeaways: result.data.keyTakeaways,
       coreQuestionsByDifficulty,
       groundingSources,
-      miniGameAffordances: result.data.miniGameAffordances,
     },
   };
 }

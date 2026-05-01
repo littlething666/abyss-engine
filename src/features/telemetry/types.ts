@@ -368,12 +368,20 @@ export type TopicContentStageFailedPayload = z.infer<
   typeof TopicContentStageFailedPayloadSchema
 >;
 
+const TopicContentPipelinePartialCompletionSchema = z.object({
+  theory: z.enum(['completed', 'failed', 'skipped']),
+  studyCards: z.enum(['completed', 'failed', 'skipped']),
+  miniGames: z.enum(['completed', 'failed', 'skipped']),
+});
+
 export const TopicContentGenerationCompletedPayloadSchema = TopicContentBaseSchema.extend({
   stage: TopicContentStageSchema,
   ok: z.boolean(),
   /** Raw error string forwarded only when `ok === false`. */
   error: z.string().optional(),
   durationMs: z.number().nonnegative(),
+  /** When `stage === 'full'` and `ok === false`, which stages had already completed. */
+  partialCompletion: TopicContentPipelinePartialCompletionSchema.optional(),
 });
 export type TopicContentGenerationCompletedPayload = z.infer<
   typeof TopicContentGenerationCompletedPayloadSchema

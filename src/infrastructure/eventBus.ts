@@ -1,3 +1,4 @@
+import type { TopicContentPipelinePartialCompletion } from '@/types/contentGeneration';
 import type { Buff, CoarseAppliedBucket, CoarseChoice } from '@/types/progression';
 import type { StudyChecklist } from '@/types/studyChecklist';
 import type { TopicLattice } from '@/types/topicLattice';
@@ -127,6 +128,8 @@ export type AppEventMap = {
     pipelineId: string;
     stage: 'theory' | 'study-cards' | 'mini-games' | 'full';
     errorMessage: string;
+    /** Present when `stage === 'full'` failed after one or more stages persisted. */
+    partialCompletion?: TopicContentPipelinePartialCompletion;
   };
   /** Terminal event emitted by `runExpansionJob` on successful crystal-level expansion. */
   'topic-expansion:generation-completed': {

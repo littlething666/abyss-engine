@@ -80,7 +80,7 @@ const readyDetails: TopicDetails = {
   subjectId: 'sub-1',
   coreConcept: 'cc',
   theory: 'theory body',
-  keyTakeaways: ['k1', 'k2', 'k3'],
+  keyTakeaways: ['k1', 'k2', 'k3', 'k4'],
   coreQuestionsByDifficulty: {
     1: ['q1', 'q2', 'q3'],
     2: ['q1', 'q2', 'q3'],
@@ -88,11 +88,6 @@ const readyDetails: TopicDetails = {
     4: ['q1', 'q2', 'q3'],
   },
   groundingSources: [],
-  miniGameAffordances: {
-    categorySets: [],
-    orderedSequences: [],
-    connectionPairs: [],
-  },
 };
 
 const readyCards: Card[] = Array.from({ length: 6 }, (_, i) => ({
@@ -105,7 +100,7 @@ const readyCards: Card[] = Array.from({ length: 6 }, (_, i) => ({
 /**
  * Theory payload fixture used by the faithful `runContentGenerationJob`
  * mock when emulating the topic-theory stage. Mirrors the production
- * `ParsedTopicTheoryPayload` shape so `runTopicGenerationPipeline`'s
+ * `ParsedTopicTheoryContentPayload` shape so `runTopicGenerationPipeline`'s
  * `resolveTheoryData()` returns this and downstream stages run as in
  * production.
  */
@@ -120,7 +115,6 @@ const FIXTURE_THEORY_DATA = {
     4: ['q1', 'q2', 'q3'],
   },
   groundingSources: [],
-  miniGameAffordances: { categorySets: [], orderedSequences: [], connectionPairs: [] },
 };
 
 function stubMiniCardsForJobKind(kind: string): Card[] {
@@ -321,6 +315,10 @@ describe('runTopicGenerationPipeline', () => {
     expect(celebrationApi.markPendingFromFullTopicUnlock).toHaveBeenCalledWith(
       topicRefKey({ subjectId: 'sub-1', topicId: 't-a' }),
     );
+    const upsert = writer.upsertTopicDetails as ReturnType<typeof vi.fn>;
+    const detailsArg = upsert.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(detailsArg).toBeDefined();
+    expect(detailsArg).not.toHaveProperty('miniGameAffordances');
   });
 
   it('passes topic-theory JSON Schema responseFormatOverride into the theory job only', async () => {
@@ -635,8 +633,67 @@ describe('runTopicGenerationPipeline', () => {
         topicLabel: 'Topic A',
         stage: 'full',
         errorMessage: 'theory boom',
+        partialCompletion: {
+          theory: 'failed',
+          studyCards: 'skipped',
+          miniGames: 'skipped',
+        },
       }),
     );
+    emitSpy.mockRestore();
+  });
+
+  it('full pipeline: mini-game failure after theory and study reports partialCompletion and skips merged mini append', async () => {
+    runContentGenerationJob.mockImplementation(
+      async (args: { kind: string; persistOutput?: (d: unknown) => Promise<void> }) => {
+        if (args.kind === 'topic-theory' || args.kind === 'topic-study-cards') {
+          return defaultJobOk(args);
+        }
+        if (args.kind === 'topic-mini-game-category-sort') {
+          return { ok: false, error: 'mini boom' };
+        }
+        return defaultJobOk(args);
+      },
+    );
+    const writer = makeWriter();
+    const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+    const result = await runTopicGenerationPipeline({
+      chat: {} as IChatCompletionsRepository,
+      deckRepository: makeDeckRepository(),
+      writer,
+      subjectId: 'sub-1',
+      topicId: 't-a',
+      enableReasoning: false,
+      stage: 'full',
+      forceRegenerate: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect((writer.upsertTopicDetails as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+    expect((writer.upsertTopicCards as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+    expect((writer.appendTopicCards as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      expect.objectContaining({
+        partialCompletion: {
+          theory: 'completed',
+          studyCards: 'completed',
+          miniGames: 'failed',
+        },
+      }),
+    );
+
+    const terminalTelemetry = logCalls().filter((c) => c[0] === 'topic-content:generation-completed');
+    const last = terminalTelemetry[terminalTelemetry.length - 1]?.[1] as Record<string, unknown> | undefined;
+    expect(last?.ok).toBe(false);
+    expect(last?.partialCompletion).toEqual({
+      theory: 'completed',
+      studyCards: 'completed',
+      miniGames: 'failed',
+    });
+
     emitSpy.mockRestore();
   });
 

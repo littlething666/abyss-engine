@@ -59,7 +59,6 @@ const detailsWithBuckets: TopicDetails = {
   keyTakeaways: ['a'],
   coreQuestionsByDifficulty: { 1: ['q1'], 2: ['q2-a', 'q2-b'], 3: ['q3'], 4: ['q4'] },
   groundingSources: [],
-  miniGameAffordances: { categorySets: [], orderedSequences: [], connectionPairs: [] },
 };
 
 const detailsMissingBucket2: TopicDetails = {

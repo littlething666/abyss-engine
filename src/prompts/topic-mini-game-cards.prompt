@@ -40,8 +40,8 @@ Replace the `content` object with the canonical shape for **{{expectedGameType}}
 - Generate **1–2** cards; every card must use `content.gameType` = **{{expectedGameType}}** only.
 - Unique `id` per card, kebab-case, prefix `{{topicId}}-mg-`.
 - Difficulty **{{targetDifficulty}}** for all cards.
-- Ground content in the theory, accepted grounding sources, structured mini-game affordances for this type, and target difficulty questions.
-- Prefer the supplied structured mini-game affordances over inventing fresh category, sequence, or pair sets.
+- Ground every card in the theory markdown, accepted grounding sources, target-difficulty syllabus questions, and the content strategy. Invent categories, sequences, or pairs that faithfully reflect the theory (no separate anchor payload is provided).
+- Use stable local ids in the canonical examples (`cat-0`…`cat-2`, `it-0`…`it-5`, `s-0`…, `p-0`…) as patterns for your own ids: every id field MUST be a non-empty string.
 - Do **not** rely on undocumented server-side repair of invalid shapes — emit valid JSON matching the canonical examples above.
 
 ### JSON strings and LaTeX
@@ -58,9 +58,6 @@ Content strategy:
 
 Accepted grounding sources:
 {{groundingSourcesBlock}}
-
-Structured mini-game affordances (this type only):
-{{miniGameAffordancesBlock}}
 
 Theory (markdown):
 ---
