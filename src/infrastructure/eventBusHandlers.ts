@@ -262,6 +262,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
       subjectName: e.subjectName,
       stage: e.stage,
       pipelineId: e.pipelineId,
+      jobId: e.jobId,
+      failureKey: e.failureKey,
     });
 
     telemetry.log(
@@ -488,6 +490,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
       topicId: e.topicId,
       topicLabel: e.topicLabel,
       errorMessage: e.errorMessage,
+      ...(e.jobId && e.failureKey ? { jobId: e.jobId, failureKey: e.failureKey } : {}),
     });
   });
 
@@ -502,6 +505,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
       topicLabel: e.topicLabel,
       level: e.level,
       errorMessage: e.errorMessage,
+      ...(e.jobId && e.failureKey ? { jobId: e.jobId, failureKey: e.failureKey } : {}),
     });
   });
 
@@ -516,6 +520,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
       topicLabel: e.topicLabel,
       level: e.level,
       errorMessage: e.errorMessage,
+      ...(e.jobId && e.failureKey ? { jobId: e.jobId, failureKey: e.failureKey } : {}),
     });
   });
 
@@ -530,6 +535,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       topicLabel: e.topicLabel,
       jobLabel: e.jobLabel,
       errorMessage: e.errorMessage,
+      jobId: e.jobId,
+      failureInstanceId: e.failureInstanceId,
+      failureKey: e.failureKey,
     });
   });
 

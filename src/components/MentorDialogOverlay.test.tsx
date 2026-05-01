@@ -44,6 +44,7 @@ function enqueueFixturePlan(id = 'queued-start'): void {
   useMentorStore.getState().enqueue({
     id,
     trigger: 'subject:generation-started',
+    payload: {},
     priority: 72,
     enqueuedAt: 1,
     messages: [{ id: 'm1', text: 'Generating Calculus.', mood: 'hint' }],
@@ -208,6 +209,7 @@ describe('MentorDialogOverlay', () => {
       currentDialog: {
         id: 'active-mentor',
         trigger: 'mentor-bubble:clicked',
+        payload: {},
         priority: 80,
         enqueuedAt: 1,
         messages: [
@@ -252,6 +254,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
       currentDialog: {
         id: 'plan-step-publish',
         trigger: 'mentor-bubble:clicked',
+        payload: {},
         priority: 80,
         enqueuedAt: 1,
         messages: [
@@ -285,6 +288,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
       currentDialog: {
         id: 'plan-with-choices',
         trigger: 'onboarding:subject-unlock-first-crystal',
+        payload: {},
         priority: 78,
         enqueuedAt: 1,
         messages: [
@@ -320,6 +324,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
       currentDialog: {
         id: 'plan-multi',
         trigger: 'mentor-bubble:clicked',
+        payload: {},
         priority: 80,
         enqueuedAt: 1,
         messages: [
@@ -359,6 +364,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
       currentDialog: {
         id: 'plan-interactive-noop',
         trigger: 'onboarding:subject-unlock-first-crystal',
+        payload: {},
         priority: 78,
         enqueuedAt: 1,
         messages: [
@@ -405,6 +411,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
       currentDialog: {
         id: 'plan-unmount',
         trigger: 'mentor-bubble:clicked',
+        payload: {},
         priority: 80,
         enqueuedAt: 1,
         messages: [{ id: 'msg-1', text: 'Hello', mood: 'neutral' }],

@@ -269,23 +269,26 @@ const HomeContent: React.FC = () => {
   //   else            → resolve trigger from live context, enqueue.
   const entryContext = useMentorEntryContext();
   const {
-    subjectGenerationPhase,
+    subjectGraphActiveStage,
     subjectGenerationLabel,
     playerName,
     firstSubjectGenerationEnqueuedAt,
+    mentorFailureEntry,
   } = entryContext;
   const handleQuickActionMentor = useCallback(() => {
     tryEnqueueMentorEntry({
-      subjectGenerationPhase,
+      subjectGraphActiveStage,
       subjectGenerationLabel,
       playerName,
       firstSubjectGenerationEnqueuedAt,
+      mentorFailureEntry,
     });
   }, [
-    subjectGenerationPhase,
+    subjectGraphActiveStage,
     subjectGenerationLabel,
     playerName,
     firstSubjectGenerationEnqueuedAt,
+    mentorFailureEntry,
   ]);
 
   const TOP_LEFT_STYLE: React.CSSProperties = { top: 'calc(0.75rem + env(safe-area-inset-top))', left: 'calc(0.75rem + env(safe-area-inset-left))' };

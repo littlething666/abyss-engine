@@ -4,7 +4,7 @@ import type { Subject, SubjectGraph } from '@/types/core';
 import type { ContentGenerationJob } from '@/types/contentGeneration';
 import type { SubjectGenerationRequest, SubjectGenerationResult } from '@/types/generationOrchestrator';
 import type { TopicLattice } from '@/types/topicLattice';
-import { countManualRetryDepth, runContentGenerationJob, useContentGenerationStore } from '@/features/contentGeneration';
+import { countManualRetryDepth, failureKeyForJob, runContentGenerationJob, useContentGenerationStore } from '@/features/contentGeneration';
 import { appEventBus } from '@/infrastructure/eventBus';
 import { resolveStrategy } from '../strategies/strategyResolver';
 import { applyGraphToStorage } from '../graph/applyGraphToStorage';
@@ -161,6 +161,8 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
         pipelineId,
         stage: 'topics',
         error,
+        jobId: latticeJob.jobId,
+        failureKey: failureKeyForJob(latticeJob.jobId),
       });
       return {
         ok: false,
@@ -290,6 +292,8 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
         pipelineId,
         stage: 'edges',
         error,
+        jobId: edgesJob.jobId,
+        failureKey: failureKeyForJob(edgesJob.jobId),
       });
       return {
         ok: false,

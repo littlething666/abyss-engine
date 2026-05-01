@@ -128,6 +128,10 @@ export type AppEventMap = {
     pipelineId: string;
     stage: 'theory' | 'study-cards' | 'mini-games' | 'full';
     errorMessage: string;
+    /** Present when a canonical stage job failed (omitted for shell-only failures). */
+    jobId?: string;
+    /** Present when `jobId` is set — `failureKeyForJob(jobId)`. */
+    failureKey?: string;
     /** Present when `stage === 'full'` failed after one or more stages persisted. */
     partialCompletion?: TopicContentPipelinePartialCompletion;
   };
@@ -147,6 +151,9 @@ export type AppEventMap = {
     /** The `nextLevel` that was being generated. */
     level: number;
     errorMessage: string;
+    /** Present when an LLM expansion job failed (omitted for preflight / shell-only failures). */
+    jobId?: string;
+    failureKey?: string;
   };
   'subject-graph:generation-requested': {
     subjectId: string;
@@ -181,6 +188,9 @@ export type AppEventMap = {
     pipelineId: string;
     stage: 'topics' | 'edges';
     error: string;
+    /** Failed stage job id (topics or edges LLM job). */
+    jobId: string;
+    failureKey: string;
   };
   /** Emitted when topic lattice or prerequisite wiring fails validation or parsing. */
   'subject-graph:validation-failed': {
@@ -217,6 +227,9 @@ export type AppEventMap = {
     /** The trial's `targetLevel` (the level the player was attempting to unlock). */
     level: number;
     errorMessage: string;
+    /** Present when an LLM trial job failed (omitted for shell-only failures). */
+    jobId?: string;
+    failureKey?: string;
   };
   /**
    * Emitted by retry orchestration (`retryFailedJob` / `retryFailedPipeline`) when
@@ -231,6 +244,11 @@ export type AppEventMap = {
     topicLabel?: string;
     jobLabel: string;
     errorMessage: string;
+    /** Original job the player attempted to retry from. */
+    jobId: string;
+    /** Per-emission routing-collapse instance id. */
+    failureInstanceId: string;
+    failureKey: string;
   };
   /**
    * Mentor → infrastructure boundary. Carries only `playerName`; PostHog

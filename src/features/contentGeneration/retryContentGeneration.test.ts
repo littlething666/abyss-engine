@@ -77,6 +77,8 @@ function resetStore(): void {
     pipelines: {},
     abortControllers: {},
     pipelineAbortControllers: {},
+    sessionAcknowledgedFailureKeys: {},
+    sessionRetryRoutingFailures: {},
   });
 }
 
@@ -398,6 +400,8 @@ describe('retryFailedPipeline', () => {
       pipelines: { p1: { id: 'p1', label: 'P', createdAt: 0, retryOf: null } },
       abortControllers: {},
       pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
     });
 
     await retryFailedPipeline('p1');
@@ -416,6 +420,8 @@ describe('retryFailedPipeline', () => {
       pipelines: {},
       abortControllers: {},
       pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
     });
 
     await retryFailedPipeline('nonexistent');
@@ -451,6 +457,8 @@ describe('retryFailedPipeline', () => {
       pipelines: { 'p-subj': { id: 'p-subj', label: 'New subject: Pipeline topic', createdAt: 0, retryOf: null } },
       abortControllers: {},
       pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
     });
 
     await retryFailedPipeline('p-subj');
@@ -492,6 +500,9 @@ describe('content-generation:retry-failed terminal events', () => {
         topicId: 'top-1',
         jobLabel: 'Crystal Trial — unparseable',
         errorMessage: expect.stringContaining('current level'),
+        jobId: 'job-1',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
       }),
     );
   });
@@ -510,6 +521,9 @@ describe('content-generation:retry-failed terminal events', () => {
       expect.objectContaining({
         jobLabel: 'Expansion no-level',
         errorMessage: expect.stringContaining('crystal level'),
+        jobId: 'job-1',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
       }),
     );
   });
@@ -532,6 +546,9 @@ describe('content-generation:retry-failed terminal events', () => {
         subjectId: 'sub-1',
         jobLabel: 'unparseable label',
         errorMessage: expect.stringContaining('checklist not recoverable'),
+        jobId: 'job-1',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
       }),
     );
   });
@@ -544,6 +561,9 @@ describe('content-generation:retry-failed terminal events', () => {
       'content-generation:retry-failed',
       expect.objectContaining({
         errorMessage: expect.stringContaining('unsupported kind'),
+        jobId: 'job-1',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
       }),
     );
   });
@@ -558,6 +578,9 @@ describe('content-generation:retry-failed terminal events', () => {
       expect.objectContaining({
         jobLabel: 'Theory — Test',
         errorMessage: 'pipeline blew up',
+        jobId: 'job-1',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
       }),
     );
   });
@@ -575,6 +598,8 @@ describe('content-generation:retry-failed terminal events', () => {
       pipelines: { p1: { id: 'p1', label: 'New subject: Mystery', createdAt: 0, retryOf: null } },
       abortControllers: {},
       pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
     });
 
     await retryFailedPipeline('p1');
@@ -584,6 +609,9 @@ describe('content-generation:retry-failed terminal events', () => {
       expect.objectContaining({
         jobLabel: 'New subject: Mystery',
         errorMessage: 'Cannot retry pipeline: unknown job kind',
+        jobId: 'jx',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
       }),
     );
   });
@@ -601,6 +629,8 @@ describe('content-generation:retry-failed terminal events', () => {
       pipelines: { p1: { id: 'p1', label: 'Pipeline P1', createdAt: 0, retryOf: null } },
       abortControllers: {},
       pipelineAbortControllers: {},
+      sessionAcknowledgedFailureKeys: {},
+      sessionRetryRoutingFailures: {},
     });
 
     await retryFailedPipeline('p1');
@@ -610,6 +640,9 @@ describe('content-generation:retry-failed terminal events', () => {
       expect.objectContaining({
         jobLabel: 'Pipeline P1',
         errorMessage: 'pipe boom',
+        jobId: 'j2',
+        failureInstanceId: expect.any(String),
+        failureKey: expect.any(String),
       }),
     );
   });

@@ -33,7 +33,9 @@ import { formatPipelineFailureMarkdown } from '../debug/formatPipelineFailureMar
 import { logPipelineFailure } from '../debug/logPipelineFailure';
 import { runContentGenerationJob } from '../runContentGenerationJob';
 import { useContentGenerationStore } from '../contentGenerationStore';
+import { failureKeyForJob } from '../failureKeys';
 import { topicStudyContentReady } from '../topicStudyContentReady';
+import { buildTopicMiniGameCardsResponseFormat } from '../schemas/topicMiniGameCardsResponseFormat';
 import { topicTheoryStructuredOutputResponseFormat } from '../schemas/topicTheoryResponseFormat';
 import { useCrystalContentCelebrationStore } from '@/store/crystalContentCelebrationStore';
 import { loadTheoryPayloadFromTopicDetails } from './loadTheoryPayloadFromTopicDetails';
@@ -130,7 +132,10 @@ type PipelineSettlement =
       pipelineId: string;
       error: string;
       partialCompletion?: TopicContentPipelinePartialCompletion;
+      failedJobId?: string;
     };
+
+type StageRunOutcome = { ok: true } | { ok: false; error: string; failedJobId?: string };
 
 export async function runTopicGenerationPipeline(
   params: RunTopicGenerationPipelineParams,
@@ -174,6 +179,7 @@ export async function runTopicGenerationPipeline(
     error?: string;
     skipped?: boolean;
     partialCompletion?: TopicContentPipelinePartialCompletion;
+    failedJobId?: string;
   }) => {
     if (!r.skipped) {
       if (r.ok) {
@@ -185,6 +191,7 @@ export async function runTopicGenerationPipeline(
           stage,
         });
       } else {
+        const jobId = r.failedJobId;
         appEventBus.emit('topic-content:generation-failed', {
           subjectId,
           topicId,
@@ -193,6 +200,9 @@ export async function runTopicGenerationPipeline(
           stage,
           errorMessage: r.error ?? 'Topic content generation failed',
           ...(stage === 'full' && r.partialCompletion ? { partialCompletion: r.partialCompletion } : {}),
+          ...(jobId
+            ? { jobId, failureKey: failureKeyForJob(jobId) }
+            : {}),
         });
       }
     }
@@ -287,8 +297,8 @@ export async function runTopicGenerationPipeline(
    */
   const wrapStage = async (
     stageName: 'theory' | 'study-cards' | 'mini-games',
-    run: () => Promise<{ ok: true } | { ok: false; error: string }>,
-  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    run: () => Promise<StageRunOutcome>,
+  ): Promise<StageRunOutcome> => {
     const stageStartedAt = Date.now();
     telemetry.log(
       'topic-content:stage-started',
@@ -322,7 +332,7 @@ export async function runTopicGenerationPipeline(
 
   let theoryData: ParsedTopicTheoryContentPayload | undefined;
 
-  const runTheoryJob = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+  const runTheoryJob = async (): Promise<StageRunOutcome> => {
     const theoryResult = await runContentGenerationJob({
       kind: 'topic-theory',
       label: `Theory — ${node.title}`,
@@ -385,14 +395,18 @@ export async function runTopicGenerationPipeline(
     });
 
     if (!theoryResult.ok) {
-      return { ok: false, error: theoryResult.error ?? 'Theory job failed' };
+      return {
+        ok: false,
+        error: theoryResult.error ?? 'Theory job failed',
+        failedJobId: theoryResult.jobId,
+      };
     }
     return { ok: true };
   };
 
   const runStudyJob = async (
     theory: ParsedTopicTheoryContentPayload,
-  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+  ): Promise<StageRunOutcome> => {
     const targetDifficulty = 1;
 
     const studyResult = await runContentGenerationJob({
@@ -445,14 +459,18 @@ export async function runTopicGenerationPipeline(
     });
 
     if (!studyResult.ok) {
-      return { ok: false, error: studyResult.error ?? 'Study cards job failed' };
+      return {
+        ok: false,
+        error: studyResult.error ?? 'Study cards job failed',
+        failedJobId: studyResult.jobId,
+      };
     }
     return { ok: true };
   };
 
   const runMiniGamesCoordinator = async (
     theory: ParsedTopicTheoryContentPayload,
-  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+  ): Promise<StageRunOutcome> => {
     const targetDifficulty = 1;
     const kinds: MiniGameType[] =
       miniGameKindsOverride && miniGameKindsOverride.length > 0 ? miniGameKindsOverride : ALL_MINI_GAME_TYPES;
@@ -491,6 +509,7 @@ export async function runTopicGenerationPipeline(
           externalSignal: pipelineAc.signal,
           retryOf: jobRetryOfForStage(retryContext, 'mini-games'),
           metadata: { ...groundingMeta, miniGameType: gameType },
+          responseFormatOverride: buildTopicMiniGameCardsResponseFormat(gameType),
           parseOutput: async (raw, job) => {
             const parsed = parseTopicCardsPayload(raw, {
               groundingSources: theory.groundingSources,
@@ -514,7 +533,11 @@ export async function runTopicGenerationPipeline(
         });
 
         if (!miniResult.ok) {
-          return { ok: false as const, error: miniResult.error ?? 'Mini-game job failed' };
+          return {
+            ok: false as const,
+            error: miniResult.error ?? 'Mini-game job failed',
+            failedJobId: miniResult.jobId,
+          };
         }
         return { ok: true as const };
       }),
@@ -522,7 +545,11 @@ export async function runTopicGenerationPipeline(
 
     const failed = outcomes.find((o) => !o.ok);
     if (failed) {
-      return { ok: false, error: failed.error };
+      return {
+        ok: false,
+        error: failed.error,
+        ...('failedJobId' in failed && failed.failedJobId ? { failedJobId: failed.failedJobId } : {}),
+      };
     }
 
     const merged = kinds.flatMap((k) => buckets[k] ?? []);
@@ -565,7 +592,9 @@ export async function runTopicGenerationPipeline(
     try {
       if (stage === 'theory') {
         const t = await wrapStage('theory', runTheoryJob);
-        return t.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: t.error };
+        return t.ok
+          ? { ok: true, pipelineId }
+          : { ok: false, pipelineId, error: t.error, ...(t.failedJobId ? { failedJobId: t.failedJobId } : {}) };
       }
 
       if (stage === 'study-cards') {
@@ -577,7 +606,9 @@ export async function runTopicGenerationPipeline(
           return { ok: false, pipelineId, error: message };
         }
         const s = await wrapStage('study-cards', () => runStudyJob(theory));
-        return s.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: s.error };
+        return s.ok
+          ? { ok: true, pipelineId }
+          : { ok: false, pipelineId, error: s.error, ...(s.failedJobId ? { failedJobId: s.failedJobId } : {}) };
       }
 
       if (stage === 'mini-games') {
@@ -589,7 +620,9 @@ export async function runTopicGenerationPipeline(
           return { ok: false, pipelineId, error: message };
         }
         const m = await wrapStage('mini-games', () => runMiniGamesCoordinator(theory));
-        return m.ok ? { ok: true, pipelineId } : { ok: false, pipelineId, error: m.error };
+        return m.ok
+          ? { ok: true, pipelineId }
+          : { ok: false, pipelineId, error: m.error, ...(m.failedJobId ? { failedJobId: m.failedJobId } : {}) };
       }
 
       // ── full pipeline (with optional resume) ──────────────────────────
@@ -610,7 +643,13 @@ export async function runTopicGenerationPipeline(
         if (!theoryStep.ok) {
           const outcomes = partial();
           outcomes.theory = 'failed';
-          return { ok: false, pipelineId, error: theoryStep.error, partialCompletion: outcomes };
+          return {
+            ok: false,
+            pipelineId,
+            error: theoryStep.error,
+            partialCompletion: outcomes,
+            ...(theoryStep.failedJobId ? { failedJobId: theoryStep.failedJobId } : {}),
+          };
         }
       }
 
@@ -640,7 +679,13 @@ export async function runTopicGenerationPipeline(
           outcomes.theory = 'completed';
           outcomes.studyCards = 'failed';
           outcomes.miniGames = 'skipped';
-          return { ok: false, pipelineId, error: studyStep.error, partialCompletion: outcomes };
+          return {
+            ok: false,
+            pipelineId,
+            error: studyStep.error,
+            partialCompletion: outcomes,
+            ...(studyStep.failedJobId ? { failedJobId: studyStep.failedJobId } : {}),
+          };
         }
       }
 
@@ -652,7 +697,13 @@ export async function runTopicGenerationPipeline(
           outcomes.theory = 'completed';
           outcomes.studyCards = 'completed';
           outcomes.miniGames = 'failed';
-          return { ok: false, pipelineId, error: miniStep.error, partialCompletion: outcomes };
+          return {
+            ok: false,
+            pipelineId,
+            error: miniStep.error,
+            partialCompletion: outcomes,
+            ...(miniStep.failedJobId ? { failedJobId: miniStep.failedJobId } : {}),
+          };
         }
       }
 
@@ -694,6 +745,9 @@ export async function runTopicGenerationPipeline(
     ...(!pipelineResult.ok ? { error: pipelineResult.error } : {}),
     ...(!pipelineResult.ok && pipelineResult.partialCompletion
       ? { partialCompletion: pipelineResult.partialCompletion }
+      : {}),
+    ...(!pipelineResult.ok && pipelineResult.failedJobId
+      ? { failedJobId: pipelineResult.failedJobId }
       : {}),
     skipped: false,
   });

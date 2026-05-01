@@ -16,6 +16,7 @@ import { buildTopicExpansionCardsMessages } from '../messages/buildTopicExpansio
 import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
 import { buildExistingConceptRegistry } from '../quality/buildExistingConceptRegistry';
 import { buildGroundingJobMetadataSnapshot } from '../grounding/buildGroundingJobMetadata';
+import { failureKeyForJob } from '../failureKeys';
 import { runContentGenerationJob } from '../runContentGenerationJob';
 import { useContentGenerationStore } from '../contentGenerationStore';
 
@@ -189,6 +190,8 @@ export async function runExpansionJob(
       topicLabel,
       level: nextLevel,
       errorMessage: result.error ?? 'Topic expansion job failed',
+      jobId: result.jobId,
+      failureKey: failureKeyForJob(result.jobId),
     });
   }
 

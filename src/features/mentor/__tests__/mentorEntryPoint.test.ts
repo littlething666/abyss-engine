@@ -10,10 +10,11 @@ import {
 import { MENTOR_VOICE_ID } from '../mentorVoice';
 
 const baseContext: MentorEntryContext = {
-  subjectGenerationPhase: null,
+  subjectGraphActiveStage: null,
   subjectGenerationLabel: null,
   playerName: null,
   firstSubjectGenerationEnqueuedAt: null,
+  mentorFailureEntry: null,
 };
 
 function resetStore(): void {
@@ -36,6 +37,7 @@ describe('tryEnqueueMentorEntry', () => {
       currentDialog: {
         id: 'plan-x',
         trigger: 'mentor-bubble:clicked',
+        payload: {},
         priority: 10,
         enqueuedAt: 0,
         messages: [{ id: 'm0', text: 'hi', mood: 'neutral' }],
@@ -55,6 +57,7 @@ describe('tryEnqueueMentorEntry', () => {
         {
           id: 'plan-existing',
           trigger: 'session:completed',
+          payload: {},
           priority: 50,
           enqueuedAt: 0,
           messages: [{ id: 'm0', text: 'queued', mood: 'neutral' }],

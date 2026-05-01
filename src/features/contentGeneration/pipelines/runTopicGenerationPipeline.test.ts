@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { MiniGameType } from '@/types/core';
 import { runTopicGenerationPipeline } from './runTopicGenerationPipeline';
 import { useContentGenerationStore } from '../contentGenerationStore';
 import { topicRefKey } from '@/lib/topicRef';
@@ -10,7 +11,9 @@ import type {
   IDeckContentWriter,
 } from '@/types/repository';
 import { appEventBus } from '@/infrastructure/eventBus';
+import { failureKeyForJob } from '../failureKeys';
 import { parseTopicCardsPayload } from '../parsers/parseTopicCardsPayload';
+import { buildTopicMiniGameCardsResponseFormat } from '../schemas/topicMiniGameCardsResponseFormat';
 import { topicTheoryStructuredOutputResponseFormat } from '../schemas/topicTheoryResponseFormat';
 
 const { surfaceProvidersApi } = vi.hoisted(() => ({
@@ -270,6 +273,8 @@ function resetStore() {
     pipelines: {},
     abortControllers: {},
     pipelineAbortControllers: {},
+    sessionAcknowledgedFailureKeys: {},
+    sessionRetryRoutingFailures: {},
   });
 }
 
@@ -321,7 +326,7 @@ describe('runTopicGenerationPipeline', () => {
     expect(detailsArg).not.toHaveProperty('miniGameAffordances');
   });
 
-  it('passes topic-theory JSON Schema responseFormatOverride into the theory job only', async () => {
+  it('passes JSON Schema responseFormatOverride for theory and per-type mini-game jobs; study cards omit override', async () => {
     runContentGenerationJob.mockImplementation(defaultJobOk);
     const writer = makeWriter();
 
@@ -343,13 +348,35 @@ describe('runTopicGenerationPipeline', () => {
       responseFormatOverride: topicTheoryStructuredOutputResponseFormat,
     });
 
-    const nonTheory = runContentGenerationJob.mock.calls
-      .map((c) => c[0] as { kind: string })
-      .filter((a) => a.kind !== 'topic-theory');
-    expect(nonTheory.length).toBeGreaterThan(0);
-    for (const job of nonTheory) {
-      expect(job).not.toHaveProperty('responseFormatOverride');
+    const studyArgs = runContentGenerationJob.mock.calls
+      .map((c) => c[0] as { kind: string; responseFormatOverride?: unknown })
+      .find((a) => a.kind === 'topic-study-cards');
+    expect(studyArgs).toBeDefined();
+    expect(studyArgs).not.toHaveProperty('responseFormatOverride');
+
+    const miniJobs: Array<{ kind: string; gameType: MiniGameType }> = [
+      { kind: 'topic-mini-game-category-sort', gameType: 'CATEGORY_SORT' },
+      { kind: 'topic-mini-game-sequence-build', gameType: 'SEQUENCE_BUILD' },
+      { kind: 'topic-mini-game-connection-web', gameType: 'CONNECTION_WEB' },
+    ];
+
+    for (const { kind, gameType } of miniJobs) {
+      const args = runContentGenerationJob.mock.calls
+        .map((c) => c[0] as { kind: string; responseFormatOverride?: unknown })
+        .find((a) => a.kind === kind);
+      expect(args, kind).toBeDefined();
+      expect(args!.responseFormatOverride).toEqual(buildTopicMiniGameCardsResponseFormat(gameType));
     }
+
+    const knownKinds = new Set([
+      'topic-theory',
+      'topic-study-cards',
+      ...miniJobs.map((m) => m.kind),
+    ]);
+    const otherJobs = runContentGenerationJob.mock.calls
+      .map((c) => c[0] as { kind: string })
+      .filter((a) => !knownKinds.has(a.kind));
+    expect(otherJobs.length).toBe(0);
   });
 
   it('auto-skips when ready content already exists', async () => {
@@ -611,7 +638,7 @@ describe('runTopicGenerationPipeline', () => {
   });
 
   it('emits topic-content:generation-failed when a stage fails (carries errorMessage)', async () => {
-    runContentGenerationJob.mockResolvedValue({ ok: false, error: 'theory boom' });
+    runContentGenerationJob.mockResolvedValue({ ok: false, error: 'theory boom', jobId: 'theory-fail-1' });
     const emitSpy = vi.spyOn(appEventBus, 'emit');
 
     await runTopicGenerationPipeline({
@@ -638,6 +665,8 @@ describe('runTopicGenerationPipeline', () => {
           studyCards: 'skipped',
           miniGames: 'skipped',
         },
+        jobId: 'theory-fail-1',
+        failureKey: failureKeyForJob('theory-fail-1'),
       }),
     );
     emitSpy.mockRestore();
@@ -650,7 +679,7 @@ describe('runTopicGenerationPipeline', () => {
           return defaultJobOk(args);
         }
         if (args.kind === 'topic-mini-game-category-sort') {
-          return { ok: false, error: 'mini boom' };
+          return { ok: false, error: 'mini boom', jobId: 'mini-fail-1' };
         }
         return defaultJobOk(args);
       },
@@ -682,6 +711,8 @@ describe('runTopicGenerationPipeline', () => {
           studyCards: 'completed',
           miniGames: 'failed',
         },
+        jobId: 'mini-fail-1',
+        failureKey: failureKeyForJob('mini-fail-1'),
       }),
     );
 

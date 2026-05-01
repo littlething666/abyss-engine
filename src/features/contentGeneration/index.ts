@@ -1,5 +1,7 @@
 export { useContentGenerationStore, MAX_PERSISTED_LOGS } from './contentGenerationStore';
-export type { ContentGenerationState } from './contentGenerationStore';
+export type { ContentGenerationState, SessionRetryRoutingFailureSurface } from './contentGenerationStore';
+
+export { failureKeyForJob, failureKeyForRetryRoutingInstance } from './failureKeys';
 
 export { runContentGenerationJob } from './runContentGenerationJob';
 export type { ContentGenerationJobParams, PipelineFailureDebugContext } from './runContentGenerationJob';
@@ -18,11 +20,15 @@ export {
   activeTopicContentGenerationLabel,
 } from './activeTopicGenerationLabel';
 export {
-  activeSubjectGenerationStatus,
-} from './activeSubjectGenerationStatus';
+  generationAttentionSurface,
+  subjectPipelineLabel,
+} from './generationAttentionSurface';
 export type {
-  ActiveSubjectGenerationStatus,
-} from './activeSubjectGenerationStatus';
+  GenerationAttentionFailureKind,
+  GenerationAttentionPrimaryFailure,
+  GenerationAttentionSelectorState,
+  GenerationAttentionSurface,
+} from './generationAttentionSurface';
 
 export {
   canRetryJob,

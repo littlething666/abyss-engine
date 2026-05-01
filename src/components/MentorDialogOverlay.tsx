@@ -6,8 +6,10 @@ import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { telemetry } from '@/features/telemetry';
+import { useContentGenerationStore } from '@/features/contentGeneration';
 import { useMentorStore } from '@/features/mentor/mentorStore';
-import type { MentorEffect, MentorMessage, MentorMood } from '@/features/mentor/mentorTypes';
+import type { DialogPlan, MentorEffect, MentorMessage, MentorMood } from '@/features/mentor/mentorTypes';
+import { isMentorGenerationFailureTrigger } from '@/features/mentor/mentorFailureTriggers';
 import { useMentorSpeech } from '@/features/mentor/useMentorSpeech';
 import { MENTOR_VOICE_ID } from '@/features/mentor/mentorVoice';
 import {
@@ -65,6 +67,7 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
   const openCurrentFromQueue = useMentorStore((s) => s.openCurrentFromQueue);
   const dismissCurrent = useMentorStore((s) => s.dismissCurrent);
   const markSeen = useMentorStore((s) => s.markSeen);
+  const acknowledgeFailureKey = useContentGenerationStore((s) => s.acknowledgeFailureKey);
   const setNarrationEnabled = useMentorStore((s) => s.setNarrationEnabled);
   const setPlayerName = useMentorStore((s) => s.setPlayerName);
   // Two distinct gates:
@@ -84,6 +87,41 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
   const { speak, cancel, enabled: ttsActive } = useMentorSpeech();
   const reducedMotion = useReducedMotion();
 
+  const startedAtRef = useRef<number | null>(null);
+  const revealedCharsRef = useRef(0);
+
+  const finalizePlanCompletion = useCallback(
+    (
+      plan: DialogPlan,
+      outcome: 'auto-advance' | 'choice' | 'closed' | 'ambient',
+      terminalEffectKind: 'open_generation_hud' | 'none',
+    ) => {
+      cancel();
+      const startedAt = startedAtRef.current;
+      const durationMs = startedAt === null ? 0 : Math.max(0, nowMs() - startedAt);
+      telemetry.log('mentor-dialog:completed', {
+        triggerId: plan.trigger,
+        source: 'canned',
+        voiceId: MENTOR_VOICE_ID,
+        planId: plan.id,
+        durationMs,
+        outcome,
+      });
+      startedAtRef.current = null;
+      if (
+        terminalEffectKind !== 'open_generation_hud' &&
+        isMentorGenerationFailureTrigger(plan.trigger)
+      ) {
+        const failureKey = plan.payload.failureKey;
+        if (typeof failureKey === 'string' && failureKey.length > 0) {
+          acknowledgeFailureKey(failureKey);
+        }
+      }
+      dismissCurrent();
+    },
+    [acknowledgeFailureKey, cancel, dismissCurrent],
+  );
+
   // Phase E: hoisted into a useCallback so it can close over the
   // `onOpenTopicStudy` prop. The remaining effects continue to read
   // `useUIStore.getState()` / `useMentorStore.getState()` directly to
@@ -93,15 +131,14 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
       if (!effect) return;
       const ui = useUIStore.getState();
       const mentor = useMentorStore.getState();
+      const activePlan = mentor.currentDialog;
       switch (effect.kind) {
         case 'open_discovery': {
-          mentor.dismissCurrent();
-          // Defer one rAF so dismiss() state settles before the new modal opens.
-          // Without this the discovery modal animation can stutter under React 18 batching.
-          // The optional `effect.subjectId` carries through to uiStore so
-          // DiscoveryModal can pre-filter to the requested subject (Workstream B's
-          // post-curriculum onboarding flow); undefined preserves the legacy
-          // sessionStorage fallback.
+          if (activePlan) {
+            finalizePlanCompletion(activePlan, 'choice', 'none');
+          } else {
+            mentor.dismissCurrent();
+          }
           const openWithScope = () => ui.openDiscoveryModal(effect.subjectId);
           if (
             typeof window !== 'undefined' &&
@@ -114,15 +151,20 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
           return;
         }
         case 'open_generation_hud': {
-          mentor.dismissCurrent();
+          if (activePlan) {
+            finalizePlanCompletion(activePlan, 'choice', 'open_generation_hud');
+          } else {
+            mentor.dismissCurrent();
+          }
           ui.openGenerationProgress();
           return;
         }
         case 'open_topic_study': {
-          mentor.dismissCurrent();
-          // Phase E: delegate to the host-provided adapter so the mentor
-          // feature stays presentation-agnostic. Falling through silently
-          // when no host is wired keeps storybook/test mounts safe.
+          if (activePlan) {
+            finalizePlanCompletion(activePlan, 'choice', 'none');
+          } else {
+            mentor.dismissCurrent();
+          }
           onOpenTopicStudy?.({
             subjectId: effect.subjectId,
             topicId: effect.topicId,
@@ -130,12 +172,16 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
           return;
         }
         case 'dismiss': {
-          mentor.dismissCurrent();
+          if (activePlan) {
+            finalizePlanCompletion(activePlan, 'choice', 'none');
+          } else {
+            mentor.dismissCurrent();
+          }
           return;
         }
       }
     },
-    [onOpenTopicStudy],
+    [finalizePlanCompletion, onOpenTopicStudy],
   );
 
   // Auto-open: when no dialog is currently shown but the queue has entries,
@@ -148,11 +194,6 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
       openCurrentFromQueue();
     }
   }, [currentDialog, isAnyModalOpen, queueLen, openCurrentFromQueue]);
-
-  // Tracks when the active dialog was first shown so completion telemetry can
-  // report durationMs. Reset alongside other per-plan state below.
-  const startedAtRef = useRef<number | null>(null);
-  const revealedCharsRef = useRef(0);
 
   // Mark seen + telemetry once per dialog open. Note: oneShot suppression in
   // the rule engine ALSO checks seenTriggers, so this is what locks out future
@@ -246,20 +287,9 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
         setMessageIndex(nextIndex);
         return;
       }
-      const startedAt = startedAtRef.current;
-      const durationMs = startedAt === null ? 0 : Math.max(0, nowMs() - startedAt);
-      telemetry.log('mentor-dialog:completed', {
-        triggerId: currentDialog.trigger,
-        source: 'canned',
-        voiceId: MENTOR_VOICE_ID,
-        planId: currentDialog.id,
-        durationMs,
-        outcome,
-      });
-      startedAtRef.current = null;
-      dismissCurrent();
+      finalizePlanCompletion(currentDialog, outcome, 'none');
     },
-    [cancel, currentDialog, dismissCurrent, messageIndex, messages.length],
+    [cancel, currentDialog, finalizePlanCompletion, messageIndex, messages.length],
   );
 
   // Auto-advance after `autoAdvanceMs` once fully revealed.

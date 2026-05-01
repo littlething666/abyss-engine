@@ -10,6 +10,7 @@ import {
 import { appEventBus } from '@/infrastructure/eventBus';
 import { PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION } from '@/types/pipelineFailureDebug';
 import { runContentGenerationJob } from '@/features/contentGeneration/runContentGenerationJob';
+import { failureKeyForJob } from '@/features/contentGeneration/failureKeys';
 import {
   buildCrystalTrialMessages,
   serializeCardsForPrompt,
@@ -156,12 +157,14 @@ export async function generateTrialQuestions(
 
   if (!result.ok) {
     trialStore.setTrialGenerationFailed(ref);
+    const jobId = result.jobId;
     appEventBus.emit('crystal-trial:generation-failed', {
       subjectId,
       topicId,
       topicLabel: topicTitle,
       level: targetLevel,
       errorMessage: result.error ?? 'Crystal trial generation failed',
+      ...(jobId ? { jobId, failureKey: failureKeyForJob(jobId) } : {}),
     });
   }
   return { ok: result.ok, jobId: result.jobId, error: result.error };

@@ -50,6 +50,8 @@ export interface MentorMessage {
 export interface DialogPlan {
   id: string;
   trigger: MentorTriggerId;
+  /** Original trigger payload (identity for failure acknowledgement). */
+  payload: MentorTriggerPayload;
   priority: number;
   enqueuedAt: number;
   messages: MentorMessage[];
@@ -63,7 +65,7 @@ export interface MentorTriggerPayload {
   topic?: string;
   subjectId?: string;
   subjectName?: string;
-  stage?: 'topics' | 'edges';
+  stage?: 'topics' | 'edges' | 'theory' | 'study-cards' | 'mini-games' | 'full';
   pipelineId?: string;
   from?: number;
   to?: number;
@@ -80,4 +82,7 @@ export interface MentorTriggerPayload {
   level?: number;
   jobLabel?: string;
   errorMessage?: string;
+  jobId?: string;
+  failureKey?: string;
+  failureInstanceId?: string;
 }

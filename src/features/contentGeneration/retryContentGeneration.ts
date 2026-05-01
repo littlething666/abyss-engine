@@ -26,6 +26,7 @@ import type { MiniGameType } from '@/types/core';
 import type { StudyChecklist } from '@/types/studyChecklist';
 import type { TopicGenerationStage } from './pipelines/topicGenerationStage';
 import { useContentGenerationStore } from './contentGenerationStore';
+import { failureKeyForRetryRoutingInstance } from './failureKeys';
 import { appEventBus } from '@/infrastructure/eventBus';
 import { deckRepository, deckWriter } from '@/infrastructure/di';
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
@@ -99,11 +100,26 @@ function emitRetryFailed(
   errorMessage: string,
 ): void {
   if (!job.subjectId) return;
+  const failureInstanceId = crypto.randomUUID();
+  const failureKey = failureKeyForRetryRoutingInstance(failureInstanceId);
+  useContentGenerationStore.getState().registerSessionRetryRoutingFailure({
+    failureKey,
+    failureInstanceId,
+    originalJobId: job.id,
+    subjectId: job.subjectId,
+    ...(job.topicId ? { topicId: job.topicId } : {}),
+    jobLabel,
+    errorMessage,
+    createdAt: Date.now(),
+  });
   appEventBus.emit('content-generation:retry-failed', {
     subjectId: job.subjectId,
     ...(job.topicId ? { topicId: job.topicId } : {}),
     jobLabel,
     errorMessage,
+    jobId: job.id,
+    failureInstanceId,
+    failureKey,
   });
 }
 

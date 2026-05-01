@@ -454,6 +454,7 @@ export function evaluateTrigger(
   const plan: DialogPlan = {
     id: `${trigger}:${nowMs}`,
     trigger,
+    payload: { ...payload },
     priority: spec.priority,
     enqueuedAt: nowMs,
     messages,

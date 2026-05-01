@@ -4,28 +4,40 @@ import { resolveMentorEntry } from '../mentorEntryResolver';
 import type { MentorEntryContext } from '../mentorEntryResolver';
 
 const baseContext: MentorEntryContext = {
-  subjectGenerationPhase: null,
+  subjectGraphActiveStage: null,
   subjectGenerationLabel: null,
   playerName: null,
   firstSubjectGenerationEnqueuedAt: null,
+  mentorFailureEntry: null,
 };
 
 describe('resolveMentorEntry', () => {
-  it('prefers subject:generation-failed when an active generation has failed', () => {
+  it('prefers mentorFailureEntry when a canonical failure is surfaced', () => {
     const decision = resolveMentorEntry({
       ...baseContext,
-      subjectGenerationPhase: 'failed',
-      subjectGenerationLabel: 'Topology',
+      subjectGraphActiveStage: 'topics',
+      subjectGenerationLabel: 'Calculus',
       firstSubjectGenerationEnqueuedAt: 1,
+      mentorFailureEntry: {
+        trigger: 'topic-content:generation-failed',
+        payload: {
+          subjectId: 's1',
+          topicId: 't1',
+          topicLabel: 'Limits',
+          errorMessage: 'x',
+          jobId: 'job-1',
+          failureKey: 'cg:job:job-1',
+        },
+      },
     });
-    expect(decision.trigger).toBe('subject:generation-failed');
-    expect(decision.payload).toMatchObject({ subjectName: 'Topology' });
+    expect(decision.trigger).toBe('topic-content:generation-failed');
+    expect(decision.payload.failureKey).toBe('cg:job:job-1');
   });
 
-  it('prefers subject:generation-started while a generation is active (topics stage)', () => {
+  it('prefers subject:generation-started while a subject-graph job is active (topics stage)', () => {
     const decision = resolveMentorEntry({
       ...baseContext,
-      subjectGenerationPhase: 'topics',
+      subjectGraphActiveStage: 'topics',
       subjectGenerationLabel: 'Linear Algebra',
       firstSubjectGenerationEnqueuedAt: 1,
     });
@@ -36,7 +48,7 @@ describe('resolveMentorEntry', () => {
   it('prefers subject:generation-started for the edges stage too', () => {
     const decision = resolveMentorEntry({
       ...baseContext,
-      subjectGenerationPhase: 'edges',
+      subjectGraphActiveStage: 'edges',
       subjectGenerationLabel: 'Graphs',
       firstSubjectGenerationEnqueuedAt: 1,
     });

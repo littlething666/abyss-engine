@@ -37,7 +37,7 @@ Replace the `content` object with the canonical shape for **{{expectedGameType}}
 
 ### Requirements
 
-- Generate **1–2** cards; every card must use `content.gameType` = **{{expectedGameType}}** only.
+- Generate exactly **1** card; it must use `content.gameType` = **{{expectedGameType}}** only.
 - Unique `id` per card, kebab-case, prefix `{{topicId}}-mg-`.
 - Difficulty **{{targetDifficulty}}** for all cards.
 - Ground every card in the theory markdown, accepted grounding sources, target-difficulty syllabus questions, and the content strategy. Invent categories, sequences, or pairs that faithfully reflect the theory (no separate anchor payload is provided).

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { failureKeyForJob, failureKeyForRetryRoutingInstance } from '@/features/contentGeneration';
+
 const BAND_CAP_XP = 99; // CRYSTAL_XP_PER_LEVEL (100) - 1
 
 const {
@@ -520,6 +522,8 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
         pipelineId: 'pipeline-1',
         stage: 'edges',
         error: 'edges failed',
+        jobId: 'edges-job-1',
+        failureKey: failureKeyForJob('edges-job-1'),
       });
       return {
         ok: false,
@@ -539,6 +543,8 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
       subjectName: 'Calculus',
       stage: 'edges',
       pipelineId: 'pipeline-1',
+      jobId: 'edges-job-1',
+      failureKey: failureKeyForJob('edges-job-1'),
     });
     expect(telemetryApi.log).toHaveBeenCalledWith(
       'subject-graph:generation-failed',
@@ -708,6 +714,8 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
       pipelineId: 'pipeline-c3',
       stage: 'theory',
       errorMessage: 'theory upstream failed',
+      jobId: 'job-theory-1',
+      failureKey: failureKeyForJob('job-theory-1'),
     });
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
@@ -718,6 +726,8 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
         topicId: 'topic-c3',
         topicLabel: 'Integrals',
         errorMessage: 'theory upstream failed',
+        jobId: 'job-theory-1',
+        failureKey: failureKeyForJob('job-theory-1'),
       },
     );
     expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -733,6 +743,8 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
       topicLabel: 'Series convergence',
       level: 2,
       errorMessage: 'expansion at L2 failed',
+      jobId: 'exp-job-1',
+      failureKey: failureKeyForJob('exp-job-1'),
     });
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
@@ -744,6 +756,8 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
         topicLabel: 'Series convergence',
         level: 2,
         errorMessage: 'expansion at L2 failed',
+        jobId: 'exp-job-1',
+        failureKey: failureKeyForJob('exp-job-1'),
       },
     );
     expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -758,6 +772,8 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
       topicLabel: 'Eigenvectors',
       level: 3,
       errorMessage: 'trial questions empty',
+      jobId: 'trial-job-1',
+      failureKey: failureKeyForJob('trial-job-1'),
     });
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
@@ -769,6 +785,8 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
         topicLabel: 'Eigenvectors',
         level: 3,
         errorMessage: 'trial questions empty',
+        jobId: 'trial-job-1',
+        failureKey: failureKeyForJob('trial-job-1'),
       },
     );
     expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -777,12 +795,17 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
   });
 
   it('content-generation:retry-failed forwards jobLabel for retry-routing-collapse copy', () => {
+    const failureInstanceId = '00000000-0000-4000-8000-000000000099';
+    const failureKey = failureKeyForRetryRoutingInstance(failureInstanceId);
     busApi.emit('content-generation:retry-failed', {
       subjectId: 'subj-c6',
       topicId: 'topic-c6',
       topicLabel: 'Discrete probability',
       jobLabel: 'Theory generation',
       errorMessage: 'missing checklist context',
+      jobId: 'orig-job-1',
+      failureInstanceId,
+      failureKey,
     });
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
@@ -794,6 +817,9 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
         topicLabel: 'Discrete probability',
         jobLabel: 'Theory generation',
         errorMessage: 'missing checklist context',
+        jobId: 'orig-job-1',
+        failureInstanceId,
+        failureKey,
       },
     );
     expect(consoleErrorSpy).toHaveBeenCalledWith(
