@@ -6,7 +6,6 @@
       "description": "Master data science fundamentals from SQL to machine learning",
       "themeId": "data-science-math",
       "color": "#0B6623",
-      "crystalBaseShape": "dodecahedron",
       "geometry": {
         "gridTile": "box"
       }
@@ -17,7 +16,6 @@
       "description": "Master system architecture, robotics, and biotech fundamentals",
       "themeId": "system-architect-robotics-biotech",
       "color": "#777AAA",
-      "crystalBaseShape": "octahedron",
       "geometry": {
         "gridTile": "cylinder"
       }
@@ -28,7 +26,6 @@
       "description": "Explore the fundamental laws of the universe",
       "themeId": "physics",
       "color": "#7C3AED",
-      "crystalBaseShape": "tetrahedron",
       "geometry": {
         "gridTile": "sphere"
       }

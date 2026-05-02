@@ -24,6 +24,7 @@ import {
   CRYSTAL_INSTANCE_OFFSET_MORPH,
   CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY,
   CRYSTAL_INSTANCE_OFFSET_SEED,
+  CRYSTAL_INSTANCE_OFFSET_TOPIC_SEED,
   CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE,
   CRYSTAL_INSTANCE_STRIDE,
   type CrystalInstancedAttributes,
@@ -73,15 +74,40 @@ function tierScalar(
 
 /**
  * Shard activation: returns 1.0 when the shard should be visible at the given tier, 0.0 otherwise.
- * Shard 0: always, Shards 1–2: tier >= 2, Shards 3–5: tier >= 4.
+ * One shard emerges per level — shard `k` activates at `tier >= k`. Mirrors the
+ * `SHARD_ACTIVATION_LEVELS = [0,1,2,3,4,5]` table on the CPU side. Implemented
+ * as a branchless piecewise ladder over `shardIdx` so we never compare two
+ * TSL nodes via `greaterThanEqual` (some TSL versions reject node-vs-node).
  */
 function shardActiveAtTier(shardIdx: unknown, tier: unknown) {
-  return (shardIdx as any)
+  const s = shardIdx as any;
+  const t = tier as any;
+  return s
     .lessThan(0.5)
-    .select(float(1), (shardIdx as any).lessThan(2.5).select(
-      (tier as any).greaterThanEqual(2).select(float(1), float(0)),
-      (tier as any).greaterThanEqual(4).select(float(1), float(0)),
-    ));
+    .select(
+      float(1),
+      s
+        .lessThan(1.5)
+        .select(
+          t.greaterThanEqual(1).select(float(1), float(0)),
+          s
+            .lessThan(2.5)
+            .select(
+              t.greaterThanEqual(2).select(float(1), float(0)),
+              s
+                .lessThan(3.5)
+                .select(
+                  t.greaterThanEqual(3).select(float(1), float(0)),
+                  s
+                    .lessThan(4.5)
+                    .select(
+                      t.greaterThanEqual(4).select(float(1), float(0)),
+                      t.greaterThanEqual(5).select(float(1), float(0)),
+                    ),
+                ),
+            ),
+        ),
+    );
 }
 
 /**
@@ -101,6 +127,7 @@ export function createCrystalNodeMaterial(
   const iColor = instancedDynamicBufferAttribute(ib, 'vec3', S, CRYSTAL_INSTANCE_OFFSET_COLOR).setInstanced(true);
   const iSelectCeremony = instancedDynamicBufferAttribute(ib, 'vec2', S, CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY).setInstanced(true);
   const iTrialAvailable = instancedDynamicBufferAttribute(ib, 'float', S, CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE).setInstanced(true);
+  const iTopicSeed = instancedDynamicBufferAttribute(ib, 'float', S, CRYSTAL_INSTANCE_OFFSET_TOPIC_SEED).setInstanced(true);
   const iSelected = iSelectCeremony.x;
   const iCeremonyPhase = iSelectCeremony.y;
 
@@ -139,10 +166,14 @@ export function createCrystalNodeMaterial(
     tierScalar(levelInt, 0, 0, 0.15, 0.28, 0.38, 0.50),
     morphT,
   );
-  const spikeAmp = mix(
+  const spikeAmpBase = mix(
     tierScalar(fromTier, 0, 0.01, 0.04, 0.10, 0.18, 0.28),
     tierScalar(levelInt, 0, 0.01, 0.04, 0.10, 0.18, 0.28),
     morphT,
+  );
+  // L5 capstone: branchless +0.05 spike-amplitude bump at max tier.
+  const spikeAmp = spikeAmpBase.add(
+    levelInt.greaterThanEqual(5).select(float(0.05), float(0)),
   );
   const spikeScale = mix(
     tierScalar(fromTier, 0, 2.0, 3.0, 4.0, 5.5, 7.0),
@@ -204,12 +235,16 @@ export function createCrystalNodeMaterial(
   const positionNode = Fn(() => {
     const n = normalLocal.normalize();
     const p = positionLocal;
-    const seed = iSubjectSeed;
+    // Per-topic variation: combine subject + topic seed channels (50/50) at
+    // the call site rather than inside the noise Fn. TSL's array-destructure
+    // Fn pattern reliably forwards 3 args here — a 4th arg saw the trailing
+    // value resolve to `null` inside generated WGSL.
+    const combinedSeed = iSubjectSeed.mul(0.5).add(iTopicSeed.mul(0.5));
 
-    const lowNoise = crystalLowFrequencyNoise(p, seed, lowFreqScale);
-    const highRaw = crystalHighFrequencyNoise(p, seed, highFreqScale);
+    const lowNoise = crystalLowFrequencyNoise(p, combinedSeed, lowFreqScale);
+    const highRaw = crystalHighFrequencyNoise(p, combinedSeed, highFreqScale);
     const highQuant = floor(highRaw.div(max(quantStep, float(1e-4)))).mul(quantStep);
-    const spike = crystalSpikeNoise(p, seed, spikeScale);
+    const spike = crystalSpikeNoise(p, combinedSeed, spikeScale);
     const total = lowNoise.mul(lowFreqAmp)
       .add(highQuant.mul(highFreqAmp))
       .add(spike.mul(spikeAmp));
