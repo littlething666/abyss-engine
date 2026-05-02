@@ -272,6 +272,8 @@ function PreferencesSection() {
   const tts = useInferenceTtsToggle();
   const mentorNarrationEnabled = useMentorStore((s) => s.narrationEnabled);
   const setMentorNarrationEnabled = useMentorStore((s) => s.setNarrationEnabled);
+  const showStudyHistoryControls = useStudySettingsStore((s) => s.showStudyHistoryControls);
+  const setShowStudyHistoryControls = useStudySettingsStore((s) => s.setShowStudyHistoryControls);
 
   return (
     <section className={SECTION_SPACING}>
@@ -294,14 +296,27 @@ function PreferencesSection() {
           <div className="min-w-0">
             <span className="text-sm text-foreground">Mentor narration</span>
             <p className="text-xs text-muted-foreground pt-0.5">
-              Toggle narration for mentor dialog lines. This is independent from the
-              study narrator.
+              Toggle narration for mentor dialog lines. This is independent from the study narrator.
             </p>
           </div>
           <Switch
             checked={mentorNarrationEnabled}
             onCheckedChange={setMentorNarrationEnabled}
             aria-label="Mentor narration"
+          />
+        </div>
+        <div className={ROW_CLASSNAME}>
+          <div className="min-w-0">
+            <span className="text-sm text-foreground">Show study history controls</span>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              Enables Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z inside the study panel for correcting
+              accidental ratings. Off by default to keep the study card minimal.
+            </p>
+          </div>
+          <Switch
+            checked={showStudyHistoryControls}
+            onCheckedChange={setShowStudyHistoryControls}
+            aria-label="Show study history controls"
           />
         </div>
         <div className={ROW_CLASSNAME}>
@@ -321,7 +336,7 @@ function PreferencesSection() {
           <div className="min-w-0">
             <span className="text-sm text-foreground">Pregenerated curricula</span>
             <p className="text-xs text-muted-foreground pt-0.5">
-              Show bundled starter curricula alongside the ones you generate yourself.
+              Show bundled starter curricula on the topic-grid landing.
             </p>
           </div>
           <Switch
@@ -332,22 +347,22 @@ function PreferencesSection() {
         </div>
         <div className={ROW_CLASSNAME}>
           <div className="min-w-0">
-            <span className="text-sm text-foreground">Attunement ritual</span>
+            <span className="text-sm text-foreground">Ritual</span>
             <p className="text-xs text-muted-foreground pt-0.5">
-              Expose the Ritual entry point inside the Wisdom Altar.
+              Reveal the daily ritual surface in the HUD.
             </p>
           </div>
           <Switch
             checked={ritualVisible}
             onCheckedChange={setRitualVisible}
-            aria-label="Show Ritual button"
+            aria-label="Show ritual"
           />
         </div>
         <div className={ROW_CLASSNAME}>
           <div className="min-w-0">
             <span className="text-sm text-foreground">Sound effects</span>
             <p className="text-xs text-muted-foreground pt-0.5">
-              Global master for feedback chimes, coin pickups, and level-up cues.
+              Play interaction-level UI sound effects.
             </p>
           </div>
           <Switch
@@ -361,207 +376,169 @@ function PreferencesSection() {
   );
 }
 
-export function GlobalSettingsSheet() {
-  const open = useUIStore((s) => s.isGlobalSettingsOpen);
-  const close = useUIStore((s) => s.closeGlobalSettings);
+function StudyDefaultsSection() {
   const targetAudience = useStudySettingsStore((s) => s.targetAudience);
   const setTargetAudience = useStudySettingsStore((s) => s.setTargetAudience);
   const agentPersonality = useStudySettingsStore((s) => s.agentPersonality);
   const setAgentPersonality = useStudySettingsStore((s) => s.setAgentPersonality);
-  const localModelId = useStudySettingsStore((s) => s.localModelId);
-  const setLocalModelId = useStudySettingsStore((s) => s.setLocalModelId);
-  const openRouterResponseHealing = useStudySettingsStore((s) => s.openRouterResponseHealing);
-  const setOpenRouterResponseHealing = useStudySettingsStore((s) => s.setOpenRouterResponseHealing);
-  const [isPruneDialogOpen, setIsPruneDialogOpen] = useState(false);
-  const [pruneError, setPruneError] = useState<string | null>(null);
-  const [isPruning, setIsPruning] = useState(false);
-
-  const handleOpenChange = (next: boolean) => {
-    if (!next) close();
-  };
-
-  const handlePruneDialogOpen = () => {
-    setPruneError(null);
-    setIsPruneDialogOpen(true);
-  };
-
-  const handlePruneStorage = async () => {
-    if (isPruning) return;
-    setIsPruning(true);
-    setPruneError(null);
-
-    try {
-      await pruneStorage();
-      setIsPruneDialogOpen(false);
-      close();
-      window.location.reload();
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Failed to prune storage. Please try again or restart the app.';
-      setPruneError(message);
-      setIsPruning(false);
-    }
-  };
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent side="right" className={CONTENT_SHEET_CLASSNAME}>
-        <SheetHeader>
-          <SheetTitle>Settings</SheetTitle>
-          <SheetDescription className="sr-only">
-            Configure LLM provider routing, OpenRouter model configs, and study defaults.
-          </SheetDescription>
-        </SheetHeader>
-
-        <div className="px-4 pb-6 space-y-4">
-          <PreferencesSection />
-
-          <section className={SECTION_SPACING}>
-            <Badge variant="outline">✨ Study defaults</Badge>
-            <div className="space-y-2 pt-3">
-              <label className="text-sm text-muted-foreground">Target Audience</label>
-              <NativeSelect
-                value={targetAudience}
-                onChange={(e) => setTargetAudience(e.currentTarget.value)}
-                aria-label="global-settings-target-audience"
-                className="w-full"
-              >
-                {TARGET_AUDIENCE_OPTIONS.map((o) => (
-                  <NativeSelectOption key={o} value={o}>{o}</NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="space-y-2 pt-3">
-              <label className="text-sm text-muted-foreground">Agent Personality</label>
-              <NativeSelect
-                value={agentPersonality}
-                onChange={(e) => setAgentPersonality(e.currentTarget.value)}
-                aria-label="global-settings-agent-personality"
-                className="w-full"
-              >
-                {AGENT_PERSONALITY_OPTIONS.map((o) => (
-                  <NativeSelectOption key={o} value={o}>{o}</NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </div>
-          </section>
-
-          <section className={SECTION_SPACING}>
-            <Badge variant="outline">🔀 Provider routing</Badge>
-            <div className="pt-3 space-y-1">
-              {ALL_SURFACE_IDS.map((surfaceId) => {
-                if (surfaceId === 'subjectGenerationTopics') {
-                  return (
-                    <div key="curriculum-generation" className="space-y-1">
-                      <p className="text-xs font-medium text-muted-foreground pt-2">
-                        Curriculum Generation
-                      </p>
-                      {CURRICULUM_SURFACE_IDS.map((id) => (
-                        <SurfaceBindingRow key={id} surfaceId={id} />
-                      ))}
-                    </div>
-                  );
-                }
-                if (surfaceId === 'subjectGenerationEdges') {
-                  return null;
-                }
-                return <SurfaceBindingRow key={surfaceId} surfaceId={surfaceId} />;
-              })}
-            </div>
-          </section>
-
-          <section className={SECTION_SPACING}>
-            <Badge variant="outline">🌐 OpenRouter model configs</Badge>
-            <p className="text-xs text-muted-foreground pt-1 pb-2">
-              OpenRouter requests are routed via the Cloudflare Worker proxy; the API key is held server-side.
+    <section className={SECTION_SPACING}>
+      <Badge variant="outline">🎓 Study defaults</Badge>
+      <div className="pt-3 space-y-3">
+        <div className={ROW_CLASSNAME}>
+          <div className="min-w-0">
+            <span className="text-sm text-foreground">Target audience</span>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              Used by the topic system prompt to calibrate explanations.
             </p>
-            <div className={`${ROW_CLASSNAME} pb-3`}>
-              <div className="min-w-0">
-                <span className="text-sm text-foreground">JSON response healing</span>
-                <p className="text-xs text-muted-foreground pt-0.5">
-                  For topic, subject, and Crystal Trial generation on OpenRouter: request{' '}
-                  <span className="font-mono">json_object</span> output and the OpenRouter{' '}
-                  <span className="font-mono">response-healing</span> plugin when enabled. Uses non-streaming
-                  completions for those jobs.
-                </p>
-              </div>
-              <Switch
-                checked={openRouterResponseHealing}
-                onCheckedChange={setOpenRouterResponseHealing}
-                aria-label="OpenRouter JSON response healing"
-              />
-            </div>
-            <OpenRouterConfigList />
-          </section>
-
-          <section className={SECTION_SPACING}>
-            <Badge variant="outline">💻 Local provider</Badge>
-            <p className="text-xs text-muted-foreground pt-1">
-              Local URL is configured via <span className="font-mono">NEXT_PUBLIC_LLM_CHAT_URL</span> (read-only).
-            </p>
-            <div className="space-y-1 pt-3">
-              <label className="text-sm text-muted-foreground">Local model id</label>
-              <Input
-                value={localModelId}
-                onChange={(e) => setLocalModelId(e.currentTarget.value)}
-                placeholder="Leave empty to use NEXT_PUBLIC_LLM_MODEL"
-                aria-label="global-settings-local-model"
-                className="w-full font-mono text-xs"
-              />
-            </div>
-          </section>
-
-          <section className={SECTION_SPACING}>
-            <Badge variant="outline">🧹 Storage management</Badge>
-            <div className="space-y-1 pt-3">
-              <p className="text-xs text-muted-foreground">
-                Prune all persisted client-side data in localStorage and IndexedDB.
-              </p>
-              <div className={ROW_CLASSNAME}>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={handlePruneDialogOpen}
-                  disabled={isPruning}
-                  aria-label="Open prune storage confirmation dialog"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Prune storage
-                </Button>
-              </div>
-            </div>
-          </section>
+          </div>
+          <NativeSelect
+            value={targetAudience}
+            onChange={(e) => setTargetAudience(e.currentTarget.value)}
+            aria-label="Target audience"
+            className={SELECT_CLASSNAME}
+          >
+            {TARGET_AUDIENCE_OPTIONS.map((opt) => (
+              <NativeSelectOption key={opt} value={opt}>
+                {opt}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
         </div>
-      </SheetContent>
+        <div className={ROW_CLASSNAME}>
+          <div className="min-w-0">
+            <span className="text-sm text-foreground">Agent personality</span>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              Voice and pacing of the study panel narrator.
+            </p>
+          </div>
+          <NativeSelect
+            value={agentPersonality}
+            onChange={(e) => setAgentPersonality(e.currentTarget.value)}
+            aria-label="Agent personality"
+            className={SELECT_CLASSNAME}
+          >
+            {AGENT_PERSONALITY_OPTIONS.map((opt) => (
+              <NativeSelectOption key={opt} value={opt}>
+                {opt}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </div>
+      </div>
+    </section>
+  );
+}
 
-      <AlertDialog open={isPruneDialogOpen} onOpenChange={setIsPruneDialogOpen}>
+function CurriculumProvidersSection() {
+  return (
+    <section className={SECTION_SPACING}>
+      <Badge variant="outline">🧬 Curriculum providers</Badge>
+      <div className="pt-3">
+        {CURRICULUM_SURFACE_IDS.map((surfaceId) => (
+          <SurfaceBindingRow key={surfaceId} surfaceId={surfaceId} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StudyProvidersSection() {
+  return (
+    <section className={SECTION_SPACING}>
+      <Badge variant="outline">🧠 Study providers</Badge>
+      <div className="pt-3">
+        {ALL_SURFACE_IDS.filter((id) => !CURRICULUM_SURFACE_IDS.includes(id as typeof CURRICULUM_SURFACE_IDS[number])).map((surfaceId) => (
+          <SurfaceBindingRow key={surfaceId} surfaceId={surfaceId} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OpenRouterSection() {
+  return (
+    <section className={SECTION_SPACING}>
+      <Badge variant="outline">🔌 OpenRouter configs</Badge>
+      <div className="pt-3">
+        <OpenRouterConfigList />
+      </div>
+    </section>
+  );
+}
+
+function DangerZoneSection({ onPrune }: { onPrune: () => void }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  return (
+    <section className={SECTION_SPACING}>
+      <Badge variant="destructive">⚠️ Danger zone</Badge>
+      <div className="pt-3 space-y-2">
+        <Button
+          type="button"
+          variant="destructive"
+          className="w-full"
+          onClick={() => setConfirmOpen(true)}
+        >
+          Reset all local data
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Clears localStorage and IndexedDB for this app. The page will reload.
+        </p>
+      </div>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Prune browser storage?</AlertDialogTitle>
+            <AlertDialogTitle>Reset all local data?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove all localStorage and IndexedDB data for this browser profile.
-              You will be signed out of local sessions and all cached study state will be lost.
-              Reload is required after pruning.
+              This wipes all of your local progress, settings, and generated content stored in this browser.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {pruneError ? <p className="text-xs text-destructive pt-1">{pruneError}</p> : null}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPruning} onClick={() => setIsPruneDialogOpen(false)}>
-              Cancel
-            </AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmOpen(false)}>Cancel</AlertDialogCancel>
             <Button
               type="button"
               variant="destructive"
-              onClick={handlePruneStorage}
-              disabled={isPruning}
+              onClick={() => {
+                setConfirmOpen(false);
+                void pruneStorage().then(() => {
+                  if (typeof window !== 'undefined') {
+                    window.location.reload();
+                  }
+                  onPrune();
+                });
+              }}
             >
-              {isPruning ? 'Pruning...' : 'Confirm prune'}
+              Reset
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </section>
+  );
+}
+
+export function GlobalSettingsSheet() {
+  const isOpen = useUIStore((s) => s.globalSettingsOpen);
+  const setOpen = useUIStore((s) => s.setGlobalSettingsOpen);
+
+  return (
+    <Sheet open={isOpen} onOpenChange={setOpen}>
+      <SheetContent side="right" className={CONTENT_SHEET_CLASSNAME}>
+        <SheetHeader>
+          <SheetTitle>Settings</SheetTitle>
+          <SheetDescription>Adjust app preferences and study defaults.</SheetDescription>
+        </SheetHeader>
+        <PreferencesSection />
+        <StudyDefaultsSection />
+        <CurriculumProvidersSection />
+        <StudyProvidersSection />
+        <OpenRouterSection />
+        <DangerZoneSection onPrune={() => setOpen(false)} />
+      </SheetContent>
     </Sheet>
   );
 }
+
+export default GlobalSettingsSheet;
