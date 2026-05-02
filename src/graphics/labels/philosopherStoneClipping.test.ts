@@ -50,6 +50,8 @@ function installRecordingCanvasMock(): CanvasMockHandle {
     restore: trace('restore'),
     translate: trace('translate'),
     scale: trace('scale'),
+    clearRect: trace('clearRect'),
+    fillRect: trace('fillRect'),
     beginPath: trace('beginPath'),
     closePath: trace('closePath'),
     moveTo: trace('moveTo'),

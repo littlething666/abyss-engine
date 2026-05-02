@@ -5,7 +5,6 @@ import {
   uniform,
   uv,
   vec2,
-  type ShaderNodeObject,
 } from 'three/tsl';
 import { sharedDepthOcclusion } from './depthOcclusionNode';
 
@@ -76,10 +75,10 @@ export function createMentorBubbleMaterial(
   haloMaterial.opacityNode = Fn(() => {
     const off = HALO_BLUR_OFFSET;
     const baseUv = uv();
-    const ax = textureNode(alphaMask, baseUv.add(vec2(off, 0))).a as ShaderNodeObject<unknown>;
-    const bx = textureNode(alphaMask, baseUv.add(vec2(-off, 0))).a as ShaderNodeObject<unknown>;
-    const ay = textureNode(alphaMask, baseUv.add(vec2(0, off))).a as ShaderNodeObject<unknown>;
-    const by = textureNode(alphaMask, baseUv.add(vec2(0, -off))).a as ShaderNodeObject<unknown>;
+    const ax = textureNode(alphaMask, baseUv.add(vec2(off, 0))).a;
+    const bx = textureNode(alphaMask, baseUv.add(vec2(-off, 0))).a;
+    const ay = textureNode(alphaMask, baseUv.add(vec2(0, off))).a;
+    const by = textureNode(alphaMask, baseUv.add(vec2(0, -off))).a;
     // Average of the four cross-blur samples; cheap separable blur.
     const blurred = ax.add(bx).add(ay).add(by).mul(0.25);
     return blurred.mul(glowOpacityUniform).mul(sharedDepthOcclusion());

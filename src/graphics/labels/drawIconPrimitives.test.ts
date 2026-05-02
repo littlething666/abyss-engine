@@ -1,8 +1,27 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { drawIconPrimitives } from './drawIconPrimitives';
 import { GENERATED_TOPIC_ICON_NODES } from './generated/topicIconNodes';
 import { GENERATED_MENTOR_ICON_NODES } from './generated/mentorIconNodes';
+
+/**
+ * jsdom does not implement `Path2D`. The shared primitive drawer constructs
+ * a `Path2D` for every `path` SVG primitive, so we install a minimal stub
+ * once per file. The stub is intentionally inert: the test only asserts the
+ * drawer's calls into the canvas context, not that strokes were actually
+ * rendered.
+ */
+beforeAll(() => {
+  if (typeof (globalThis as { Path2D?: unknown }).Path2D === 'undefined') {
+    class Path2DStub {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      constructor(_d?: string) {
+        /* no-op */
+      }
+    }
+    (globalThis as { Path2D?: unknown }).Path2D = Path2DStub;
+  }
+});
 
 function makeStubContext(): CanvasRenderingContext2D {
   const ctx: Record<string, unknown> = {
@@ -72,8 +91,9 @@ describe('drawIconPrimitives', () => {
       '#fff',
     );
     expect(ctx.rect).toHaveBeenCalledTimes(1);
-    // Two `circle` arcs + the polygon's `closePath`.
+    // Two `circle` arcs (outer + inner of the philosopher-stone glyph).
     expect(ctx.arc).toHaveBeenCalledTimes(2);
+    // Polygon's `closePath`.
     expect(ctx.closePath).toHaveBeenCalledTimes(1);
   });
 });
