@@ -70,6 +70,15 @@ export interface StudySettingsState {
    * Those requests use non-streaming `json_object` mode (see OpenRouter docs). Defaults to on.
    */
   openRouterResponseHealing: boolean;
+  /**
+   * When true, Cmd/Ctrl+Z (and Shift variant) are wired up inside the Study Panel to undo/redo
+   * the most recent rating. Off by default to keep the study session UI minimal; users opt in
+   * from Global Settings when they want history correction available.
+   *
+   * The keyboard-shortcut path is the only undo/redo affordance: there are no longer visible
+   * undo/redo buttons inside the study card.
+   */
+  showStudyHistoryControls: boolean;
   openRouterConfigs: OpenRouterModelConfig[];
   surfaceProviders: Record<InferenceSurfaceId, SurfaceProviderBinding>;
 }
@@ -80,6 +89,7 @@ export interface StudySettingsActions {
   setAgentPersonality: (agentPersonality: string) => void;
   setLocalModelId: (modelId: string) => void;
   setOpenRouterResponseHealing: (enabled: boolean) => void;
+  setShowStudyHistoryControls: (enabled: boolean) => void;
   addOpenRouterConfig: (partial: Omit<OpenRouterModelConfig, 'id'> & { id?: string }) => string;
   updateOpenRouterConfig: (id: string, patch: Partial<Omit<OpenRouterModelConfig, 'id'>>) => void;
   deleteOpenRouterConfig: (id: string) => void;
@@ -220,6 +230,7 @@ function buildDefaultSnapshot(): Snapshot {
     agentPersonality: DEFAULT_AGENT_PERSONALITY,
     localModelId: '',
     openRouterResponseHealing: true,
+    showStudyHistoryControls: false,
     openRouterConfigs: configs,
     surfaceProviders: buildDefaultSurfaceBindings(configs),
   };
@@ -243,6 +254,7 @@ function readSnapshotFromStorage(): Snapshot {
       : DEFAULT_AGENT_PERSONALITY;
   const localModelId = typeof parsed.localModelId === 'string' ? parsed.localModelId : '';
   const openRouterResponseHealing = parsed.openRouterResponseHealing !== false;
+  const showStudyHistoryControls = parsed.showStudyHistoryControls === true;
 
   // Migration: if no configs persisted, seed defaults.
   let configs = parseConfigs(parsed.openRouterConfigs);
@@ -262,6 +274,7 @@ function readSnapshotFromStorage(): Snapshot {
     agentPersonality,
     localModelId,
     openRouterResponseHealing,
+    showStudyHistoryControls,
     openRouterConfigs: configs,
     surfaceProviders: bindings,
   };
@@ -306,6 +319,7 @@ export const createStudySettingsStore = () =>
         agentPersonality: patch.agentPersonality ?? current.agentPersonality,
         localModelId: patch.localModelId ?? current.localModelId,
         openRouterResponseHealing: patch.openRouterResponseHealing ?? current.openRouterResponseHealing,
+        showStudyHistoryControls: patch.showStudyHistoryControls ?? current.showStudyHistoryControls,
         openRouterConfigs: patch.openRouterConfigs ?? current.openRouterConfigs,
         surfaceProviders: patch.surfaceProviders ?? current.surfaceProviders,
       };
@@ -321,6 +335,7 @@ export const createStudySettingsStore = () =>
       setAgentPersonality: (v) => persist({ agentPersonality: normalizeAgentPersonality(v) }),
       setLocalModelId: (v) => persist({ localModelId: v }),
       setOpenRouterResponseHealing: (enabled) => persist({ openRouterResponseHealing: enabled }),
+      setShowStudyHistoryControls: (enabled) => persist({ showStudyHistoryControls: enabled === true }),
 
       addOpenRouterConfig: (partial) => {
         const id = partial.id ?? randomId();

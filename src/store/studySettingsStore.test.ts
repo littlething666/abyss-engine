@@ -127,6 +127,26 @@ describe('studySettingsStore', () => {
     expect(JSON.parse(raw as string).openRouterResponseHealing).toBe(true);
   });
 
+  it('defaults showStudyHistoryControls to false', () => {
+    const store = createStudySettingsStore();
+    expect(store.getState().showStudyHistoryControls).toBe(false);
+  });
+
+  it('setShowStudyHistoryControls persists across reloads', () => {
+    const store = createStudySettingsStore();
+    store.getState().setShowStudyHistoryControls(true);
+    expect(store.getState().showStudyHistoryControls).toBe(true);
+    const raw = localStorage.getItem(STUDY_SETTINGS_STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw as string).showStudyHistoryControls).toBe(true);
+
+    const reloaded = createStudySettingsStore();
+    expect(reloaded.getState().showStudyHistoryControls).toBe(true);
+
+    reloaded.getState().setShowStudyHistoryControls(false);
+    expect(reloaded.getState().showStudyHistoryControls).toBe(false);
+  });
+
   it('setTargetAudience persists', () => {
     const store = createStudySettingsStore();
     store.getState().setTargetAudience(TARGET_AUDIENCE_OPTIONS[2]);
