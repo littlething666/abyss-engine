@@ -52,6 +52,28 @@ function getRequiredItemIds(content: MiniGameContent): string[] | undefined {
   return undefined;
 }
 
+/**
+ * Single-line submit nudge per game type.
+ *
+ * Match Pairs has no remaining concept (every row will be a placement once
+ * Phase 2 lands; even pre-Phase-2 the player can submit at any time and the
+ * hint stays neutral). Category Sort and Sequence Build report how many items
+ * still need placing while keeping Submit enabled.
+ */
+function buildSubmitHint(
+  gameType: MiniGameContent['gameType'],
+  isComplete: boolean,
+  remaining: number,
+): string {
+  if (gameType === 'CONNECTION_WEB') {
+    return 'Submit Answer';
+  }
+  if (isComplete) {
+    return 'Submit Answer';
+  }
+  return `Submit (${remaining} remaining)`;
+}
+
 export function MiniGameView({ content, isRevealed, onSubmit, onContinue }: MiniGameViewProps) {
   const itemIds = useMemo(() => getItemIds(content), [content]);
   const requiredItemIds = useMemo(() => getRequiredItemIds(content), [content]);
@@ -80,14 +102,11 @@ export function MiniGameView({ content, isRevealed, onSubmit, onContinue }: Mini
     ? Math.round(interaction.result.score * 100)
     : null;
 
-  const submitHint =
-    content.gameType === 'CONNECTION_WEB'
-      ? interaction.isComplete
-        ? 'Submit Answer'
-        : `Connect all pairs (${interaction.unplacedItemIds.length} remaining)`
-      : interaction.isComplete
-        ? 'Submit Answer'
-        : `Place all items (${interaction.unplacedItemIds.length} remaining)`;
+  const submitHint = buildSubmitHint(
+    content.gameType,
+    interaction.isComplete,
+    interaction.unplacedItemIds.length,
+  );
 
   return (
     <div className="w-full" data-testid="mini-game-view">
@@ -154,7 +173,7 @@ export function MiniGameView({ content, isRevealed, onSubmit, onContinue }: Mini
           <Button
             onClick={handleSubmit}
             disabled={!interaction.canSubmit}
-            className={`w-full ${!interaction.canSubmit ? 'opacity-50' : ''}`}
+            className="w-full"
             data-testid="mini-game-submit"
           >
             {submitHint}
