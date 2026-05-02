@@ -45,6 +45,23 @@ function renderHarness(content: ConnectionWebContent = sampleContent) {
   return { container, unmount: () => root.unmount() };
 }
 
+function readRightLabels(container: HTMLElement): string[] {
+  const buttons = container.querySelectorAll('[data-testid="connection-web-game"] button');
+  return [...buttons]
+    .filter((_, i) => i % 2 === 1)
+    .map((b) => b.textContent?.trim() ?? '');
+}
+
+function clickByTestId(container: HTMLElement, testId: string) {
+  const btn = container.querySelector(`[data-testid="${testId}"]`) as HTMLButtonElement | null;
+  if (!btn) throw new Error(`Button with data-testid="${testId}" not found`);
+  act(() => {
+    flushSync(() => {
+      btn.click();
+    });
+  });
+}
+
 afterEach(() => {
   document.body.innerHTML = '';
 });
@@ -72,14 +89,42 @@ describe('ConnectionWebGame', () => {
     unmount();
   });
 
-  it('right column order is deterministic (shuffled, not pair insertion order)', () => {
+  it('right column initial order is deterministic (shuffled, not pair insertion order)', () => {
     const { container, unmount } = renderHarness();
-    const buttons = container.querySelectorAll('[data-testid="connection-web-game"] button');
-    const rightLabels = [...buttons]
-      .filter((_, i) => i % 2 === 1)
-      .map((b) => b.textContent?.trim() ?? '');
+    const rightLabels = readRightLabels(container);
     const natural = sampleContent.pairs.map((p) => p.right);
     expect(rightLabels).not.toEqual(natural);
+    unmount();
+  });
+
+  it('does not render the legacy SVG connector layer', () => {
+    const { container, unmount } = renderHarness();
+    expect(container.querySelector('svg')).toBeNull();
+    unmount();
+  });
+
+  it('moves the matched right chip into the row of its left chip when placed', () => {
+    const { container, unmount } = renderHarness();
+
+    // Pair 'a' has left at row index 0; selecting then connecting must align RA there.
+    clickByTestId(container, 'mg-item-a');
+    clickByTestId(container, 'mg-item-right-a');
+
+    expect(readRightLabels(container)[0]).toBe('RA');
+    unmount();
+  });
+
+  it('preserves every right chip on placement (the displaced chip falls into the freed row)', () => {
+    const { container, unmount } = renderHarness();
+    const before = readRightLabels(container);
+
+    // Pair 'b' has left at row index 1; placing it pulls RB to row 1 and bumps whoever was there.
+    clickByTestId(container, 'mg-item-b');
+    clickByTestId(container, 'mg-item-right-b');
+
+    const after = readRightLabels(container);
+    expect([...after].sort()).toEqual([...before].sort());
+    expect(after[1]).toBe('RB');
     unmount();
   });
 
