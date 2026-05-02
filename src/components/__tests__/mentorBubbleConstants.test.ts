@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   HIT_TARGET_RADIUS_LOCAL,
+  RING_INNER_LOCAL,
   RING_OUTER_LOCAL,
   GLYPH_RADIUS_LOCAL,
 } from '../mentorBubbleConstants';
@@ -19,5 +20,14 @@ describe('mentorBubbleConstants', () => {
     // The same ratio must NOT match the glyph plane radius — if those
     // happened to match, a glyph tweak could regress the hit target.
     expect(HIT_TARGET_RADIUS_LOCAL).not.toBeCloseTo(GLYPH_RADIUS_LOCAL, 6);
+  });
+
+  it('keeps the visible mentor bubble ring as a thin outline instead of a disk-like backing plate', () => {
+    const ringThickness = RING_OUTER_LOCAL - RING_INNER_LOCAL;
+
+    expect(ringThickness).toBeCloseTo(0.015, 6);
+    // 0.015/0.30 === 0.05 but IEEE division can land epsilon above 0.05.
+    expect(ringThickness / RING_OUTER_LOCAL).toBeCloseTo(0.05, 5);
+    expect(RING_INNER_LOCAL).toBeGreaterThan(GLYPH_RADIUS_LOCAL);
   });
 });

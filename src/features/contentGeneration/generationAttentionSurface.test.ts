@@ -187,6 +187,29 @@ describe('generationAttentionSurface', () => {
     expect(surface.primaryFailure?.kind).toBe('retry-routing');
   });
 
+  it('returns referentially stable primaryFailure when input state is unchanged (useShallow / useSyncExternalStore safe)', () => {
+    const state = {
+      jobs: {
+        f: makeJob({
+          id: 'failed-theory',
+          kind: 'topic-theory',
+          pipelineId: 'pipeline-1',
+          topicId: 't1',
+          subjectId: 's1',
+          status: 'failed',
+          finishedAt: 900,
+          label: 'Topic — PD',
+          error: 'Invalid grounding sources',
+        }),
+      },
+      pipelines: { 'pipeline-1': makePipeline({ id: 'pipeline-1', label: 'P' }) },
+      ...emptySession,
+    };
+    const a = generationAttentionSurface(state);
+    const b = generationAttentionSurface(state);
+    expect(a.primaryFailure).toBe(b.primaryFailure);
+  });
+
   it('returns null primary failure when only non-subject jobs exist without failure', () => {
     const surface = generationAttentionSurface({
       jobs: {

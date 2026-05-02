@@ -37,20 +37,15 @@ export const PHASE_TO_ICON: Record<'topics' | 'edges', MentorIconName> = {
 
 // Idle-state opacity targets used by the component pulse driver.
 const NEUTRAL_RING_OPACITY = 0.55;
-const NEUTRAL_HALO_OPACITY = 0.55;
 // Active (non-alert) opacity peaks; the component pulse modulates the ring
-// opacity around 0.80–0.95 and the halo around 0.55–0.85.
+// opacity around 0.80–0.95.
 const ACTIVE_RING_OPACITY_PEAK = 0.95;
-const ACTIVE_HALO_OPACITY_PEAK = 0.85;
 // Alert opacity is fixed (anti-flicker, OQ6).
 const ALERT_RING_OPACITY = 1.0;
-const ALERT_HALO_OPACITY = 0.95;
 
-// Halo / base scale multipliers. Alert bumps base scale by +10%.
+// Base scale multipliers. Alert bumps base scale by +10%.
 const BASE_SCALE_DEFAULT = 1.0;
 const BASE_SCALE_ALERT = 1.1;
-const HALO_SCALE_DEFAULT = 1.45;
-const HALO_SCALE_ALERT = 1.65;
 
 /**
  * Resolved visual state for the mentor bubble. Returned by the pure selector
@@ -62,13 +57,9 @@ export interface MentorBubbleVisual {
   iconName: MentorIconName;
   ringColor: string;
   glyphColor: string;
-  glowColor: string;
   /** Target ring opacity. Held fixed during alert (anti-flicker). */
   ringOpacity: number;
-  /** Target halo opacity. Held fixed during alert (anti-flicker). */
-  haloOpacity: number;
   baseScaleMultiplier: number;
-  haloScaleMultiplier: number;
   /**
    * True when the bubble should pulse (mentor activity, active subject-graph
    * job, or alert). Drives the animation envelope only — never icon
@@ -96,8 +87,8 @@ export interface SelectMentorBubbleVisualInput {
  * Pure visual resolution for the mentor bubble.
  *
  * Resolution rules (locked):
- *   1. `primaryFailure !== null` -> `triangle-alert`, ring/glyph/halo color
- *      `#ff5d5d`, +10% base scale, fixed ring/halo opacities (anti-flicker).
+ *   1. `primaryFailure !== null` -> `triangle-alert`, ring/glyph color
+ *      `#ff5d5d`, +10% base scale, fixed ring opacity (anti-flicker).
  *   2. else `mood !== null` -> mood-glyph, color `MOOD_COLOR[mood]`.
  *   3. else `subjectGraphActivePhase !== null` -> phase glyph (compass/network),
  *      color `MOOD_COLOR.hint`.
@@ -119,11 +110,8 @@ export function selectMentorBubbleVisual(
       iconName: 'triangle-alert',
       ringColor: ALERT_COLOR,
       glyphColor: ALERT_COLOR,
-      glowColor: ALERT_COLOR,
       ringOpacity: ALERT_RING_OPACITY,
-      haloOpacity: ALERT_HALO_OPACITY,
       baseScaleMultiplier: BASE_SCALE_ALERT,
-      haloScaleMultiplier: HALO_SCALE_ALERT,
       isActive: true,
       isAlert: true,
       phase: subjectGraphActivePhase,
@@ -136,11 +124,8 @@ export function selectMentorBubbleVisual(
       iconName: MOOD_TO_ICON[mood],
       ringColor: color,
       glyphColor: color,
-      glowColor: color,
       ringOpacity: isActive ? ACTIVE_RING_OPACITY_PEAK : NEUTRAL_RING_OPACITY,
-      haloOpacity: isActive ? ACTIVE_HALO_OPACITY_PEAK : NEUTRAL_HALO_OPACITY,
       baseScaleMultiplier: BASE_SCALE_DEFAULT,
-      haloScaleMultiplier: HALO_SCALE_DEFAULT,
       isActive,
       isAlert: false,
       phase: subjectGraphActivePhase,
@@ -153,11 +138,8 @@ export function selectMentorBubbleVisual(
       iconName: PHASE_TO_ICON[subjectGraphActivePhase],
       ringColor: color,
       glyphColor: color,
-      glowColor: color,
       ringOpacity: ACTIVE_RING_OPACITY_PEAK,
-      haloOpacity: ACTIVE_HALO_OPACITY_PEAK,
       baseScaleMultiplier: BASE_SCALE_DEFAULT,
-      haloScaleMultiplier: HALO_SCALE_DEFAULT,
       isActive: true,
       isAlert: false,
       phase: subjectGraphActivePhase,
@@ -169,11 +151,8 @@ export function selectMentorBubbleVisual(
     iconName: 'philosopher-stone',
     ringColor: neutral,
     glyphColor: neutral,
-    glowColor: neutral,
     ringOpacity: hasMentorActivity ? ACTIVE_RING_OPACITY_PEAK : NEUTRAL_RING_OPACITY,
-    haloOpacity: hasMentorActivity ? ACTIVE_HALO_OPACITY_PEAK : NEUTRAL_HALO_OPACITY,
     baseScaleMultiplier: BASE_SCALE_DEFAULT,
-    haloScaleMultiplier: HALO_SCALE_DEFAULT,
     isActive,
     isAlert: false,
     phase: null,

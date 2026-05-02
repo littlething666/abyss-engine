@@ -42,8 +42,8 @@ function resolveDevicePixelRatio(): number {
 /**
  * Rasterizes a mentor-bubble glyph into a transparent, square WebGPU-friendly
  * `CanvasTexture` whose alpha channel is the only color-bearing data. The
- * mentor bubble material delivers actual color via uniforms (`glyphColor`,
- * `glowColor`), enabling cheap mood / alert color cross-fades without
+ * mentor bubble material delivers actual color via `glyphColor` uniforms,
+ * enabling cheap mood / alert color cross-fades without
  * regenerating the texture.
  */
 export function createMentorBubbleTexture(

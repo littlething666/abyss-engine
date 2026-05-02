@@ -107,24 +107,23 @@ export function useMentorEntryContext(): MentorEntryContext {
 
   const subjectGraphActiveStage = attention.subjectGraphActivePhase;
   const subjectGenerationLabel = attention.subjectGraphLabel;
-  const mentorFailureEntry = attention.primaryFailure
-    ? mentorFailureEntryFromPrimary(attention.primaryFailure)
-    : null;
 
-  return useMemo(
-    () => ({
+  return useMemo(() => {
+    const mentorFailureEntry = attention.primaryFailure
+      ? mentorFailureEntryFromPrimary(attention.primaryFailure)
+      : null;
+    return {
       subjectGraphActiveStage,
       subjectGenerationLabel,
       playerName,
       firstSubjectGenerationEnqueuedAt,
       mentorFailureEntry,
-    }),
-    [
-      subjectGraphActiveStage,
-      subjectGenerationLabel,
-      playerName,
-      firstSubjectGenerationEnqueuedAt,
-      mentorFailureEntry,
-    ],
-  );
+    };
+  }, [
+    subjectGraphActiveStage,
+    subjectGenerationLabel,
+    playerName,
+    firstSubjectGenerationEnqueuedAt,
+    attention.primaryFailure,
+  ]);
 }

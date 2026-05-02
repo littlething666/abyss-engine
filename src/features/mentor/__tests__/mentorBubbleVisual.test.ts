@@ -23,7 +23,7 @@ function failure(
 }
 
 describe('selectMentorBubbleVisual', () => {
-  it('alerts win unconditionally and use anti-flicker fixed opacities', () => {
+  it('alerts win unconditionally and use anti-flicker fixed opacity', () => {
     const visual = selectMentorBubbleVisual({
       mood: 'cheer',
       hasMentorActivity: true,
@@ -33,9 +33,7 @@ describe('selectMentorBubbleVisual', () => {
     expect(visual.iconName).toBe('triangle-alert');
     expect(visual.ringColor).toBe(ALERT_COLOR);
     expect(visual.glyphColor).toBe(ALERT_COLOR);
-    expect(visual.glowColor).toBe(ALERT_COLOR);
     expect(visual.ringOpacity).toBe(1.0);
-    expect(visual.haloOpacity).toBe(0.95);
     expect(visual.baseScaleMultiplier).toBeCloseTo(1.1);
     expect(visual.isAlert).toBe(true);
     expect(visual.isActive).toBe(true);
