@@ -7,7 +7,7 @@ import {
 import { assertSm2Advanced, getCurrentCardId, getSm2Snapshot } from '../utils/sm2-assertions';
 
 /**
- * Flashcard flow: coarse-rate → SM-2 update → XP.
+ * Flashcard flow: coarse-rate -> SM-2 update -> XP.
  *
  * Parametrized across coarse choices. Each test:
  *   1. Opens a flashcard via abyssDev
@@ -49,7 +49,9 @@ for (const coarseChoice of COARSE_CHOICES) {
     });
 
     await waitForStudyPanelReady(page);
-    await expect(page.getByTestId('study-card-format-flashcard')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('study-panel-card-root')).toBeVisible({ timeout: 3000 });
+    // Flashcard surface is identified by the coarse-rate buttons; choice cards never render those.
+    await expect(page.getByTestId('study-card-coarse-recalled')).toBeVisible({ timeout: 3000 });
 
     const cardId = await getCurrentCardId(page);
     expect(cardId).toBeTruthy();
@@ -114,7 +116,8 @@ test('Flashcard coarse recall after opening a hint opens applies slow bucket', a
   });
 
   await waitForStudyPanelReady(page);
-  await expect(page.getByTestId('study-card-format-flashcard')).toBeVisible({ timeout: 3000 });
+  await expect(page.getByTestId('study-panel-card-root')).toBeVisible({ timeout: 3000 });
+  await expect(page.getByTestId('study-card-coarse-recalled')).toBeVisible({ timeout: 3000 });
 
   const cardId = await getCurrentCardId(page);
   expect(cardId).toBeTruthy();

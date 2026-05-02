@@ -160,11 +160,6 @@ async function getEventCount(page: any) {
   return events.length;
 }
 
-function parseActionCounterLabel(value: string | null): number {
-  const match = value?.match(/\((\d+)\)/);
-  return match ? Number.parseInt(match[1], 10) : 0;
-}
-
 async function assertNoNewEvents(page: any, beforeCount: number) {
   await expect.poll(async () => getEventCount(page), {
     timeout: 800,
@@ -245,10 +240,9 @@ test.describe('Study Session', () => {
     );
     await page.waitForTimeout(1000);
 
-    // If this is a flashcard, rate it immediately (coarse choice and reveal in one step).
-    const flashcardFormatBadge = page.getByTestId('study-card-format-flashcard');
+    // If a flashcard happens to be open, rate it (coarse choice + reveal happen together).
     const flashcardRecallButton = page.getByTestId('study-card-coarse-recalled');
-    if ((await flashcardFormatBadge.count()) > 0 && (await flashcardRecallButton.count()) > 0) {
+    if ((await flashcardRecallButton.count()) > 0) {
       const priorEvents = await getEventCount(page);
       await flashcardRecallButton.click({ force: true });
       await expect(page.getByTestId('study-card-answer-section')).toBeVisible({ timeout: 3000 });
@@ -274,10 +268,8 @@ test.describe('Challenge Format Types', () => {
     // Spawn crystal and make due, set to flashcard
     await openCardByType(page, 'FLASHCARD');
 
-    await expect(page.getByTestId('study-tab-study')).toBeVisible({ timeout: 5000 });
-
-    // Verify flashcard badge
-    await expect(page.getByTestId('study-card-format-flashcard')).toBeVisible({ timeout: 3000 });
+    // Verify the study card root is mounted (replaces the removed format badge + tab probes).
+    await expect(page.getByTestId('study-panel-card-root')).toBeVisible({ timeout: 5000 });
 
     // Submit a recall rating (flashcard answer reveal + rating happen together).
     const priorEvents = await getEventCount(page);
@@ -305,10 +297,9 @@ test.describe('Challenge Format Types', () => {
     // Spawn crystal and make due, set to single choice
     await openCardByType(page, 'SINGLE_CHOICE');
 
-    await expect(page.getByTestId('study-tab-study')).toBeVisible({ timeout: 5000 });
-
-    // Verify single choice badge
-    await expect(page.getByTestId('study-card-format-single-choice')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('study-panel-card-root')).toBeVisible({ timeout: 5000 });
+    // Single-choice card surfaces the Submit button only when there is at least one option pickable.
+    await expect(page.getByTestId('study-card-submit-answer')).toBeVisible({ timeout: 3000 });
 
     // Find and click an option
     const optionButton = page.getByTestId('study-card-choice-options').locator('button').nth(0);
@@ -343,10 +334,7 @@ test.describe('Challenge Format Types', () => {
     await openCardByType(page, 'MULTI_CHOICE');
 
     // Verify modal is open
-    await expect(page.getByTestId('study-tab-study')).toBeVisible({ timeout: 5000 });
-
-    // Verify multi choice badge
-    await expect(page.getByTestId('study-card-format-multi-choice')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('study-panel-card-root')).toBeVisible({ timeout: 5000 });
 
     // Verify submit is disabled initially
     const submitButton = page.getByTestId('study-card-submit-answer');
@@ -361,37 +349,12 @@ test.describe('Challenge Format Types', () => {
 
     // Click Submit Answer
     const submitEventCount = await getEventCount(page);
-    const submitUndoCount = parseActionCounterLabel(await page.getByTestId('study-card-undo').textContent());
     await submitButton.click({ force: true });
     await page.waitForTimeout(500);
 
-    let sawProgressionEvent = false;
-    try {
-      await expect
-        .poll(async () => {
-          const events = await getProgressionEvents(page);
-          return events
-            .slice(submitEventCount)
-            .some((entry: { type?: string }) =>
-              entry.type === 'abyss-card:reviewed' || entry.type === 'abyss-xp:gained',
-            );
-        }, {
-          timeout: 1500,
-        })
-        .toBeTruthy();
-      sawProgressionEvent = true;
-    } catch (_error) {
-      sawProgressionEvent = false;
-    }
-
-    // Verify submit was applied in either event stream or panel state.
+    // Continue surfaces only after submit applies; assert via the panel state and the event stream.
     await expect(page.getByTestId('study-card-continue')).toBeVisible({ timeout: 3000 });
-    if (sawProgressionEvent) {
-      await assertProgressionEventIncrease(page, submitEventCount);
-    } else {
-      const undoAfterSubmit = parseActionCounterLabel(await page.getByTestId('study-card-undo').textContent());
-      expect(undoAfterSubmit).toBeGreaterThan(submitUndoCount);
-    }
+    await assertProgressionEventIncrease(page, submitEventCount);
 
     // Continue should only advance state, not add additional progression events.
     const continueEventCount = await getEventCount(page);

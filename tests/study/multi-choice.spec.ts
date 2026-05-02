@@ -6,7 +6,7 @@ import {
   waitForProgressionEvent,
 } from '../utils/progression-probe';
 
-test('Multi Choice — submit is gated by selection, emits single review event', async ({
+test('Multi Choice -- submit is gated by selection, emits single review event', async ({
   seededApp: page,
 }) => {
   await page.evaluate(async () => {
@@ -31,7 +31,7 @@ test('Multi Choice — submit is gated by selection, emits single review event',
   });
 
   await waitForStudyPanelReady(page);
-  await expect(page.getByTestId('study-card-format-multi-choice')).toBeVisible({ timeout: 3000 });
+  await expect(page.getByTestId('study-panel-card-root')).toBeVisible({ timeout: 3000 });
 
   const submit = page.getByTestId('study-card-submit-answer');
   await expect(submit).toBeDisabled();
