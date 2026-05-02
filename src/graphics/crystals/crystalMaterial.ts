@@ -3,7 +3,6 @@ import * as THREE from 'three/webgpu';
 import {
   cameraPosition,
   clamp,
-  cos,
   float,
   floor,
   Fn,
@@ -33,7 +32,6 @@ import {
 import {
   crystalHighFrequencyNoise,
   crystalLowFrequencyNoise,
-  crystalShardJitterSeed,
   crystalSpikeNoise,
 } from './crystalNoiseNodes';
 
@@ -77,10 +75,39 @@ function tierScalar(
 /**
  * Shard activation: returns 1.0 when the shard should be visible at the given tier, 0.0 otherwise.
  * One shard emerges per level — shard `k` activates at `tier >= k`. Mirrors the
- * `SHARD_ACTIVATION_LEVELS = [0,1,2,3,4,5]` table on the CPU side.
+ * `SHARD_ACTIVATION_LEVELS = [0,1,2,3,4,5]` table on the CPU side. Implemented
+ * as a branchless piecewise ladder over `shardIdx` so we never compare two
+ * TSL nodes via `greaterThanEqual` (some TSL versions reject node-vs-node).
  */
 function shardActiveAtTier(shardIdx: unknown, tier: unknown) {
-  return (tier as any).greaterThanEqual(shardIdx as any).select(float(1), float(0));
+  const s = shardIdx as any;
+  const t = tier as any;
+  return s
+    .lessThan(0.5)
+    .select(
+      float(1),
+      s
+        .lessThan(1.5)
+        .select(
+          t.greaterThanEqual(1).select(float(1), float(0)),
+          s
+            .lessThan(2.5)
+            .select(
+              t.greaterThanEqual(2).select(float(1), float(0)),
+              s
+                .lessThan(3.5)
+                .select(
+                  t.greaterThanEqual(3).select(float(1), float(0)),
+                  s
+                    .lessThan(4.5)
+                    .select(
+                      t.greaterThanEqual(4).select(float(1), float(0)),
+                      t.greaterThanEqual(5).select(float(1), float(0)),
+                    ),
+                ),
+            ),
+        ),
+    );
 }
 
 /**
@@ -146,7 +173,7 @@ export function createCrystalNodeMaterial(
   );
   // L5 capstone: branchless +0.05 spike-amplitude bump at max tier.
   const spikeAmp = spikeAmpBase.add(
-    levelInt.greaterThanEqual(float(5)).select(float(0.05), float(0)),
+    levelInt.greaterThanEqual(5).select(float(0.05), float(0)),
   );
   const spikeScale = mix(
     tierScalar(fromTier, 0, 2.0, 3.0, 4.0, 5.5, 7.0),
@@ -207,36 +234,16 @@ export function createCrystalNodeMaterial(
 
   const positionNode = Fn(() => {
     const n = normalLocal.normalize();
-    const seed = iSubjectSeed;
+    const p = positionLocal;
+    const subjectSeed = iSubjectSeed;
+    const topicSeed = iTopicSeed;
 
-    // Per-topic rotation around Y of the noise-sampling position. Gives every
-    // topic a unique facet orientation without rotating the actual mesh.
-    const topicAngle = iTopicSeed.mul(float(6.2831853));
-    const cosT = cos(topicAngle);
-    const sinT = sin(topicAngle);
-    const pTopicRotated = vec3(
-      positionLocal.x.mul(cosT).sub(positionLocal.z.mul(sinT)),
-      positionLocal.y,
-      positionLocal.x.mul(sinT).add(positionLocal.z.mul(cosT)),
-    );
-
-    // L4–L5 per-shard rotation jitter — additional rotation derived from the
-    // centralized jitter helper (single 7.913 constant, no duplication).
-    const jitterStrength = levelInt.greaterThanEqual(float(4)).select(float(1), float(0));
-    const jitterSeed = crystalShardJitterSeed(iTopicSeed, shardIdx);
-    const jitterAngle = jitterSeed.sub(float(0.5)).mul(float(0.6)).mul(jitterStrength);
-    const cosJ = cos(jitterAngle);
-    const sinJ = sin(jitterAngle);
-    const p = vec3(
-      pTopicRotated.x.mul(cosJ).sub(pTopicRotated.z.mul(sinJ)),
-      pTopicRotated.y,
-      pTopicRotated.x.mul(sinJ).add(pTopicRotated.z.mul(cosJ)),
-    );
-
-    const lowNoise = crystalLowFrequencyNoise(p, seed, iTopicSeed, lowFreqScale);
-    const highRaw = crystalHighFrequencyNoise(p, seed, iTopicSeed, highFreqScale);
+    // Per-topic noise variation: each Fn now takes both seeds and combines
+    // them inside, giving every topic its own unique displacement pattern.
+    const lowNoise = crystalLowFrequencyNoise(p, subjectSeed, topicSeed, lowFreqScale);
+    const highRaw = crystalHighFrequencyNoise(p, subjectSeed, topicSeed, highFreqScale);
     const highQuant = floor(highRaw.div(max(quantStep, float(1e-4)))).mul(quantStep);
-    const spike = crystalSpikeNoise(p, seed, iTopicSeed, spikeScale);
+    const spike = crystalSpikeNoise(p, subjectSeed, topicSeed, spikeScale);
     const total = lowNoise.mul(lowFreqAmp)
       .add(highQuant.mul(highFreqAmp))
       .add(spike.mul(spikeAmp));
@@ -269,25 +276,7 @@ export function createCrystalNodeMaterial(
   const trialPulseRaw = sin(time.mul(float(9.42))).mul(float(0.4)).add(float(0.6));
   const trialPulse = iTrialAvailable.mul(trialPulseRaw).mul(float(0.8));
 
-  // Per-topic emissive HSV drift: ±5° hue around the [1,1,1] axis (luma-preserving)
-  // and ±8% lightness, both signed by topic seed. Applied to the emissive node only;
-  // base color stays subject-consistent.
-  const driftSigned = iTopicSeed.mul(float(2)).sub(float(1));
-  const hueAngle = driftSigned.mul(float(0.0872665)); // ±5° in radians
-  const cosH = cos(hueAngle);
-  const sinH = sin(hueAngle);
-  const oneMinusCosH = float(1).sub(cosH);
-  const sqrt3Inv = float(0.5773503); // 1/√3
-  const diag = cosH.add(oneMinusCosH.div(float(3)));
-  const offMinus = oneMinusCosH.div(float(3)).sub(sinH.mul(sqrt3Inv));
-  const offPlus = oneMinusCosH.div(float(3)).add(sinH.mul(sqrt3Inv));
-  const driftR = iColor.x.mul(diag).add(iColor.y.mul(offMinus)).add(iColor.z.mul(offPlus));
-  const driftG = iColor.x.mul(offPlus).add(iColor.y.mul(diag)).add(iColor.z.mul(offMinus));
-  const driftB = iColor.x.mul(offMinus).add(iColor.y.mul(offPlus)).add(iColor.z.mul(diag));
-  const lightnessFactor = float(1).add(driftSigned.mul(float(0.08)));
-  const driftedEmissiveColor = vec3(driftR, driftG, driftB).mul(lightnessFactor);
-
-  material.emissiveNode = driftedEmissiveColor.mul(
+  material.emissiveNode = iColor.mul(
     fresnelTerm.add(levelNorm.mul(0.3)).add(selectionBoost).add(ceremonyFlash).add(trialPulse).add(emissiveIntensity.mul(0.15)),
   );
 
