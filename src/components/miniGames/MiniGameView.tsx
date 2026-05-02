@@ -5,14 +5,14 @@ import type {
   MiniGameContent,
   CategorySortContent,
   SequenceBuildContent,
-  ConnectionWebContent,
+  MatchPairsContent,
 } from '../../types/core';
 import type { MiniGameResult } from '../../types/miniGame';
 import { evaluateMiniGame } from '../../features/content/evaluateMiniGame';
 import { useMiniGameInteraction } from '../../hooks/useMiniGameInteraction';
 import { CategorySortGame } from './CategorySortGame';
 import { SequenceBuildGame } from './SequenceBuildGame';
-import { ConnectionWebGame } from './ConnectionWebGame';
+import { MatchPairsGame } from './MatchPairsGame';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import MathMarkdownRenderer from '../MathMarkdownRenderer';
@@ -27,7 +27,7 @@ interface MiniGameViewProps {
 const GAME_TYPE_LABELS: Record<string, string> = {
   CATEGORY_SORT: 'Category Sort',
   SEQUENCE_BUILD: 'Sequence Build',
-  CONNECTION_WEB: 'Connection Web',
+  MATCH_PAIRS: 'Match Pairs',
 };
 
 function getItemIds(content: MiniGameContent): string[] {
@@ -36,17 +36,13 @@ function getItemIds(content: MiniGameContent): string[] {
       return content.items.map((item) => item.id);
     case 'SEQUENCE_BUILD':
       return content.items.map((item) => item.id);
-    case 'CONNECTION_WEB': {
-      const leftDistractorIds = (content.distractors ?? [])
-        .filter((d) => d.side === 'left')
-        .map((d) => d.id);
-      return [...content.pairs.map((pair) => pair.id), ...leftDistractorIds];
-    }
+    case 'MATCH_PAIRS':
+      return content.pairs.map((pair) => pair.id);
   }
 }
 
 function getRequiredItemIds(content: MiniGameContent): string[] | undefined {
-  if (content.gameType === 'CONNECTION_WEB') {
+  if (content.gameType === 'MATCH_PAIRS') {
     return content.pairs.map((pair) => pair.id);
   }
   return undefined;
@@ -55,9 +51,9 @@ function getRequiredItemIds(content: MiniGameContent): string[] | undefined {
 /**
  * Single-line submit nudge per game type.
  *
- * Match Pairs has no remaining concept (every row will be a placement once
- * Phase 2 lands; even pre-Phase-2 the player can submit at any time and the
- * hint stays neutral). Category Sort and Sequence Build report how many items
+ * Match Pairs is always submittable (every row will be a placement once Phase
+ * 2 lands; even pre-Phase-2 the player can submit at any time and the hint
+ * stays neutral). Category Sort and Sequence Build report how many items
  * still need placing while keeping Submit enabled.
  */
 function buildSubmitHint(
@@ -65,7 +61,7 @@ function buildSubmitHint(
   isComplete: boolean,
   remaining: number,
 ): string {
-  if (gameType === 'CONNECTION_WEB') {
+  if (gameType === 'MATCH_PAIRS') {
     return 'Submit Answer';
   }
   if (isComplete) {
@@ -146,9 +142,9 @@ export function MiniGameView({ content, isRevealed, onSubmit, onContinue }: Mini
           />
         )}
 
-        {content.gameType === 'CONNECTION_WEB' && (
-          <ConnectionWebGame
-            content={content as ConnectionWebContent}
+        {content.gameType === 'MATCH_PAIRS' && (
+          <MatchPairsGame
+            content={content as MatchPairsContent}
             interaction={interaction}
           />
         )}
