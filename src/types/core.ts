@@ -67,6 +67,28 @@ export type TopicIconName =
   | 'users'
   | 'wrench';
 
+/**
+ * Curated icon name attached to the floating mentor bubble. Mirrors the
+ * runtime allowlist `MENTOR_ICON_NAMES` declared in
+ * `src/features/mentor/mentorIconAllowlist.ts`.
+ *
+ * Disjoint from `TopicIconName` by design — mentor and topic icon vocabularies
+ * are independent feature surfaces. `MENTOR_ICON_NAMES` includes one custom
+ * `philosopher-stone` glyph hand-authored inside the build-time generator;
+ * the other 8 entries flow from `lucide`. A bidirectional coverage test
+ * (`mentorIconAllowlist.test.ts`) keeps the runtime list and this union in sync.
+ */
+export type MentorIconName =
+  | 'smile'
+  | 'laugh'
+  | 'frown'
+  | 'party-popper'
+  | 'lightbulb'
+  | 'compass'
+  | 'network'
+  | 'triangle-alert'
+  | 'philosopher-stone';
+
 export interface SubjectGeometry {
   gridTile: GeometryType;
 }
