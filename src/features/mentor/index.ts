@@ -60,3 +60,18 @@ export type {
   MentorOverlayHandlers,
   MentorOverlayStep,
 } from './overlayController';
+export {
+  MENTOR_ICON_NAMES,
+  isMentorIconName,
+} from './mentorIconAllowlist';
+export {
+  ALERT_COLOR,
+  MOOD_COLOR,
+  MOOD_TO_ICON,
+  PHASE_TO_ICON,
+  selectMentorBubbleVisual,
+} from './mentorBubbleVisual';
+export type {
+  MentorBubbleVisual,
+  SelectMentorBubbleVisualInput,
+} from './mentorBubbleVisual';
