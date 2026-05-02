@@ -13,8 +13,6 @@ export const CRYSTAL_BASE_SHAPES: readonly CrystalBaseShape[] = [
   'dodecahedron',
 ] as const;
 
-export const DEFAULT_CRYSTAL_BASE_SHAPE: CrystalBaseShape = 'icosahedron';
-
 /**
  * Curated Lucide icon name attached to every curriculum topic. Mirrors the
  * runtime allowlist `TOPIC_ICON_NAMES` declared in
@@ -104,7 +102,6 @@ export interface Subject {
   description: string;
   color: string;
   geometry: SubjectGeometry;
-  crystalBaseShape?: CrystalBaseShape;
   topicIds?: string[];
   metadata?: SubjectMetadata;
 }
