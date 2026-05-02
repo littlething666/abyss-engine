@@ -213,10 +213,15 @@ export function AbyssCommandPalette({
     setRecentCommands((previous) => [commandId, ...previous.filter((id) => id !== commandId)].slice(0, RECENT_COMMAND_LIMIT));
   };
 
-  const handleCommandSelect = (commandId: PaletteCommandId, enabled: boolean, action: () => void) => {
+  const handleCommandSelect = (
+    commandId: PaletteCommandId,
+    enabled: boolean,
+    action: () => void,
+    closePalette = true,
+  ) => {
     if (!enabled) return;
     rememberRecentCommand(commandId);
-    onOpenChange(false);
+    if (closePalette) onOpenChange(false);
     action();
   };
 
@@ -347,12 +352,12 @@ export function AbyssCommandPalette({
     'open-global-settings': { id: 'open-global-settings', label: 'Open settings', value: 'open settings llm openrouter provider routing', icon: Settings, onSelect: () => handleCommandSelect('open-global-settings', true, handleOpenGlobalSettings), disabled: false },
     'toggle-sfx': { id: 'toggle-sfx', label: sfxLabel, value: 'toggle sound effects sfx audio mute unmute', icon: SfxIcon, onSelect: () => handleCommandSelect('toggle-sfx', true, handleToggleSfx), disabled: false },
     'study-filtered-cards': { id: 'study-filtered-cards', label: 'Study filtered cards (selected topic)', value: 'study filtered cards selected topic crystal flashcard choice mini game', icon: BookOpen, onSelect: () => handleCommandSelect('study-filtered-cards', canStartFilteredStudy, handleStudyFilteredCards), disabled: !canStartFilteredStudy },
-    'filter-flashcard': { id: 'filter-flashcard', label: 'Include ' + BASE_CARD_TYPE_LABELS.FLASHCARD, value: 'filter include FLASHCARD', icon: studyCardFilter.base.FLASHCARD ? Check : Circle, onSelect: () => handleCommandSelect('filter-flashcard', true, () => setStudyCardFilter((p) => ({ ...p, base: { ...p.base, FLASHCARD: !p.base.FLASHCARD } }))), disabled: false },
-    'filter-single-choice': { id: 'filter-single-choice', label: 'Include ' + BASE_CARD_TYPE_LABELS.SINGLE_CHOICE, value: 'filter include SINGLE_CHOICE', icon: studyCardFilter.base.SINGLE_CHOICE ? Check : Circle, onSelect: () => handleCommandSelect('filter-single-choice', true, () => setStudyCardFilter((p) => ({ ...p, base: { ...p.base, SINGLE_CHOICE: !p.base.SINGLE_CHOICE } }))), disabled: false },
-    'filter-multi-choice': { id: 'filter-multi-choice', label: 'Include ' + BASE_CARD_TYPE_LABELS.MULTI_CHOICE, value: 'filter include MULTI_CHOICE', icon: studyCardFilter.base.MULTI_CHOICE ? Check : Circle, onSelect: () => handleCommandSelect('filter-multi-choice', true, () => setStudyCardFilter((p) => ({ ...p, base: { ...p.base, MULTI_CHOICE: !p.base.MULTI_CHOICE } }))), disabled: false },
-    'filter-category-sort': { id: 'filter-category-sort', label: 'Include ' + MINI_GAME_TYPE_LABELS.CATEGORY_SORT, value: 'filter include CATEGORY_SORT', icon: studyCardFilter.mini.CATEGORY_SORT ? Check : Circle, onSelect: () => handleCommandSelect('filter-category-sort', true, () => setStudyCardFilter((p) => ({ ...p, mini: { ...p.mini, CATEGORY_SORT: !p.mini.CATEGORY_SORT } }))), disabled: false },
-    'filter-sequence-build': { id: 'filter-sequence-build', label: 'Include ' + MINI_GAME_TYPE_LABELS.SEQUENCE_BUILD, value: 'filter include SEQUENCE_BUILD', icon: studyCardFilter.mini.SEQUENCE_BUILD ? Check : Circle, onSelect: () => handleCommandSelect('filter-sequence-build', true, () => setStudyCardFilter((p) => ({ ...p, mini: { ...p.mini, SEQUENCE_BUILD: !p.mini.SEQUENCE_BUILD } }))), disabled: false },
-    'filter-match-pairs': { id: 'filter-match-pairs', label: 'Include ' + MINI_GAME_TYPE_LABELS.MATCH_PAIRS, value: 'filter include MATCH_PAIRS', icon: studyCardFilter.mini.MATCH_PAIRS ? Check : Circle, onSelect: () => handleCommandSelect('filter-match-pairs', true, () => setStudyCardFilter((p) => ({ ...p, mini: { ...p.mini, MATCH_PAIRS: !p.mini.MATCH_PAIRS } }))), disabled: false },
+    'filter-flashcard': { id: 'filter-flashcard', label: 'Include ' + BASE_CARD_TYPE_LABELS.FLASHCARD, value: 'filter include FLASHCARD', icon: studyCardFilter.base.FLASHCARD ? Check : Circle, onSelect: () => handleCommandSelect('filter-flashcard', true, () => setStudyCardFilter((p) => ({ ...p, base: { ...p.base, FLASHCARD: !p.base.FLASHCARD } })), false), disabled: false },
+    'filter-single-choice': { id: 'filter-single-choice', label: 'Include ' + BASE_CARD_TYPE_LABELS.SINGLE_CHOICE, value: 'filter include SINGLE_CHOICE', icon: studyCardFilter.base.SINGLE_CHOICE ? Check : Circle, onSelect: () => handleCommandSelect('filter-single-choice', true, () => setStudyCardFilter((p) => ({ ...p, base: { ...p.base, SINGLE_CHOICE: !p.base.SINGLE_CHOICE } })), false), disabled: false },
+    'filter-multi-choice': { id: 'filter-multi-choice', label: 'Include ' + BASE_CARD_TYPE_LABELS.MULTI_CHOICE, value: 'filter include MULTI_CHOICE', icon: studyCardFilter.base.MULTI_CHOICE ? Check : Circle, onSelect: () => handleCommandSelect('filter-multi-choice', true, () => setStudyCardFilter((p) => ({ ...p, base: { ...p.base, MULTI_CHOICE: !p.base.MULTI_CHOICE } })), false), disabled: false },
+    'filter-category-sort': { id: 'filter-category-sort', label: 'Include ' + MINI_GAME_TYPE_LABELS.CATEGORY_SORT, value: 'filter include CATEGORY_SORT', icon: studyCardFilter.mini.CATEGORY_SORT ? Check : Circle, onSelect: () => handleCommandSelect('filter-category-sort', true, () => setStudyCardFilter((p) => ({ ...p, mini: { ...p.mini, CATEGORY_SORT: !p.mini.CATEGORY_SORT } })), false), disabled: false },
+    'filter-sequence-build': { id: 'filter-sequence-build', label: 'Include ' + MINI_GAME_TYPE_LABELS.SEQUENCE_BUILD, value: 'filter include SEQUENCE_BUILD', icon: studyCardFilter.mini.SEQUENCE_BUILD ? Check : Circle, onSelect: () => handleCommandSelect('filter-sequence-build', true, () => setStudyCardFilter((p) => ({ ...p, mini: { ...p.mini, SEQUENCE_BUILD: !p.mini.SEQUENCE_BUILD } })), false), disabled: false },
+    'filter-match-pairs': { id: 'filter-match-pairs', label: 'Include ' + MINI_GAME_TYPE_LABELS.MATCH_PAIRS, value: 'filter include MATCH_PAIRS', icon: studyCardFilter.mini.MATCH_PAIRS ? Check : Circle, onSelect: () => handleCommandSelect('filter-match-pairs', true, () => setStudyCardFilter((p) => ({ ...p, mini: { ...p.mini, MATCH_PAIRS: !p.mini.MATCH_PAIRS } })), false), disabled: false },
     'new-subject-curriculum': { id: 'new-subject-curriculum', label: 'New subject from prompt (curriculum graph)', value: 'new subject curriculum graph generate indexeddb', icon: Network, onSelect: () => handleCommandSelect('new-subject-curriculum', canOpenSubjectCurriculum, handleOpenSubjectCurriculum), disabled: !canOpenSubjectCurriculum },
     'prepare-trial': { id: 'prepare-trial', label: 'Prepare selected crystal trial for challenge', value: 'prepare trial ready selected crystal crystal trial', icon: ShieldCheck, onSelect: () => handleCommandSelect('prepare-trial', canPrepareTrialReady, handlePrepareTrialReady), disabled: !canPrepareTrialReady },
     'force-complete-trial': { id: 'force-complete-trial', label: 'Force complete selected crystal trial (correct answers)', value: 'force complete selected crystal trial correct answers debug', icon: Check, onSelect: () => handleCommandSelect('force-complete-trial', canForceTrialPass, handleForceTrialPass), disabled: !canForceTrialPass },

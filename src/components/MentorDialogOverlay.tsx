@@ -89,6 +89,13 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
 
   const startedAtRef = useRef<number | null>(null);
   const revealedCharsRef = useRef(0);
+  const typewriterRafRef = useRef<number | null>(null);
+
+  const cancelTypewriterAnimation = useCallback(() => {
+    if (typewriterRafRef.current === null) return;
+    window.cancelAnimationFrame(typewriterRafRef.current);
+    typewriterRafRef.current = null;
+  }, []);
 
   const finalizePlanCompletion = useCallback(
     (plan: DialogPlan, outcome: 'auto-advance' | 'choice' | 'closed' | 'ambient') => {
@@ -233,6 +240,7 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
   useEffect(() => {
     if (!currentMessage) return;
     if (reducedMotion) {
+      cancelTypewriterAnimation();
       setRevealedChars(totalChars);
       revealedCharsRef.current = totalChars;
       return;
@@ -241,7 +249,6 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
     const initialChars = revealedCharsRef.current;
     if (initialChars >= totalChars) return;
     const startedAt = performance.now();
-    let raf = 0;
     const tick = (t: number) => {
       const elapsedSec = (t - startedAt) / 1000;
       const target = Math.min(
@@ -251,12 +258,14 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
       revealedCharsRef.current = target;
       setRevealedChars(target);
       if (target < totalChars) {
-        raf = window.requestAnimationFrame(tick);
+        typewriterRafRef.current = window.requestAnimationFrame(tick);
+      } else {
+        typewriterRafRef.current = null;
       }
     };
-    raf = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(raf);
-  }, [currentMessage, totalChars, reducedMotion, isStudyPanelOpen]);
+    typewriterRafRef.current = window.requestAnimationFrame(tick);
+    return cancelTypewriterAnimation;
+  }, [cancelTypewriterAnimation, currentMessage, totalChars, reducedMotion, isStudyPanelOpen]);
 
   // Speak each message once on entry. Web Speech API is non-incremental for
   // canned mentor lines (no streaming), so we feed the full text and rely on
@@ -305,9 +314,19 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
       charsRevealed: revealedChars,
       totalChars,
     });
+    cancelTypewriterAnimation();
+    revealedCharsRef.current = totalChars;
     setRevealedChars(totalChars);
     cancel();
-  }, [cancel, currentDialog, currentMessage, isFullyRevealed, revealedChars, totalChars]);
+  }, [
+    cancel,
+    cancelTypewriterAnimation,
+    currentDialog,
+    currentMessage,
+    isFullyRevealed,
+    revealedChars,
+    totalChars,
+  ]);
 
   const handleClose = useCallback(() => handleAdvance('closed'), [handleAdvance]);
   const handleAmbientAdvance = useCallback(() => handleAdvance('ambient'), [handleAdvance]);

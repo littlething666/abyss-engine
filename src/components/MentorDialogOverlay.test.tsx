@@ -26,11 +26,14 @@ vi.mock('@/features/mentor/useMentorSpeech', () => ({
   }),
 }));
 
-// Force reduced-motion semantics in JSDOM so the typewriter completes
-// synchronously and the controller publishes isFullyRevealed=true on the
-// first effect tick. Prevents the new tests from racing the rAF loop.
+// Force reduced-motion semantics in JSDOM by default so the typewriter
+// completes synchronously and the controller publishes isFullyRevealed=true
+// on the first effect tick. Individual typewriter tests can opt into the
+// animated path deterministically.
+const reducedMotionMock = vi.hoisted(() => ({ enabled: true }));
+
 vi.mock('@/hooks/useReducedMotion', () => ({
-  useReducedMotion: () => true,
+  useReducedMotion: () => reducedMotionMock.enabled,
 }));
 
 function renderOverlay(): { root: Root; container: HTMLDivElement } {
@@ -72,6 +75,7 @@ beforeEach(() => {
     selectedTopic: null,
     isCurrentCardFlipped: false,
   });
+  reducedMotionMock.enabled = true;
   // The overlay controller is module-scoped — reset between tests so
   // the previous test's published step / registered handlers do not
   // leak.
@@ -358,6 +362,68 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
     expect(advanced.isFullyRevealed).toBe(true);
 
     root.unmount();
+  });
+
+  it('ambient reveal cancels the in-flight typewriter frame so the message stays fully visible', () => {
+    reducedMotionMock.enabled = false;
+    const longText =
+      'The abyss answers slowly, but this whole sentence must stay visible after the reveal tap.';
+    const rafCallbacks = new Map<number, FrameRequestCallback>();
+    let nextRafId = 0;
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback) => {
+        nextRafId += 1;
+        rafCallbacks.set(nextRafId, callback);
+        return nextRafId;
+      });
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, 'cancelAnimationFrame')
+      .mockImplementation((id: number) => {
+        rafCallbacks.delete(id);
+      });
+
+    useMentorStore.setState({
+      ...DEFAULT_PERSISTED_STATE,
+      ...DEFAULT_EPHEMERAL_STATE,
+      currentDialog: {
+        id: 'plan-typewriter-skip',
+        trigger: 'mentor-bubble:clicked',
+        payload: {},
+        priority: 80,
+        enqueuedAt: 1,
+        messages: [{ id: 'msg-typing', text: longText, mood: 'neutral' }],
+        source: 'canned',
+        voiceId: 'witty-sarcastic',
+      },
+    });
+
+    const { root, container } = renderOverlay();
+    const text = container.querySelector('[data-testid="mentor-dialog-text"]');
+    expect(text).not.toBeNull();
+    expect(rafCallbacks.size).toBe(1);
+
+    let outcome: ReturnType<typeof requestAmbientAdvance> | undefined;
+    act(() => {
+      outcome = requestAmbientAdvance();
+    });
+
+    expect(outcome).toBe('reveal');
+    expect(text?.textContent).toBe(longText);
+
+    act(() => {
+      const queuedCallbacks = [...rafCallbacks.values()];
+      rafCallbacks.clear();
+      for (const callback of queuedCallbacks) {
+        callback(performance.now() + 100);
+      }
+    });
+
+    expect(text?.textContent).toBe(longText);
+
+    root.unmount();
+    requestAnimationFrameSpy.mockRestore();
+    cancelAnimationFrameSpy.mockRestore();
   });
 
   it('requestAmbientAdvance is a no-op when the message has choices, even when revealed', () => {
