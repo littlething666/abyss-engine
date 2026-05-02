@@ -235,15 +235,16 @@ export function createCrystalNodeMaterial(
   const positionNode = Fn(() => {
     const n = normalLocal.normalize();
     const p = positionLocal;
-    const subjectSeed = iSubjectSeed;
-    const topicSeed = iTopicSeed;
+    // Per-topic variation: combine subject + topic seed channels (50/50) at
+    // the call site rather than inside the noise Fn. TSL's array-destructure
+    // Fn pattern reliably forwards 3 args here — a 4th arg saw the trailing
+    // value resolve to `null` inside generated WGSL.
+    const combinedSeed = iSubjectSeed.mul(0.5).add(iTopicSeed.mul(0.5));
 
-    // Per-topic noise variation: each Fn now takes both seeds and combines
-    // them inside, giving every topic its own unique displacement pattern.
-    const lowNoise = crystalLowFrequencyNoise(p, subjectSeed, topicSeed, lowFreqScale);
-    const highRaw = crystalHighFrequencyNoise(p, subjectSeed, topicSeed, highFreqScale);
+    const lowNoise = crystalLowFrequencyNoise(p, combinedSeed, lowFreqScale);
+    const highRaw = crystalHighFrequencyNoise(p, combinedSeed, highFreqScale);
     const highQuant = floor(highRaw.div(max(quantStep, float(1e-4)))).mul(quantStep);
-    const spike = crystalSpikeNoise(p, subjectSeed, topicSeed, spikeScale);
+    const spike = crystalSpikeNoise(p, combinedSeed, spikeScale);
     const total = lowNoise.mul(lowFreqAmp)
       .add(highQuant.mul(highFreqAmp))
       .add(spike.mul(spikeAmp));
