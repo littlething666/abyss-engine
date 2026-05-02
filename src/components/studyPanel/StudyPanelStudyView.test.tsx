@@ -25,17 +25,13 @@ const baseProps: StudyPanelStudyViewProps = {
   isRevealed: false,
   sm2State: null,
   activeCard: null,
+  topicSystemPrompt: '',
+  resolvedTopic: 'Test topic',
   onSelectAnswer: vi.fn(),
   onChoiceSubmit: vi.fn(),
   onChoiceContinue: vi.fn(),
   onCoarseRate: vi.fn(),
   onHintUsed: vi.fn(),
-  onUndo: vi.fn(),
-  onRedo: vi.fn(),
-  canUndo: false,
-  canRedo: false,
-  undoCount: 0,
-  redoCount: 0,
   llmExplain: {
     isPending: false,
     errorMessage: null,
@@ -91,11 +87,12 @@ afterEach(() => {
 });
 
 describe('StudyPanelStudyView', () => {
-  it('renders Explain control for LLM inference', () => {
+  it('renders Hint trigger for LLM inference', () => {
     const { container, unmount } = renderStudyPanelView();
     const trigger = container.querySelector('[data-testid="study-card-llm-explain-trigger"]');
     expect(trigger).not.toBeNull();
-    expect(trigger?.getAttribute('aria-label')).toContain('Explain');
+    expect(trigger?.getAttribute('aria-label')).toContain('Hint');
+    expect(trigger?.textContent).toContain('Hint');
     unmount();
   });
 
@@ -176,51 +173,6 @@ describe('StudyPanelStudyView', () => {
     });
     const loading = document.body.querySelector('[data-testid="study-card-llm-explain-loading"]');
     expect(loading).not.toBeNull();
-    unmount();
-  });
-
-  it('renders undo and redo controls with current stack counts', () => {
-    const onUndo = vi.fn();
-    const onRedo = vi.fn();
-    const { container, unmount } = renderStudyPanelView({
-      onUndo,
-      onRedo,
-      canUndo: true,
-      canRedo: true,
-      undoCount: 2,
-      redoCount: 1,
-    });
-
-    const undoButton = container.querySelector('[data-testid="study-card-undo"]') as HTMLButtonElement;
-    const redoButton = container.querySelector('[data-testid="study-card-redo"]') as HTMLButtonElement;
-
-    expect(undoButton).not.toBeNull();
-    expect(redoButton).not.toBeNull();
-    expect(undoButton?.getAttribute('aria-label')).toContain('Undo (2)');
-    expect(redoButton?.getAttribute('aria-label')).toContain('Redo (1)');
-    expect(undoButton.closest('[data-testid="study-card-history-actions"]')).not.toBeNull();
-    expect(redoButton.closest('[data-testid="study-card-history-actions"]')).not.toBeNull();
-
-    undoButton?.click();
-    redoButton?.click();
-    expect(onUndo).toHaveBeenCalledTimes(1);
-    expect(onRedo).toHaveBeenCalledTimes(1);
-    unmount();
-  });
-
-  it('disables undo and redo buttons when no history is available', () => {
-    const { container, unmount } = renderStudyPanelView({
-      canUndo: false,
-      canRedo: false,
-      undoCount: 0,
-      redoCount: 0,
-    });
-
-    const undoButton = container.querySelector('[data-testid="study-card-undo"]') as HTMLButtonElement;
-    const redoButton = container.querySelector('[data-testid="study-card-redo"]') as HTMLButtonElement;
-
-    expect(undoButton.disabled).toBe(true);
-    expect(redoButton.disabled).toBe(true);
     unmount();
   });
 
@@ -341,5 +293,4 @@ describe('StudyPanelStudyView', () => {
 
     unmount();
   });
-
 });

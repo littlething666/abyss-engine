@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useCallback } from 'react';
+import React from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { InfoPopover } from '@/components/InfoPopover';
 import {
   Dialog,
   DialogContent,
@@ -15,35 +14,11 @@ import {
 import type { TieredTopic, TopicUnlockStatus } from '@/features/progression/progressionUtils';
 import {
   activeTopicContentGenerationLabel,
-  triggerTopicGenerationPipeline,
   useContentGenerationStore,
-  type TopicGenerationStage,
 } from '@/features/contentGeneration';
 import { useTopicDetails } from '@/hooks/useDeckData';
 
 import { TopicIcon } from './topicIcons/TopicIcon';
-
-const GENERATION_STEPS: readonly TopicGenerationStage[] = [
-  'theory',
-  'study-cards',
-  'mini-games',
-  'full',
-] as const;
-
-function stepButtonLabel(stage: TopicGenerationStage): string {
-  switch (stage) {
-    case 'theory':
-      return 'Theory';
-    case 'study-cards':
-      return 'Study cards';
-    case 'mini-games':
-      return 'Mini-games';
-    case 'full':
-      return 'Full';
-    default:
-      return stage;
-  }
-}
 
 export interface TopicDetailsPopupProps {
   topic: TieredTopic;
@@ -53,6 +28,13 @@ export interface TopicDetailsPopupProps {
   onUnlock: () => void;
 }
 
+/**
+ * Renders the read-only topic detail dialog. The inline generation grid
+ * (Theory / Study cards / Mini-games / Full) was removed in the
+ * visual-clutter cleanup. Topic content now generates through the auto
+ * pipeline triggered on unlock and the content-generation logs panel; this
+ * dialog only surfaces *status* of any in-flight job and the unlock CTA.
+ */
 export function TopicDetailsPopup({
   topic,
   unlockStatus,
@@ -69,20 +51,6 @@ export function TopicDetailsPopup({
   });
   const detailsQuery = useTopicDetails(topic.subjectId, topic.id);
   const syllabus = detailsQuery.data?.coreQuestionsByDifficulty;
-  const isGenerating = activeJobLabel !== null;
-
-  const runGenerationStep = useCallback(
-    (stage: TopicGenerationStage) => {
-      if (isGenerating) {
-        return;
-      }
-      void triggerTopicGenerationPipeline(topic.subjectId, topic.id, {
-        forceRegenerate: true,
-        stage,
-      });
-    },
-    [isGenerating, topic.id, topic.subjectId],
-  );
 
   return (
     <Dialog
@@ -103,32 +71,6 @@ export function TopicDetailsPopup({
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto">
           <p className="text-muted-foreground mb-4 text-sm">{topic.description}</p>
-
-          <div className="text-muted-foreground mb-3 flex items-center gap-1 text-sm">
-            <span className="min-w-0">Generate study content for this topic.</span>
-            <InfoPopover label="About generation steps">
-              <p>
-                Run the full pipeline or a single stage; each stage replaces any existing generated content for that
-                part of the deck.
-              </p>
-            </InfoPopover>
-          </div>
-
-          <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {GENERATION_STEPS.map((stage) => (
-              <Button
-                key={stage}
-                type="button"
-                variant="secondary"
-                className="min-h-11 w-full"
-                disabled={isGenerating}
-                onClick={() => runGenerationStep(stage)}
-                aria-label={`Generate ${stepButtonLabel(stage)} for this topic`}
-              >
-                {stepButtonLabel(stage)}
-              </Button>
-            ))}
-          </div>
 
           {activeJobLabel ? (
             <p className="text-primary mb-3 text-sm font-medium" role="status">
@@ -191,10 +133,10 @@ export function TopicDetailsPopup({
               type="button"
               onClick={onUnlock}
               disabled={!unlockStatus.canUnlock}
-              className={`w-full min-h-11 cursor-pointer rounded-lg border-none px-6 py-3 font-semibold transition-all ${
+              className={`w-full min-h-11 rounded-lg border-none px-6 py-3 font-semibold transition-all ${
                 unlockStatus.canUnlock
                   ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                  : 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'
+                  : 'bg-muted text-muted-foreground opacity-50'
               }`}
             >
               {unlockStatus.canUnlock ? 'Unlock & Spawn' : 'Locked'}
