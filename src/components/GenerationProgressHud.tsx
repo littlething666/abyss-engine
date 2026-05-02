@@ -261,7 +261,11 @@ function JobRowSummary({ job }: { job: ContentGenerationJob }) {
 /**
  * Compact scene HUD for LLM content generation; opens a read-only dialog with a unified job list (live + history).
  */
-export function GenerationProgressHud() {
+interface GenerationProgressHudProps {
+  showTrigger?: boolean;
+}
+
+export function GenerationProgressHud({ showTrigger = true }: GenerationProgressHudProps) {
   const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const jobs = useContentGenerationStore((s) => s.jobs);
   const pipelines = useContentGenerationStore((s) => s.pipelines);
@@ -346,25 +350,27 @@ export function GenerationProgressHud() {
 
   return (
     <>
-      <div
-        className="text-foreground flex h-7 items-center gap-1 self-end rounded-lg border border-surface-hud-border bg-surface-hud px-2 py-1"
-      >
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className={isBusy ? 'motion-safe:animate-pulse' : undefined}
-          onClick={handleOpenGenerationProgress}
-          aria-label="Open background LLM content generation"
-          title="Open background LLM content generation"
+      {showTrigger ? (
+        <div
+          className="text-foreground flex h-7 items-center gap-1 self-end rounded-lg border border-surface-hud-border bg-surface-hud px-2 py-1"
         >
-          {isBusy ? (
-            <Spinner className="size-3.5 shrink-0" aria-hidden />
-          ) : (
-            <ListTree className="size-3.5 shrink-0" aria-hidden />
-          )}
-        </Button>
-      </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className={isBusy ? 'motion-safe:animate-pulse' : undefined}
+            onClick={handleOpenGenerationProgress}
+            aria-label="Open background LLM content generation"
+            title="Open background LLM content generation"
+          >
+            {isBusy ? (
+              <Spinner className="size-3.5 shrink-0" aria-hidden />
+            ) : (
+              <ListTree className="size-3.5 shrink-0" aria-hidden />
+            )}
+          </Button>
+        </div>
+      ) : null}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="flex max-h-[85vh] w-[min(100%,28rem)] max-w-[28rem] flex-col gap-3">

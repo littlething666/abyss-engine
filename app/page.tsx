@@ -21,7 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Sparkles } from 'lucide-react';
+import { ListTree, Menu } from 'lucide-react';
 
 import StatsOverlay from '@/components/StatsOverlay';
 import { GenerationProgressHud } from '@/components/GenerationProgressHud';
@@ -145,6 +145,7 @@ const HomeContent: React.FC = () => {
   const closeStudyTimeline = useUIStore((state) => state.closeStudyTimeline);
   const selectTopic = useUIStore((state) => state.selectTopic);
   const openStudyPanel = useUIStore((state) => state.openStudyPanel);
+  const openGenerationProgress = useUIStore((state) => state.openGenerationProgress);
 
   const ritualCooldownRemainingMs = getRemainingRitualCooldownMs(Date.now());
 
@@ -251,6 +252,10 @@ const HomeContent: React.FC = () => {
   const handleQuickActionWisdomAltar = useCallback(() => { openDiscoveryModal(); }, [openDiscoveryModal]);
   const handleQuickActionCommandPalette = useCallback(() => { setIsCommandPaletteOpen(true); }, []);
   const handleQuickActionSettings = useCallback(() => { openGlobalSettings(); }, [openGlobalSettings]);
+  const handleQuickActionGenerationProgress = useCallback(
+    () => { openGenerationProgress(); },
+    [openGenerationProgress],
+  );
   const handleCreateSubjectFromHud = useCallback(() => { setIsIncrementalSubjectOpen(true); }, []);
   // Discovery's empty-state CTA closes Discovery before opening
   // IncrementalSubjectModal so the two surfaces never stack. The mentor's
@@ -304,7 +309,7 @@ const HomeContent: React.FC = () => {
       aria-label="Quick actions"
       data-testid="quick-actions-trigger"
     >
-      <Sparkles className="h-3.5 w-3.5" />
+      <Menu />
     </Button>
   );
 
@@ -345,7 +350,6 @@ const HomeContent: React.FC = () => {
         className="fixed z-20 flex flex-col items-end gap-1.5"
         style={TOP_RIGHT_STYLE}
       >
-        <GenerationProgressHud />
         <StatsOverlay activeBuffs={activeBuffs} />
       </div>
 
@@ -359,6 +363,13 @@ const HomeContent: React.FC = () => {
           <DropdownMenuContent side="top" align="end" sideOffset={8}>
             <DropdownMenuItem onClick={handleQuickActionWisdomAltar}>
               🏛️ Wisdom Altar
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={handleQuickActionGenerationProgress}
+              data-testid="quick-action-generation-progress"
+            >
+              <ListTree className="size-3.5 shrink-0 opacity-70" aria-hidden />
+              Background generation
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleQuickActionMentor} data-testid="quick-action-mentor">
               🗣️ Mentor
@@ -426,6 +437,8 @@ const HomeContent: React.FC = () => {
       <CrystalTrialModal />
 
       <MentorDialogOverlay onOpenTopicStudy={handleOpenTopicStudyFromMentor} />
+
+      <GenerationProgressHud showTrigger={false} />
     </div>
   );
 }
