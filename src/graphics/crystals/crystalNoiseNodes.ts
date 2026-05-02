@@ -1,3 +1,4 @@
+// @ts-nocheck — three/tsl `Fn` overload + interleaved TSL chains; same escape hatch as `crystalMaterial.ts`.
 import { abs, Fn, float, fract, max, sin, vec3, triNoise3D } from 'three/tsl';
 
 /**
@@ -5,7 +6,7 @@ import { abs, Fn, float, fract, max, sin, vec3, triNoise3D } from 'three/tsl';
  * every topic has its own unique noise variation, while still inheriting
  * a subject-coherent character.
  */
-const combineSeeds = Fn(([subjectSeed, topicSeed]: [unknown, unknown]) => {
+const combineSeeds = Fn(([subjectSeed, topicSeed]) => {
   return float(subjectSeed).mul(0.5).add(float(topicSeed).mul(0.5));
 });
 
@@ -13,7 +14,7 @@ const combineSeeds = Fn(([subjectSeed, topicSeed]: [unknown, unknown]) => {
  * Organic low-frequency displacement (levels 1–2 emphasis).
  */
 export const crystalLowFrequencyNoise = Fn(
-  ([position, subjectSeed, topicSeed, freqScale]: [unknown, unknown, unknown, unknown]) => {
+  ([position, subjectSeed, topicSeed, freqScale]) => {
     const seed = combineSeeds(subjectSeed, topicSeed);
     const p = vec3(position).mul(freqScale).add(vec3(seed, seed.mul(1.713), seed.mul(0.291)));
     return triNoise3D(p, float(1), float(0));
@@ -24,7 +25,7 @@ export const crystalLowFrequencyNoise = Fn(
  * Faceted high-frequency displacement (levels 3–5); tri-noise stands in for cellular Voronoi for cost.
  */
 export const crystalHighFrequencyNoise = Fn(
-  ([position, subjectSeed, topicSeed, freqScale]: [unknown, unknown, unknown, unknown]) => {
+  ([position, subjectSeed, topicSeed, freqScale]) => {
     const seed = combineSeeds(subjectSeed, topicSeed);
     const p = vec3(position).mul(freqScale).add(vec3(seed.mul(2.17), seed, seed.mul(3.09)));
     return triNoise3D(p, float(2.1), float(0));
@@ -36,7 +37,7 @@ export const crystalHighFrequencyNoise = Fn(
  * Creates sharp protrusions reminiscent of mineral spikes.
  */
 export const crystalSpikeNoise = Fn(
-  ([position, subjectSeed, topicSeed, freqScale]: [unknown, unknown, unknown, unknown]) => {
+  ([position, subjectSeed, topicSeed, freqScale]) => {
     const seed = combineSeeds(subjectSeed, topicSeed);
     const p = vec3(position).mul(freqScale).add(vec3(seed.mul(3.41), seed.mul(0.73), seed.mul(2.19)));
     const raw = triNoise3D(p, float(3.5), float(0));
@@ -54,8 +55,8 @@ export const crystalSpikeNoise = Fn(
  * — a cheap branchless TSL hash that mirrors common shader-side hashes.
  */
 export const crystalShardJitterSeed = Fn(
-  ([iTopicSeed, shardIdx]: [unknown, unknown]) => {
-    const mix = float(shardIdx).add(float(iTopicSeed).mul(7.913));
-    return fract(sin(mix).mul(43758.5453));
+  ([iTopicSeed, shardIdx]) => {
+    const hashInput = float(shardIdx).add(float(iTopicSeed).mul(7.913));
+    return fract(sin(hashInput).mul(43758.5453));
   },
 );
