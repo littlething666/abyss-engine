@@ -336,4 +336,159 @@ describe('DiscoveryModal', () => {
     root.unmount();
   });
 
-  it('shows empty state with reset when no topics match the locked
+  it('shows empty state with reset when no topics match the locked filter', () => {
+    progressionState.getTopicsByTier.mockReturnValue([
+      {
+        tier: 1,
+        topics: [
+          {
+            id: 't1',
+            name: 'Only unlocked',
+            description: '',
+            subjectId: 's',
+            subjectName: 'S',
+            iconName: 'lightbulb' as const,
+            contentStatus: 'ready' as const,
+            isLocked: false,
+            isUnlocked: true,
+            isCurriculumVisible: true,
+          },
+        ],
+      },
+    ]);
+
+    const { root } = renderDiscoveryModal({
+      isOpen: true,
+      unlockPoints: 1,
+      onClose: vi.fn(),
+    });
+
+    expect(document.body.textContent).toContain('No topics match');
+    expect(document.body.textContent).toContain('Reset filters');
+    root.unmount();
+  });
+
+  it('reset filters widens list and clears stored modal subject', async () => {
+    sessionStorage.setItem(DISCOVERY_MODAL_SUBJECT_STORAGE_KEY, 'sub-a');
+    progressionState.getTopicsByTier.mockReturnValue([
+      {
+        tier: 1,
+        topics: [
+          {
+            id: 't1',
+            name: 'Only unlocked',
+            description: '',
+            subjectId: 's',
+            subjectName: 'S',
+            iconName: 'lightbulb' as const,
+            contentStatus: 'ready' as const,
+            isLocked: false,
+            isUnlocked: true,
+            isCurriculumVisible: true,
+          },
+        ],
+      },
+    ]);
+
+    const { root } = renderDiscoveryModal({
+      isOpen: true,
+      unlockPoints: 1,
+      onClose: vi.fn(),
+    });
+
+    expect(document.body.textContent).toContain('No topics match');
+    const resetBtn = [...document.body.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Reset filters'),
+    ) as HTMLButtonElement | undefined;
+    expect(resetBtn).toBeDefined();
+    await act(async () => {
+      resetBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(sessionStorage.getItem(DISCOVERY_MODAL_SUBJECT_STORAGE_KEY)).toBe('__all_floors__');
+    expect(document.body.textContent).toContain('Only unlocked');
+    root.unmount();
+  });
+
+  it('renders the curated topic icon and a Lucide lock badge for locked topics', () => {
+    progressionState.getTopicsByTier.mockReturnValue([
+      {
+        tier: 1,
+        topics: [
+          {
+            id: 't-locked-with-icon',
+            name: 'Locked Topic',
+            description: '',
+            subjectId: 's',
+            subjectName: 'S',
+            iconName: 'lightbulb' as const,
+            contentStatus: 'ready' as const,
+            isLocked: true,
+            isUnlocked: false,
+            isCurriculumVisible: true,
+          },
+        ],
+      },
+    ]);
+
+    const { root } = renderDiscoveryModal({
+      isOpen: true,
+      unlockPoints: 1,
+      onClose: vi.fn(),
+    });
+
+    const tile = [...document.body.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Locked Topic'),
+    );
+    expect(tile).toBeDefined();
+    expect(tile?.querySelector('[data-topic-icon="lightbulb"]')).not.toBeNull();
+    expect(tile?.querySelector('[data-testid="discovery-topic-lock-badge"]')).not.toBeNull();
+    expect(tile?.querySelector('[data-testid="discovery-topic-unlock-badge"]')).toBeNull();
+    root.unmount();
+  });
+
+  it('renders the curated topic icon and a Lucide unlock badge for unlocked topics after toggling the unlocked filter', async () => {
+    progressionState.getTopicsByTier.mockReturnValue([
+      {
+        tier: 1,
+        topics: [
+          {
+            id: 't-unlocked-with-icon',
+            name: 'Unlocked Topic',
+            description: '',
+            subjectId: 's',
+            subjectName: 'S',
+            iconName: 'rocket' as const,
+            contentStatus: 'ready' as const,
+            isLocked: false,
+            isUnlocked: true,
+            isCurriculumVisible: true,
+          },
+        ],
+      },
+    ]);
+
+    const { root } = renderDiscoveryModal({
+      isOpen: true,
+      unlockPoints: 1,
+      onClose: vi.fn(),
+    });
+
+    // Default filter is 'locked' — toggle to 'Unlocked' so the unlocked tile renders.
+    const unlockedToggle = document.body.querySelector('[aria-label="Unlocked topics, 1"]') as
+      | HTMLButtonElement
+      | null;
+    expect(unlockedToggle).not.toBeNull();
+    await act(async () => {
+      unlockedToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const tile = [...document.body.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Unlocked Topic'),
+    );
+    expect(tile).toBeDefined();
+    expect(tile?.querySelector('[data-topic-icon="rocket"]')).not.toBeNull();
+    expect(tile?.querySelector('[data-testid="discovery-topic-unlock-badge"]')).not.toBeNull();
+    expect(tile?.querySelector('[data-testid="discovery-topic-lock-badge"]')).toBeNull();
+    root.unmount();
+  });
+});
