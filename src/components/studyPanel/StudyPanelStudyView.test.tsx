@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createElement, type ComponentProps } from 'react';
+import { act, createElement, type ComponentProps } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
-import { StudyPanelStudyView } from './StudyPanelStudyView';
+import { StudyPanelStudyView, STUDY_HINT_BUTTON_REVEAL_DELAY_MS } from './StudyPanelStudyView';
 
 type StudyPanelStudyViewProps = ComponentProps<typeof StudyPanelStudyView>;
 
@@ -83,12 +83,18 @@ function renderStudyPanelView(override: Partial<StudyPanelStudyViewProps> = {}) 
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   document.body.innerHTML = '';
 });
 
 describe('StudyPanelStudyView', () => {
-  it('renders Hint trigger for LLM inference', () => {
+  it('renders Hint trigger for LLM inference after reveal delay', () => {
+    vi.useFakeTimers();
     const { container, unmount } = renderStudyPanelView();
+    expect(container.querySelector('[data-testid="study-card-llm-explain-trigger"]')).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(STUDY_HINT_BUTTON_REVEAL_DELAY_MS);
+    });
     const trigger = container.querySelector('[data-testid="study-card-llm-explain-trigger"]');
     expect(trigger).not.toBeNull();
     expect(trigger?.getAttribute('aria-label')).toContain('Hint');
@@ -123,6 +129,7 @@ describe('StudyPanelStudyView', () => {
   });
 
   it('requests LLM explanation when Explain inference surface opens', () => {
+    vi.useFakeTimers();
     const requestExplain = vi.fn();
     const { container, unmount } = renderStudyPanelView({
       llmExplain: {
@@ -136,6 +143,9 @@ describe('StudyPanelStudyView', () => {
       },
     });
     document.body.append(container);
+    act(() => {
+      vi.advanceTimersByTime(STUDY_HINT_BUTTON_REVEAL_DELAY_MS);
+    });
     const trigger = container.querySelector('[data-testid="study-card-llm-explain-trigger"]') as HTMLButtonElement;
     trigger?.click();
     expect(requestExplain).toHaveBeenCalledTimes(1);
@@ -143,6 +153,7 @@ describe('StudyPanelStudyView', () => {
   });
 
   it('shows loading text in explain inference surface while pending', () => {
+    vi.useFakeTimers();
     const requestExplain = vi.fn();
     const cancelInflight = vi.fn();
     const { container, rerender, unmount } = renderStudyPanelView({
@@ -157,6 +168,9 @@ describe('StudyPanelStudyView', () => {
       },
     });
     document.body.append(container);
+    act(() => {
+      vi.advanceTimersByTime(STUDY_HINT_BUTTON_REVEAL_DELAY_MS);
+    });
     container.querySelector('[data-testid="study-card-llm-explain-trigger"]')?.dispatchEvent(
       new MouseEvent('click', { bubbles: true }),
     );

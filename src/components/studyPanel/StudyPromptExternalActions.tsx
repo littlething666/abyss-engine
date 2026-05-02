@@ -96,28 +96,26 @@ export function StudyPromptExternalActions({
         type="button"
         variant="outline"
         size="icon-sm"
-        className="min-h-10"
         onClick={handleSearchPrompt}
         disabled={!hasPrompt}
         aria-label="Search topic prompt with Google"
         title="Search topic prompt"
         data-testid="study-prompt-external-search"
       >
-        <FileSearch className="h-3.5 w-3.5" aria-hidden />
+        <FileSearch aria-hidden />
         <span className="sr-only">Search topic prompt</span>
       </Button>
       <Button
         type="button"
         variant="outline"
         size="icon-sm"
-        className="min-h-10"
         onClick={openDialog}
         disabled={!hasPrompt}
         aria-label="Build diagram prompt from pasted source"
         title="Build diagram prompt"
         data-testid="study-prompt-external-diagram"
       >
-        <ChartNetwork className="h-3.5 w-3.5" aria-hidden />
+        <ChartNetwork aria-hidden />
         <span className="sr-only">Build diagram prompt</span>
       </Button>
       <Dialog

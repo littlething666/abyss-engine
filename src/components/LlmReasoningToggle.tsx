@@ -23,7 +23,7 @@ export function LlmReasoningToggle({ enabled, onToggle, disabled = false }: LlmR
     <Button
       type="button"
       variant="outline"
-      size="icon-xs"
+      size="icon-sm"
       disabled={disabled}
       aria-label={
         disabled

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import MathMarkdownRenderer from '../MathMarkdownRenderer';
 import { RenderableCard } from '../../features/studyPanel/cardPresenter';
 import {
@@ -175,6 +175,9 @@ interface StudyPanelStudyViewProps {
 
 const QUESTION_EXPLAIN_DESCRIPTION = 'AI explanation for the current card question.';
 
+/** Delay before the Hint control is shown (viewport-fixed; resets when the card changes). */
+export const STUDY_HINT_BUTTON_REVEAL_DELAY_MS = 15_000;
+
 /** Inline LaTeX as remark-math; escapes `$` inside the expression. */
 function formulaDescriptionMarkdown(latex: string | null): string {
   if (!latex) {
@@ -214,6 +217,15 @@ export function StudyPanelStudyView({
   onToggleFormulaTts,
 }: StudyPanelStudyViewProps) {
   void activeCard;
+  const [hintButtonVisible, setHintButtonVisible] = useState(false);
+  useEffect(() => {
+    setHintButtonVisible(false);
+    const timerId = window.setTimeout(() => {
+      setHintButtonVisible(true);
+    }, STUDY_HINT_BUTTON_REVEAL_DELAY_MS);
+    return () => window.clearTimeout(timerId);
+  }, [renderedCard.id]);
+
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const {
     explainOpen,
@@ -289,27 +301,33 @@ export function StudyPanelStudyView({
     kind: 'markdown',
     source: formulaDescSource,
   };
+
+  const hintOpenHandler = () => handleExplainOpenChange(true);
+  const hintTriggerWrapperClassName =
+    'pointer-events-none fixed left-0 top-0 z-[200] flex p-3 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pt-[max(0.75rem,env(safe-area-inset-top,0px))]';
+
   return (
     <div className="w-full relative" data-testid="study-panel-card-root">
-      <div className="bg-card rounded-[15px] p-5 min-h-[150px] flex flex-col justify-center">
-        {/* Single Hint trigger replaces the previous format-badge + history-actions row.
-            Visible "Hint" text + Sparkles icon meets sighted-affordance + >=44px tap-target requirements. */}
-        <div className="mb-3 flex items-center justify-end">
+      {hintButtonVisible ? (
+        <div className={hintTriggerWrapperClassName}>
+          {/* pointer-events-none on the wrapper keeps taps from blocking the scene; the button re-enables hits. */}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="min-h-10 gap-1"
+            className="pointer-events-auto gap-1 min-h-8 rounded-full"
             aria-label="Hint: Explain question with AI"
             title="Hint: Explain question with AI"
             data-testid="study-card-llm-explain-trigger"
-            onClick={() => handleExplainOpenChange(true)}
+            onClick={hintOpenHandler}
           >
-            <Sparkles className="h-3.5 w-3.5" aria-hidden />
+            <Sparkles aria-hidden />
             Hint
           </Button>
         </div>
+      ) : null}
 
+      <div className="bg-card p-5 min-h-[100px] flex flex-col justify-center">
         <div className="mb-2" data-testid="study-card-question">
           <StudyKatexInteractive
             className="study-katex-interactive study-markdown-primary"
@@ -462,7 +480,6 @@ export function StudyPanelStudyView({
         {/* Flashcard Actions */}
         {isFlashcard && !isAnswerSubmitted && (
           <div className="grid gap-2">
-            <p className="text-muted-foreground text-sm">Did you recall it?</p>
             <div className="grid grid-cols-2 gap-2">
               <Button
                 onClick={() => onCoarseRate('forgot')}
@@ -478,7 +495,7 @@ export function StudyPanelStudyView({
                 className="w-full py-3"
                 data-testid="study-card-coarse-recalled"
               >
-                Recalled
+                Got it
               </Button>
             </div>
           </div>

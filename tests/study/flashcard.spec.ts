@@ -95,6 +95,7 @@ for (const coarseChoice of COARSE_CHOICES) {
 }
 
 test('Flashcard coarse recall after opening a hint opens applies slow bucket', async ({ seededApp: page }) => {
+  test.setTimeout(90_000);
   await expectWebGPUAvailable(page);
 
   await page.evaluate(async () => {
@@ -123,6 +124,7 @@ test('Flashcard coarse recall after opening a hint opens applies slow bucket', a
   expect(cardId).toBeTruthy();
   const priorEvents = await getProgressionEventCount(page);
 
+  await expect(page.getByTestId('study-card-llm-explain-trigger')).toBeVisible({ timeout: 35_000 });
   await page.getByTestId('study-card-llm-explain-trigger').click({ force: true });
   await page.getByTestId('study-card-coarse-recalled').click({ force: true });
 

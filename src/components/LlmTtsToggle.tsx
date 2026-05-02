@@ -25,7 +25,7 @@ export function LlmTtsToggle({ enabled, onToggle, speaking = false }: LlmTtsTogg
     <Button
       type="button"
       variant="outline"
-      size="icon-xs"
+      size="icon-sm"
       aria-label={enabled ? 'Disable read aloud' : 'Enable read aloud'}
       aria-pressed={enabled}
       title={enabled ? 'Read aloud enabled' : 'Enable read aloud'}
