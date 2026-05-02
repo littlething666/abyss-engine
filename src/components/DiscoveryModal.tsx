@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SubjectGraph, TopicRef } from '@/types/core';
-import { DEFAULT_CRYSTAL_BASE_SHAPE } from '@/types/core';
 import { useProgressionStore as useStudyStore } from '../features/progression';
 import { useAllGraphs, useSubjects } from '../features/content';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
@@ -374,9 +373,6 @@ export function DiscoveryModal({
               aria-hidden
             />
             <span className="min-w-0 flex-1 truncate">{subject.name}</span>
-            <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
-              {subject.geometry.gridTile}/{subject.crystalBaseShape ?? DEFAULT_CRYSTAL_BASE_SHAPE}
-            </span>
           </span>
         ),
       };
@@ -432,7 +428,7 @@ export function DiscoveryModal({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="flex max-h-[95vh] min-h-0 flex-col">
+        <DialogContent className="flex max-h-[95vh] min-h-0 flex-col sm:max-w-4xl">
           <DialogHeader className="shrink-0 space-y-3 pb-0">
             <DialogTitle>🏛️ Wisdom Altar</DialogTitle>
             <DialogDescription className="flex flex-wrap items-center gap-1">

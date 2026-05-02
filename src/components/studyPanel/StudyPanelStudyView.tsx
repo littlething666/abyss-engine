@@ -19,7 +19,7 @@ import {
 import { LlmReasoningBlock } from '../LlmReasoningBlock';
 import { LlmReasoningToggle } from '../LlmReasoningToggle';
 import { LlmTtsToggle } from '../LlmTtsToggle';
-import { Sparkles } from 'lucide-react';
+import { Lightbulb, Sparkles } from 'lucide-react';
 import { StudyKatexInteractive } from './StudyKatexInteractive';
 import { StudyPromptExternalActions } from './StudyPromptExternalActions';
 import { useMediaQuery } from '@/hooks/use-media-query';
@@ -321,7 +321,7 @@ export function StudyPanelStudyView({
             data-testid="study-card-llm-explain-trigger"
             onClick={hintOpenHandler}
           >
-            <Sparkles aria-hidden />
+            <Lightbulb aria-hidden />
             Hint
           </Button>
         </div>

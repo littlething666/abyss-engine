@@ -234,7 +234,7 @@ export function StudyPanelModal({
       open={isOpen}
       onOpenChange={(open) => { if (!open) handleClose(); }}
     >
-      <DialogContent className="flex max-h-[95dvh] min-h-0 flex-col overflow-hidden rounded-none sm:h-[95dvh] sm:max-h-[95dvh] sm:rounded-xl">
+      <DialogContent className="flex max-h-[95dvh] min-h-0 flex-col overflow-hidden rounded-none sm:max-w-lg">
         <DialogHeader className="shrink-0">
           <DialogTitle className="sr-only" data-testid="study-session-title">📚 Study Session</DialogTitle>
           <DialogDescription className="sr-only">
