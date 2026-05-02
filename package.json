@@ -18,7 +18,9 @@
     "test:unit:run": "vitest run",
     "test:unit:coverage": "vitest run --coverage",
     "generate:topic-icons": "tsx scripts/generate-topic-icon-nodes.ts",
-    "check:topic-icons": "pnpm generate:topic-icons && git diff --exit-code -- src/graphics/labels/generated/topicIconNodes.ts"
+    "check:topic-icons": "pnpm generate:topic-icons && git diff --exit-code -- src/graphics/labels/generated/topicIconNodes.ts",
+    "generate:mentor-icons": "tsx scripts/generate-mentor-icon-nodes.ts",
+    "check:mentor-icons": "pnpm generate:mentor-icons && git diff --exit-code -- src/graphics/labels/generated/mentorIconNodes.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
