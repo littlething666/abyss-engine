@@ -26,7 +26,6 @@ const mockSubject = (id: string, name: string) => ({
   description: '',
   color: '#336699',
   geometry: { gridTile: 'box' as const },
-  crystalBaseShape: 'icosahedron' as const,
 });
 
 vi.mock('../features/progression', () => ({

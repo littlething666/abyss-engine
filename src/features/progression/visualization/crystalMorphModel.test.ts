@@ -6,7 +6,6 @@ import {
   getLevelBandProgress,
   getMaterialParams,
   ceremonialEase,
-  subjectSeedFromId,
 } from './crystalMorphModel';
 
 describe('crystalMorphModel', () => {
@@ -60,12 +59,5 @@ describe('crystalMorphModel', () => {
   it('ceremonialEase is 0 and 1 at edges', () => {
     expect(ceremonialEase(0)).toBe(0);
     expect(ceremonialEase(1)).toBe(1);
-  });
-
-  it('subjectSeedFromId is deterministic in 0–1', () => {
-    expect(subjectSeedFromId('sub-a')).toBe(subjectSeedFromId('sub-a'));
-    expect(subjectSeedFromId(null)).toBe(0.5);
-    expect(subjectSeedFromId('x')).toBeGreaterThanOrEqual(0);
-    expect(subjectSeedFromId('x')).toBeLessThanOrEqual(1);
   });
 });

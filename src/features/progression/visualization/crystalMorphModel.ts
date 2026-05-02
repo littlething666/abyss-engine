@@ -7,6 +7,9 @@ import {
 /**
  * Pure visualization model: maps crystal level + morph animation progress to GPU-friendly parameters.
  * Tier tables match `plans/crystal-procedural-morph-plan.md`.
+ *
+ * Seed derivation (`subjectSeedFromId`, `topicSeedFromRef`) lives in `./seeds`,
+ * not here — keeping morph/tier blending decoupled from per-instance seed math.
  */
 
 export interface CrystalDisplacementParams {
@@ -136,19 +139,6 @@ export function getLevelBandProgress(xp: number): number {
 /**
  * Full morph snapshot for one crystal instance (CPU-side mirror; shader uses same tier blending via level + morphProgress).
  */
-/** Deterministic 0–1 seed for procedural noise from subject id. */
-export function subjectSeedFromId(subjectId: string | null | undefined): number {
-  if (!subjectId) {
-    return 0.5;
-  }
-  let h = 2166136261;
-  for (let i = 0; i < subjectId.length; i++) {
-    h ^= subjectId.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0) / 4294967296;
-}
-
 export function getCrystalMorphParams(
   xp: number,
   morphProgress: number,
