@@ -101,18 +101,18 @@ export function buildMiniGameTypePromptRules(
           '```',
         ].join('\n'),
       );
-    case 'CONNECTION_WEB':
+    case 'MATCH_PAIRS':
       return fill(
         [
-          '### CONNECTION_WEB — canonical minimal example',
+          '### MATCH_PAIRS — canonical minimal example',
           '',
           '```json',
           '{',
-          '  "id": "{{topicId}}-mg-connection-web-1",',
+          '  "id": "{{topicId}}-mg-match-pairs-1",',
           '  "type": "MINI_GAME",',
           '  "difficulty": {{targetDifficulty}},',
           '  "content": {',
-          '    "gameType": "CONNECTION_WEB",',
+          '    "gameType": "MATCH_PAIRS",',
           '    "prompt": "Match each left concept to the correct right concept.",',
           '    "explanation": "Why each pairing is grounded in the theory.",',
           '    "pairs": [',

@@ -35,7 +35,7 @@ describe('parseTopicCardsPayload', () => {
     }
   });
 
-  it('normalizes LLM-alias MINI_GAME shapes (string categories, content/category, item1/item2, string distractors)', () => {
+  it('normalizes LLM-alias MINI_GAME shapes (string categories, content/category, item1/item2, term/definition aliases)', () => {
     const raw = JSON.stringify({
       cards: [
         {
@@ -62,14 +62,13 @@ describe('parseTopicCardsPayload', () => {
           type: 'MINI_GAME',
           difficulty: 1,
           content: {
-            gameType: 'CONNECTION_WEB',
+            gameType: 'MATCH_PAIRS',
             prompt: 'Match concepts.',
             pairs: [
               { item1: 'Dot Product', item2: 'Results in a scalar value' },
               { item1: 'Matrix product', item2: 'Composes linear maps' },
               { item1: 'Vector norm', item2: 'Measures length' },
             ],
-            distractors: ['Always results in a matrix'],
             explanation: 'Dot product yields a scalar.',
           },
         },
@@ -103,15 +102,13 @@ describe('parseTopicCardsPayload', () => {
     const cw = r.cards[1].content as {
       gameType: string;
       pairs: { id: string; left: string; right: string }[];
-      distractors: { id: string; side: string; label: string }[];
     };
-    expect(cw.gameType).toBe('CONNECTION_WEB');
+    expect(cw.gameType).toBe('MATCH_PAIRS');
     expect(cw.pairs[0]).toMatchObject({
       left: 'Dot Product',
       right: 'Results in a scalar value',
     });
     expect(cw.pairs[0].id.length).toBeGreaterThan(0);
-    expect(cw.distractors[0]).toMatchObject({ side: 'right', label: 'Always results in a matrix' });
 
     const sb = r.cards[2].content as { gameType: string; items: { id: string; label: string; correctPosition: number }[] };
     expect(sb.gameType).toBe('SEQUENCE_BUILD');
@@ -146,14 +143,13 @@ describe('parseTopicCardsPayload', () => {
           type: 'MINI_GAME',
           difficulty: 1,
           content: {
-            gameType: 'CONNECTION_WEB',
+            gameType: 'MATCH_PAIRS',
             prompt: 'Match.',
             pairs: [
               { term: 'Mean', definition: 'The average' },
               { term: 'Median', definition: 'The middle ordered value' },
               { term: 'Range', definition: 'Maximum minus minimum' },
             ],
-            distractors: ['d1'],
             explanation: 'ex',
           },
         },
