@@ -5,6 +5,7 @@ import { flushSync } from 'react-dom';
 import { useStudyKeyboardShortcuts } from './useStudyKeyboardShortcuts';
 
 type ShortcutHarnessProps = {
+  enabled: boolean;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -12,8 +13,13 @@ type ShortcutHarnessProps = {
 };
 
 function ShortcutHarness(props: ShortcutHarnessProps) {
-  const { onUndo, onRedo, canUndo, canRedo } = props;
-  useStudyKeyboardShortcuts(onUndo, onRedo, canUndo, canRedo);
+  useStudyKeyboardShortcuts({
+    enabled: props.enabled,
+    onUndo: props.onUndo,
+    onRedo: props.onRedo,
+    canUndo: props.canUndo,
+    canRedo: props.canRedo,
+  });
   return null;
 }
 
@@ -27,6 +33,7 @@ function renderShortcutHarness(override: Partial<ShortcutHarnessProps> = {}) {
   };
 
   const baseProps: ShortcutHarnessProps = {
+    enabled: true,
     canUndo: true,
     canRedo: true,
     onUndo: vi.fn(),
@@ -50,6 +57,7 @@ describe('useStudyKeyboardShortcuts', () => {
     const onUndo = vi.fn();
     const onRedo = vi.fn();
     const { unmount } = renderShortcutHarness({
+      enabled: true,
       canUndo: true,
       canRedo: true,
       onUndo,
@@ -68,8 +76,28 @@ describe('useStudyKeyboardShortcuts', () => {
     const onUndo = vi.fn();
     const onRedo = vi.fn();
     const { unmount } = renderShortcutHarness({
+      enabled: true,
       canUndo: false,
       canRedo: false,
+      onUndo,
+      onRedo,
+    });
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true }));
+
+    expect(onUndo).not.toHaveBeenCalled();
+    expect(onRedo).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('does not attach a listener when enabled is false', () => {
+    const onUndo = vi.fn();
+    const onRedo = vi.fn();
+    const { unmount } = renderShortcutHarness({
+      enabled: false,
+      canUndo: true,
+      canRedo: true,
       onUndo,
       onRedo,
     });

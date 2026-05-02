@@ -520,11 +520,20 @@ function DangerZoneSection({ onPrune }: { onPrune: () => void }) {
 }
 
 export function GlobalSettingsSheet() {
-  const isOpen = useUIStore((s) => s.globalSettingsOpen);
-  const setOpen = useUIStore((s) => s.setGlobalSettingsOpen);
+  const isOpen = useUIStore((s) => s.isGlobalSettingsOpen);
+  const openGlobalSettings = useUIStore((s) => s.openGlobalSettings);
+  const closeGlobalSettings = useUIStore((s) => s.closeGlobalSettings);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      openGlobalSettings();
+    } else {
+      closeGlobalSettings();
+    }
+  };
 
   return (
-    <Sheet open={isOpen} onOpenChange={setOpen}>
+    <Sheet open={isOpen} onOpenChange={handleOpenChange}>
       <SheetContent side="right" className={CONTENT_SHEET_CLASSNAME}>
         <SheetHeader>
           <SheetTitle>Settings</SheetTitle>
@@ -535,7 +544,7 @@ export function GlobalSettingsSheet() {
         <CurriculumProvidersSection />
         <StudyProvidersSection />
         <OpenRouterSection />
-        <DangerZoneSection onPrune={() => setOpen(false)} />
+        <DangerZoneSection onPrune={closeGlobalSettings} />
       </SheetContent>
     </Sheet>
   );
