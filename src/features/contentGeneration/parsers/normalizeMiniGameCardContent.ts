@@ -4,7 +4,7 @@
  * and content so the same payload normalizes identically across parses.
  *
  * Label aliases: `label` | `content` | `item` | `text` (game-type specific).
- * Connection pairs: `left`/`right` | `item1`/`item2` | `term`/`definition`.
+ * Match Pairs pairs: `left`/`right` | `item1`/`item2` | `term`/`definition`.
  */
 
 import { stringToKebabCaseId } from '@/lib/stringToKebabCaseId';
@@ -148,7 +148,12 @@ function normalizeSequenceBuild(cardId: string, content: Record<string, unknown>
   };
 }
 
-function normalizeConnectionWeb(cardId: string, content: Record<string, unknown>): Record<string, unknown> {
+/**
+ * Normalizes a MATCH_PAIRS content payload. Match Pairs has no distractors,
+ * so any incoming `distractors` field is intentionally discarded — it is
+ * not part of the canonical {@link MatchPairsContent} shape.
+ */
+function normalizeMatchPairs(cardId: string, content: Record<string, unknown>): Record<string, unknown> {
   const rawPairs = content.pairs;
   if (!Array.isArray(rawPairs)) {
     return content;
@@ -170,40 +175,13 @@ function normalizeConnectionWeb(cardId: string, content: Record<string, unknown>
     pairs.push({ id, left, right });
   }
 
-  const rawDist = content.distractors;
-  const distractors: { id: string; side: 'left' | 'right'; label: string }[] = [];
-  if (Array.isArray(rawDist)) {
-    for (let i = 0; i < rawDist.length; i++) {
-      const d = rawDist[i];
-      if (typeof d === 'string') {
-        const label = d.trim();
-        if (!label) continue;
-        distractors.push({
-          id: makeStableId(cardId, 'dist', i, label),
-          side: 'right',
-          label,
-        });
-        continue;
-      }
-      if (!isRecord(d)) continue;
-      const labelRaw = d.label;
-      const label = typeof labelRaw === 'string' ? labelRaw.trim() : '';
-      if (!label) continue;
-      const side = d.side === 'left' || d.side === 'right' ? d.side : 'right';
-      const id =
-        typeof d.id === 'string' && d.id.trim().length > 0 ? d.id.trim() : makeStableId(cardId, 'dist', i, `${side}|${label}`);
-      distractors.push({ id, side, label });
-    }
-  }
-
   const next: Record<string, unknown> = {
     ...content,
-    gameType: 'CONNECTION_WEB',
+    gameType: 'MATCH_PAIRS',
     pairs,
   };
-  if (distractors.length > 0) {
-    next.distractors = distractors;
-  } else {
+  // Drop any incoming distractors field — not part of MatchPairsContent.
+  if ('distractors' in next) {
     delete next.distractors;
   }
   return next;
@@ -220,8 +198,8 @@ export function normalizeMiniGameCardContent(cardId: string, content: Record<str
   if (gt === 'SEQUENCE_BUILD') {
     return normalizeSequenceBuild(cardId, content);
   }
-  if (gt === 'CONNECTION_WEB') {
-    return normalizeConnectionWeb(cardId, content);
+  if (gt === 'MATCH_PAIRS') {
+    return normalizeMatchPairs(cardId, content);
   }
   return content;
 }

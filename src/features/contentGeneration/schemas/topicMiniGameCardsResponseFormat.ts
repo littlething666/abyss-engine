@@ -4,7 +4,7 @@ import type { ChatResponseFormatJsonSchema } from '@/types/llm';
 const SCHEMA_NAMES: Record<MiniGameType, string> = {
   CATEGORY_SORT: 'topic_mini_game_category_sort_cards',
   SEQUENCE_BUILD: 'topic_mini_game_sequence_build_cards',
-  CONNECTION_WEB: 'topic_mini_game_connection_web_cards',
+  MATCH_PAIRS: 'topic_mini_game_match_pairs_cards',
 };
 
 const categoryRowSchema: Record<string, unknown> = {
@@ -102,7 +102,7 @@ const sequenceBuildContentSchema: Record<string, unknown> = {
   },
 };
 
-const connectionPairSchema: Record<string, unknown> = {
+const matchPairsPairSchema: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
   required: ['id', 'left', 'right'],
@@ -113,47 +113,23 @@ const connectionPairSchema: Record<string, unknown> = {
   },
 };
 
-const connectionDistractorSchema: Record<string, unknown> = {
+const matchPairsContentSchema: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['id', 'side', 'label'],
-  properties: {
-    id: { type: 'string', description: 'Unique distractor id within this card.' },
-    side: {
-      type: 'string',
-      enum: ['left', 'right'],
-      description: 'Which column this distractor chip belongs to.',
-    },
-    label: {
-      type: 'string',
-      description: 'Non-empty distractor label; must not duplicate any pair label on the chosen side.',
-    },
-  },
-};
-
-const connectionWebContentSchema: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['gameType', 'prompt', 'explanation', 'pairs', 'distractors'],
+  required: ['gameType', 'prompt', 'explanation', 'pairs'],
   properties: {
     gameType: {
       type: 'string',
-      enum: ['CONNECTION_WEB'],
-      description: 'MUST be CONNECTION_WEB for this job.',
+      enum: ['MATCH_PAIRS'],
+      description: 'MUST be MATCH_PAIRS for this job.',
     },
     prompt: { type: 'string', description: 'Non-empty learner-facing matching instruction.' },
     explanation: { type: 'string', description: 'Non-empty rationale for the correct pairings.' },
     pairs: {
       type: 'array',
       minItems: 3,
-      description: 'At least 3 term/definition (left/right) pairs.',
-      items: connectionPairSchema,
-    },
-    distractors: {
-      type: 'array',
-      description:
-        'Extra chips not part of a correct pair. Use an empty array when there are no distractors.',
-      items: connectionDistractorSchema,
+      description: 'At least 3 term/definition (left/right) pairs. Match Pairs is a strict 1:1 permutation — do not emit distractors.',
+      items: matchPairsPairSchema,
     },
   },
 };
@@ -164,8 +140,8 @@ function miniGameContentSchemaFor(gameType: MiniGameType): Record<string, unknow
       return categorySortContentSchema;
     case 'SEQUENCE_BUILD':
       return sequenceBuildContentSchema;
-    case 'CONNECTION_WEB':
-      return connectionWebContentSchema;
+    case 'MATCH_PAIRS':
+      return matchPairsContentSchema;
     default: {
       const _exhaustive: never = gameType;
       return _exhaustive;
