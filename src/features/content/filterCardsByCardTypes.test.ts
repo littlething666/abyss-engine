@@ -39,7 +39,7 @@ function card(id: string, type: Card['type']): Card {
 
 function miniGameCard(
   id: string,
-  gameType: 'CATEGORY_SORT' | 'SEQUENCE_BUILD' | 'CONNECTION_WEB',
+  gameType: 'CATEGORY_SORT' | 'SEQUENCE_BUILD' | 'MATCH_PAIRS',
 ): Card {
   if (gameType === 'SEQUENCE_BUILD') {
     return {
@@ -54,13 +54,13 @@ function miniGameCard(
       },
     };
   }
-  if (gameType === 'CONNECTION_WEB') {
+  if (gameType === 'MATCH_PAIRS') {
     return {
       id,
       type: 'MINI_GAME',
       difficulty: 1,
       content: {
-        gameType: 'CONNECTION_WEB',
+        gameType: 'MATCH_PAIRS',
         prompt: 'p',
         pairs: [{ id: 'p1', left: 'L', right: 'R' }],
         explanation: 'e',
@@ -122,7 +122,7 @@ describe('filterCardsForStudy', () => {
     const cards = [
       miniGameCard('c', 'CATEGORY_SORT'),
       miniGameCard('s', 'SEQUENCE_BUILD'),
-      miniGameCard('w', 'CONNECTION_WEB'),
+      miniGameCard('w', 'MATCH_PAIRS'),
     ];
     expect(filterCardsForStudy(cards, new Set(), new Set(['SEQUENCE_BUILD']))).toEqual([
       miniGameCard('s', 'SEQUENCE_BUILD'),
