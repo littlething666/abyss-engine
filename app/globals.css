@@ -208,3 +208,18 @@
     @apply font-sans;
   }
 }
+
+/* Study panel: scoped KaTeX sizing for primary (question/answer) vs secondary (options/context) markdown. */
+.study-markdown-primary .katex-display {
+  font-size: 1.28em;
+  line-height: 1.45;
+}
+
+.study-markdown-primary .katex {
+  font-size: 1.18em;
+}
+
+.study-markdown-secondary .katex-display {
+  font-size: 1.14em;
+  line-height: 1.4;
+}
