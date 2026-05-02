@@ -13,8 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { StudyPanelStateViews } from './studyPanel/StudyPanelStateViews';
 import { StudyPanelStudyView } from './studyPanel/StudyPanelStudyView';
 import { useStudyPanelModel } from '../hooks/useStudyPanelModel';
@@ -23,15 +21,12 @@ import { useStudyFormulaLlmExplain } from '../hooks/useStudyFormulaLlmExplain';
 import { useStudyQuestionLlmExplain } from '../hooks/useStudyQuestionLlmExplain';
 import { useInferenceTtsToggle } from '../hooks/useInferenceTtsToggle';
 import { useReasoningToggle } from '../hooks/useReasoningToggle';
-import { StudyPanelTab } from './studyPanel/types';
 import { MiniGameView } from './miniGames/MiniGameView';
 import type { MiniGameContent } from '../types/core';
 import { cardRefKey } from '@/lib/topicRef';
 import { RatingFeedbackCanvas, type RatingFeedbackCanvasHandle } from './studyPanel/RatingFeedbackCanvas';
 import { useRatingFeedback } from '@/hooks/useRatingFeedback';
-import { uiStore } from '@/store/uiStore';
 import { makeOpenRouterProviderSelector } from '../infrastructure/llmInferenceSurfaceProviders';
-import { Settings } from 'lucide-react';
 import { useStudySettingsStore } from '@/store/studySettingsStore';
 
 interface StudyPanelModalProps {
@@ -61,7 +56,6 @@ export function StudyPanelModal({
   onUndo,
   onRedo,
 }: StudyPanelModalProps) {
-  const [activeTab, setActiveTab] = useState<StudyPanelTab>('study');
   const currentSession = useStudyStore((state) => state.currentSession);
 
   const model = useStudyPanelModel({ currentCardId, currentTopicId, currentSubjectId, totalCards });
@@ -74,6 +68,7 @@ export function StudyPanelModal({
     makeOpenRouterProviderSelector('studyFormulaExplain'),
   );
   const ttsEnabled = useInferenceTtsToggle();
+  const showStudyHistoryControls = useStudySettingsStore((s) => s.showStudyHistoryControls);
   const llmExplain = useStudyQuestionLlmExplain({
     topicLabel: model.resolvedTopic,
     questionText: model.currentQuestion,
@@ -88,18 +83,16 @@ export function StudyPanelModal({
   });
 
   useEffect(() => {
-    if (!isOpen || activeTab !== 'study' || !model.renderedCard) {
+    if (!isOpen || !model.renderedCard) {
       llmExplain.cancelInflight();
       llmFormulaExplain.cancelInflight();
     }
-  }, [isOpen, activeTab, model.renderedCard, llmExplain.cancelInflight, llmFormulaExplain.cancelInflight]);
+  }, [isOpen, model.renderedCard, llmExplain.cancelInflight, llmFormulaExplain.cancelInflight]);
 
   const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]);
   const [isAnswerSubmitted, setIsAnswerSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [isRevealed, setIsRevealed] = useState(false);
-  const systemPromptRef = useRef<HTMLPreElement>(null);
-  const previousActiveTabRef = useRef<StudyPanelTab>('study');
   const feedbackCanvasRef = useRef<RatingFeedbackCanvasHandle>(null);
   const studyCardContainerRef = useRef<HTMLDivElement>(null);
   const { triggerForRating, triggerForChoice } = useRatingFeedback({
@@ -107,20 +100,6 @@ export function StudyPanelModal({
     cardRef: studyCardContainerRef,
   });
 
-  /**
-   * Phase 4: emit `study-session:abandoned` when the panel closes mid
-   * session. Detection contract:
-   *   - a session exists in the progression store
-   *   - the user submitted at least one card (`attempts.length > 0`)
-   *   - the session has not naturally completed
-   *     (`attempts.length < totalCards`); the completion path already
-   *     emits `study-session:completed` via the `session:completed`
-   *     bus event in eventBusHandlers.ts.
-   *
-   * Reading from `useStudyStore.getState()` rather than the subscribed
-   * `currentSession` value avoids stale-closure hazards if the user
-   * closes during a render in which the store has just settled.
-   */
   const handleClose = useCallback(() => {
     const session = useStudyStore.getState().currentSession;
     if (session) {
@@ -162,27 +141,16 @@ export function StudyPanelModal({
   const handleUndo = () => { onUndo(); applySubmissionStateFromSession(); };
   const handleRedo = () => { onRedo(); applySubmissionStateFromSession(); };
 
-  useStudyKeyboardShortcuts(handleUndo, handleRedo, model.canUndo, model.canRedo);
-
-  useEffect(() => {
-    if (previousActiveTabRef.current !== activeTab) {
-      telemetry.log('study-panel:tab-switched', {
-        topicId: currentSession?.topicId ?? currentTopicId,
-        sessionId: currentSession?.sessionId ?? null,
-        tab: activeTab,
-        fromTab: previousActiveTabRef.current,
-        toTab: activeTab,
-      }, {
-        topicId: currentSession?.topicId ?? currentTopicId,
-        sessionId: currentSession?.sessionId ?? null,
-      });
-      previousActiveTabRef.current = activeTab;
-    }
-  }, [activeTab, currentSession?.sessionId, currentSession?.topicId, currentTopicId]);
-
-  useEffect(() => {
-    if (!model.resolvedTopicId || (activeTab === 'theory' && !model.hasTheory)) setActiveTab('study');
-  }, [activeTab, model.hasTheory, model.resolvedTopicId]);
+  // Visual undo/redo affordances were removed as part of the visual-clutter cleanup;
+  // the keyboard shortcut path is the only undo/redo entry point and is gated behind
+  // the optional `showStudyHistoryControls` setting (Global Settings -> Preferences).
+  useStudyKeyboardShortcuts({
+    onUndo: handleUndo,
+    onRedo: handleRedo,
+    canUndo: model.canUndo,
+    canRedo: model.canRedo,
+    enabled: isOpen && showStudyHistoryControls,
+  });
 
   useEffect(() => {
     setSelectedAnswers([]); setIsAnswerSubmitted(false); setIsCorrect(false); setIsRevealed(false);
@@ -190,17 +158,6 @@ export function StudyPanelModal({
 
   useEffect(() => { applySubmissionStateFromSession(); }, [currentSession?.attempts?.length, currentSession?.currentCardId]);
   useEffect(() => { if (!isOpen) { setSelectedAnswers([]); setIsAnswerSubmitted(false); setIsCorrect(false); setIsRevealed(false); } }, [isOpen]);
-
-  const handleSelectSystemPrompt = () => {
-    const el = systemPromptRef.current;
-    if (!el) return;
-    const selection = window.getSelection();
-    if (!selection) return;
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  };
 
   const handleAnswerSelect = (answer: string) => {
     if (isAnswerSubmitted || !model.renderedCard) return;
@@ -277,56 +234,24 @@ export function StudyPanelModal({
       open={isOpen}
       onOpenChange={(open) => { if (!open) handleClose(); }}
     >
-      <DialogContent className="max-h-[95vh] flex flex-col">
-        <DialogHeader>
+      <DialogContent className="flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden rounded-none sm:h-[95dvh] sm:max-h-[95dvh] sm:rounded-xl">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="sr-only" data-testid="study-session-title">📚 Study Session</DialogTitle>
           <DialogDescription className="sr-only">
             Review cards, answer prompts, and track your study session progress.
           </DialogDescription>
-          <div className="flex items-center justify-center gap-2">
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StudyPanelTab)}>
-              <TabsList className="mx-auto">
-                <TabsTrigger value="study" data-testid="study-tab-study">📖 Study</TabsTrigger>
-                {model.hasTheory && (
-                  <TabsTrigger value="theory" data-testid="study-tab-theory">💡 Theory</TabsTrigger>
-                )}
-                <TabsTrigger
-                  value="system_prompt"
-                  disabled={!model.resolvedTopicId}
-                  data-testid="study-tab-system-prompt"
-                >🧠</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              onClick={() => uiStore.getState().openGlobalSettings()}
-              aria-label="Open global settings"
-              data-testid="study-tab-settings"
-            >
-              <Settings className="h-3.5 w-3.5" />
-            </Button>
-          </div>
         </DialogHeader>
-        <div data-testid="study-panel-modal-content" className="-mx-4 px-4 overflow-y-auto">
+        <div data-testid="study-panel-modal-content" className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4">
           <StudyPanelStateViews
-            activeTab={activeTab}
-            hasTheory={model.hasTheory}
             isEmptyDeck={model.isEmptyDeck}
             isLoadingCards={model.isLoadingCards}
             isCardsLoadError={model.isCardsLoadError}
             hasActiveCard={model.hasActiveCard}
             isCompleted={model.isCompleted}
-            resolvedTopicTheory={model.resolvedTopicTheory}
-            resolvedTopic={model.resolvedTopic}
-            topicSystemPrompt={model.topicSystemPrompt}
             onClose={handleClose}
-            onSystemPromptSelect={handleSelectSystemPrompt}
-            systemPromptRef={systemPromptRef}
           />
 
-          {model.renderedCard && activeTab === 'study' && (
+          {model.renderedCard && (
             <div ref={studyCardContainerRef} className="relative">
               <RatingFeedbackCanvas ref={feedbackCanvasRef} containerRef={studyCardContainerRef} />
               {model.isMiniGame && model.renderedCard.miniGame ? (
@@ -350,17 +275,13 @@ export function StudyPanelModal({
                   isRevealed={isRevealed}
                   sm2State={model.sm2State}
                   activeCard={model.activeCard}
+                  topicSystemPrompt={model.topicSystemPrompt}
+                  resolvedTopic={model.resolvedTopic}
                   onSelectAnswer={handleAnswerSelect}
                   onChoiceSubmit={handleChoiceSubmit}
                   onChoiceContinue={handleChoiceContinue}
                   onCoarseRate={handleCoarseRate}
                   onHintUsed={handleHintUsed}
-                  onUndo={handleUndo}
-                  onRedo={handleRedo}
-                  canUndo={model.canUndo}
-                  canRedo={model.canRedo}
-                  undoCount={model.undoCount}
-                  redoCount={model.redoCount}
                   llmExplain={llmExplain}
                   llmFormulaExplain={llmFormulaExplain}
                   explainReasoningEnabled={explainReasoning.enableReasoning}
