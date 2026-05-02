@@ -8,6 +8,7 @@ export {
   CRYSTAL_INSTANCE_OFFSET_MORPH,
   CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY,
   CRYSTAL_INSTANCE_OFFSET_SEED,
+  CRYSTAL_INSTANCE_OFFSET_TOPIC_SEED,
   CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE,
   CRYSTAL_INSTANCE_STRIDE,
   CRYSTAL_MAX_INSTANCES,
@@ -15,4 +16,4 @@ export {
   type CrystalInstancedAttributes,
 } from './crystalInstanceAttributes';
 export { createCrystalNodeMaterial } from './crystalMaterial';
-export { crystalHighFrequencyNoise, crystalLowFrequencyNoise, crystalSpikeNoise } from './crystalNoiseNodes';
+export { crystalHighFrequencyNoise, crystalLowFrequencyNoise, crystalShardJitterSeed, crystalSpikeNoise } from './crystalNoiseNodes';

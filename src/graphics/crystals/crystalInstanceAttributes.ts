@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 
-/** Floats per instance: level, morph, seed, color×3, selectCeremony×2, trialAvailable */
-export const CRYSTAL_INSTANCE_STRIDE = 9;
+/** Floats per instance: level, morph, subjectSeed, color×3, selectCeremony×2, trialAvailable, topicSeed */
+export const CRYSTAL_INSTANCE_STRIDE = 10;
 
 export const CRYSTAL_INSTANCE_OFFSET_LEVEL = 0;
 export const CRYSTAL_INSTANCE_OFFSET_MORPH = 1;
@@ -19,6 +19,12 @@ export const CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY = 6;
  * `src/features/crystalTrial/trialPolicy.ts`.
  */
 export const CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE = 8;
+/**
+ * Per-topic FNV-1a hash in [0, 1). Drives noise sampling rotation, per-shard
+ * jitter at L4–L5, and emissive HSV drift. Single source of truth for
+ * "this topic looks like that one" — no `Math.random()` in shader path.
+ */
+export const CRYSTAL_INSTANCE_OFFSET_TOPIC_SEED = 9;
 
 export const CRYSTAL_INSTANCE_FLOAT_COUNT = CRYSTAL_INSTANCE_STRIDE;
 
@@ -37,6 +43,7 @@ export interface CrystalInstancedAttributes {
   instanceColor: THREE.InterleavedBufferAttribute;
   instanceSelectCeremony: THREE.InterleavedBufferAttribute;
   instanceTrialAvailable: THREE.InterleavedBufferAttribute;
+  instanceTopicSeed: THREE.InterleavedBufferAttribute;
 }
 
 export function createCrystalInstancedAttributes(
@@ -54,6 +61,7 @@ export function createCrystalInstancedAttributes(
     instanceColor: new THREE.InterleavedBufferAttribute(interleaved, 3, CRYSTAL_INSTANCE_OFFSET_COLOR),
     instanceSelectCeremony: new THREE.InterleavedBufferAttribute(interleaved, 2, CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY),
     instanceTrialAvailable: new THREE.InterleavedBufferAttribute(interleaved, 1, CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE),
+    instanceTopicSeed: new THREE.InterleavedBufferAttribute(interleaved, 1, CRYSTAL_INSTANCE_OFFSET_TOPIC_SEED),
   };
 
   return {

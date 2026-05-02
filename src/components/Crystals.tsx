@@ -9,16 +9,17 @@ import {
   ActiveCrystal,
   CrystalBaseShape,
   CRYSTAL_BASE_SHAPES,
-  DEFAULT_CRYSTAL_BASE_SHAPE,
   Subject,
   type TopicRef,
 } from '../types';
 import type { TopicIconName } from '../types/core';
 import {
   calculateLevelFromXP,
+  crystalBaseShapeFromTopicRef,
   crystalCeremonyStore,
   getCrystalScale,
   subjectSeedFromId,
+  topicSeedFromRef,
   useProgressionStore,
 } from '../features/progression';
 import {
@@ -48,6 +49,7 @@ import {
   CRYSTAL_INSTANCE_OFFSET_MORPH,
   CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY,
   CRYSTAL_INSTANCE_OFFSET_SEED,
+  CRYSTAL_INSTANCE_OFFSET_TOPIC_SEED,
   CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE,
   CRYSTAL_INSTANCE_STRIDE,
   CRYSTAL_MAX_INSTANCES,
@@ -96,17 +98,6 @@ const positionScratch = new THREE.Vector3();
 const quaternionScratch = new THREE.Quaternion();
 const scaleScratch = new THREE.Vector3();
 const yAxis = new THREE.Vector3(0, 1, 0);
-
-function resolveCrystalBaseShape(
-  topicKey: string,
-  metadataLookup: Record<string, TopicMetadata | undefined>,
-  subjects: Subject[],
-): CrystalBaseShape {
-  const meta = metadataLookup[topicKey];
-  if (!meta?.subjectId) return DEFAULT_CRYSTAL_BASE_SHAPE;
-  const subject = subjects.find((s) => s.id === meta.subjectId);
-  return subject?.crystalBaseShape ?? DEFAULT_CRYSTAL_BASE_SHAPE;
-}
 
 /** Trial status that marks trial question pregeneration in-flight for a topic. */
 const TRIAL_PREGENERATION_STATUS = 'pregeneration';
@@ -163,7 +154,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
     crystals.map((crystal) => ({ subjectId: crystal.subjectId, topicId: crystal.topicId })),
   );
   const manifestQuery = useManifest();
-  const subjects = manifestQuery.data?.subjects ?? [];
+  const subjects: Subject[] = manifestQuery.data?.subjects ?? [];
 
   const selectedTopic = useUIStore((state) => state.selectedTopic);
   const selectTopic = useUIStore((state) => state.selectTopic);
@@ -210,6 +201,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
       geometry.setAttribute('instanceColor', attributes.instanceColor);
       geometry.setAttribute('instanceSelectCeremony', attributes.instanceSelectCeremony);
       geometry.setAttribute('instanceTrialAvailable', attributes.instanceTrialAvailable);
+      geometry.setAttribute('instanceTopicSeed', attributes.instanceTopicSeed);
       const material = createCrystalNodeMaterial(attributes, environmentMap);
       groups[shape] = { geometry, material, arrays, attributes };
     }
@@ -454,7 +446,7 @@ export const Crystals: React.FC<CrystalsProps> = ({
       const crystal = crystals[i];
       const topicKey = topicRefKey(crystal);
       const topicMeta = metadataLookup[topicKey] as TopicMetadata | undefined;
-      const shape = resolveCrystalBaseShape(topicKey, metadataLookup, subjects);
+      const shape = crystalBaseShapeFromTopicRef(crystal);
       const group = shapeGroups[shape];
       const localIdx = shapeCounts[shape]++;
 
@@ -518,6 +510,8 @@ export const Crystals: React.FC<CrystalsProps> = ({
       if (isTrialAvailable) {
         needsInvalidate = true;
       }
+
+      d[row + CRYSTAL_INSTANCE_OFFSET_TOPIC_SEED] = topicSeedFromRef(crystal);
 
       const anchor = labelAnchorRefs.current[i];
       if (anchor) {

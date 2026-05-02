@@ -41,12 +41,7 @@ describe('crystalClusterGeometry', () => {
     expect(first).toBe(second);
   });
 
-  it('defines shard activation levels matching design spec', () => {
-    expect(SHARD_ACTIVATION_LEVELS[0]).toBe(0);
-    expect(SHARD_ACTIVATION_LEVELS[1]).toBe(2);
-    expect(SHARD_ACTIVATION_LEVELS[2]).toBe(2);
-    expect(SHARD_ACTIVATION_LEVELS[3]).toBe(4);
-    expect(SHARD_ACTIVATION_LEVELS[4]).toBe(4);
-    expect(SHARD_ACTIVATION_LEVELS[5]).toBe(4);
+  it('defines per-level shard activation: 1→6 shards across L0–L5', () => {
+    expect(SHARD_ACTIVATION_LEVELS).toEqual([0, 1, 2, 3, 4, 5]);
   });
 });

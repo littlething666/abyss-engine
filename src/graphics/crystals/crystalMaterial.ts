@@ -3,6 +3,7 @@ import * as THREE from 'three/webgpu';
 import {
   cameraPosition,
   clamp,
+  cos,
   float,
   floor,
   Fn,
@@ -24,6 +25,7 @@ import {
   CRYSTAL_INSTANCE_OFFSET_MORPH,
   CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY,
   CRYSTAL_INSTANCE_OFFSET_SEED,
+  CRYSTAL_INSTANCE_OFFSET_TOPIC_SEED,
   CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE,
   CRYSTAL_INSTANCE_STRIDE,
   type CrystalInstancedAttributes,
@@ -31,6 +33,7 @@ import {
 import {
   crystalHighFrequencyNoise,
   crystalLowFrequencyNoise,
+  crystalShardJitterSeed,
   crystalSpikeNoise,
 } from './crystalNoiseNodes';
 
@@ -73,15 +76,11 @@ function tierScalar(
 
 /**
  * Shard activation: returns 1.0 when the shard should be visible at the given tier, 0.0 otherwise.
- * Shard 0: always, Shards 1–2: tier >= 2, Shards 3–5: tier >= 4.
+ * One shard emerges per level — shard `k` activates at `tier >= k`. Mirrors the
+ * `SHARD_ACTIVATION_LEVELS = [0,1,2,3,4,5]` table on the CPU side.
  */
 function shardActiveAtTier(shardIdx: unknown, tier: unknown) {
-  return (shardIdx as any)
-    .lessThan(0.5)
-    .select(float(1), (shardIdx as any).lessThan(2.5).select(
-      (tier as any).greaterThanEqual(2).select(float(1), float(0)),
-      (tier as any).greaterThanEqual(4).select(float(1), float(0)),
-    ));
+  return (tier as any).greaterThanEqual(shardIdx as any).select(float(1), float(0));
 }
 
 /**
@@ -101,6 +100,7 @@ export function createCrystalNodeMaterial(
   const iColor = instancedDynamicBufferAttribute(ib, 'vec3', S, CRYSTAL_INSTANCE_OFFSET_COLOR).setInstanced(true);
   const iSelectCeremony = instancedDynamicBufferAttribute(ib, 'vec2', S, CRYSTAL_INSTANCE_OFFSET_SELECT_CEREMONY).setInstanced(true);
   const iTrialAvailable = instancedDynamicBufferAttribute(ib, 'float', S, CRYSTAL_INSTANCE_OFFSET_TRIAL_AVAILABLE).setInstanced(true);
+  const iTopicSeed = instancedDynamicBufferAttribute(ib, 'float', S, CRYSTAL_INSTANCE_OFFSET_TOPIC_SEED).setInstanced(true);
   const iSelected = iSelectCeremony.x;
   const iCeremonyPhase = iSelectCeremony.y;
 
@@ -139,10 +139,14 @@ export function createCrystalNodeMaterial(
     tierScalar(levelInt, 0, 0, 0.15, 0.28, 0.38, 0.50),
     morphT,
   );
-  const spikeAmp = mix(
+  const spikeAmpBase = mix(
     tierScalar(fromTier, 0, 0.01, 0.04, 0.10, 0.18, 0.28),
     tierScalar(levelInt, 0, 0.01, 0.04, 0.10, 0.18, 0.28),
     morphT,
+  );
+  // L5 capstone: branchless +0.05 spike-amplitude bump at max tier.
+  const spikeAmp = spikeAmpBase.add(
+    levelInt.greaterThanEqual(float(5)).select(float(0.05), float(0)),
   );
   const spikeScale = mix(
     tierScalar(fromTier, 0, 2.0, 3.0, 4.0, 5.5, 7.0),
@@ -203,13 +207,36 @@ export function createCrystalNodeMaterial(
 
   const positionNode = Fn(() => {
     const n = normalLocal.normalize();
-    const p = positionLocal;
     const seed = iSubjectSeed;
 
-    const lowNoise = crystalLowFrequencyNoise(p, seed, lowFreqScale);
-    const highRaw = crystalHighFrequencyNoise(p, seed, highFreqScale);
+    // Per-topic rotation around Y of the noise-sampling position. Gives every
+    // topic a unique facet orientation without rotating the actual mesh.
+    const topicAngle = iTopicSeed.mul(float(6.2831853));
+    const cosT = cos(topicAngle);
+    const sinT = sin(topicAngle);
+    const pTopicRotated = vec3(
+      positionLocal.x.mul(cosT).sub(positionLocal.z.mul(sinT)),
+      positionLocal.y,
+      positionLocal.x.mul(sinT).add(positionLocal.z.mul(cosT)),
+    );
+
+    // L4–L5 per-shard rotation jitter — additional rotation derived from the
+    // centralized jitter helper (single 7.913 constant, no duplication).
+    const jitterStrength = levelInt.greaterThanEqual(float(4)).select(float(1), float(0));
+    const jitterSeed = crystalShardJitterSeed(iTopicSeed, shardIdx);
+    const jitterAngle = jitterSeed.sub(float(0.5)).mul(float(0.6)).mul(jitterStrength);
+    const cosJ = cos(jitterAngle);
+    const sinJ = sin(jitterAngle);
+    const p = vec3(
+      pTopicRotated.x.mul(cosJ).sub(pTopicRotated.z.mul(sinJ)),
+      pTopicRotated.y,
+      pTopicRotated.x.mul(sinJ).add(pTopicRotated.z.mul(cosJ)),
+    );
+
+    const lowNoise = crystalLowFrequencyNoise(p, seed, iTopicSeed, lowFreqScale);
+    const highRaw = crystalHighFrequencyNoise(p, seed, iTopicSeed, highFreqScale);
     const highQuant = floor(highRaw.div(max(quantStep, float(1e-4)))).mul(quantStep);
-    const spike = crystalSpikeNoise(p, seed, spikeScale);
+    const spike = crystalSpikeNoise(p, seed, iTopicSeed, spikeScale);
     const total = lowNoise.mul(lowFreqAmp)
       .add(highQuant.mul(highFreqAmp))
       .add(spike.mul(spikeAmp));
@@ -242,7 +269,25 @@ export function createCrystalNodeMaterial(
   const trialPulseRaw = sin(time.mul(float(9.42))).mul(float(0.4)).add(float(0.6));
   const trialPulse = iTrialAvailable.mul(trialPulseRaw).mul(float(0.8));
 
-  material.emissiveNode = iColor.mul(
+  // Per-topic emissive HSV drift: ±5° hue around the [1,1,1] axis (luma-preserving)
+  // and ±8% lightness, both signed by topic seed. Applied to the emissive node only;
+  // base color stays subject-consistent.
+  const driftSigned = iTopicSeed.mul(float(2)).sub(float(1));
+  const hueAngle = driftSigned.mul(float(0.0872665)); // ±5° in radians
+  const cosH = cos(hueAngle);
+  const sinH = sin(hueAngle);
+  const oneMinusCosH = float(1).sub(cosH);
+  const sqrt3Inv = float(0.5773503); // 1/√3
+  const diag = cosH.add(oneMinusCosH.div(float(3)));
+  const offMinus = oneMinusCosH.div(float(3)).sub(sinH.mul(sqrt3Inv));
+  const offPlus = oneMinusCosH.div(float(3)).add(sinH.mul(sqrt3Inv));
+  const driftR = iColor.x.mul(diag).add(iColor.y.mul(offMinus)).add(iColor.z.mul(offPlus));
+  const driftG = iColor.x.mul(offPlus).add(iColor.y.mul(diag)).add(iColor.z.mul(offMinus));
+  const driftB = iColor.x.mul(offMinus).add(iColor.y.mul(offPlus)).add(iColor.z.mul(diag));
+  const lightnessFactor = float(1).add(driftSigned.mul(float(0.08)));
+  const driftedEmissiveColor = vec3(driftR, driftG, driftB).mul(lightnessFactor);
+
+  material.emissiveNode = driftedEmissiveColor.mul(
     fresnelTerm.add(levelNorm.mul(0.3)).add(selectionBoost).add(ceremonyFlash).add(trialPulse).add(emissiveIntensity.mul(0.15)),
   );
 
