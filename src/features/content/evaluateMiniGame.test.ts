@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import type {
   CategorySortContent,
   SequenceBuildContent,
-  ConnectionWebContent,
+  MatchPairsContent,
 } from '../../types/core';
 import { evaluateMiniGame, miniGameResultToIsCorrect } from './evaluateMiniGame';
 
@@ -41,9 +41,9 @@ function createSequenceBuildContent(): SequenceBuildContent {
   };
 }
 
-function createConnectionWebContent(): ConnectionWebContent {
+function createMatchPairsContent(): MatchPairsContent {
   return {
-    gameType: 'CONNECTION_WEB',
+    gameType: 'MATCH_PAIRS',
     prompt: 'Match left to right',
     pairs: [
       { id: 'p1', left: 'A', right: '1' },
@@ -190,9 +190,9 @@ function rightNode(pairId: string): string {
   return `right-${pairId}`;
 }
 
-describe('evaluateMiniGame — Connection Web', () => {
-  it('returns score 1.0 when all pairs correctly matched and distractors unconnected', () => {
-    const content = createConnectionWebContent();
+describe('evaluateMiniGame — Match Pairs', () => {
+  it('returns score 1.0 when all pairs correctly matched', () => {
+    const content = createMatchPairsContent();
     const placements = new Map<string, string>();
     for (const pair of content.pairs) {
       placements.set(pair.id, rightNode(pair.id));
@@ -206,7 +206,7 @@ describe('evaluateMiniGame — Connection Web', () => {
   });
 
   it('returns score 0.0 when all pairs incorrectly matched', () => {
-    const content = createConnectionWebContent();
+    const content = createMatchPairsContent();
     const placements = new Map<string, string>();
     for (const pair of content.pairs) {
       placements.set(pair.id, 'wrong');
@@ -217,8 +217,8 @@ describe('evaluateMiniGame — Connection Web', () => {
     expect(result.isCorrect).toBe(false);
   });
 
-  it('returns isCorrect=true at threshold (4/5 pairs correct, no distractors)', () => {
-    const content = createConnectionWebContent();
+  it('returns isCorrect=true at threshold (4/5 pairs correct)', () => {
+    const content = createMatchPairsContent();
     const placements = new Map<string, string>();
     content.pairs.forEach((pair, i) => {
       placements.set(pair.id, i < 4 ? rightNode(pair.id) : 'wrong');
@@ -230,7 +230,7 @@ describe('evaluateMiniGame — Connection Web', () => {
   });
 
   it('returns isCorrect=false below threshold', () => {
-    const content = createConnectionWebContent();
+    const content = createMatchPairsContent();
     const placements = new Map<string, string>();
     content.pairs.forEach((pair, i) => {
       placements.set(pair.id, i < 3 ? rightNode(pair.id) : 'wrong');
@@ -239,72 +239,6 @@ describe('evaluateMiniGame — Connection Web', () => {
     const result = evaluateMiniGame(content, placements);
     expect(result.score).toBe(0.6);
     expect(result.isCorrect).toBe(false);
-  });
-
-  it('penalizes connected left distractors (score drops; below threshold when pairs also wrong)', () => {
-    const content: ConnectionWebContent = {
-      ...createConnectionWebContent(),
-      distractors: [{ id: 'dist-l1', side: 'left', label: 'Extra' }],
-    };
-    const placements = new Map<string, string>();
-    content.pairs.forEach((pair, i) => {
-      placements.set(pair.id, i === 0 ? 'wrong' : rightNode(pair.id));
-    });
-    placements.set('dist-l1', 'right-p1');
-
-    const result = evaluateMiniGame(content, placements);
-    expect(result.totalItems).toBe(6);
-    expect(result.correctItems).toBe(4);
-    expect(result.score).toBeCloseTo(4 / 6, 5);
-    expect(result.isCorrect).toBe(false);
-  });
-
-  it('rewards unconnected left distractors', () => {
-    const content: ConnectionWebContent = {
-      ...createConnectionWebContent(),
-      distractors: [{ id: 'dist-l1', side: 'left', label: 'Extra' }],
-    };
-    const placements = new Map<string, string>();
-    for (const pair of content.pairs) {
-      placements.set(pair.id, rightNode(pair.id));
-    }
-
-    const result = evaluateMiniGame(content, placements);
-    expect(result.totalItems).toBe(6);
-    expect(result.correctItems).toBe(6);
-    expect(result.score).toBe(1);
-    expect(result.isCorrect).toBe(true);
-  });
-
-  it('handles content with no distractors', () => {
-    const content = createConnectionWebContent();
-    const placements = new Map<string, string>();
-    for (const pair of content.pairs) {
-      placements.set(pair.id, rightNode(pair.id));
-    }
-
-    const result = evaluateMiniGame(content, placements);
-    expect(result.totalItems).toBe(5);
-    expect(result.placements.filter((p) => p.itemId.startsWith('dist')).length).toBe(0);
-  });
-
-  it('handles distractors on both sides (only left distractors affect score total)', () => {
-    const content: ConnectionWebContent = {
-      ...createConnectionWebContent(),
-      distractors: [
-        { id: 'dist-l1', side: 'left', label: 'L' },
-        { id: 'dist-r1', side: 'right', label: 'R' },
-      ],
-    };
-    const placements = new Map<string, string>();
-    for (const pair of content.pairs) {
-      placements.set(pair.id, rightNode(pair.id));
-    }
-
-    const result = evaluateMiniGame(content, placements);
-    expect(result.totalItems).toBe(6);
-    expect(result.correctItems).toBe(6);
-    expect(result.score).toBe(1);
   });
 });
 

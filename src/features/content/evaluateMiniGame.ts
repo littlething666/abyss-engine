@@ -2,7 +2,7 @@ import type {
   MiniGameContent,
   CategorySortContent,
   SequenceBuildContent,
-  ConnectionWebContent,
+  MatchPairsContent,
 } from '../../types/core';
 import type { MiniGameResult, MiniGamePlacement } from '../../types/miniGame';
 
@@ -17,8 +17,8 @@ export function evaluateMiniGame(
       return evaluateCategorySort(content, placements);
     case 'SEQUENCE_BUILD':
       return evaluateSequenceBuild(content, placements);
-    case 'CONNECTION_WEB':
-      return evaluateConnectionWeb(content, placements);
+    case 'MATCH_PAIRS':
+      return evaluateMatchPairs(content, placements);
   }
 }
 
@@ -78,12 +78,17 @@ function expectedRightNodeId(pairId: string): string {
   return `right-${pairId}`;
 }
 
-function evaluateConnectionWeb(
-  content: ConnectionWebContent,
+/**
+ * Match Pairs scoring: every left node MUST end up paired with the
+ * matching right node (`right-${pair.id}`). Match Pairs has no distractors,
+ * so totalItems is just the number of declared pairs.
+ */
+function evaluateMatchPairs(
+  content: MatchPairsContent,
   placements: Map<string, string>,
 ): MiniGameResult {
-  const totalPairs = content.pairs.length;
-  let pairCorrect = 0;
+  const totalItems = content.pairs.length;
+  let correctItems = 0;
   const placementList: MiniGamePlacement[] = [];
 
   for (const pair of content.pairs) {
@@ -91,7 +96,7 @@ function evaluateConnectionWeb(
     const expectedRightId = expectedRightNodeId(pair.id);
     const placedRightId = placements.get(leftId);
     const isItemCorrect = placedRightId === expectedRightId;
-    if (isItemCorrect) pairCorrect++;
+    if (isItemCorrect) correctItems++;
     placementList.push({
       itemId: leftId,
       targetId: placedRightId ?? '',
@@ -99,27 +104,11 @@ function evaluateConnectionWeb(
     });
   }
 
-  const leftDistractors = (content.distractors ?? []).filter((d) => d.side === 'left');
-  const totalItems = totalPairs + leftDistractors.length;
-  let distractorCorrect = 0;
-
-  for (const distractor of leftDistractors) {
-    const connected = placements.has(distractor.id);
-    if (!connected) distractorCorrect++;
-    const isItemCorrect = !connected;
-    placementList.push({
-      itemId: distractor.id,
-      targetId: placements.get(distractor.id) ?? '',
-      isItemCorrect,
-    });
-  }
-
-  const totalCorrect = pairCorrect + distractorCorrect;
-  const score = totalItems > 0 ? totalCorrect / totalItems : 0;
+  const score = totalItems > 0 ? correctItems / totalItems : 0;
 
   return {
     totalItems,
-    correctItems: totalCorrect,
+    correctItems,
     score,
     isCorrect: score >= CORRECT_THRESHOLD,
     placements: placementList,

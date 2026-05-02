@@ -1,8 +1,8 @@
 import type {
   Card,
   CategorySortContent,
-  ConnectionWebContent,
   FlashcardContent,
+  MatchPairsContent,
   MultiChoiceContent,
   SequenceBuildContent,
   SingleChoiceContent,
@@ -31,7 +31,7 @@ export function extractConceptTarget(card: Card): string {
     const choice = content as MultiChoiceContent;
     return normalizeConceptText(`${choice.question} ${choice.correctAnswers.join(' ')}`);
   }
-  const miniGame = content as CategorySortContent | SequenceBuildContent | ConnectionWebContent;
+  const miniGame = content as CategorySortContent | SequenceBuildContent | MatchPairsContent;
   if (miniGame.gameType === 'CATEGORY_SORT') {
     return normalizeConceptText(`${miniGame.prompt} ${miniGame.categories.map((c) => c.label).join(' ')}`);
   }

@@ -87,7 +87,7 @@ function jobKindToFailureKind(kind: ContentGenerationJobKind): GenerationAttenti
     case 'topic-mini-games':
     case 'topic-mini-game-category-sort':
     case 'topic-mini-game-sequence-build':
-    case 'topic-mini-game-connection-web':
+    case 'topic-mini-game-match-pairs':
       return 'topic-content';
     case 'topic-expansion-cards':
       return 'topic-expansion';
@@ -126,7 +126,7 @@ function topicStageFromJobKind(
     kind === 'topic-mini-games' ||
     kind === 'topic-mini-game-category-sort' ||
     kind === 'topic-mini-game-sequence-build' ||
-    kind === 'topic-mini-game-connection-web'
+    kind === 'topic-mini-game-match-pairs'
   ) {
     return 'mini-games';
   }

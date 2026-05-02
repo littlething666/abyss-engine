@@ -46,10 +46,6 @@ const { telemetryApi } = vi.hoisted(() => ({
   },
 }));
 
-// `runTopicGenerationPipeline` imports `{ telemetry }` from
-// `@/features/telemetry`. Mocking it here bypasses the dev-mode payload
-// validation guard inside `telemetry.log` so the tests can assert on the
-// exact call shape without producing real telemetry events.
 vi.mock('@/features/telemetry', () => ({
   telemetry: telemetryApi,
 }));
@@ -100,13 +96,6 @@ const readyCards: Card[] = Array.from({ length: 6 }, (_, i) => ({
   content: { front: 'f', back: 'b' },
 }));
 
-/**
- * Theory payload fixture used by the faithful `runContentGenerationJob`
- * mock when emulating the topic-theory stage. Mirrors the production
- * `ParsedTopicTheoryContentPayload` shape so `runTopicGenerationPipeline`'s
- * `resolveTheoryData()` returns this and downstream stages run as in
- * production.
- */
 const FIXTURE_THEORY_DATA = {
   coreConcept: 'cc',
   theory: 'theory body',
@@ -178,15 +167,15 @@ function stubMiniCardsForJobKind(kind: string): Card[] {
     if (!r.ok) throw new Error(r.error);
     return r.cards;
   }
-  if (kind === 'topic-mini-game-connection-web') {
+  if (kind === 'topic-mini-game-match-pairs') {
     const r = parseTopicCardsPayload(
       wrap([
         {
-          id: 't-a-stub-web',
+          id: 't-a-stub-pairs',
           type: 'MINI_GAME',
           difficulty: 1,
           content: {
-            gameType: 'CONNECTION_WEB',
+            gameType: 'MATCH_PAIRS',
             prompt: 'Match',
             explanation: 'E',
             pairs: [
@@ -197,7 +186,7 @@ function stubMiniCardsForJobKind(kind: string): Card[] {
           },
         },
       ]),
-      { allowedCardTypes: ['MINI_GAME'], allowedMiniGameTypes: ['CONNECTION_WEB'] },
+      { allowedCardTypes: ['MINI_GAME'], allowedMiniGameTypes: ['MATCH_PAIRS'] },
     );
     if (!r.ok) throw new Error(r.error);
     return r.cards;
@@ -205,16 +194,6 @@ function stubMiniCardsForJobKind(kind: string): Card[] {
   throw new Error(`unexpected mini job kind ${kind}`);
 }
 
-/**
- * Faithful default for the `runContentGenerationJob` mock: invokes
- * `persistOutput` with realistic per-stage data before resolving ok.
- * The earlier `mockResolvedValue({ ok: true })` shortcut left
- * `theoryData` undefined inside the pipeline, so `resolveTheoryData()`
- * fell back to `loadTheoryPayloadFromTopicDetails(details = null)` and
- * threw — aborting the run after the theory stage. Honoring the real
- * `persistOutput` contract here exercises the same data flow
- * production does.
- */
 async function defaultJobOk(
   args: { kind: string; persistOutput?: (data: unknown) => Promise<void> },
 ): Promise<{ ok: true }> {
@@ -226,7 +205,7 @@ async function defaultJobOk(
     } else if (
       args.kind === 'topic-mini-game-category-sort' ||
       args.kind === 'topic-mini-game-sequence-build' ||
-      args.kind === 'topic-mini-game-connection-web'
+      args.kind === 'topic-mini-game-match-pairs'
     ) {
       await args.persistOutput(stubMiniCardsForJobKind(args.kind));
     } else if (args.kind === 'topic-mini-games') {
@@ -266,8 +245,6 @@ function makeWriter(): IDeckContentWriter {
 }
 
 function resetStore() {
-  // ContentGenerationState shape: { jobs, pipelines, abortControllers,
-  // pipelineAbortControllers }. There is no `pipelineOrder` / `jobOrder`.
   useContentGenerationStore.setState({
     jobs: {},
     pipelines: {},
@@ -292,10 +269,6 @@ describe('runTopicGenerationPipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     telemetryApi.log.mockReset();
-    // `vi.clearAllMocks()` clears call history but NOT the queued
-    // implementations of mockResolvedValueOnce / mockImplementationOnce.
-    // We therefore reset the implementation explicitly each test to
-    // prevent any leftover queue from bleeding into the next case.
     runContentGenerationJob.mockReset();
     resetStore();
   });
@@ -357,7 +330,7 @@ describe('runTopicGenerationPipeline', () => {
     const miniJobs: Array<{ kind: string; gameType: MiniGameType }> = [
       { kind: 'topic-mini-game-category-sort', gameType: 'CATEGORY_SORT' },
       { kind: 'topic-mini-game-sequence-build', gameType: 'SEQUENCE_BUILD' },
-      { kind: 'topic-mini-game-connection-web', gameType: 'CONNECTION_WEB' },
+      { kind: 'topic-mini-game-match-pairs', gameType: 'MATCH_PAIRS' },
     ];
 
     for (const { kind, gameType } of miniJobs) {
@@ -459,12 +432,6 @@ describe('runTopicGenerationPipeline', () => {
     });
 
     it('emits stage-failed with the raw job error and stops the pipeline', async () => {
-      // Counter-based impl avoids `mockResolvedValueOnce` queue leakage:
-      // an unconsumed Once entry from a failing test would otherwise be
-      // dequeued by the next test's first call to the mock, masking real
-      // failures in unrelated tests. `mockReset()` in `beforeEach`
-      // clears any prior implementation; the counter is local to this
-      // closure.
       let calls = 0;
       runContentGenerationJob.mockImplementation(async (args: {
         kind: string;
@@ -488,7 +455,6 @@ describe('runTopicGenerationPipeline', () => {
 
       expect(result.ok).toBe(false);
 
-      // mini-games stage-started must NOT appear (study-cards failure short-circuits)
       const stageStartedNames = logCalls()
         .filter((c) => c[0] === 'topic-content:stage-started')
         .map((c) => (c[1] as { stage: string }).stage);
@@ -498,7 +464,6 @@ describe('runTopicGenerationPipeline', () => {
       expect(failedCall).toBeDefined();
       const failedPayload = failedCall![1] as { stage: string; error: string; durationMs: number };
       expect(failedPayload.stage).toBe('study-cards');
-      // Raw error forwarded verbatim — no heuristic parsing.
       expect(failedPayload.error).toBe('study cards LLM 503');
       expect(failedPayload.durationMs).toBeGreaterThanOrEqual(0);
 
@@ -509,7 +474,6 @@ describe('runTopicGenerationPipeline', () => {
       expect(finalPayload.ok).toBe(false);
       expect(finalPayload.error).toBe('study cards LLM 503');
 
-      // Celebration must NOT fire on failure.
       expect(celebrationApi.markPendingFromFullTopicUnlock).not.toHaveBeenCalled();
     });
 
@@ -549,7 +513,6 @@ describe('runTopicGenerationPipeline', () => {
       await runTopicGenerationPipeline({
         chat: {} as IChatCompletionsRepository,
         deckRepository: makeDeckRepository({
-          // Provide ready details so resume can resolveTheoryData() from the DB.
           getTopicDetails: vi.fn(async () => readyDetails) as unknown as IDeckRepository['getTopicDetails'],
         }),
         writer: makeWriter(),
@@ -605,10 +568,6 @@ describe('runTopicGenerationPipeline', () => {
       expect(finalPayload.durationMs).toBeGreaterThanOrEqual(0);
     });
   });
-
-  // ── Phase B: terminal lifecycle event emission ───────────────────
-  // Each test uses a fresh spy with mockRestore() so emission state never
-  // bleeds across cases.
 
   it('emits topic-content:generation-completed when full pipeline succeeds', async () => {
     runContentGenerationJob.mockImplementation(defaultJobOk);

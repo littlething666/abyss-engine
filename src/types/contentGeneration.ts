@@ -10,7 +10,7 @@ export type ContentGenerationJobKind =
   | 'topic-mini-games'
   | 'topic-mini-game-category-sort'
   | 'topic-mini-game-sequence-build'
-  | 'topic-mini-game-connection-web'
+  | 'topic-mini-game-match-pairs'
   | 'topic-expansion-cards'
   | 'subject-graph-topics'
   | 'subject-graph-edges'

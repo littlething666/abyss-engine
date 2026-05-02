@@ -5,14 +5,14 @@ import type {
   MiniGameContent,
   CategorySortContent,
   SequenceBuildContent,
-  ConnectionWebContent,
+  MatchPairsContent,
 } from '../../types/core';
 import type { MiniGameResult } from '../../types/miniGame';
 import { evaluateMiniGame } from '../../features/content/evaluateMiniGame';
 import { useMiniGameInteraction } from '../../hooks/useMiniGameInteraction';
 import { CategorySortGame } from './CategorySortGame';
 import { SequenceBuildGame } from './SequenceBuildGame';
-import { ConnectionWebGame } from './ConnectionWebGame';
+import { MatchPairsGame } from './MatchPairsGame';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import MathMarkdownRenderer from '../MathMarkdownRenderer';
@@ -27,7 +27,7 @@ interface MiniGameViewProps {
 const GAME_TYPE_LABELS: Record<string, string> = {
   CATEGORY_SORT: 'Category Sort',
   SEQUENCE_BUILD: 'Sequence Build',
-  CONNECTION_WEB: 'Connection Web',
+  MATCH_PAIRS: 'Match Pairs',
 };
 
 function getItemIds(content: MiniGameContent): string[] {
@@ -36,20 +36,38 @@ function getItemIds(content: MiniGameContent): string[] {
       return content.items.map((item) => item.id);
     case 'SEQUENCE_BUILD':
       return content.items.map((item) => item.id);
-    case 'CONNECTION_WEB': {
-      const leftDistractorIds = (content.distractors ?? [])
-        .filter((d) => d.side === 'left')
-        .map((d) => d.id);
-      return [...content.pairs.map((pair) => pair.id), ...leftDistractorIds];
-    }
+    case 'MATCH_PAIRS':
+      return content.pairs.map((pair) => pair.id);
   }
 }
 
 function getRequiredItemIds(content: MiniGameContent): string[] | undefined {
-  if (content.gameType === 'CONNECTION_WEB') {
+  if (content.gameType === 'MATCH_PAIRS') {
     return content.pairs.map((pair) => pair.id);
   }
   return undefined;
+}
+
+/**
+ * Single-line submit nudge per game type.
+ *
+ * Match Pairs is always submittable (every row will be a placement once Phase
+ * 2 lands; even pre-Phase-2 the player can submit at any time and the hint
+ * stays neutral). Category Sort and Sequence Build report how many items
+ * still need placing while keeping Submit enabled.
+ */
+function buildSubmitHint(
+  gameType: MiniGameContent['gameType'],
+  isComplete: boolean,
+  remaining: number,
+): string {
+  if (gameType === 'MATCH_PAIRS') {
+    return 'Submit Answer';
+  }
+  if (isComplete) {
+    return 'Submit Answer';
+  }
+  return `Submit (${remaining} remaining)`;
 }
 
 export function MiniGameView({ content, isRevealed, onSubmit, onContinue }: MiniGameViewProps) {
@@ -80,14 +98,11 @@ export function MiniGameView({ content, isRevealed, onSubmit, onContinue }: Mini
     ? Math.round(interaction.result.score * 100)
     : null;
 
-  const submitHint =
-    content.gameType === 'CONNECTION_WEB'
-      ? interaction.isComplete
-        ? 'Submit Answer'
-        : `Connect all pairs (${interaction.unplacedItemIds.length} remaining)`
-      : interaction.isComplete
-        ? 'Submit Answer'
-        : `Place all items (${interaction.unplacedItemIds.length} remaining)`;
+  const submitHint = buildSubmitHint(
+    content.gameType,
+    interaction.isComplete,
+    interaction.unplacedItemIds.length,
+  );
 
   return (
     <div className="w-full" data-testid="mini-game-view">
@@ -127,9 +142,9 @@ export function MiniGameView({ content, isRevealed, onSubmit, onContinue }: Mini
           />
         )}
 
-        {content.gameType === 'CONNECTION_WEB' && (
-          <ConnectionWebGame
-            content={content as ConnectionWebContent}
+        {content.gameType === 'MATCH_PAIRS' && (
+          <MatchPairsGame
+            content={content as MatchPairsContent}
             interaction={interaction}
           />
         )}
@@ -154,7 +169,7 @@ export function MiniGameView({ content, isRevealed, onSubmit, onContinue }: Mini
           <Button
             onClick={handleSubmit}
             disabled={!interaction.canSubmit}
-            className={`w-full ${!interaction.canSubmit ? 'opacity-50' : ''}`}
+            className="w-full"
             data-testid="mini-game-submit"
           >
             {submitHint}

@@ -2,7 +2,7 @@ import type { Card, CardType, MiniGameType } from '@/types/core';
 import type { GeneratedCardValidationFailure } from '@/types/contentQuality';
 
 const CARD_TYPES: CardType[] = ['FLASHCARD', 'SINGLE_CHOICE', 'MULTI_CHOICE', 'MINI_GAME'];
-const MINI_GAME_TYPES: MiniGameType[] = ['CATEGORY_SORT', 'SEQUENCE_BUILD', 'CONNECTION_WEB'];
+const MINI_GAME_TYPES: MiniGameType[] = ['CATEGORY_SORT', 'SEQUENCE_BUILD', 'MATCH_PAIRS'];
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -116,17 +116,17 @@ function validateSequenceBuildContent(
   }
 }
 
-function validateConnectionWebContent(
+function validateMatchPairsContent(
   cardId: string | null,
   index: number,
   c: Record<string, unknown>,
   failures: GeneratedCardValidationFailure[],
 ): void {
-  if (typeof c.prompt !== 'string' || c.prompt.length === 0) failures.push(failure(cardId, index, 'missing_prompt', 'Connection web prompt is required'));
-  if (typeof c.explanation !== 'string') failures.push(failure(cardId, index, 'missing_explanation', 'Connection web explanation is required'));
+  if (typeof c.prompt !== 'string' || c.prompt.length === 0) failures.push(failure(cardId, index, 'missing_prompt', 'Match pairs prompt is required'));
+  if (typeof c.explanation !== 'string') failures.push(failure(cardId, index, 'missing_explanation', 'Match pairs explanation is required'));
   const pairs = c.pairs;
   if (!Array.isArray(pairs) || pairs.length < 3) {
-    failures.push(failure(cardId, index, 'connection_pair_count', 'CONNECTION_WEB requires at least 3 pairs'));
+    failures.push(failure(cardId, index, 'match_pairs_pair_count', 'MATCH_PAIRS requires at least 3 pairs'));
     return;
   }
 
@@ -135,7 +135,7 @@ function validateConnectionWebContent(
   const rightLabels: string[] = [];
   for (const p of pairs) {
     if (!isRecord(p)) {
-      failures.push(failure(cardId, index, 'invalid_pair', 'Each connection pair must be an object'));
+      failures.push(failure(cardId, index, 'invalid_pair', 'Each match pairs entry must be an object'));
       continue;
     }
     if (typeof p.id !== 'string' || p.id.length === 0) failures.push(failure(cardId, index, 'pair_id', 'Pair id is required'));
@@ -146,34 +146,8 @@ function validateConnectionWebContent(
     if (typeof p.left === 'string') leftLabels.push(p.left);
     if (typeof p.right === 'string') rightLabels.push(p.right);
   }
-  if (hasDuplicateStrings(leftLabels)) failures.push(failure(cardId, index, 'duplicate_left_label', 'Connection left labels must be unique'));
-  if (hasDuplicateStrings(rightLabels)) failures.push(failure(cardId, index, 'duplicate_right_label', 'Connection right labels must be unique'));
-
-  const dist = c.distractors;
-  if (dist !== undefined) {
-    if (!Array.isArray(dist)) {
-      failures.push(failure(cardId, index, 'invalid_distractors', 'Distractors must be an array'));
-      return;
-    }
-    const distractorIds = new Set<string>();
-    for (const d of dist) {
-      if (!isRecord(d)) {
-        failures.push(failure(cardId, index, 'invalid_distractor', 'Each distractor must be an object'));
-        continue;
-      }
-      if (typeof d.id !== 'string' || d.id.length === 0) failures.push(failure(cardId, index, 'distractor_id', 'Distractor id is required'));
-      if (d.side !== 'left' && d.side !== 'right') failures.push(failure(cardId, index, 'distractor_side', 'Distractor side must be left or right'));
-      if (typeof d.label !== 'string' || d.label.length === 0) failures.push(failure(cardId, index, 'distractor_label', 'Distractor label is required'));
-      if (typeof d.id === 'string' && distractorIds.has(d.id)) failures.push(failure(cardId, index, 'duplicate_distractor_id', `Duplicate distractor id: ${d.id}`));
-      if (typeof d.id === 'string') distractorIds.add(d.id);
-      if (typeof d.label === 'string') {
-        const allPairLabels = [...leftLabels, ...rightLabels].map((label) => label.trim().toLowerCase());
-        if (allPairLabels.includes(d.label.trim().toLowerCase())) {
-          failures.push(failure(cardId, index, 'distractor_collision', `Distractor collides with pair label: ${d.label}`));
-        }
-      }
-    }
-  }
+  if (hasDuplicateStrings(leftLabels)) failures.push(failure(cardId, index, 'duplicate_left_label', 'Match pairs left labels must be unique'));
+  if (hasDuplicateStrings(rightLabels)) failures.push(failure(cardId, index, 'duplicate_right_label', 'Match pairs right labels must be unique'));
 }
 
 function validateMiniGameContentShape(
@@ -191,8 +165,8 @@ function validateMiniGameContentShape(
     validateSequenceBuildContent(cardId, index, c, failures);
     return;
   }
-  if (gt === 'CONNECTION_WEB') {
-    validateConnectionWebContent(cardId, index, c, failures);
+  if (gt === 'MATCH_PAIRS') {
+    validateMatchPairsContent(cardId, index, c, failures);
     return;
   }
   failures.push(failure(cardId, index, 'invalid_game_type', 'Unknown mini-game type'));

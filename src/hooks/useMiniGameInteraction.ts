@@ -103,7 +103,10 @@ export function useMiniGameInteraction({
   );
 
   const isComplete = unplacedItemIds.length === 0;
-  const canSubmit = isComplete && phase === 'playing';
+  // Submit is enabled at all times while the player is in the playing phase.
+  // The hint text in MiniGameView surfaces remaining-item counts; submission
+  // itself is never blocked by completeness across any of the three games.
+  const canSubmit = phase === 'playing';
 
   return {
     selectedItemId,

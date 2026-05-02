@@ -4,7 +4,7 @@ Output **one JSON object**: `{ "cards": [ ... ] }`.
 
 Card shapes (same as production decks):
 - FLASHCARD, SINGLE_CHOICE, MULTI_CHOICE with `difficulty` set to **{{difficulty}}**
-- MINI_GAME with `difficulty` **{{difficulty}}** and `content.gameType` one of CATEGORY_SORT, SEQUENCE_BUILD, CONNECTION_WEB
+- MINI_GAME with `difficulty` **{{difficulty}}** and `content.gameType` one of CATEGORY_SORT, SEQUENCE_BUILD, MATCH_PAIRS
 
 Requirements:
 - Generate **6–10** cards total, mixing study types and **1–2** mini-games.

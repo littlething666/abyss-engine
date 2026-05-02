@@ -49,7 +49,7 @@ const TOPIC_TIER_SORT_KINDS = new Set<ContentGenerationJobKind>([
   'topic-mini-games',
   'topic-mini-game-category-sort',
   'topic-mini-game-sequence-build',
-  'topic-mini-game-connection-web',
+  'topic-mini-game-match-pairs',
   'topic-expansion-cards',
 ]);
 
@@ -70,7 +70,6 @@ function matchesTopicListFilter(topic: TieredTopic, filter: TopicListFilter): bo
   return true;
 }
 
-/** Generating first, then other unlocked crystals, then locked (used for all filter modes). */
 function discoveryTopicActivityBand(topic: TieredTopic): number {
   if (topic.contentStatus === 'generating') return 2;
   if (topic.isUnlocked) return 1;
@@ -94,10 +93,6 @@ function sortDiscoveryTierTopics(
   });
 }
 
-/**
- * Buckets tier topics by subject. Subject order follows manifest `subjects` in descending order
- * (newest-first index); unknown subjects last, then by name descending.
- */
 function groupTopicsBySubjectInManifestOrder(
   topics: TieredTopic[],
   subjectOrderRank: Map<string, number>,
@@ -212,11 +207,6 @@ interface DiscoveryModalProps {
   onOpenRitual?: () => void;
   ritualCooldownRemainingMs?: number;
   onClose: () => void;
-  /**
-   * Called by the empty-state CTA when the user has no subjects yet and clicks
-   * "New subject". The handler should close Discovery before opening the
-   * incremental-subject creation modal so the two surfaces never stack.
-   */
   onCreateSubject?: () => void;
 }
 
@@ -235,9 +225,6 @@ export function DiscoveryModal({
   const isRitualSubmissionAvailable = ritualCooldownRemainingMs <= 0;
   const ritualVisible = useFeatureFlagsStore((s) => s.ritualVisible);
 
-  // UI-store-supplied scope hint. When non-null at open time it wins over
-  // the sessionStorage default so the mentor's open_discovery effect can
-  // pre-filter the modal to a specific subject.
   const uiStoreSubjectIdHint = useUIStore((s) => s.discoveryModalSubjectId);
 
   const modalSubjectScopeForGraphs = modalSubjectId === '__all_floors__' ? null : modalSubjectId;
@@ -249,9 +236,6 @@ export function DiscoveryModal({
     }
   }, [isOpen]);
 
-  // When the modal opens with a uiStore-supplied scope hint, adopt it as the
-  // current scope and persist to sessionStorage so subsequent unscoped opens
-  // remember it. Re-runs if the hint changes while the modal is already open.
   useEffect(() => {
     if (!isOpen) return;
     if (uiStoreSubjectIdHint === null || uiStoreSubjectIdHint === undefined) return;

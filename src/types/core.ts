@@ -151,7 +151,7 @@ export interface TopicDetails {
 
 export type CardType = 'FLASHCARD' | 'SINGLE_CHOICE' | 'MULTI_CHOICE' | 'MINI_GAME';
 
-export type MiniGameType = 'CATEGORY_SORT' | 'SEQUENCE_BUILD' | 'CONNECTION_WEB';
+export type MiniGameType = 'CATEGORY_SORT' | 'SEQUENCE_BUILD' | 'MATCH_PAIRS';
 
 export interface FlashcardContent {
   front: string;
@@ -187,15 +187,19 @@ export interface SequenceBuildContent {
   explanation: string;
 }
 
-export interface ConnectionWebContent {
-  gameType: 'CONNECTION_WEB';
+/**
+ * Match Pairs is a strict 1:1 permutation: every left concept has exactly one
+ * matching right concept. Distractors are intentionally NOT supported here —
+ * the player rearranges the right column to align rows with their left labels.
+ */
+export interface MatchPairsContent {
+  gameType: 'MATCH_PAIRS';
   prompt: string;
   pairs: { id: string; left: string; right: string }[];
-  distractors?: { id: string; side: 'left' | 'right'; label: string }[];
   explanation: string;
 }
 
-export type MiniGameContent = CategorySortContent | SequenceBuildContent | ConnectionWebContent;
+export type MiniGameContent = CategorySortContent | SequenceBuildContent | MatchPairsContent;
 
 export interface Card {
   id: string;

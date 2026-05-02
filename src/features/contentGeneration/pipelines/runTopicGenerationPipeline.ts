@@ -46,15 +46,15 @@ import { extractConceptTarget } from '../quality/extractConceptTarget';
 export type { TopicGenerationStage } from './topicGenerationStage';
 export type { TopicContentPipelinePartialCompletion, TopicPipelineRetryContext } from '@/types/contentGeneration';
 
-const ALL_MINI_GAME_TYPES: MiniGameType[] = ['CATEGORY_SORT', 'SEQUENCE_BUILD', 'CONNECTION_WEB'];
+const ALL_MINI_GAME_TYPES: MiniGameType[] = ['CATEGORY_SORT', 'SEQUENCE_BUILD', 'MATCH_PAIRS'];
 
 const MINI_JOB_KIND: Record<
   MiniGameType,
-  'topic-mini-game-category-sort' | 'topic-mini-game-sequence-build' | 'topic-mini-game-connection-web'
+  'topic-mini-game-category-sort' | 'topic-mini-game-sequence-build' | 'topic-mini-game-match-pairs'
 > = {
   CATEGORY_SORT: 'topic-mini-game-category-sort',
   SEQUENCE_BUILD: 'topic-mini-game-sequence-build',
-  CONNECTION_WEB: 'topic-mini-game-connection-web',
+  MATCH_PAIRS: 'topic-mini-game-match-pairs',
 };
 
 function miniGameJobLabel(topicTitle: string, gameType: MiniGameType): string {
@@ -63,8 +63,8 @@ function miniGameJobLabel(topicTitle: string, gameType: MiniGameType): string {
       return `Mini-game (sort) — ${topicTitle}`;
     case 'SEQUENCE_BUILD':
       return `Mini-game (sequence) — ${topicTitle}`;
-    case 'CONNECTION_WEB':
-      return `Mini-game (connections) — ${topicTitle}`;
+    case 'MATCH_PAIRS':
+      return `Mini-game (match pairs) — ${topicTitle}`;
     default: {
       const _e: never = gameType;
       return _e;
@@ -164,15 +164,8 @@ export async function runTopicGenerationPipeline(
     signal.addEventListener('abort', () => pipelineAc.abort(signal.reason), { once: true });
   }
 
-  // Topic label used by any terminal lifecycle event this run emits. Falls
-  // back to the topicId until the graph node is resolved; once located it is
-  // replaced with the human-readable title.
   let topicLabel = topicId;
 
-  // Sole emission point for `topic-content:generation-{completed,failed}`
-  // lifecycle events on this run. Auto-skipped runs (study-ready content
-  // already exists) intentionally produce no event — there is no fresh
-  // result for mentor consumers or telemetry to surface.
   const finalize = (r: {
     ok: boolean;
     pipelineId: string;
@@ -244,10 +237,6 @@ export async function runTopicGenerationPipeline(
   const shouldAutoSkip =
     !forceRegenerate && stage === 'full' && !resumeFromStage && topicStudyContentReady(details, cards);
   if (shouldAutoSkip) {
-    // Auto-skip is intentionally telemetry-free: no work was performed.
-    // The bus event `topic-content:generation-requested` already accounts
-    // for the request side, so skip rate is computable as
-    // (requested − generation-started).
     return { ok: true, pipelineId: '', skipped: true };
   }
 
@@ -271,10 +260,6 @@ export async function runTopicGenerationPipeline(
     pipelineAc,
   );
 
-  // ── Phase 3 telemetry: pipeline lifecycle starts here ────────────────
-  // `runTopicGenerationPipeline` is the canonical stage source —
-  // analytics never infers stage transitions from downstream LLM-job
-  // events. Every stage transition flows through `wrapStage` below.
   const pipelineStartedAt = Date.now();
   telemetry.log(
     'topic-content:generation-started',
@@ -289,12 +274,6 @@ export async function runTopicGenerationPipeline(
     { subjectId, topicId },
   );
 
-  /**
-   * Wraps a single stage execution with telemetry start/end emit and
-   * timing. Error strings from failed stages are forwarded raw — no
-   * heuristic parsing — per the Phase 3 plan ("Capture raw emitted
-   * error messages for first internal milestone").
-   */
   const wrapStage = async (
     stageName: 'theory' | 'study-cards' | 'mini-games',
     run: () => Promise<StageRunOutcome>,
@@ -575,19 +554,11 @@ export async function runTopicGenerationPipeline(
     return { ok: true };
   };
 
-  /**
-   * Loads theory data from the DB (for pipeline resume when theory stage was skipped).
-   * Falls back to theoryData if it was already produced by runTheoryJob in this run.
-   */
   const resolveTheoryData = (): ParsedTopicTheoryContentPayload => {
     if (theoryData) return theoryData;
     return loadTheoryPayloadFromTopicDetails(details);
   };
 
-  // Run the body inside an inner async IIFE so every exit path funnels
-  // through a single `pipelineResult` value — that makes the
-  // `topic-content:generation-completed` emission the only return-time
-  // side effect, regardless of which stage path the pipeline took.
   const pipelineResult: PipelineSettlement = await (async (): Promise<PipelineSettlement> => {
     try {
       if (stage === 'theory') {
@@ -625,7 +596,6 @@ export async function runTopicGenerationPipeline(
           : { ok: false, pipelineId, error: m.error, ...(m.failedJobId ? { failedJobId: m.failedJobId } : {}) };
       }
 
-      // ── full pipeline (with optional resume) ──────────────────────────
       const resumeIdx = resumeFromStage && resumeFromStage !== 'full'
         ? FULL_PIPELINE_STAGES.indexOf(resumeFromStage)
         : 0;
@@ -637,7 +607,6 @@ export async function runTopicGenerationPipeline(
         miniGames: 'skipped',
       });
 
-      // Stage 0: theory
       if (startIdx <= 0) {
         const theoryStep = await wrapStage('theory', runTheoryJob);
         if (!theoryStep.ok) {
@@ -653,7 +622,6 @@ export async function runTopicGenerationPipeline(
         }
       }
 
-      // Resolve theory data (either from runTheoryJob or loaded from DB for resume)
       let theory: ParsedTopicTheoryContentPayload;
       try {
         theory = resolveTheoryData();
@@ -671,7 +639,6 @@ export async function runTopicGenerationPipeline(
         };
       }
 
-      // Stage 1: study-cards
       if (startIdx <= 1) {
         const studyStep = await wrapStage('study-cards', () => runStudyJob(theory));
         if (!studyStep.ok) {
@@ -689,7 +656,6 @@ export async function runTopicGenerationPipeline(
         }
       }
 
-      // Stage 2: mini-games
       if (startIdx <= 2) {
         const miniStep = await wrapStage('mini-games', () => runMiniGamesCoordinator(theory));
         if (!miniStep.ok) {
@@ -720,7 +686,6 @@ export async function runTopicGenerationPipeline(
     }
   })();
 
-  // ── Phase 3 telemetry: lifecycle close-out ───────────────────────────
   const totalDurationMs = Date.now() - pipelineStartedAt;
   telemetry.log(
     'topic-content:generation-completed',
