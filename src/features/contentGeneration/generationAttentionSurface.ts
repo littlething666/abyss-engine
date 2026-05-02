@@ -77,7 +77,7 @@ export interface GenerationAttentionSurface {
 
 export type GenerationAttentionSelectorState = Pick<
   ContentGenerationState,
-  'jobs' | 'pipelines' | 'sessionAcknowledgedFailureKeys' | 'sessionRetryRoutingFailures'
+  'jobs' | 'pipelines' | 'sessionFailureAttentionKeys' | 'sessionRetryRoutingFailures'
 >;
 
 function jobKindToFailureKind(kind: ContentGenerationJobKind): GenerationAttentionFailureKind | null {
@@ -189,6 +189,14 @@ function primaryFailureFromJob(
   return base;
 }
 
+/** True when a failed job should create session mentor/HUD failure attention (matches primaryFailure job branch). */
+export function isJobFailureAttentionEligible(
+  job: ContentGenerationJob,
+  pipelines: Record<string, ContentGenerationPipeline>,
+): boolean {
+  return primaryFailureFromJob(job, pipelines) !== null;
+}
+
 function comparePrimaryFailures(
   a: GenerationAttentionPrimaryFailure,
   b: GenerationAttentionPrimaryFailure,
@@ -269,7 +277,7 @@ function internPrimaryFailure(
 /**
  * Unified content-generation attention for the nexus mentor bubble and entry
  * resolution: subject-graph progress pips plus the single highest-priority
- * unacknowledged canonical failure surface (including retry-routing collapse).
+ * current-session failure attention (including retry-routing collapse).
  */
 export function generationAttentionSurface(
   state: GenerationAttentionSelectorState,
@@ -287,13 +295,12 @@ export function generationAttentionSurface(
   let subjectGraphSubjectId: string | null = null;
   let subjectGraphPipelineId: string | null = null;
 
-  const ack = state.sessionAcknowledgedFailureKeys;
+  const attention = state.sessionFailureAttentionKeys;
 
   type Cand = { failure: GenerationAttentionPrimaryFailure; recency: number };
   const candidates: Cand[] = [];
 
   for (const r of Object.values(state.sessionRetryRoutingFailures)) {
-    if (ack[r.failureKey]) continue;
     candidates.push({ failure: retrySurfaceToPrimary(r), recency: r.createdAt });
   }
 
@@ -303,7 +310,7 @@ export function generationAttentionSurface(
       continue;
     }
     const fk = failureKeyForJob(job.id);
-    if (ack[fk]) continue;
+    if (!attention[fk]) continue;
     const p = primaryFailureFromJob(job, state.pipelines);
     if (!p) continue;
     candidates.push({ failure: p, recency: job.finishedAt ?? job.createdAt });

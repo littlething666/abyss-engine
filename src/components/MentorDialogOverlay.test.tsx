@@ -5,6 +5,9 @@ import { flushSync } from 'react-dom';
 
 import { MentorDialogOverlay } from './MentorDialogOverlay';
 import {
+  useContentGenerationStore,
+} from '@/features/contentGeneration';
+import {
   DEFAULT_EPHEMERAL_STATE,
   DEFAULT_PERSISTED_STATE,
   useMentorStore,
@@ -441,5 +444,102 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
 
     // Subsequent ambient taps must no-op.
     expect(requestAmbientAdvance()).toBe('noop');
+  });
+});
+
+describe('MentorDialogOverlay — generation failure acknowledgement', () => {
+  beforeEach(() => {
+    useContentGenerationStore.setState({
+      jobs: {},
+      pipelines: {},
+      abortControllers: {},
+      pipelineAbortControllers: {},
+      sessionFailureAttentionKeys: {},
+      sessionRetryRoutingFailures: {},
+    });
+  });
+
+  it('Open generation HUD choice acknowledges failureKey, opens progress UI, and dismisses the dialog', async () => {
+    const fk = 'cg:job:job-xyz';
+    useContentGenerationStore.setState({
+      sessionFailureAttentionKeys: { [fk]: true },
+    });
+    useMentorStore.setState({
+      ...DEFAULT_PERSISTED_STATE,
+      ...DEFAULT_EPHEMERAL_STATE,
+      currentDialog: {
+        id: 'gen-fail-plan',
+        trigger: 'subject:generation-failed',
+        payload: { failureKey: fk },
+        priority: 82,
+        enqueuedAt: 1,
+        messages: [
+          {
+            id: 'm1',
+            text: 'Generation failed.',
+            mood: 'concern',
+            choices: [
+              {
+                id: 'open-generation-hud',
+                label: 'Open generation HUD',
+                effect: { kind: 'open_generation_hud' },
+                next: 'end',
+              },
+            ],
+          },
+        ],
+        source: 'canned',
+        voiceId: 'witty-sarcastic',
+      },
+    });
+
+    const { root } = renderOverlay();
+    const btn = document.body.querySelector('[data-testid="mentor-choice-open-generation-hud"]');
+    expect(btn).not.toBeNull();
+
+    await act(async () => {
+      btn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(useContentGenerationStore.getState().sessionFailureAttentionKeys[fk]).toBeUndefined();
+    expect(uiStore.getState().isGenerationProgressOpen).toBe(true);
+    expect(useMentorStore.getState().currentDialog).toBeNull();
+
+    root.unmount();
+  });
+
+  it('dialog close (X) acknowledges generation failure failureKey', async () => {
+    const fk = 'cg:job:close-test';
+    useContentGenerationStore.setState({
+      sessionFailureAttentionKeys: { [fk]: true },
+    });
+    useMentorStore.setState({
+      ...DEFAULT_PERSISTED_STATE,
+      ...DEFAULT_EPHEMERAL_STATE,
+      currentDialog: {
+        id: 'gen-fail-close',
+        trigger: 'topic-content:generation-failed',
+        payload: { failureKey: fk },
+        priority: 84,
+        enqueuedAt: 1,
+        messages: [{ id: 'm1', text: 'Failed.', mood: 'concern' }],
+        source: 'canned',
+        voiceId: 'witty-sarcastic',
+      },
+    });
+
+    const { root } = renderOverlay();
+    const closeBtn = document.body.querySelector('[data-testid="mentor-dialog-close"]');
+
+    await act(async () => {
+      closeBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(useContentGenerationStore.getState().sessionFailureAttentionKeys[fk]).toBeUndefined();
+    expect(useMentorStore.getState().currentDialog).toBeNull();
+
+    root.unmount();
   });
 });

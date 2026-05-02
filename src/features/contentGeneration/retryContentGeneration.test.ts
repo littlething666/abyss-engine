@@ -77,7 +77,7 @@ function resetStore(): void {
     pipelines: {},
     abortControllers: {},
     pipelineAbortControllers: {},
-    sessionAcknowledgedFailureKeys: {},
+    sessionFailureAttentionKeys: {},
     sessionRetryRoutingFailures: {},
   });
 }
@@ -400,7 +400,7 @@ describe('retryFailedPipeline', () => {
       pipelines: { p1: { id: 'p1', label: 'P', createdAt: 0, retryOf: null } },
       abortControllers: {},
       pipelineAbortControllers: {},
-      sessionAcknowledgedFailureKeys: {},
+      sessionFailureAttentionKeys: {},
       sessionRetryRoutingFailures: {},
     });
 
@@ -420,7 +420,7 @@ describe('retryFailedPipeline', () => {
       pipelines: {},
       abortControllers: {},
       pipelineAbortControllers: {},
-      sessionAcknowledgedFailureKeys: {},
+      sessionFailureAttentionKeys: {},
       sessionRetryRoutingFailures: {},
     });
 
@@ -457,7 +457,7 @@ describe('retryFailedPipeline', () => {
       pipelines: { 'p-subj': { id: 'p-subj', label: 'New subject: Pipeline topic', createdAt: 0, retryOf: null } },
       abortControllers: {},
       pipelineAbortControllers: {},
-      sessionAcknowledgedFailureKeys: {},
+      sessionFailureAttentionKeys: {},
       sessionRetryRoutingFailures: {},
     });
 
@@ -598,7 +598,7 @@ describe('content-generation:retry-failed terminal events', () => {
       pipelines: { p1: { id: 'p1', label: 'New subject: Mystery', createdAt: 0, retryOf: null } },
       abortControllers: {},
       pipelineAbortControllers: {},
-      sessionAcknowledgedFailureKeys: {},
+      sessionFailureAttentionKeys: {},
       sessionRetryRoutingFailures: {},
     });
 
@@ -629,7 +629,7 @@ describe('content-generation:retry-failed terminal events', () => {
       pipelines: { p1: { id: 'p1', label: 'Pipeline P1', createdAt: 0, retryOf: null } },
       abortControllers: {},
       pipelineAbortControllers: {},
-      sessionAcknowledgedFailureKeys: {},
+      sessionFailureAttentionKeys: {},
       sessionRetryRoutingFailures: {},
     });
 

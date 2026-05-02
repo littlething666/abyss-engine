@@ -21,6 +21,7 @@ export {
 } from './activeTopicGenerationLabel';
 export {
   generationAttentionSurface,
+  isJobFailureAttentionEligible,
   subjectPipelineLabel,
 } from './generationAttentionSurface';
 export type {

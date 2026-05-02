@@ -268,11 +268,19 @@ export function GenerationProgressHud() {
   const abortJob = useContentGenerationStore((s) => s.abortJob);
   const abortPipeline = useContentGenerationStore((s) => s.abortPipeline);
   const clearCompletedJobs = useContentGenerationStore((s) => s.clearCompletedJobs);
+  const acknowledgeAllFailureAttention = useContentGenerationStore(
+    (s) => s.acknowledgeAllFailureAttention,
+  );
   const hudJobAbortReason: ContentGenerationAbortReason = { kind: 'user', source: 'hud-job' };
   const hudPipelineAbortReason: ContentGenerationAbortReason = { kind: 'user', source: 'hud-pipeline' };
   const open = useUIStore((s) => s.isGenerationProgressOpen);
   const openGenerationProgress = useUIStore((s) => s.openGenerationProgress);
   const setGenerationProgressOpen = useUIStore((s) => s.setGenerationProgressOpen);
+
+  const handleOpenGenerationProgress = useCallback(() => {
+    acknowledgeAllFailureAttention();
+    openGenerationProgress();
+  }, [acknowledgeAllFailureAttention, openGenerationProgress]);
 
   const handleOpenChange = useCallback((next: boolean) => {
     setGenerationProgressOpen(next);
@@ -346,7 +354,7 @@ export function GenerationProgressHud() {
           variant="ghost"
           size="icon-xs"
           className={isBusy ? 'motion-safe:animate-pulse' : undefined}
-          onClick={openGenerationProgress}
+          onClick={handleOpenGenerationProgress}
           aria-label="Open background LLM content generation"
           title="Open background LLM content generation"
         >

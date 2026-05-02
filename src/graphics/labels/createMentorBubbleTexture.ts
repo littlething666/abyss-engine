@@ -68,7 +68,15 @@ export function createMentorBubbleTexture(
 
   // Alpha mask: stroke white into a transparent canvas. The material multiplies
   // sampled alpha by the color uniform. RGB on the canvas is never sampled.
-  drawMentorIcon(ctx, iconName, GLYPH_OFFSET, GLYPH_OFFSET, GLYPH_SIZE, '#ffffff');
+  drawMentorIcon(
+    ctx,
+    iconName,
+    GLYPH_OFFSET,
+    GLYPH_OFFSET,
+    GLYPH_SIZE,
+    '#ffffff',
+    STROKE_WIDTH_24,
+  );
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.anisotropy = 4;

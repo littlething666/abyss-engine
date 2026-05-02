@@ -20,9 +20,10 @@ export function drawMentorIcon(
   y: number,
   size: number,
   color: string,
+  lineWidth = 2,
 ): void {
   const nodes: readonly GeneratedMentorIconPrimitive[] =
     GENERATED_MENTOR_ICON_NODES[iconName];
 
-  drawIconPrimitives(ctx, nodes, x, y, size, color);
+  drawIconPrimitives(ctx, nodes, x, y, size, color, lineWidth);
 }

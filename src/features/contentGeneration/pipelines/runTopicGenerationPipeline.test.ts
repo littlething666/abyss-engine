@@ -273,7 +273,7 @@ function resetStore() {
     pipelines: {},
     abortControllers: {},
     pipelineAbortControllers: {},
-    sessionAcknowledgedFailureKeys: {},
+    sessionFailureAttentionKeys: {},
     sessionRetryRoutingFailures: {},
   });
 }

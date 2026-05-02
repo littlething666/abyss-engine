@@ -33,13 +33,15 @@ export function drawIconPrimitives(
   y: number,
   size: number,
   color: string,
+  lineWidth = 2,
 ): void {
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(size / 24, size / 24);
+  const effectiveLineWidth = size > 0 ? lineWidth * (24 / size) : lineWidth;
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = effectiveLineWidth;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 

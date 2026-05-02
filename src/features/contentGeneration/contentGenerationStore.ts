@@ -12,6 +12,7 @@ import type {
 } from '@/types/contentGeneration';
 
 import { failureKeyForJob } from './failureKeys';
+import { isJobFailureAttentionEligible } from './generationAttentionSurface';
 
 /** Max terminal job logs kept in memory and persisted (completed | failed | aborted). */
 export const MAX_PERSISTED_LOGS = 15;
@@ -20,16 +21,16 @@ function isTerminalStatus(status: ContentGenerationJobStatus): boolean {
   return status === 'completed' || status === 'failed' || status === 'aborted';
 }
 
-function pruneAcknowledgementsForRemovedJobIds(
-  ack: Record<string, true>,
+function pruneAttentionForRemovedJobIds(
+  attention: Record<string, true>,
   removedJobIds: readonly string[],
 ): Record<string, true> {
-  if (removedJobIds.length === 0) return ack;
-  let next = ack;
+  if (removedJobIds.length === 0) return attention;
+  let next = attention;
   for (const id of removedJobIds) {
     const fk = failureKeyForJob(id);
     if (next[fk]) {
-      if (next === ack) next = { ...ack };
+      if (next === attention) next = { ...attention };
       delete next[fk];
     }
   }
@@ -73,8 +74,8 @@ export interface ContentGenerationState {
   abortControllers: Record<string, AbortController>;
   pipelineAbortControllers: Record<string, AbortController>;
 
-  /** Session-only (not persisted): keys acknowledged via mentor dismiss / retry. */
-  sessionAcknowledgedFailureKeys: Record<string, true>;
+  /** Session-only (not persisted): failed-job alert keys created when a job fails this session. */
+  sessionFailureAttentionKeys: Record<string, true>;
   /**
    * Retry-routing collapse surfaces (no new job). Keyed by
    * {@link failureKeyForRetryRoutingInstance}.
@@ -82,6 +83,7 @@ export interface ContentGenerationState {
   sessionRetryRoutingFailures: Record<string, SessionRetryRoutingFailureSurface>;
 
   acknowledgeFailureKey: (failureKey: string) => void;
+  acknowledgeAllFailureAttention: () => void;
   registerSessionRetryRoutingFailure: (surface: SessionRetryRoutingFailureSurface) => void;
 
   registerPipeline: (pipeline: ContentGenerationPipeline, abortController: AbortController) => void;
@@ -120,19 +122,37 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
   pipelines: {},
   abortControllers: {},
   pipelineAbortControllers: {},
-  sessionAcknowledgedFailureKeys: {},
+  sessionFailureAttentionKeys: {},
   sessionRetryRoutingFailures: {},
 
   acknowledgeFailureKey: (failureKey) =>
     set((s) => {
-      if (s.sessionAcknowledgedFailureKeys[failureKey]) return s;
-      const sessionAcknowledgedFailureKeys = { ...s.sessionAcknowledgedFailureKeys, [failureKey]: true as const };
-      if (!s.sessionRetryRoutingFailures[failureKey]) {
-        return { sessionAcknowledgedFailureKeys };
+      let changed = false;
+      let sessionFailureAttentionKeys = s.sessionFailureAttentionKeys;
+      if (sessionFailureAttentionKeys[failureKey]) {
+        sessionFailureAttentionKeys = { ...sessionFailureAttentionKeys };
+        delete sessionFailureAttentionKeys[failureKey];
+        changed = true;
       }
-      const sessionRetryRoutingFailures = { ...s.sessionRetryRoutingFailures };
-      delete sessionRetryRoutingFailures[failureKey];
-      return { sessionAcknowledgedFailureKeys, sessionRetryRoutingFailures };
+      let sessionRetryRoutingFailures = s.sessionRetryRoutingFailures;
+      if (sessionRetryRoutingFailures[failureKey]) {
+        sessionRetryRoutingFailures = { ...sessionRetryRoutingFailures };
+        delete sessionRetryRoutingFailures[failureKey];
+        changed = true;
+      }
+      if (!changed) return s;
+      return { sessionFailureAttentionKeys, sessionRetryRoutingFailures };
+    }),
+
+  acknowledgeAllFailureAttention: () =>
+    set((s) => {
+      if (
+        Object.keys(s.sessionFailureAttentionKeys).length === 0 &&
+        Object.keys(s.sessionRetryRoutingFailures).length === 0
+      ) {
+        return s;
+      }
+      return { sessionFailureAttentionKeys: {}, sessionRetryRoutingFailures: {} };
     }),
 
   registerSessionRetryRoutingFailure: (surface) =>
@@ -148,17 +168,18 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
 
   registerJob: (job, ac) =>
     set((s) => {
-      let sessionAcknowledgedFailureKeys = s.sessionAcknowledgedFailureKeys;
+      let sessionFailureAttentionKeys = s.sessionFailureAttentionKeys;
       if (job.retryOf) {
         const k = failureKeyForJob(job.retryOf);
-        if (!sessionAcknowledgedFailureKeys[k]) {
-          sessionAcknowledgedFailureKeys = { ...sessionAcknowledgedFailureKeys, [k]: true as const };
+        if (sessionFailureAttentionKeys[k]) {
+          sessionFailureAttentionKeys = { ...sessionFailureAttentionKeys };
+          delete sessionFailureAttentionKeys[k];
         }
       }
       return {
         jobs: { ...s.jobs, [job.id]: job },
         abortControllers: job.pipelineId === null ? { ...s.abortControllers, [job.id]: ac } : s.abortControllers,
-        sessionAcknowledgedFailureKeys,
+        sessionFailureAttentionKeys,
       };
     }),
 
@@ -261,8 +282,14 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
 
       const pruned = pruneTerminalJobsInRecord(nextJobs);
       nextJobs = pruned.jobs;
-      const sessionAcknowledgedFailureKeys = pruneAcknowledgementsForRemovedJobIds(
-        s.sessionAcknowledgedFailureKeys,
+
+      let sessionFailureAttentionKeys = { ...s.sessionFailureAttentionKeys };
+      if (terminalStatus === 'failed' && isJobFailureAttentionEligible(updatedJob, s.pipelines)) {
+        const fk = failureKeyForJob(jobId);
+        sessionFailureAttentionKeys = { ...sessionFailureAttentionKeys, [fk]: true as const };
+      }
+      sessionFailureAttentionKeys = pruneAttentionForRemovedJobIds(
+        sessionFailureAttentionKeys,
         pruned.removedJobIds,
       );
       const nextPipelines = pruneOrphanPipelines(nextJobs, s.pipelines);
@@ -272,7 +299,7 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
         abortControllers,
         pipelineAbortControllers,
         pipelines: nextPipelines,
-        sessionAcknowledgedFailureKeys,
+        sessionFailureAttentionKeys,
       };
     });
   },
@@ -288,14 +315,14 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
   pruneCompletedJobs: () =>
     set((s) => {
       const pruned = pruneTerminalJobsInRecord(s.jobs);
-      const sessionAcknowledgedFailureKeys = pruneAcknowledgementsForRemovedJobIds(
-        s.sessionAcknowledgedFailureKeys,
+      const sessionFailureAttentionKeys = pruneAttentionForRemovedJobIds(
+        s.sessionFailureAttentionKeys,
         pruned.removedJobIds,
       );
       return {
         jobs: pruned.jobs,
         pipelines: pruneOrphanPipelines(pruned.jobs, s.pipelines),
-        sessionAcknowledgedFailureKeys,
+        sessionFailureAttentionKeys,
       };
     }),
 
@@ -327,7 +354,7 @@ export const useContentGenerationStore = create<ContentGenerationState>((set, ge
         jobs: nextJobs,
         pipelines: nextPipelines,
         abortControllers: nextAbort,
-        sessionAcknowledgedFailureKeys: {},
+        sessionFailureAttentionKeys: {},
         sessionRetryRoutingFailures: {},
       };
     });

@@ -42,7 +42,7 @@ function makeJob(overrides: Partial<ContentGenerationJob> = {}): ContentGenerati
 }
 
 const emptySession = {
-  sessionAcknowledgedFailureKeys: {} as Record<string, true>,
+  sessionFailureAttentionKeys: {} as Record<string, true>,
   sessionRetryRoutingFailures: {},
 };
 
@@ -79,7 +79,10 @@ describe('generationAttentionSurface', () => {
         }),
       },
       pipelines: { 'pipeline-1': makePipeline() },
-      ...emptySession,
+      sessionFailureAttentionKeys: {
+        [failureKeyForJob('failed')]: true,
+      },
+      sessionRetryRoutingFailures: {},
     });
 
     expect(surface.subjectGraphPips).toBe(2);
@@ -106,6 +109,8 @@ describe('generationAttentionSurface', () => {
   });
 
   it('surfaces the most recent failed subject-generation pipeline when nothing is active', () => {
+    const fkOlder = failureKeyForJob('older');
+    const fkNewer = failureKeyForJob('newer');
     const surface = generationAttentionSurface({
       jobs: {
         older: makeJob({
@@ -133,7 +138,8 @@ describe('generationAttentionSurface', () => {
           createdAt: 400,
         }),
       },
-      ...emptySession,
+      sessionFailureAttentionKeys: { [fkOlder]: true, [fkNewer]: true },
+      sessionRetryRoutingFailures: {},
     });
 
     expect(surface.primaryFailure?.kind).toBe('subject-graph');
@@ -142,17 +148,30 @@ describe('generationAttentionSurface', () => {
     expect(surface.subjectGraphPips).toBe(2);
   });
 
-  it('suppresses acknowledged failed jobs', () => {
+  it('failed job with no session attention key returns primaryFailure null', () => {
+    const surface = generationAttentionSurface({
+      jobs: {
+        j: makeJob({ id: 'failed-id', status: 'failed', finishedAt: 100 }),
+      },
+      pipelines: { 'pipeline-1': makePipeline() },
+      sessionFailureAttentionKeys: {},
+      sessionRetryRoutingFailures: {},
+    });
+    expect(surface.primaryFailure).toBeNull();
+  });
+
+  it('failed job with session attention key returns primaryFailure', () => {
     const fk = failureKeyForJob('failed-id');
     const surface = generationAttentionSurface({
       jobs: {
         j: makeJob({ id: 'failed-id', status: 'failed', finishedAt: 100 }),
       },
       pipelines: { 'pipeline-1': makePipeline() },
-      sessionAcknowledgedFailureKeys: { [fk]: true },
+      sessionFailureAttentionKeys: { [fk]: true },
       sessionRetryRoutingFailures: {},
     });
-    expect(surface.primaryFailure).toBeNull();
+    expect(surface.primaryFailure?.failureKey).toBe(fk);
+    expect(surface.primaryFailure?.kind).toBe('subject-graph');
   });
 
   it('prioritizes retry-routing collapse over topic failures', () => {
@@ -170,7 +189,7 @@ describe('generationAttentionSurface', () => {
         }),
       },
       pipelines: { 'pipeline-1': makePipeline({ id: 'pipeline-1', label: 'P' }) },
-      sessionAcknowledgedFailureKeys: {},
+      sessionFailureAttentionKeys: { [failureKeyForJob('topic-f')]: true },
       sessionRetryRoutingFailures: {
         [retryKey]: {
           failureKey: retryKey,
@@ -188,6 +207,7 @@ describe('generationAttentionSurface', () => {
   });
 
   it('returns referentially stable primaryFailure when input state is unchanged (useShallow / useSyncExternalStore safe)', () => {
+    const fk = failureKeyForJob('failed-theory');
     const state = {
       jobs: {
         f: makeJob({
@@ -203,7 +223,8 @@ describe('generationAttentionSurface', () => {
         }),
       },
       pipelines: { 'pipeline-1': makePipeline({ id: 'pipeline-1', label: 'P' }) },
-      ...emptySession,
+      sessionFailureAttentionKeys: { [fk]: true } as Record<string, true>,
+      sessionRetryRoutingFailures: {},
     };
     const a = generationAttentionSurface(state);
     const b = generationAttentionSurface(state);

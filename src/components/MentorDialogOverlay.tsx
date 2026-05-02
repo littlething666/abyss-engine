@@ -91,11 +91,7 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
   const revealedCharsRef = useRef(0);
 
   const finalizePlanCompletion = useCallback(
-    (
-      plan: DialogPlan,
-      outcome: 'auto-advance' | 'choice' | 'closed' | 'ambient',
-      terminalEffectKind: 'open_generation_hud' | 'none',
-    ) => {
+    (plan: DialogPlan, outcome: 'auto-advance' | 'choice' | 'closed' | 'ambient') => {
       cancel();
       const startedAt = startedAtRef.current;
       const durationMs = startedAt === null ? 0 : Math.max(0, nowMs() - startedAt);
@@ -108,10 +104,7 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
         outcome,
       });
       startedAtRef.current = null;
-      if (
-        terminalEffectKind !== 'open_generation_hud' &&
-        isMentorGenerationFailureTrigger(plan.trigger)
-      ) {
+      if (isMentorGenerationFailureTrigger(plan.trigger)) {
         const failureKey = plan.payload.failureKey;
         if (typeof failureKey === 'string' && failureKey.length > 0) {
           acknowledgeFailureKey(failureKey);
@@ -135,7 +128,7 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
       switch (effect.kind) {
         case 'open_discovery': {
           if (activePlan) {
-            finalizePlanCompletion(activePlan, 'choice', 'none');
+            finalizePlanCompletion(activePlan, 'choice');
           } else {
             mentor.dismissCurrent();
           }
@@ -152,7 +145,7 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
         }
         case 'open_generation_hud': {
           if (activePlan) {
-            finalizePlanCompletion(activePlan, 'choice', 'open_generation_hud');
+            finalizePlanCompletion(activePlan, 'choice');
           } else {
             mentor.dismissCurrent();
           }
@@ -161,7 +154,7 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
         }
         case 'open_topic_study': {
           if (activePlan) {
-            finalizePlanCompletion(activePlan, 'choice', 'none');
+            finalizePlanCompletion(activePlan, 'choice');
           } else {
             mentor.dismissCurrent();
           }
@@ -173,7 +166,7 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
         }
         case 'dismiss': {
           if (activePlan) {
-            finalizePlanCompletion(activePlan, 'choice', 'none');
+            finalizePlanCompletion(activePlan, 'choice');
           } else {
             mentor.dismissCurrent();
           }
@@ -287,7 +280,7 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
         setMessageIndex(nextIndex);
         return;
       }
-      finalizePlanCompletion(currentDialog, outcome, 'none');
+      finalizePlanCompletion(currentDialog, outcome);
     },
     [cancel, currentDialog, finalizePlanCompletion, messageIndex, messages.length],
   );
