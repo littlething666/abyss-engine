@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SubjectGraph, TopicRef } from '@/types/core';
-import { useProgressionStore as useStudyStore } from '../features/progression';
+import {
+  crystalGardenOrchestrator,
+  getTopicUnlockStatusFromPolicy,
+  useCrystalGardenStore,
+  useTopicsByTier,
+} from '../features/progression';
 import { useAllGraphs, useSubjects } from '../features/content';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import type { TieredTopic, TopicUnlockStatus } from '../features/progression/progressionUtils';
@@ -243,19 +248,34 @@ export function DiscoveryModal({
     writeStoredModalSubjectId(uiStoreSubjectIdHint);
   }, [isOpen, uiStoreSubjectIdHint]);
 
-  const getTopicsByTier = useStudyStore((state) => state.getTopicsByTier);
-  const unlockTopic = useStudyStore((state) => state.unlockTopic);
-  const storeGetTopicUnlockStatus = useStudyStore((state) => state.getTopicUnlockStatus);
+  // Phase 2 step 10 — DiscoveryModal hook-substitution round.
+  // - Bulk topic listing flows through the `useTopicsByTier` hook
+  //   (subscribes to `useCrystalGardenStore` via `useShallow` + calls the
+  //   topic-unlocking policy under the hood).
+  // - Per-topic unlock status is sourced from primitive `useCrystalGardenStore`
+  //   selectors + the `getTopicUnlockStatusFromPolicy` policy directly. The
+  //   call site needs a function-getter (it runs only after a topic is
+  //   selected, and `selectedTopic` may be null) so a hook-bound value form
+  //   would require conditional hook usage. Reading the store + invoking the
+  //   policy is the same shape `useTopicUnlockStatus` wraps internally; the
+  //   identity-preserving `useShallow` step is recovered by the per-call
+  //   `useMemo` below.
+  // - The `unlockTopic` writer routes through `crystalGardenOrchestrator`
+  //   (single contiguous setState block + `crystal:unlocked` emit). The
+  //   legacy `useStudyStore.unlockTopic` no longer fires from this surface.
   const allGraphs = useAllGraphs();
   const { data: subjects = [] } = useSubjects();
   const jobs = useContentGenerationStore(useShallow((state) => state.jobs));
+
+  const cgActiveCrystals = useCrystalGardenStore((s) => s.activeCrystals);
+  const cgUnlockPoints = useCrystalGardenStore((s) => s.unlockPoints);
 
   const topicUnlockStatusGetter = useMemo(() => {
     return (ref: TopicRef) =>
       getTopicUnlockStatus
         ? getTopicUnlockStatus(ref, allGraphs)
-        : storeGetTopicUnlockStatus(ref, allGraphs);
-  }, [allGraphs, getTopicUnlockStatus, storeGetTopicUnlockStatus]);
+        : getTopicUnlockStatusFromPolicy(ref, cgActiveCrystals, cgUnlockPoints, allGraphs);
+  }, [allGraphs, getTopicUnlockStatus, cgActiveCrystals, cgUnlockPoints]);
 
   const subjectList = useMemo(() => subjects.map((subject) => ({ id: subject.id, name: subject.name })), [subjects]);
 
@@ -267,9 +287,7 @@ export function DiscoveryModal({
 
   const contentStatusMap = useTopicContentStatusMap();
 
-  const topicsByTier = useMemo(() => {
-    return getTopicsByTier(allGraphs, subjectList, modalSubjectScopeForGraphs, contentStatusMap);
-  }, [getTopicsByTier, allGraphs, subjectList, modalSubjectScopeForGraphs, contentStatusMap]);
+  const topicsByTier = useTopicsByTier(allGraphs, subjectList, modalSubjectScopeForGraphs, contentStatusMap);
 
   useEffect(() => {
     if (modalSubjectId === '__all_floors__') return;
@@ -387,7 +405,7 @@ export function DiscoveryModal({
   const handleUnlock = () => {
     if (!selectedTopic || !selectedTopicStatus?.canUnlock) return;
     const ref = { subjectId: selectedTopic.subjectId, topicId: selectedTopic.id };
-    unlockTopic(ref, allGraphs);
+    crystalGardenOrchestrator.unlockTopic(ref, allGraphs);
     const tKey = topicRefKey(ref);
     const status = contentStatusMap[tKey];
     if (status !== 'ready') {
