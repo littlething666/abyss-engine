@@ -718,4 +718,115 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
       failureKey: failureKeyForJob('job-theory-1'),
     });
 
-    expect
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'topic-content:generation-failed',
+      {
+        subjectId: 'subj-c3',
+        topicId: 'topic-c3',
+        topicLabel: 'Integrals',
+        errorMessage: 'theory upstream failed',
+        jobId: 'job-theory-1',
+        failureKey: failureKeyForJob('job-theory-1'),
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('topic-content:generation-failed'),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('theory upstream failed'));
+  });
+
+  it('topic-expansion:generation-failed forwards the level so the expansion copy can interpolate the band', () => {
+    busApi.emit('topic-expansion:generation-failed', {
+      subjectId: 'subj-c4',
+      topicId: 'topic-c4',
+      topicLabel: 'Series convergence',
+      level: 2,
+      errorMessage: 'expansion at L2 failed',
+      jobId: 'exp-job-1',
+      failureKey: failureKeyForJob('exp-job-1'),
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'topic-expansion:generation-failed',
+      {
+        subjectId: 'subj-c4',
+        topicId: 'topic-c4',
+        topicLabel: 'Series convergence',
+        level: 2,
+        errorMessage: 'expansion at L2 failed',
+        jobId: 'exp-job-1',
+        failureKey: failureKeyForJob('exp-job-1'),
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('topic-expansion:generation-failed'),
+    );
+  });
+
+  it('crystal-trial:generation-failed forwards the level so the trial copy can name the band', () => {
+    busApi.emit('crystal-trial:generation-failed', {
+      subjectId: 'subj-c5',
+      topicId: 'topic-c5',
+      topicLabel: 'Eigenvectors',
+      level: 3,
+      errorMessage: 'trial questions empty',
+      jobId: 'trial-job-1',
+      failureKey: failureKeyForJob('trial-job-1'),
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'crystal-trial:generation-failed',
+      {
+        subjectId: 'subj-c5',
+        topicId: 'topic-c5',
+        topicLabel: 'Eigenvectors',
+        level: 3,
+        errorMessage: 'trial questions empty',
+        jobId: 'trial-job-1',
+        failureKey: failureKeyForJob('trial-job-1'),
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('crystal-trial:generation-failed'),
+    );
+  });
+
+  it('content-generation:retry-failed forwards jobLabel for retry-routing-collapse copy', () => {
+    const failureInstanceId = '00000000-0000-4000-8000-000000000099';
+    const failureKey = failureKeyForRetryRoutingInstance(failureInstanceId);
+    busApi.emit('content-generation:retry-failed', {
+      subjectId: 'subj-c6',
+      topicId: 'topic-c6',
+      topicLabel: 'Discrete probability',
+      jobLabel: 'Theory generation',
+      errorMessage: 'missing checklist context',
+      jobId: 'orig-job-1',
+      failureInstanceId,
+      failureKey,
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
+      'content-generation:retry-failed',
+      {
+        subjectId: 'subj-c6',
+        topicId: 'topic-c6',
+        topicLabel: 'Discrete probability',
+        jobLabel: 'Theory generation',
+        errorMessage: 'missing checklist context',
+        jobId: 'orig-job-1',
+        failureInstanceId,
+        failureKey,
+      },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('content-generation:retry-failed'),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Theory generation'),
+    );
+  });
+});
