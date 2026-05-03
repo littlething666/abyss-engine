@@ -88,7 +88,10 @@ describe('useTopicUnlockStatus', () => {
 
 		act(() => {
 			useCrystalGardenStore.setState({
-				activeCrystals: [{ subjectId: 's', topicId: 'a', gridPosition: [0, 0], xp: 0, spawnedAt: 1 }],
+				// xp=100 puts topic-a at crystal level 1, which satisfies the
+				// legacy string-prereq default (`minLevel: 1`) applied by
+				// normalizeGraphPrerequisites to `prerequisites: ['a']`.
+				activeCrystals: [{ subjectId: 's', topicId: 'a', gridPosition: [0, 0], xp: 100, spawnedAt: 1 }],
 			});
 		});
 		expect(captured?.canUnlock).toBe(true);
