@@ -5,7 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
 import { Billboard, Sparkles } from '@react-three/drei/webgpu';
 import { selectIsAnyModalOpen, uiStore } from '../store/uiStore';
-import { useProgressionStore as useStudyStore } from '../features/progression';
+import { useRemainingRitualCooldownMs } from '../features/progression';
 import { useSceneInvalidator } from '../hooks/useSceneInvalidator';
 import {
   createAltarMaterialBundle,
@@ -51,6 +51,9 @@ const FRAGMENT_BOB_COOLDOWN_LOCAL = 0.04;
 /** Sparkles field / particle size in altar local space (inherit `ALTAR_SCALE` toward world). */
 const SPARKLES_FIELD_SCALE = 1.8;
 const SPARKLES_POINT_SIZE = 2.4;
+
+/** Cadence of the wall-clock tick that re-derives the ritual cooldown remaining ms. */
+const COOLDOWN_TICK_INTERVAL_MS = 1000;
 
 /** Orbital parameters per fragment (radius, base height, angular speed, phase, bob phase). */
 const FRAGMENT_ORBITS: ReadonlyArray<{
@@ -103,8 +106,18 @@ export const WisdomAltar: React.FC = () => {
     document.body.style.cursor = 'auto';
   };
 
-  const getRemainingRitualCooldownMs = useStudyStore((state) => state.getRemainingRitualCooldownMs);
-  const [isRitualSubmissionAvailable, setIsRitualSubmissionAvailable] = useState(true);
+  // Phase 2 step 10 — WisdomAltar cooldown-poll restructure.
+  // The data source flips from the legacy `useStudyStore.getRemainingRitualCooldownMs`
+  // imperative getter to the `useRemainingRitualCooldownMs(atMs)` hook. The hook
+  // subscribes to `lastRitualSubmittedAt` on the new study-session store and
+  // derives remaining ms against the supplied `atMs`; we still need a wall-clock
+  // tick to advance `atMs` (the hook would otherwise return a stale value between
+  // ritual submissions). The modal-open guard is preserved — while any modal is
+  // open we freeze the tick, which freezes the derived availability without
+  // ever calling the hook conditionally.
+  const [now, setNow] = useState(() => Date.now());
+  const remainingCooldownMs = useRemainingRitualCooldownMs(now);
+  const isRitualSubmissionAvailable = remainingCooldownMs <= 0;
   const { isPaused, invalidate } = useSceneInvalidator();
 
   useLayoutEffect(() => {
@@ -116,22 +129,20 @@ export const WisdomAltar: React.FC = () => {
   }, [isRitualSubmissionAvailable, isPaused]);
 
   useEffect(() => {
-    const updateSubmissionAvailability = () => {
+    const tick = () => {
       if (selectIsAnyModalOpen(uiStore.getState())) {
         return;
       }
-
-      const remaining = getRemainingRitualCooldownMs(Date.now());
-      setIsRitualSubmissionAvailable(remaining <= 0);
+      setNow(Date.now());
     };
 
-    updateSubmissionAvailability();
-    const timer = window.setInterval(updateSubmissionAvailability, 1000);
+    tick();
+    const timer = window.setInterval(tick, COOLDOWN_TICK_INTERVAL_MS);
 
     return () => {
       window.clearInterval(timer);
     };
-  }, [getRemainingRitualCooldownMs]);
+  }, []);
 
   useFrame(() => {
     if (isPaused) {
