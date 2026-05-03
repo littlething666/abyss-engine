@@ -36,7 +36,7 @@ import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInfe
 import { crystalCeremonyStore, useProgressionStore } from '@/features/progression';
 import { uiStore, useUIStore } from '@/store/uiStore';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
-import { calculateLevelFromXP, MAX_CRYSTAL_LEVEL } from '@/features/progression/progressionUtils';
+import { calculateLevelFromXP, MAX_CRYSTAL_LEVEL } from '@/types/crystalLevel';
 import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 

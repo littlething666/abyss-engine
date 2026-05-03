@@ -10,10 +10,8 @@ import {
 import { useUIStore } from '@/store/uiStore';
 import { useProgressionStore } from '@/features/progression/progressionStore';
 import { appEventBus } from '@/infrastructure/eventBus';
-import {
-  CRYSTAL_XP_PER_LEVEL,
-  getXpToNextBandThreshold,
-} from '@/features/progression/progressionUtils';
+import { getXpToNextBandThreshold } from '@/features/progression/progressionUtils';
+import { CRYSTAL_XP_PER_LEVEL } from '@/types/crystalLevel';
 import type { CrystalTrialResult, CrystalTrialScenarioQuestion } from '@/types/crystalTrial';
 import { evaluateTrial } from '@/features/crystalTrial/evaluateTrial';
 import {

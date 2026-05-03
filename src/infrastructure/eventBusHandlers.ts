@@ -17,12 +17,11 @@ import { resolveEnableReasoningForSurface } from './llmInferenceSurfaceProviders
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
 import {
-  resolveCrystalTrialPregenerateLevels,
   busMayStartTrialPregeneration,
   isCrystalTrialAvailableForPlayer,
 } from '@/features/crystalTrial';
 import { useProgressionStore } from '@/features/progression/progressionStore';
-import { calculateLevelFromXP } from '@/features/progression/progressionUtils';
+import { calculateLevelFromXP, MAX_CRYSTAL_LEVEL } from '@/types/crystalLevel';
 import {
   handleMentorTrigger,
   MENTOR_VOICE_ID,
@@ -553,20 +552,27 @@ if (!g.__abyssEventBusHandlersRegistered) {
     const status = trialStore.getTrialStatus(ref);
     // Topic-scoped: refresh when generating or ready (`awaiting_player`), not during `in_progress`.
     if (status === 'pregeneration' || status === 'awaiting_player') {
-      // Atomic invalidation + regeneration: look up crystal level and create new trial in one store update
-      const levels = resolveCrystalTrialPregenerateLevels(
-        ref,
-        useProgressionStore.getState().activeCrystals,
+      // Resolve current/target trial levels inline (formerly
+      // `resolveCrystalTrialPregenerateLevels` from the deleted
+      // `emitCrystalTrialPregenerate.ts`). Skip when there is no
+      // active crystal for the topic, or when the crystal is already
+      // at max level and has no next level to pre-generate for.
+      const crystal = useProgressionStore.getState().activeCrystals.find(
+        (c) => c.subjectId === ref.subjectId && c.topicId === ref.topicId,
       );
-      if (!levels) {
+      if (!crystal) {
         return;
       }
-      const { currentLevel } = levels;
+      const currentLevel = calculateLevelFromXP(crystal.xp);
+      if (currentLevel >= MAX_CRYSTAL_LEVEL) {
+        return;
+      }
+      const targetLevel = currentLevel + 1;
 
       trialStore.invalidateAndRegenerate(ref, {
         subjectId: ref.subjectId,
         topicId: ref.topicId,
-        targetLevel: levels.targetLevel,
+        targetLevel,
       });
 
       // Now trigger the LLM generation (trial already exists in store in pregeneration state)
