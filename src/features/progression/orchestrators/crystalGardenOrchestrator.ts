@@ -110,10 +110,11 @@ export function unlockTopic(
 	});
 	// --- End mutation phase ---
 
-	// Phase 1 step 5 will rename `notifyLevelUp` → `presentCeremony` and add
-	// emission of `crystal:unlocked` (step 8). For now this orchestrator
-	// mirrors legacy behavior so adopting it in callers is a no-op.
-	crystalCeremonyStore.getState().notifyLevelUp(ref, isDialogOpen);
+	// Phase 1 step 6 will move ceremony presentation entirely behind the
+	// `crystal:unlocked` event handler in `eventBusHandlers.ts`, but until
+	// step 6 lands the orchestrator drives the ceremony directly to keep
+	// caller-side behavior identical.
+	crystalCeremonyStore.getState().presentCeremony(ref, isDialogOpen);
 
 	return nextPosition;
 }

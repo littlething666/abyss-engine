@@ -317,7 +317,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
     crystalCeremonyStore
       .getState()
-      .notifyLevelUp({ subjectId: e.subjectId, topicId: e.topicId }, e.isDialogOpen);
+      .presentCeremony({ subjectId: e.subjectId, topicId: e.topicId }, e.isDialogOpen);
 
     // UPDATED: Expansion now runs for L1 through L3 (was L2-L3 only).
     // L1 level-up creates difficulty 2 cards, L2 creates diff 3, L3 creates diff 4.
