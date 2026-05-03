@@ -69,43 +69,23 @@ const {
         }
       }),
     },
-    mentorApi: {
-      handleMentorTrigger: vi.fn(),
-      state: mentorState,
-    },
-    orchestratorApi: {
-      execute: vi.fn().mockResolvedValue({ ok: true }),
-    },
-    telemetryApi: {
-      log: vi.fn(),
-    },
-    deckApi: {
-      getManifest: vi.fn().mockResolvedValue({ subjects: [] }),
-    },
+    mentorApi: { handleMentorTrigger: vi.fn(), state: mentorState },
+    orchestratorApi: { execute: vi.fn().mockResolvedValue({ ok: true }) },
+    telemetryApi: { log: vi.fn() },
+    deckApi: { getManifest: vi.fn().mockResolvedValue({ subjects: [] }) },
     progressionApi: crystalGardenStoreMock,
     studySessionApi: studySessionStoreMock,
   };
 });
 
-// ---- Heavy-collaborator mocks ---------------------------------------------
-//
-// Phase D: the legacy `@/infrastructure/toast` mock was dropped along with
-// the `Curriculum generated` / `Curriculum generation needs attention`
-// toast surfaces in eventBusHandlers itself. The mentor failure / success
-// triggers asserted below are the Phase D player-facing surface.
-
 vi.mock('@/features/mentor', () => ({
   handleMentorTrigger: mentorApi.handleMentorTrigger,
   MENTOR_VOICE_ID: 'witty-sarcastic',
-  useMentorStore: {
-    getState: () => mentorApi.state,
-  },
+  useMentorStore: { getState: () => mentorApi.state },
 }));
 
 vi.mock('@/infrastructure/di', () => ({
-  deckRepository: {
-    getManifest: deckApi.getManifest,
-  },
+  deckRepository: { getManifest: deckApi.getManifest },
   deckWriter: {},
   chatCompletionsRepository: {},
 }));
@@ -122,17 +102,12 @@ vi.mock('@/features/contentGeneration/jobs/runExpansionJob', () => ({
   runExpansionJob: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock(
-  '@/features/contentGeneration/pipelines/runTopicGenerationPipeline',
-  () => ({
-    runTopicGenerationPipeline: vi.fn().mockResolvedValue(undefined),
-  }),
-);
+vi.mock('@/features/contentGeneration/pipelines/runTopicGenerationPipeline', () => ({
+  runTopicGenerationPipeline: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('@/features/subjectGeneration', () => ({
-  createSubjectGenerationOrchestrator: vi.fn(() => ({
-    execute: orchestratorApi.execute,
-  })),
+  createSubjectGenerationOrchestrator: vi.fn(() => ({ execute: orchestratorApi.execute })),
   resolveSubjectGenerationStageBindings: vi.fn(() => ({})),
 }));
 
@@ -143,10 +118,8 @@ vi.mock('@/features/crystalTrial/generateTrialQuestions', () => ({
 vi.mock('@/features/crystalTrial', () => ({
   resolveCrystalTrialPregenerateLevels: vi.fn(() => null),
   busMayStartTrialPregeneration: vi.fn(() => false),
-  isCrystalTrialAvailableForPlayer: (
-    status: string | undefined,
-    xp: number,
-  ) => status === 'awaiting_player' && xp >= BAND_CAP_XP,
+  isCrystalTrialAvailableForPlayer: (status: string | undefined, xp: number) =>
+    status === 'awaiting_player' && xp >= BAND_CAP_XP,
 }));
 
 vi.mock('@/features/progression/stores/crystalGardenStore', () => ({
@@ -162,30 +135,20 @@ vi.mock('@/features/progression/progressionUtils', () => ({
 }));
 
 vi.mock('@/features/progression/crystalCeremonyStore', () => ({
-  crystalCeremonyStore: {
-    getState: () => ({ presentCeremony: vi.fn() }),
-  },
+  crystalCeremonyStore: { getState: () => ({ presentCeremony: vi.fn() }) },
 }));
 
 vi.mock('@/store/crystalContentCelebrationStore', () => ({
-  useCrystalContentCelebrationStore: {
-    getState: () => ({ dismissPending: vi.fn() }),
-  },
+  useCrystalContentCelebrationStore: { getState: () => ({ dismissPending: vi.fn() }) },
 }));
 
-vi.mock('@/features/telemetry', () => ({
-  telemetry: telemetryApi,
-}));
+vi.mock('@/features/telemetry', () => ({ telemetry: telemetryApi }));
 
-vi.mock('../pubsub', () => ({
-  pubSubClient: { on: vi.fn(), emit: vi.fn() },
-}));
+vi.mock('../pubsub', () => ({ pubSubClient: { on: vi.fn(), emit: vi.fn() } }));
 
 vi.mock('../eventBus', () => ({
   appEventBus: { on: busApi.on, emit: busApi.emit, off: vi.fn() },
 }));
-
-// ---- Real imports under test ----------------------------------------------
 
 import { handleMentorTrigger } from '@/features/mentor';
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
@@ -238,153 +201,83 @@ async function flushMicrotasks(): Promise<void> {
 
 describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
   it('fires when status flips to awaiting_player AND XP is already at the band cap', () => {
-    progressionApi.setActiveCrystals([
-      { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP }]);
     handleMentorTriggerSpy.mockReset();
 
     useCrystalTrialStore.setState({
       trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'awaiting_player',
-          subjectId: 'subj-1',
-          topicId: 'topic-1',
-        }),
+        'subj-1::topic-1': trialFixture({ status: 'awaiting_player', subjectId: 'subj-1', topicId: 'topic-1' }),
       },
     });
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'crystal-trial:available-for-player',
-      { topic: 'topic-1' },
-    );
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('crystal-trial:available-for-player', { topic: 'topic-1' });
   });
 
   it('does NOT fire when status flips to awaiting_player but XP is below the band cap', () => {
-    progressionApi.setActiveCrystals([
-      { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP - 50 },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP - 50 }]);
     handleMentorTriggerSpy.mockReset();
 
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'awaiting_player',
-          topicId: 'topic-1',
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'awaiting_player', topicId: 'topic-1' }) },
     });
 
     expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
   });
 
   it('fires when XP catches up after the trial was already prepared', () => {
-    progressionApi.setActiveCrystals([
-      { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP - 1 },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP - 1 }]);
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'awaiting_player',
-          topicId: 'topic-1',
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'awaiting_player', topicId: 'topic-1' }) },
     });
     expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
     handleMentorTriggerSpy.mockReset();
 
-    progressionApi.setActiveCrystals([
-      { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP }]);
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'crystal-trial:available-for-player',
-      { topic: 'topic-1' },
-    );
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('crystal-trial:available-for-player', { topic: 'topic-1' });
   });
 
   it('does NOT re-fire once a key is already in the available set', () => {
-    progressionApi.setActiveCrystals([
-      { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP + 30 },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP + 30 }]);
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'awaiting_player',
-          topicId: 'topic-1',
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'awaiting_player', topicId: 'topic-1' }) },
     });
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
     handleMentorTriggerSpy.mockReset();
 
-    progressionApi.setActiveCrystals([
-      { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP + 40 },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP + 40 }]);
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'awaiting_player',
-          topicId: 'topic-1',
-          score: 0.5,
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'awaiting_player', topicId: 'topic-1', score: 0.5 }) },
     });
 
     expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
   });
 
   it('drops the key (no fire) when status falls out of available, then re-fires on next true transition', () => {
-    progressionApi.setActiveCrystals([
-      { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP }]);
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'awaiting_player',
-          topicId: 'topic-1',
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'awaiting_player', topicId: 'topic-1' }) },
     });
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
     handleMentorTriggerSpy.mockReset();
 
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'in_progress',
-          topicId: 'topic-1',
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'in_progress', topicId: 'topic-1' }) },
     });
     expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
 
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'awaiting_player',
-          topicId: 'topic-1',
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'awaiting_player', topicId: 'topic-1' }) },
     });
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'crystal-trial:available-for-player',
-      { topic: 'topic-1' },
-    );
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('crystal-trial:available-for-player', { topic: 'topic-1' });
   });
 
   it('drops disappeared keys without re-firing on recreate', () => {
-    progressionApi.setActiveCrystals([
-      { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP }]);
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'awaiting_player',
-          topicId: 'topic-1',
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'awaiting_player', topicId: 'topic-1' }) },
     });
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
     handleMentorTriggerSpy.mockReset();
@@ -394,11 +287,7 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
 
     useCrystalTrialStore.setState({
       trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'awaiting_player',
-          topicId: 'topic-1',
-          trialId: 'trial-recreated',
-        }),
+        'subj-1::topic-1': trialFixture({ status: 'awaiting_player', topicId: 'topic-1', trialId: 'trial-recreated' }),
       },
     });
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
@@ -414,28 +303,14 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
 
     useCrystalTrialStore.setState({
       trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'awaiting_player',
-          subjectId: 'subj-1',
-          topicId: 'topic-1',
-        }),
-        'subj-1::topic-2': trialFixture({
-          status: 'awaiting_player',
-          subjectId: 'subj-1',
-          topicId: 'topic-2',
-        }),
-        'subj-1::topic-3': trialFixture({
-          status: 'awaiting_player',
-          subjectId: 'subj-1',
-          topicId: 'topic-3',
-        }),
+        'subj-1::topic-1': trialFixture({ status: 'awaiting_player', subjectId: 'subj-1', topicId: 'topic-1' }),
+        'subj-1::topic-2': trialFixture({ status: 'awaiting_player', subjectId: 'subj-1', topicId: 'topic-2' }),
+        'subj-1::topic-3': trialFixture({ status: 'awaiting_player', subjectId: 'subj-1', topicId: 'topic-3' }),
       },
     });
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(2);
-    const topics = handleMentorTriggerSpy.mock.calls
-      .map((c) => (c[1] as { topic: string }).topic)
-      .sort();
+    const topics = handleMentorTriggerSpy.mock.calls.map((c) => (c[1] as { topic: string }).topic).sort();
     expect(topics).toEqual(['topic-1', 'topic-2']);
     for (const call of handleMentorTriggerSpy.mock.calls) {
       expect(call[0]).toBe('crystal-trial:available-for-player');
@@ -443,43 +318,24 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
   });
 
   it('does NOT fire on transitions into non-awaiting_player statuses regardless of XP', () => {
-    progressionApi.setActiveCrystals([
-      { subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP * 5 },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP * 5 }]);
     handleMentorTriggerSpy.mockReset();
 
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'pregeneration',
-          topicId: 'topic-1',
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'pregeneration', topicId: 'topic-1' }) },
     });
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'in_progress',
-          topicId: 'topic-1',
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'in_progress', topicId: 'topic-1' }) },
     });
     useCrystalTrialStore.setState({
-      trials: {
-        'subj-1::topic-1': trialFixture({
-          status: 'cooldown',
-          topicId: 'topic-1',
-        }),
-      },
+      trials: { 'subj-1::topic-1': trialFixture({ status: 'cooldown', topicId: 'topic-1' }) },
     });
 
     expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
   });
 
   it('passes the trial topicId (not subjectId or trialId) in the payload', () => {
-    progressionApi.setActiveCrystals([
-      { subjectId: 'subj-9', topicId: 'derivatives', xp: BAND_CAP_XP },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'subj-9', topicId: 'derivatives', xp: BAND_CAP_XP }]);
     handleMentorTriggerSpy.mockReset();
 
     useCrystalTrialStore.setState({
@@ -493,19 +349,13 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
       },
     });
 
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'crystal-trial:available-for-player',
-      { topic: 'derivatives' },
-    );
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('crystal-trial:available-for-player', { topic: 'derivatives' });
   });
 });
 
 describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
   it('fires the start mentor trigger and records the first subject generation enqueue', async () => {
-    busApi.emit('subject-graph:generation-requested', {
-      subjectId: 'calculus',
-      checklist: { topicName: 'Calculus' },
-    });
+    busApi.emit('subject-graph:generation-requested', { subjectId: 'calculus', checklist: { topicName: 'Calculus' } });
     await flushMicrotasks();
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generation-started', {
@@ -515,18 +365,12 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     expect(mentorApi.state.markFirstSubjectGenerationEnqueued).toHaveBeenCalledTimes(1);
     expect(telemetryApi.log).toHaveBeenCalledWith(
       'mentor:first-subject-generation-enqueued',
-      expect.objectContaining({
-        triggerId: 'onboarding:pre-first-subject',
-        voiceId: 'witty-sarcastic',
-      }),
+      expect.objectContaining({ triggerId: 'onboarding:pre-first-subject', voiceId: 'witty-sarcastic' }),
       { subjectId: 'calculus' },
     );
   });
 
   it('routes failed subject generation to a mentor failure trigger and telemetry', async () => {
-    // Phase B.2.b contract: emission of `subject-graph:generation-failed`
-    // is owned by the orchestrator. Phase D removed the toast; the mentor
-    // failure dialog is now the player-facing surface.
     orchestratorApi.execute.mockImplementationOnce(async () => {
       busApi.emit('subject-graph:generation-failed', {
         subjectId: 'calculus',
@@ -537,18 +381,10 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
         jobId: 'edges-job-1',
         failureKey: failureKeyForJob('edges-job-1'),
       });
-      return {
-        ok: false,
-        error: 'edges failed',
-        pipelineId: 'pipeline-1',
-        stage: 'edges',
-      };
+      return { ok: false, error: 'edges failed', pipelineId: 'pipeline-1', stage: 'edges' };
     });
 
-    busApi.emit('subject-graph:generation-requested', {
-      subjectId: 'calculus',
-      checklist: { topicName: 'Calculus' },
-    });
+    busApi.emit('subject-graph:generation-requested', { subjectId: 'calculus', checklist: { topicName: 'Calculus' } });
     await flushMicrotasks();
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generation-failed', {
@@ -590,9 +426,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     });
     await flushMicrotasks();
 
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generated', {
-      subjectName: 'Celebration Subject',
-    });
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generated', { subjectName: 'Celebration Subject' });
     expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith(
       'onboarding:subject-unlock-first-crystal',
       expect.anything(),
@@ -603,9 +437,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     deckApi.getManifest.mockResolvedValueOnce({
       subjects: [{ id: 'first-crystal-subj-1', name: 'Topology' }],
     });
-    progressionApi.setActiveCrystals([
-      { subjectId: 'unrelated-subj', topicId: 'unrelated-topic', xp: 0 },
-    ]);
+    progressionApi.setActiveCrystals([{ subjectId: 'unrelated-subj', topicId: 'unrelated-topic', xp: 0 }]);
     handleMentorTriggerSpy.mockReset();
 
     busApi.emit('subject-graph:generated', {
@@ -618,14 +450,11 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     });
     await flushMicrotasks();
 
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'onboarding:subject-unlock-first-crystal',
-      { subjectName: 'Topology', subjectId: 'first-crystal-subj-1' },
-    );
-    expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith(
-      'subject:generated',
-      expect.anything(),
-    );
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('onboarding:subject-unlock-first-crystal', {
+      subjectName: 'Topology',
+      subjectId: 'first-crystal-subj-1',
+    });
+    expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith('subject:generated', expect.anything());
   });
 
   it('subject-graph:generated dedupes the onboarding trigger per subjectId across regenerates in the same session', async () => {
@@ -645,10 +474,10 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     });
     await flushMicrotasks();
 
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'onboarding:subject-unlock-first-crystal',
-      { subjectName: 'Linear Algebra', subjectId: 'first-crystal-subj-2' },
-    );
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('onboarding:subject-unlock-first-crystal', {
+      subjectName: 'Linear Algebra',
+      subjectId: 'first-crystal-subj-2',
+    });
     handleMentorTriggerSpy.mockReset();
 
     busApi.emit('subject-graph:generated', {
@@ -661,9 +490,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
     });
     await flushMicrotasks();
 
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generated', {
-      subjectName: 'Linear Algebra',
-    });
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generated', { subjectName: 'Linear Algebra' });
     expect(handleMentorTriggerSpy).not.toHaveBeenCalledWith(
       'onboarding:subject-unlock-first-crystal',
       expect.anything(),
@@ -692,15 +519,12 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
     });
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'topic-content:generation-ready',
-      {
-        subjectId: 'subj-c1',
-        topicId: 'topic-c1',
-        topicLabel: 'Limits',
-        pipelineId: 'pipeline-c1',
-      },
-    );
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('topic-content:generation-ready', {
+      subjectId: 'subj-c1',
+      topicId: 'topic-c1',
+      topicLabel: 'Limits',
+      pipelineId: 'pipeline-c1',
+    });
   });
 
   it.each(['theory', 'study-cards', 'mini-games'])(
@@ -713,7 +537,6 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
         pipelineId: 'pipeline-c2',
         stage,
       });
-
       expect(handleMentorTriggerSpy).not.toHaveBeenCalled();
     },
   );
@@ -731,21 +554,92 @@ describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', (
     });
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
-    expect(handleMentorTriggerSpy).toHaveBeenCalledWith(
-      'topic-content:generation-failed',
-      {
-        subjectId: 'subj-c3',
-        topicId: 'topic-c3',
-        topicLabel: 'Integrals',
-        errorMessage: 'theory upstream failed',
-        jobId: 'job-theory-1',
-        failureKey: failureKeyForJob('job-theory-1'),
-      },
-    );
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('topic-content:generation-failed'),
-    );
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('topic-content:generation-failed', {
+      subjectId: 'subj-c3',
+      topicId: 'topic-c3',
+      topicLabel: 'Integrals',
+      errorMessage: 'theory upstream failed',
+      jobId: 'job-theory-1',
+      failureKey: failureKeyForJob('job-theory-1'),
+    });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('topic-content:generation-failed'));
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('theory upstream failed'));
   });
 
-  it('topic-expansion:generation
+  it('topic-expansion:generation-failed forwards the level so the expansion copy can interpolate the band', () => {
+    busApi.emit('topic-expansion:generation-failed', {
+      subjectId: 'subj-c4',
+      topicId: 'topic-c4',
+      topicLabel: 'Series convergence',
+      level: 2,
+      errorMessage: 'expansion at L2 failed',
+      jobId: 'exp-job-1',
+      failureKey: failureKeyForJob('exp-job-1'),
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('topic-expansion:generation-failed', {
+      subjectId: 'subj-c4',
+      topicId: 'topic-c4',
+      topicLabel: 'Series convergence',
+      level: 2,
+      errorMessage: 'expansion at L2 failed',
+      jobId: 'exp-job-1',
+      failureKey: failureKeyForJob('exp-job-1'),
+    });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('topic-expansion:generation-failed'));
+  });
+
+  it('crystal-trial:generation-failed forwards the level so the trial copy can name the band', () => {
+    busApi.emit('crystal-trial:generation-failed', {
+      subjectId: 'subj-c5',
+      topicId: 'topic-c5',
+      topicLabel: 'Eigenvectors',
+      level: 3,
+      errorMessage: 'trial questions empty',
+      jobId: 'trial-job-1',
+      failureKey: failureKeyForJob('trial-job-1'),
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('crystal-trial:generation-failed', {
+      subjectId: 'subj-c5',
+      topicId: 'topic-c5',
+      topicLabel: 'Eigenvectors',
+      level: 3,
+      errorMessage: 'trial questions empty',
+      jobId: 'trial-job-1',
+      failureKey: failureKeyForJob('trial-job-1'),
+    });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('crystal-trial:generation-failed'));
+  });
+
+  it('content-generation:retry-failed forwards jobLabel for retry-routing-collapse copy', () => {
+    const failureInstanceId = '00000000-0000-4000-8000-000000000099';
+    const failureKey = failureKeyForRetryRoutingInstance(failureInstanceId);
+    busApi.emit('content-generation:retry-failed', {
+      subjectId: 'subj-c6',
+      topicId: 'topic-c6',
+      topicLabel: 'Discrete probability',
+      jobLabel: 'Theory generation',
+      errorMessage: 'missing checklist context',
+      jobId: 'orig-job-1',
+      failureInstanceId,
+      failureKey,
+    });
+
+    expect(handleMentorTriggerSpy).toHaveBeenCalledTimes(1);
+    expect(handleMentorTriggerSpy).toHaveBeenCalledWith('content-generation:retry-failed', {
+      subjectId: 'subj-c6',
+      topicId: 'topic-c6',
+      topicLabel: 'Discrete probability',
+      jobLabel: 'Theory generation',
+      errorMessage: 'missing checklist context',
+      jobId: 'orig-job-1',
+      failureInstanceId,
+      failureKey,
+    });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('content-generation:retry-failed'));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Theory generation'));
+  });
+});
