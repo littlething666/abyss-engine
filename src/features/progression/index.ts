@@ -1,4 +1,4 @@
-// Existing barrel exports — kept verbatim as transitional re-exports so
+// Existing barrel exports -- kept verbatim as transitional re-exports so
 // Phase 2 callers can migrate one file at a time without breaking the
 // build. They will be removed in Phase 2 step 13 once every caller has
 // switched to the new stores / orchestrators / hooks.
@@ -48,6 +48,17 @@ export type {
 	BuffState,
 	BuffActions,
 	BuffStore,
+} from './stores/buffStore';
+
+// Phase 2 step 10 (writer migration round): single-store mutation helpers
+// for AbyssCommandPalette's dev XP-buff toggle. Colocated with `buffStore`
+// because they do not cross store boundaries; the legacy writers of the
+// same names remain bound to `useProgressionStore.getState()` and stay
+// alive for the existing `progressionStore.test.ts` parity gate until
+// Phase 4 step 15 deletes the monolith.
+export {
+	grantBuffFromCatalog,
+	toggleBuffFromCatalog,
 } from './stores/buffStore';
 
 // Orchestrators (cross-store mutation seams). Imported as namespaces so

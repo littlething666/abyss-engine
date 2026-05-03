@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 
 import type { Buff } from '@/types/progression';
 
+import { BuffEngine } from '../buffs/buffEngine';
+
 /**
  * Buff state slice: currently active buffs hydrated by `BuffEngine` at
  * runtime.
@@ -45,3 +47,77 @@ export const useBuffStore = create<BuffStore>()(
 		},
 	),
 );
+
+// ---------------------------------------------------------------------------
+// Single-store mutation helpers (Phase 2 step 10 -- writer migration round).
+//
+// `grantBuffFromCatalog` and `toggleBuffFromCatalog` are pure mutations on
+// the buff store: they hydrate active buffs, drop expired `session_end`
+// entries that have not yet been consumed, dedupe by
+// `(buffId | source | condition)`, and merge in the catalog buff (if any).
+// They do NOT cross store boundaries, so they live here next to
+// `useBuffStore` rather than in `crystalGardenOrchestrator` -- whose seat
+// is reserved for cross-store writes.
+//
+// Production callers (`AbyssCommandPalette` dev XP-buff toggle) route
+// through these helpers. The legacy writers of the same names remain on
+// `progressionStore.ts` for the existing `progressionStore.test.ts` parity
+// gate until Phase 4 step 15 deletes the monolith outright.
+// ---------------------------------------------------------------------------
+
+function dedupeBuffsById(buffs: Buff[]): Buff[] {
+	const seen = new Set<string>();
+	const deduped: Buff[] = [];
+	for (let index = buffs.length - 1; index >= 0; index -= 1) {
+		const buff = buffs[index];
+		const dedupeKey = !buff
+			? ''
+			: `${buff.buffId}|${buff.source ?? 'unknown'}|${buff.condition}`;
+		if (!buff || seen.has(dedupeKey)) {
+			continue;
+		}
+		seen.add(dedupeKey);
+		deduped.push(buff);
+	}
+	return deduped.reverse();
+}
+
+function normalizeActiveBuffs(currentBuffs: Buff[], incoming: Buff[]): Buff[] {
+	const nonSession = currentBuffs
+		.map((buff) => BuffEngine.get().hydrateBuff(buff))
+		.filter((buff) => buff.condition !== 'session_end');
+	const sanitizedIncoming = incoming.map((buff) => BuffEngine.get().hydrateBuff(buff));
+	const combined = [...nonSession, ...sanitizedIncoming];
+	return dedupeBuffsById(combined);
+}
+
+export function grantBuffFromCatalog(
+	defId: string,
+	source: string,
+	magnitudeOverride?: number,
+): void {
+	const buff = BuffEngine.get().grantBuff(defId, source, magnitudeOverride);
+	useBuffStore.setState((state) => ({
+		activeBuffs: normalizeActiveBuffs(state.activeBuffs, [buff]),
+	}));
+}
+
+export function toggleBuffFromCatalog(
+	defId: string,
+	source: string,
+	magnitudeOverride?: number,
+): void {
+	useBuffStore.setState((state) => {
+		const matches = (b: Buff) =>
+			b.buffId === defId && (b.source ?? 'legacy') === source;
+		if (state.activeBuffs.some(matches)) {
+			return {
+				activeBuffs: state.activeBuffs.filter((b) => !matches(b)),
+			};
+		}
+		const buff = BuffEngine.get().grantBuff(defId, source, magnitudeOverride);
+		return {
+			activeBuffs: normalizeActiveBuffs(state.activeBuffs, [buff]),
+		};
+	});
+}
