@@ -22,7 +22,6 @@
 
 import { cardRefKey, parseCardRefKey } from '@/lib/topicRef';
 import { appEventBus } from '@/infrastructure/eventBus';
-import { selectIsAnyModalOpen, useUIStore } from '@/store/uiStore';
 import { calculateLevelFromXP } from '@/types/crystalLevel';
 import type { Card, TopicRef } from '@/types/core';
 import {
@@ -403,7 +402,6 @@ function submitResolvedStudyResult(
 			to: applied.nextLevel,
 			levelsGained: applied.levelsGained,
 			sessionId,
-			isDialogOpen: selectIsAnyModalOpen(useUIStore.getState()),
 		});
 	}
 

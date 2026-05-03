@@ -6,7 +6,9 @@
  *
  *   - app-bootstrap `initialize()` (buff hydration / pruning)
  *   - `unlockTopic(ref, allGraphs)` — spawns a new crystal at the next free
- *     grid cell, charging one unlock point.
+ *     grid cell, charging one unlock point. Emits `crystal:unlocked`; the
+ *     eventBusHandlers ceremony wiring sources isDialogOpen from the UI
+ *     store and presents the spawn ceremony.
  *   - `addXP(ref, xp, options)` — direct-path XP grant (dev tools, ritual
  *     spillover, trial level-up payouts).
  *
@@ -28,7 +30,6 @@
  */
 
 import { appEventBus } from '@/infrastructure/eventBus';
-import { selectIsAnyModalOpen, useUIStore } from '@/store/uiStore';
 import { calculateLevelFromXP } from '@/types/crystalLevel';
 import type { SubjectGraph, TopicRef } from '@/types/core';
 import type { Buff } from '@/types/progression';
@@ -43,7 +44,6 @@ import { applyCrystalXpDelta } from '../policies/crystalLeveling';
 import { getTopicUnlockStatus } from '../policies/topicUnlocking';
 import { findNextGridPosition } from '../gridUtils';
 import { BuffEngine } from '../buffs/buffEngine';
-import { crystalCeremonyStore } from '../crystalCeremonyStore';
 
 function dedupeBuffsById(buffs: Buff[]): Buff[] {
 	const seen = new Set<string>();
@@ -92,8 +92,6 @@ export function unlockTopic(
 		return null;
 	}
 
-	const isDialogOpen = selectIsAnyModalOpen(useUIStore.getState());
-
 	// --- Single contiguous setState block ---
 	useCrystalGardenStore.setState({
 		activeCrystals: [
@@ -110,11 +108,15 @@ export function unlockTopic(
 	});
 	// --- End mutation phase ---
 
-	// Phase 1 step 6 will move ceremony presentation entirely behind the
-	// `crystal:unlocked` event handler in `eventBusHandlers.ts`, but until
-	// step 6 lands the orchestrator drives the ceremony directly to keep
-	// caller-side behavior identical.
-	crystalCeremonyStore.getState().presentCeremony(ref, isDialogOpen);
+	// Phase 1 step 6: ceremony presentation flows through the bus. The
+	// `crystal:unlocked` handler in `eventBusHandlers.ts` reads
+	// `selectIsAnyModalOpen(useUIStore.getState())` directly and routes to
+	// `crystalCeremonyStore.presentCeremony`, so the orchestrator stays
+	// focused on domain mutation.
+	appEventBus.emit('crystal:unlocked', {
+		subjectId: ref.subjectId,
+		topicId: ref.topicId,
+	});
 
 	return nextPosition;
 }
@@ -180,7 +182,6 @@ export function addXP(
 			to: applied.nextLevel,
 			levelsGained: applied.levelsGained,
 			sessionId: options?.sessionId ?? 'xp-adjustment',
-			isDialogOpen: selectIsAnyModalOpen(useUIStore.getState()),
 		});
 	}
 

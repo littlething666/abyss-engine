@@ -22,6 +22,7 @@ import {
 } from '@/features/crystalTrial';
 import { useProgressionStore } from '@/features/progression/progressionStore';
 import { calculateLevelFromXP, MAX_CRYSTAL_LEVEL } from '@/types/crystalLevel';
+import { selectIsAnyModalOpen, useUIStore } from '@/store/uiStore';
 import {
   handleMentorTrigger,
   MENTOR_VOICE_ID,
@@ -303,6 +304,17 @@ if (!g.__abyssEventBusHandlersRegistered) {
     );
   });
 
+  // Crystal unlocked: present spawn ceremony with UI-store-sourced isDialogOpen.
+  // Phase 1 step 6 chokepoint — `crystalGardenOrchestrator.unlockTopic` emits
+  // this; the legacy `progressionStore.unlockTopic` still calls
+  // `presentCeremony` directly until Phase 2 caller migration retires it.
+  appEventBus.on('crystal:unlocked', (e) => {
+    const isDialogOpen = selectIsAnyModalOpen(useUIStore.getState());
+    crystalCeremonyStore
+      .getState()
+      .presentCeremony({ subjectId: e.subjectId, topicId: e.topicId }, isDialogOpen);
+  });
+
   appEventBus.on('crystal:leveled', (e) => {
     telemetry.log(
       'crystal:leveled',
@@ -315,9 +327,10 @@ if (!g.__abyssEventBusHandlersRegistered) {
       { subjectId: e.subjectId, topicId: e.topicId },
     );
 
+    const isDialogOpen = selectIsAnyModalOpen(useUIStore.getState());
     crystalCeremonyStore
       .getState()
-      .presentCeremony({ subjectId: e.subjectId, topicId: e.topicId }, e.isDialogOpen);
+      .presentCeremony({ subjectId: e.subjectId, topicId: e.topicId }, isDialogOpen);
 
     // UPDATED: Expansion now runs for L1 through L3 (was L2-L3 only).
     // L1 level-up creates difficulty 2 cards, L2 creates diff 3, L3 creates diff 4.
