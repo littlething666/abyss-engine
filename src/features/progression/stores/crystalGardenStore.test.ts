@@ -25,7 +25,8 @@ describe('crystalGardenStore', () => {
 
 	it('exposes only primitive setters; no business logic on the slice', () => {
 		const state = useCrystalGardenStore.getState();
-		const actionKeys = Object.keys(state).filter((k) => typeof (state as Record<string, unknown>)[k] === 'function');
+		const stateAsRecord = state as unknown as Record<string, unknown>;
+		const actionKeys = Object.keys(state).filter((k) => typeof stateAsRecord[k] === 'function');
 		expect(actionKeys.sort()).toEqual(['setActiveCrystals', 'setResonancePoints', 'setUnlockPoints']);
 	});
 
