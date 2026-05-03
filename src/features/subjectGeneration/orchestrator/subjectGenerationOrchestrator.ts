@@ -12,10 +12,11 @@ import { assembleSubjectGraph } from '../graph/assembleSubjectGraph';
 import { buildTopicLatticeMessages } from '../graph/topicLattice/buildTopicLatticeMessages';
 import { parseTopicLatticeResponse } from '../graph/topicLattice/parseTopicLatticeResponse';
 import { validateTopicLattice } from '../graph/topicLattice/validateTopicLattice';
-import { buildPrereqWiringMessages } from '../graph/prereqWiring/buildPrereqWiringMessages';
-import { parsePrereqWiringResponse } from '../graph/prereqWiring/parsePrereqWiringResponse';
+import {
+  createPrerequisiteEdgeRules,
+  type PrereqEdgesCorrectionObservation,
+} from '../graph/prereqWiring/prerequisiteEdgeRules';
 import { validateGraph } from '../graph/validateGraph';
-import type { PrereqEdgesCorrectionLog } from '../graph/prereqWiring/correctPrereqEdges';
 import type { GenerationDependencies } from './types';
 
 export interface SubjectGenerationOrchestrator {
@@ -90,7 +91,11 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
 
     let lattice: TopicLattice | undefined;
     let lastValidatedGraph: SubjectGraph | undefined;
-    let edgesCorrectionLog: PrereqEdgesCorrectionLog | undefined;
+    // Single closure carrying the Stage-B correction observation. Both job
+    // metadata (in `parseOutput`) and the `subject-graph:generated` event
+    // fields (in `persistOutput`) derive from this same value, so the two
+    // surfaces cannot drift.
+    let pendingPrereqObservation: PrereqEdgesCorrectionObservation | null = null;
     const topicsLabel = `[Topics] Curriculum — ${topicName}`;
     const edgesLabel = `[Edges] Curriculum — ${topicName}`;
 
@@ -176,6 +181,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
     }
 
     const resolvedLattice = lattice;
+    const prereqRules = createPrerequisiteEdgeRules(resolvedLattice);
 
     const edgesJob = await runContentGenerationJob<SubjectGraph>({
       kind: 'subject-graph-edges',
@@ -191,7 +197,11 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
       },
       chat: stageBindings.edges.chat,
       model: stageBindings.edges.model,
-      messages: buildPrereqWiringMessages(request.subjectId, topicName, strategy.graph, resolvedLattice),
+      messages: prereqRules.buildMessages({
+        subjectId: request.subjectId,
+        subjectTitle: topicName,
+        strategy: strategy.graph,
+      }),
       enableReasoning: stageBindings.edges.enableReasoning,
       enableStreaming: stageBindings.edges.enableStreaming,
       temperature: STAGE_B_FIRST_TEMPERATURE,
@@ -217,29 +227,27 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
           return { ok: false as const, error, parseError: parseError ?? error };
         };
 
-        const first = parsePrereqWiringResponse(raw, resolvedLattice);
-        if (!first.ok) {
-          return failEdges(first.error, first.error);
+        const acceptance = prereqRules.acceptModelResponse(raw);
+        if (!acceptance.ok) {
+          return failEdges(acceptance.error, acceptance.error);
         }
 
-        edgesCorrectionLog = first.correction;
-        const correction = first.correction;
-        const correctionApplied = correction.removed.length > 0 || correction.added.length > 0;
-        if (correctionApplied) {
-          console.info('[subjectGraph] prereqEdgesCorrection', {
+        pendingPrereqObservation = acceptance.observation;
+        if (acceptance.observation) {
+          console.info(acceptance.observation.consoleEvent.label, {
             subjectId: request.subjectId,
             jobId: job.id,
-            removedCount: correction.removed.length,
-            addedCount: correction.added.length,
-            removed: correction.removed,
-            added: correction.added,
+            removedCount: acceptance.observation.consoleEvent.removedCount,
+            addedCount: acceptance.observation.consoleEvent.addedCount,
+            removed: acceptance.observation.consoleEvent.removed,
+            added: acceptance.observation.consoleEvent.added,
           });
-          useContentGenerationStore.getState().mergeJobMetadata(job.id, {
-            prereqEdgesCorrection: correction,
-          });
+          useContentGenerationStore
+            .getState()
+            .mergeJobMetadata(job.id, acceptance.observation.metadata);
         }
 
-        const graph = assembleSubjectGraph(resolvedLattice, first.edges, request.subjectId, topicName);
+        const graph = assembleSubjectGraph(resolvedLattice, acceptance.edges, request.subjectId, topicName);
         const val = validateGraph(graph, expectations);
         if (!val.ok) {
           return failEdges(val.error, val.error);
@@ -262,9 +270,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
           },
         };
         await applyGraphToStorage(deps.writer, { subject, graph });
-        const corr = edgesCorrectionLog;
-        const prereqEdgesCorrectionApplied =
-          corr !== undefined && (corr.removed.length > 0 || corr.added.length > 0);
+        const observation = pendingPrereqObservation;
         appEventBus.emit('subject-graph:generated', {
           subjectId: request.subjectId,
           boundModel: stageBindings.edges.model,
@@ -272,14 +278,7 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
           stageBDurationMs,
           retryCount: retryDepth,
           lattice: resolvedLattice,
-          ...(prereqEdgesCorrectionApplied && corr
-            ? {
-                prereqEdgesCorrectionApplied: true,
-                prereqEdgesCorrectionRemovedCount: corr.removed.length,
-                prereqEdgesCorrectionAddedCount: corr.added.length,
-                prereqEdgesCorrection: corr,
-              }
-            : {}),
+          ...(observation ? observation.eventFields : {}),
         });
       },
     });
