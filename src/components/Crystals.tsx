@@ -13,8 +13,8 @@ import {
   type TopicRef,
 } from '../types';
 import type { TopicIconName } from '../types/core';
+import { calculateLevelFromXP } from '../types/crystalLevel';
 import {
-  calculateLevelFromXP,
   crystalBaseShapeFromTopicRef,
   crystalCeremonyStore,
   getCrystalScale,
