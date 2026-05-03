@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { useProgressionStore as useStudyStore } from '../features/progression';
+import {
+  useProgressionStore as useStudyStore,
+  useStudySessionStore,
+} from '../features/progression';
 import { useSubjects } from '../features/content';
 import {
   Select,
@@ -30,10 +33,17 @@ interface SubjectNavigationHudProps {
  * Part of the scene HUD cluster; consumes the shared `--surface-hud` tokens so
  * light/dark chrome matches the bottom-right quick-actions and top-right
  * generation-progress surfaces.
+ *
+ * Phase 2 step 10 (initial reads): the `currentSubjectId` read is sourced from
+ * the new `useStudySessionStore` (subject viewport signal moved off the legacy
+ * monolith in Phase 1 step 1). The `setCurrentSubject` write still routes
+ * through the legacy store while Phase 2 finishes migrating callers; the
+ * legacy → new-store mirror bridge keeps both surfaces consistent until the
+ * orchestrator takes over the writer in a follow-up commit.
  */
 export const SubjectNavigationHud: React.FC<SubjectNavigationHudProps> = ({ onCreateSubject }) => {
   const { data: subjects = [] } = useSubjects();
-  const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
+  const currentSubjectId = useStudySessionStore((state) => state.currentSubjectId);
   const setCurrentSubject = useStudyStore((state) => state.setCurrentSubject);
 
   const handleSelectSubject = (subjectId: string | null) => {

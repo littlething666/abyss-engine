@@ -7,7 +7,7 @@ import { CubeCamera } from '@react-three/drei/webgpu';
 import { float, getParallaxCorrectNormal, pmremTexture, reflectVector, texture, vec3 } from 'three/tsl';
 import { GRID_SIZE } from './Grid';
 import { useSubjectColor } from '../utils/geometryMapping';
-import { useProgressionStore as useStudyStore } from '../features/progression';
+import { useStudySessionStore } from '../features/progression';
 
 const DEFAULT_ROUGHNESS_SCALE = 0.25;
 const DEFAULT_METALNESS = 0.05;
@@ -51,7 +51,7 @@ export const ReflectiveFloor: React.FC<ReflectiveFloorProps> = ({
   envMapIntensity = DEFAULT_ENV_MAP_INTENSITY,
   cubeCameraResolution = 512,
 }) => {
-  const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
+  const currentSubjectId = useStudySessionStore((state) => state.currentSubjectId);
   const subjectColor = useSubjectColor(currentSubjectId);
   const floorColor = useMemo(() => {
     const shadedColor = new THREE.Color(subjectColor);

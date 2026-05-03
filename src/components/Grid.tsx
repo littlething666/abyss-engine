@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import * as THREE from 'three/webgpu';
-import { useProgressionStore as useStudyStore } from '../features/progression';
+import { useStudySessionStore } from '../features/progression';
 import { useSubjectColor, useSubjectGeometry } from '../utils/geometryMapping';
 
 /**
@@ -35,8 +35,9 @@ interface TilePosition {
  * - Applies subject color to grid tiles
  */
 export const Grid: React.FC = () => {
-  // Get current subject ID from store
-  const currentSubjectId = useStudyStore((state) => state.currentSubjectId);
+  // Get current subject ID from the study-session store (subject viewport signal
+  // moved out of the legacy progression monolith in Phase 1 step 1).
+  const currentSubjectId = useStudySessionStore((state) => state.currentSubjectId);
   const tileGeometry = useSubjectGeometry(currentSubjectId);
   const subjectColor = useSubjectColor(currentSubjectId);
 

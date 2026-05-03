@@ -9,7 +9,7 @@ import {
   CRYSTAL_CEREMONY_DURATION_MS,
 } from '../features/progression/crystalCeremonyStore';
 import { parseTopicRefKey } from '@/lib/topicRef';
-import { useProgressionStore } from '../features/progression';
+import { useCrystalGardenStore } from '../features/progression';
 import { FLOOR_SURFACE_Y } from '../constants/sceneFloor';
 
 /** How much of the distance toward the crystal the target moves (0–1). */
@@ -29,6 +29,11 @@ interface DollyState {
  * The dolly is tied to the ceremony lifecycle: it starts when
  * `ceremonyTopicKey` becomes non-null (post-deferral) and ends
  * when the ceremony completes.
+ *
+ * Phase 2 step 10 (initial reads): `activeCrystals` is sourced from the new
+ * `useCrystalGardenStore` rather than the legacy progression monolith. The
+ * legacy → new-store mirror bridge keeps the two surfaces consistent during
+ * the migration window.
  *
  * @param controlsRef Ref to the drei OrbitControls instance.
  */
@@ -55,7 +60,7 @@ export function useCeremonyCameraDolly(
 
         const topicKey = state.ceremonyTopicKey;
         const parsed = parseTopicRefKey(topicKey);
-        const activeCrystals = useProgressionStore.getState().activeCrystals;
+        const activeCrystals = useCrystalGardenStore.getState().activeCrystals;
         const crystal = activeCrystals.find(
           (c) => c.subjectId === parsed.subjectId && c.topicId === parsed.topicId,
         );
