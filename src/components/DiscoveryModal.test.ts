@@ -12,6 +12,10 @@ const DISCOVERY_MODAL_SUBJECT_STORAGE_KEY = 'abyss:discoveryModalSubjectId';
 // the new-store / hook / orchestrator surfaces of '../features/progression'
 // instead, in the same commit as the component flip so the test never
 // observes a half-migrated graph.
+//
+// Phase 4 prep: the component now imports the policy-side helper as
+// `getTopicUnlockStatus as getTopicUnlockStatusFromPolicy` from the barrel,
+// so the mock provides `getTopicUnlockStatus` (the canonical barrel export).
 const tieredTopicsResult = vi.fn(() => [] as { tier: number; topics: unknown[] }[]);
 const topicUnlockStatusFallback = {
   canUnlock: false,
@@ -37,7 +41,7 @@ vi.mock('../features/progression', () => ({
   useCrystalGardenStore: (selector: (state: typeof crystalGardenStateMock) => unknown) =>
     selector(crystalGardenStateMock),
   useTopicsByTier: () => tieredTopicsResult(),
-  getTopicUnlockStatusFromPolicy: () => topicUnlockStatusFallback,
+  getTopicUnlockStatus: () => topicUnlockStatusFallback,
   crystalGardenOrchestrator: {
     unlockTopic: vi.fn(() => null),
   },

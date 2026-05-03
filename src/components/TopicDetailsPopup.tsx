@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { TieredTopic, TopicUnlockStatus } from '@/features/progression/progressionUtils';
+import type { TieredTopic, TopicUnlockStatus } from '@/features/progression';
 import {
   activeTopicContentGenerationLabel,
   useContentGenerationStore,
@@ -34,6 +34,10 @@ export interface TopicDetailsPopupProps {
  * visual-clutter cleanup. Topic content now generates through the auto
  * pipeline triggered on unlock and the content-generation logs panel; this
  * dialog only surfaces *status* of any in-flight job and the unlock CTA.
+ *
+ * Phase 4 prep: the `TieredTopic` and `TopicUnlockStatus` types now flow
+ * through the `@/features/progression` barrel rather than the soon-to-be
+ * deleted `progressionUtils.ts` file.
  */
 export function TopicDetailsPopup({
   topic,

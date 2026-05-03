@@ -2,13 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SubjectGraph, TopicRef } from '@/types/core';
 import {
   crystalGardenOrchestrator,
-  getTopicUnlockStatusFromPolicy,
+  getTopicUnlockStatus as getTopicUnlockStatusFromPolicy,
   useCrystalGardenStore,
   useTopicsByTier,
 } from '../features/progression';
 import { useAllGraphs, useSubjects } from '../features/content';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
-import type { TieredTopic, TopicUnlockStatus } from '../features/progression/progressionUtils';
+import type { TieredTopic, TopicUnlockStatus } from '../features/progression';
 import {
   Dialog,
   DialogContent,
@@ -253,16 +253,21 @@ export function DiscoveryModal({
   //   (subscribes to `useCrystalGardenStore` via `useShallow` + calls the
   //   topic-unlocking policy under the hood).
   // - Per-topic unlock status is sourced from primitive `useCrystalGardenStore`
-  //   selectors + the `getTopicUnlockStatusFromPolicy` policy directly. The
-  //   call site needs a function-getter (it runs only after a topic is
-  //   selected, and `selectedTopic` may be null) so a hook-bound value form
-  //   would require conditional hook usage. Reading the store + invoking the
-  //   policy is the same shape `useTopicUnlockStatus` wraps internally; the
+  //   selectors + the topic-unlocking policy directly. The call site needs a
+  //   function-getter (it runs only after a topic is selected, and
+  //   `selectedTopic` may be null) so a hook-bound value form would require
+  //   conditional hook usage. Reading the store + invoking the policy is the
+  //   same shape `useTopicUnlockStatus` wraps internally; the
   //   identity-preserving `useShallow` step is recovered by the per-call
   //   `useMemo` below.
   // - The `unlockTopic` writer routes through `crystalGardenOrchestrator`
   //   (single contiguous setState block + `crystal:unlocked` emit). The
   //   legacy `useStudyStore.unlockTopic` no longer fires from this surface.
+  //
+  // Phase 4 prep: the policy-side `getTopicUnlockStatus` is now imported
+  // from the `@/features/progression` barrel as `getTopicUnlockStatusFromPolicy`
+  // (alias retained at the import site to avoid colliding with the
+  // component's same-named prop).
   const allGraphs = useAllGraphs();
   const { data: subjects = [] } = useSubjects();
   const jobs = useContentGenerationStore(useShallow((state) => state.jobs));
