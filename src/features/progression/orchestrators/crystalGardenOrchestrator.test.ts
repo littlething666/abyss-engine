@@ -14,7 +14,6 @@ import { useCrystalTrialStore } from '@/features/crystalTrial';
 import { useCrystalGardenStore } from '../stores/crystalGardenStore';
 
 import * as crystalGardenOrchestrator from './crystalGardenOrchestrator';
-import * as studySessionOrchestrator from './studySessionOrchestrator';
 import {
 	crystal,
 	DS,
@@ -36,7 +35,8 @@ describe('crystalGardenOrchestrator.unlockTopic', () => {
 		expect(firstUnlock).not.toBeNull();
 
 		// Direct-path XP grant carries topic-a from 0 -> 250, crossing the
-		// L1 + L2 boundaries so topic-b's prereq (topic-a) is satisfied.
+		// L1 + L2 boundaries. Topic-b's graph prereq is `topic-a` with the
+		// default minLevel (any level), so a level-2 topic-a satisfies it.
 		crystalGardenOrchestrator.addXP(topicRef('topic-a'), 250);
 
 		const dependentUnlock = crystalGardenOrchestrator.unlockTopic(topicRef('topic-b'), topicGraphs);
@@ -75,6 +75,13 @@ describe('crystalGardenOrchestrator.unlockTopic', () => {
 		expect(pos).toEqual([0, 0]);
 		expect(useCrystalGardenStore.getState().unlockPoints).toBe(1); // No charge applied.
 	});
+
+	it('returns null when the topic cannot be unlocked (no points)', () => {
+		useCrystalGardenStore.setState({ activeCrystals: [], unlockPoints: 0 });
+		const pos = crystalGardenOrchestrator.unlockTopic(topicRef('topic-a'), topicGraphs);
+		expect(pos).toBeNull();
+		expect(useCrystalGardenStore.getState().activeCrystals).toEqual([]);
+	});
 });
 
 describe('crystalGardenOrchestrator.addXP', () => {
@@ -100,3 +107,50 @@ describe('crystalGardenOrchestrator.addXP', () => {
 
 	it('emits crystal-trial:pregeneration-requested on positive XP gain during addXP', () => {
 		const ref = topicRef('topic-a');
+		const emitSpy = vi.spyOn(appEventBus, 'emit');
+
+		useCrystalGardenStore.setState({ activeCrystals: [crystal('topic-a', 10)], unlockPoints: 0 });
+
+		crystalGardenOrchestrator.addXP(ref, 10);
+
+		const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal-trial:pregeneration-requested');
+		expect(pregenCalls).toHaveLength(1);
+		expect(pregenCalls[0]?.[1]).toMatchObject({
+			subjectId: DS,
+			topicId: 'topic-a',
+			currentLevel: 0,
+			targetLevel: 1,
+		});
+		emitSpy.mockRestore();
+	});
+
+	it('does not emit crystal-trial:pregeneration-requested on addXP when trial is failed', () => {
+		const ref = topicRef('topic-a');
+		const key = topicRefKey(ref);
+		const emitSpy = vi.spyOn(appEventBus, 'emit');
+		useCrystalTrialStore.setState({
+			trials: { [key]: makeTrialWithStatus('topic-a', 'failed') },
+		});
+
+		useCrystalGardenStore.setState({ activeCrystals: [crystal('topic-a', 10)], unlockPoints: 0 });
+
+		crystalGardenOrchestrator.addXP(ref, 10);
+
+		const pregenCalls = emitSpy.mock.calls.filter((c) => c[0] === 'crystal-trial:pregeneration-requested');
+		expect(pregenCalls).toHaveLength(0);
+		emitSpy.mockRestore();
+	});
+
+	it('grants unlock points when crossing a level boundary', () => {
+		useCrystalGardenStore.setState({
+			activeCrystals: [crystal('topic-a', 95)],
+			unlockPoints: 0,
+		});
+
+		crystalGardenOrchestrator.addXP(topicRef('topic-a'), 15);
+
+		const updated = useCrystalGardenStore.getState();
+		expect(updated.activeCrystals[0]).toMatchObject({ xp: 110 });
+		expect(updated.unlockPoints).toBe(1);
+	});
+});
