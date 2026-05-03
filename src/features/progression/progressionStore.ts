@@ -619,7 +619,7 @@ export const useProgressionStore = create<ProgressionStore>()(
           ],
           unlockPoints: Math.max(0, current.unlockPoints - 1),
         }));
-        crystalCeremonyStore.getState().notifyLevelUp(ref, isDialogOpen);
+        crystalCeremonyStore.getState().presentCeremony(ref, isDialogOpen);
 
         return nextPosition;
       },
