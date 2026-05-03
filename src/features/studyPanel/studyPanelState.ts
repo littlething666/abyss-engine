@@ -1,6 +1,6 @@
 import { parseCardRefKey, topicRefKey } from '@/lib/topicRef';
+import { calculateLevelFromXP } from '@/types/crystalLevel';
 import { ActiveCrystal, Card } from '../../types/core';
-import { calculateLevelFromXP } from '../progression';
 import { TopicMetadata } from '../content/selectors';
 
 export function buildPriorKnowledgeLines(

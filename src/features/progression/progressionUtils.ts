@@ -1,5 +1,10 @@
 import { normalizeGraphPrerequisites } from '@/lib/graphPrerequisites';
 import { topicRefKey } from '@/lib/topicRef';
+import {
+  CRYSTAL_XP_PER_LEVEL,
+  MAX_CRYSTAL_LEVEL,
+  calculateLevelFromXP,
+} from '@/types/crystalLevel';
 import { ActiveCrystal, SubjectGraph, TopicRef } from '../../types/core';
 import type { TopicIconName } from '../../types/core';
 import { Rating } from '../../types';
@@ -130,23 +135,10 @@ export function trimUndoSnapshotStack<T>(
   return stack.slice(Math.max(0, stack.length - maxDepth));
 }
 
-/** XP required per crystal level tier (levels 0\u20135). */
-export const CRYSTAL_XP_PER_LEVEL = 100;
-
-/** Inclusive max crystal level; XP beyond this tier still counts as this level. */
-export const MAX_CRYSTAL_LEVEL = 5;
-
-export function calculateLevelFromXP(xp: number): number {
-  return Math.min(
-    MAX_CRYSTAL_LEVEL,
-    Math.floor(Math.max(0, xp) / CRYSTAL_XP_PER_LEVEL),
-  );
-}
-
 /**
  * Topic ids that may appear in curriculum / graph UI: tier 1 always; higher tiers when
  * prerequisites are empty (always) or at least one listed prerequisite has an active crystal.
- * Graph `minLevel` is ignored here \u2014 unlock eligibility still uses minLevel via `getTopicUnlockStatus`.
+ * Graph `minLevel` is ignored here — unlock eligibility still uses minLevel via `getTopicUnlockStatus`.
  */
 export function getVisibleTopicIds(graph: SubjectGraph, activeCrystals: readonly ActiveCrystal[]): Set<string> {
   const crystalTopicIds = new Set(
@@ -221,26 +213,14 @@ export function applyCrystalXpDelta(
 
 export interface CrystalLevelProgressToNext {
   level: number;
-  /** 0\u2013100 for `Progress` UI; 100 when `isMax`. */
+  /** 0–100 for `Progress` UI; 100 when `isMax`. */
   progressPercent: number;
   isMax: boolean;
   /** Total XP after clamping negatives to 0 (same basis as level math). */
   totalXp: number;
 }
 
-/** XP required to be at the capped value for the current crystal level band (e.g. 99, 199, ...). */
-export function isXpMaxedForCurrentLevel(xp: number): boolean {
-  const safeXp = Math.max(0, xp);
-  const level = calculateLevelFromXP(safeXp);
-
-  if (level >= MAX_CRYSTAL_LEVEL) {
-    return false;
-  }
-
-  return safeXp >= level * CRYSTAL_XP_PER_LEVEL + (CRYSTAL_XP_PER_LEVEL - 1);
-}
-
-/** XP left to reach the next band boundary (e.g. from 50 \u2192 50, from 99 \u2192 1). */
+/** XP left to reach the next band boundary (e.g. from 50 → 50, from 99 → 1). */
 export function getXpToNextBandThreshold(xp: number): number {
   const safeXp = Math.max(0, xp);
   const level = calculateLevelFromXP(safeXp);
@@ -477,7 +457,7 @@ export function getTopicsByTier(
   allGraphs: SubjectGraph[] = [],
   subjects: SubjectLike[] = [],
   currentSubjectId?: string | null,
-  /** Tri-state map keyed by `topicRefKey`. Omitted \u2192 all topics treated as `'ready'`. */
+  /** Tri-state map keyed by `topicRefKey`. Omitted → all topics treated as `'ready'`. */
   contentStatusByTopicKey?: Record<string, TopicContentStatus>,
   /** When set, `isCurriculumVisible` reflects prerequisite crystal levels per graph; unlock flags use crystal list. */
   activeCrystals?: readonly ActiveCrystal[],

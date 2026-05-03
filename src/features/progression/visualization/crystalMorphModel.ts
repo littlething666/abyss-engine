@@ -2,7 +2,7 @@ import {
   CRYSTAL_XP_PER_LEVEL,
   MAX_CRYSTAL_LEVEL,
   calculateLevelFromXP,
-} from '../progressionUtils';
+} from '@/types/crystalLevel';
 
 /**
  * Pure visualization model: maps crystal level + morph animation progress to GPU-friendly parameters.

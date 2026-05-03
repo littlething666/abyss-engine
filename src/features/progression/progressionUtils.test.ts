@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TopicRef } from '@/types/core';
+import { isXpMaxedForCurrentLevel } from '@/types/crystalLevel';
 import { ActiveCrystal, SubjectGraph } from '../../types';
 import {
   applyCrystalXpDelta,
@@ -8,7 +9,6 @@ import {
   getCrystalLevelProgressToNext,
   getTopicUnlockStatus,
   getTopicsByTier,
-  isXpMaxedForCurrentLevel,
   getVisibleTopicIds,
 } from './progressionUtils';
 import type { TopicContentStatus } from '@/types/progression';
