@@ -368,3 +368,387 @@ export const useProgressionStore = create<ProgressionStore>()(
           if (state.activeBuffs.some(matches)) {
             return {
               activeBuffs: state.activeBuffs.filter((b) => !matches(b)),
+            };
+          }
+          const buff = BuffEngine.get().grantBuff(defId, source, magnitudeOverride);
+          return {
+            activeBuffs: normalizeActiveBuffs(state, [buff]),
+          };
+        });
+      },
+
+      startTopicStudySession: (ref, cards) => {
+        const state = get();
+        const crystal = state.activeCrystals.find(
+          (item) => item.subjectId === ref.subjectId && item.topicId === ref.topicId,
+        );
+        const level = calculateLevelFromXP(crystal?.xp ?? 0);
+        const sm2Augmented = attachSm2(ref, cards, state.sm2Data);
+        const activeBuffs = state.activeBuffs.map((buff) => BuffEngine.get().hydrateBuff(buff));
+        const growthBoost = BuffEngine.get().getModifierTotal('growth_speed', activeBuffs);
+        const difficultyBoost = Math.max(0, Math.floor(growthBoost * 10) - 1);
+        const maxDifficulty = Math.min(level + 1 + difficultyBoost, 4);
+        const gatedCards = filterCardsByDifficulty(sm2Augmented, maxDifficulty);
+        const dueCards = sm2.getDueCards(gatedCards);
+        const queue = (dueCards.length > 0 ? dueCards : gatedCards).map((card) =>
+          cardRefKey({ ...ref, cardId: card.id }),
+        );
+        const cardDifficultyById = sm2Augmented.reduce<Record<string, number>>((acc, card) => {
+          acc[card.id] = card.difficulty;
+          return acc;
+        }, {});
+        const cardTypeById = cards.reduce<Record<string, string>>((acc, card) => {
+          acc[card.id] = card.type;
+          return acc;
+        }, {});
+        const pending = state.pendingRitual;
+        const sessionId =
+          pending?.subjectId === ref.subjectId && pending?.topicId === ref.topicId
+            ? pending.sessionId
+            : makeStudySessionId(ref);
+        const startedAt = Date.now();
+        const activeBuffIds = state.activeBuffs.map((buff) => buff.buffId);
+        undoManager.reset();
+        set({
+          currentSession: {
+            subjectId: ref.subjectId,
+            topicId: ref.topicId,
+            queueCardIds: queue,
+            currentCardId: queue[0] ?? null,
+            totalCards: queue.length,
+            sessionId,
+            startedAt,
+            lastCardStart: startedAt,
+            activeBuffIds,
+            attempts: [],
+            cardDifficultyById,
+            cardTypeById,
+            hintUsedByCardId: {},
+          },
+          pendingRitual: null,
+        });
+        appEventBus.emit('study-panel:history-applied', {
+          action: 'submit',
+          subjectId: ref.subjectId,
+          topicId: ref.topicId,
+          sessionId,
+          undoCount: undoManager.undoStackSize,
+          redoCount: undoManager.redoStackSize,
+        });
+      },
+
+      focusStudyCard: (ref, cards, focusCardId = null) => {
+        get().startTopicStudySession(ref, cards);
+        if (!focusCardId) {
+          return;
+        }
+
+        const session = get().currentSession;
+        if (
+          !session
+          || session.topicId !== ref.topicId
+          || session.subjectId !== ref.subjectId
+        ) {
+          return;
+        }
+
+        if (!cards.some((card) => card.id === focusCardId)) {
+          return;
+        }
+
+        const focusKey = cardRefKey({ ...ref, cardId: focusCardId });
+        if (session.queueCardIds.includes(focusKey)) {
+          set({
+            currentSession: {
+              ...session,
+              currentCardId: focusKey,
+            },
+          });
+          return;
+        }
+
+        const queue = [focusKey, ...session.queueCardIds.filter((id) => id !== focusKey)];
+        set({
+          currentSession: {
+            ...session,
+            queueCardIds: queue,
+            currentCardId: focusKey,
+            totalCards: queue.length,
+          },
+        });
+      },
+
+      submitStudyResult: (cardRefKeyStr, rating) => {
+        submitResolvedStudyResult(cardRefKeyStr, rating);
+      },
+
+      markHintUsed: (cardRefKeyStr) => {
+        const state = get();
+        const session = state.currentSession;
+        if (!session || session.currentCardId !== cardRefKeyStr) {
+          return;
+        }
+
+        const alreadySubmitted = (session.attempts ?? []).some((attempt) => attempt.cardId === cardRefKeyStr);
+        if (alreadySubmitted) {
+          return;
+        }
+
+        const { cardId } = parseCardRefKey(cardRefKeyStr);
+        if (session.hintUsedByCardId?.[cardId]) {
+          return;
+        }
+
+        set({
+          currentSession: {
+            ...session,
+            hintUsedByCardId: {
+              ...(session.hintUsedByCardId ?? {}),
+              [cardId]: true,
+            },
+          },
+        });
+      },
+
+      submitCoarseStudyResult: (cardRefKeyStr, coarseChoice) => {
+        return submitCoarseRating(cardRefKeyStr, coarseChoice);
+      },
+
+      advanceStudyAfterReveal: () => {
+        const state = get();
+        const session = state.currentSession;
+        if (!session || !session.currentCardId) {
+          return;
+        }
+
+        if (!session.queueCardIds.includes(session.currentCardId)) {
+          return;
+        }
+
+        const nextQueue = session.queueCardIds.filter((id) => id !== session.currentCardId);
+        const nextCard = nextQueue[0] ?? null;
+        const now = Date.now();
+
+        set({
+          currentSession: {
+            ...session,
+            queueCardIds: nextQueue,
+            currentCardId: nextCard,
+            ...(nextQueue.length > 0 ? { lastCardStart: now } : {}),
+          },
+        });
+      },
+
+      undoLastStudyResult: () => {
+        const state = get();
+        const restored = undoManager.undo(state);
+        if (!restored) {
+          return;
+        }
+        const topicId = restored.currentSession?.topicId;
+        const subjectId = restored.currentSession?.subjectId;
+        const sessionId = restored.currentSession?.sessionId;
+        if (!topicId?.trim() || !sessionId?.trim() || !subjectId?.trim()) {
+          throw new Error('undoLastStudyResult: restored session missing subjectId, topicId or sessionId');
+        }
+        set(restored);
+        appEventBus.emit('study-panel:history-applied', {
+          action: 'undo',
+          subjectId,
+          topicId,
+          sessionId,
+          undoCount: undoManager.undoStackSize,
+          redoCount: undoManager.redoStackSize,
+        });
+      },
+
+      redoLastStudyResult: () => {
+        const state = get();
+        const restored = undoManager.redo(state);
+        if (!restored) {
+          return;
+        }
+        const topicId = restored.currentSession?.topicId;
+        const subjectId = restored.currentSession?.subjectId;
+        const sessionId = restored.currentSession?.sessionId;
+        if (!topicId?.trim() || !sessionId?.trim() || !subjectId?.trim()) {
+          throw new Error('redoLastStudyResult: restored session missing subjectId, topicId or sessionId');
+        }
+        set(restored);
+        appEventBus.emit('study-panel:history-applied', {
+          action: 'redo',
+          subjectId,
+          topicId,
+          sessionId,
+          undoCount: undoManager.undoStackSize,
+          redoCount: undoManager.redoStackSize,
+        });
+      },
+
+      unlockTopic: (ref, allGraphs) => {
+        const state = get();
+        const existing = state.activeCrystals.find(
+          (item) => item.subjectId === ref.subjectId && item.topicId === ref.topicId,
+        );
+        if (existing) {
+          return existing.gridPosition;
+        }
+
+        const status = getTopicUnlockStatus(ref, state.activeCrystals, state.unlockPoints, allGraphs);
+        if (!status.canUnlock) {
+          return null;
+        }
+
+        const nextPosition = findNextGridPosition(state.activeCrystals);
+        if (!nextPosition) {
+          return null;
+        }
+
+        const isDialogOpen = selectIsAnyModalOpen(useUIStore.getState());
+        set((current) => ({
+          activeCrystals: [
+            ...current.activeCrystals,
+            {
+              subjectId: ref.subjectId,
+              topicId: ref.topicId,
+              gridPosition: nextPosition,
+              xp: 0,
+              spawnedAt: Date.now(),
+            },
+          ],
+          unlockPoints: Math.max(0, current.unlockPoints - 1),
+        }));
+        // Phase 1 step 6: legacy progressionStore keeps the direct
+        // presentCeremony call (preserves progressionStore.test.ts).
+        // The orchestrator path emits crystal:unlocked instead; once
+        // Phase 2 caller migration retires the legacy unlockTopic, this
+        // direct call will go away.
+        crystalCeremonyStore.getState().presentCeremony(ref, isDialogOpen);
+
+        return nextPosition;
+      },
+
+      getTopicUnlockStatus: (ref, allGraphs) => {
+        return getTopicUnlockStatus(ref, get().activeCrystals, get().unlockPoints, allGraphs);
+      },
+
+      getTopicTier: (ref, allGraphs) => {
+        return calculateTopicTier(ref, allGraphs);
+      },
+
+      getTopicsByTier: (allGraphs, subjects, currentSubjectId, contentStatusByTopicKey) => {
+        return computeTopicsByTier(
+          allGraphs,
+          subjects,
+          currentSubjectId,
+          contentStatusByTopicKey,
+          get().activeCrystals,
+        );
+      },
+
+      getDueCardsCount: (ref, cards = []) => {
+        const withSm2 = attachSm2(ref, cards as Card[], get().sm2Data);
+        return sm2.getDueCards(withSm2).length;
+      },
+
+      getTotalCardsCount: (cards = []) => {
+        return cards.length;
+      },
+
+      addXP: (ref, xpAmount, options) => {
+        const state = get();
+
+        // --- Crystal Trial: XP gating (direct path) ---
+        // One trial-status read; the gating helper applies the direct-path
+        // policy where idle never caps and pregeneration only fires on
+        // positive gains while idle.
+        const crystal = state.activeCrystals.find(
+          (item) => item.subjectId === ref.subjectId && item.topicId === ref.topicId,
+        );
+        let effectiveXpAmount = xpAmount;
+
+        if (crystal) {
+          const previousXp = crystal.xp;
+          const currentLevel = calculateLevelFromXP(previousXp);
+          const trialGating = computeTrialGatedDirectReward({
+            previousXp,
+            rawReward: xpAmount,
+            trialStatus: useCrystalTrialStore.getState().getTrialStatus(ref),
+            currentLevel,
+          });
+          effectiveXpAmount = trialGating.effectiveReward;
+
+          if (trialGating.shouldPregenerate) {
+            appEventBus.emit('crystal-trial:pregeneration-requested', {
+              subjectId: ref.subjectId,
+              topicId: ref.topicId,
+              currentLevel,
+              targetLevel: currentLevel + 1,
+            });
+          }
+        }
+
+        const snapshotCrystals = state.activeCrystals;
+        const xpForEvents = applyCrystalXpDelta(snapshotCrystals, ref, effectiveXpAmount);
+        if (!xpForEvents) {
+          return 0;
+        }
+
+        set((current) => {
+          const applied = applyCrystalXpDelta(current.activeCrystals, ref, effectiveXpAmount);
+          if (!applied) {
+            return {};
+          }
+          return {
+            activeCrystals: applied.nextActiveCrystals,
+            unlockPoints:
+              applied.levelsGained > 0 ? current.unlockPoints + applied.levelsGained : current.unlockPoints,
+          };
+        });
+
+        if (xpForEvents.levelsGained > 0) {
+          appEventBus.emit('crystal:leveled', {
+            subjectId: ref.subjectId,
+            topicId: ref.topicId,
+            from: xpForEvents.previousLevel,
+            to: xpForEvents.nextLevel,
+            levelsGained: xpForEvents.levelsGained,
+            sessionId: options?.sessionId ?? 'xp-adjustment',
+          });
+        }
+        return xpForEvents.nextXp;
+      },
+
+      updateSM2: (ref, rawCardId, sm2State) => {
+        const key = cardRefKey({ ...ref, cardId: rawCardId });
+        set((s) => ({
+          sm2Data: {
+            ...s.sm2Data,
+            [key]: sm2State,
+          },
+        }));
+      },
+
+      getSM2Data: (ref, rawCardId) => {
+        const key = cardRefKey({ ...ref, cardId: rawCardId });
+        return get().sm2Data[key];
+      },
+      };
+    },
+    {
+      name: PROGRESSION_STORAGE_KEY,
+      version: 1,
+      partialize: (state) => ({
+        activeCrystals: state.activeCrystals,
+        sm2Data: state.sm2Data,
+        unlockPoints: state.unlockPoints,
+        resonancePoints: state.resonancePoints,
+        currentSubjectId: state.currentSubjectId,
+        currentSession: state.currentSession,
+        activeBuffs: state.activeBuffs,
+        pendingRitual: state.pendingRitual,
+        lastRitualSubmittedAt: state.lastRitualSubmittedAt,
+      }),
+    },
+  ),
+);
