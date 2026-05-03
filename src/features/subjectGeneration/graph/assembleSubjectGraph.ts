@@ -1,7 +1,7 @@
 import type { GraphPrerequisiteEntry, SubjectGraph } from '@/types/core';
 import type { TopicLattice } from '@/types/topicLattice';
 
-import type { PrereqEdges } from './prereqWiring/prereqWiringSchema';
+import type { PrereqEdges } from './prereqWiring/prerequisiteEdgeRules';
 
 /**
  * Merges Stage-A lattice with Stage-B edges into the canonical SubjectGraph shape
