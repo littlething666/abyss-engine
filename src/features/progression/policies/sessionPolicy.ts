@@ -1,7 +1,7 @@
 import { cardRefKey } from '@/lib/topicRef';
 import type { Card, TopicRef } from '@/types/core';
 
-import { defaultSM2, type SM2Data } from '../sm2';
+import { defaultSM2, type SM2Data } from './sm2';
 
 /** A study card with its SM-2 schedule attached for session-time policy decisions. */
 export interface CardWithSm2 extends Card {

@@ -4,7 +4,7 @@ import { cardRefKey } from '@/lib/topicRef';
 import type { TopicRef } from '@/types/core';
 
 import { useSM2Store } from '../stores/sm2Store';
-import { defaultSM2, sm2 } from '../sm2';
+import { defaultSM2, sm2 } from '../policies/sm2';
 
 interface CardLike {
 	id: string;

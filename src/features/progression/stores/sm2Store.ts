@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { SM2Data } from '../sm2';
+import type { SM2Data } from '../policies/sm2';
 
 /**
  * SM-2 state slice: per-card review schedule keyed by composite `cardRefKey`

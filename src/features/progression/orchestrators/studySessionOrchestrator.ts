@@ -16,8 +16,9 @@
  * post-mutation state.
  *
  * Buff catalog actions (`grantBuffFromCatalog` / `toggleBuffFromCatalog`)
- * are pure single-store mutations and live as helpers colocated with
- * `stores/buffStore.ts` — they are NOT part of this orchestrator.
+ * are pure single-store mutations and live as thin module-level helpers
+ * colocated with `stores/buffStore.ts` -- they are NOT part of this
+ * orchestrator.
  */
 
 import { cardRefKey, parseCardRefKey } from '@/lib/topicRef';
@@ -63,13 +64,13 @@ import {
 	deriveRitualBuffs,
 } from '../policies/progressionRitual';
 import { BuffEngine } from '../buffs/buffEngine';
-import { defaultSM2, sm2 } from '../sm2';
+import { defaultSM2, sm2 } from '../policies/sm2';
 import { undoManager } from '../undoManager';
 
 // ---------------------------------------------------------------------------
 // Cross-store snapshot helpers
 //
-// The undo manager still expects a `ProgressionState`-shaped argument — that
+// The undo manager still expects a `ProgressionState`-shaped argument -- that
 // API stays stable until Phase 4 step 17 rewrites it as a pure stack. These
 // helpers bridge the new four-store shape with the old monolith shape.
 // ---------------------------------------------------------------------------

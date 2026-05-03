@@ -4,7 +4,7 @@ import {
   buildStudySessionMetrics,
   extractStudyAdaptationSignals,
 } from './attunementMetrics';
-import { calculateRitualHarmony, deriveRitualBuffs } from '../progression/progressionRitual';
+import { calculateRitualHarmony, deriveRitualBuffs } from '../progression/policies/progressionRitual';
 
 const highPayload: AttunementRitualPayload = {
   subjectId: 'sub-a',
