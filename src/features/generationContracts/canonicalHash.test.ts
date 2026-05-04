@@ -36,7 +36,7 @@ describe('canonicalJson', () => {
   });
 
   it('rejects bigint', () => {
-    expect(() => canonicalJson({ a: 1n })).toThrow(/bigint/);
+    expect(() => canonicalJson({ a: BigInt(1) })).toThrow(/bigint/);
   });
 
   it('escapes string keys and values via JSON.stringify rules', () => {
