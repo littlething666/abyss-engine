@@ -61,6 +61,27 @@ export type ParseTopicTheoryContentResult =
   | { ok: true; data: ParsedTopicTheoryContentPayload }
   | { ok: false; error: string };
 
+/**
+ * Permissive Topic theory + 4-bucket core-questions parser.
+ *
+ * @deprecated **Do not use in durable pipeline code paths.**
+ *
+ * This parser strips markdown fences via `extractJsonString` before running its
+ * Zod check, so model output that includes any non-JSON prose still parses.
+ * The durable Topic Content Pipeline must call OpenRouter with strict
+ * `json_schema` mode and fail loudly via `parse:json-mode-violation` on
+ * anything that is not exact JSON. Use the strict pipeline parser instead, via
+ * `strictParseArtifact('topic-theory', raw)` from
+ * `@/features/generationContracts`.
+ *
+ * Grounding-source validation is preserved here for the legacy in-tab runner
+ * but will move into the Phase 0 step 9 semantic validators that run after the
+ * strict parser in the durable pipeline.
+ *
+ * Allowed remaining callers: legacy in-tab runners until the Topic Content
+ * Pipeline migrates to the durable runner (Phase 2). Scheduled for removal
+ * from generation pipeline code paths in Phase 4.
+ */
 export function parseTopicTheoryContentPayload(
   raw: string,
   options?: {

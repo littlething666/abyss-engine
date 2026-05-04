@@ -68,6 +68,27 @@ function validateQuestion(
 /**
  * Parse and validate raw LLM output into CrystalTrialScenarioQuestion[].
  * Expects JSON: { "questions": [...] }
+ *
+ * @deprecated **Do not use in durable pipeline code paths.**
+ *
+ * This parser strips markdown code fences in-line, defaults a missing or
+ * invalid `category` to `'interview'` instead of failing, and accepts soft
+ * whitespace mismatches between `correctAnswer` and `options`. The durable
+ * Crystal Trial pipeline must call OpenRouter with strict `json_schema` mode
+ * and fail loudly via `parse:json-mode-violation` / `parse:zod-shape` on any
+ * envelope deviation. Use the strict pipeline parser instead, via
+ * `strictParseArtifact('crystal-trial', raw)` from
+ * `@/features/generationContracts`.
+ *
+ * `TRIAL_QUESTION_COUNT` enforcement is intentionally **not** part of the
+ * strict schema (the constant lives in feature code and would cross the
+ * contracts → feature boundary the contracts module's AGENTS.md forbids); it
+ * moves into the Phase 0 step 9 semantic validators that run after the strict
+ * parser in the durable pipeline.
+ *
+ * Allowed remaining callers: legacy in-tab runners until the Crystal Trial
+ * pipeline migrates to the durable runner (Phase 1, Crystal Trial pilot).
+ * Scheduled for removal from generation pipeline code paths in Phase 4.
  */
 export function parseCrystalTrialPayload(
   raw: string,
