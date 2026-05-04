@@ -68,12 +68,28 @@ export function resolveOpenRouterReasoningChatOptions(
 
 /**
  * OpenRouter-only: structured generation extras (`response_format`, optional `plugins`,
- * non-streaming). When the bound model declares `structured_outputs` and the caller
- * supplies {@link OpenRouterStructuredChatExtrasOptions.jsonSchemaResponseFormat},
- * uses JSON Schema mode; otherwise uses `json_object` when `response_format` is supported.
+ * non-streaming).
+ *
+ * Default behavior (no options or `requireJsonSchema: false`): when the bound model
+ * declares `structured_outputs` and the caller supplies
+ * {@link OpenRouterStructuredChatExtrasOptions.jsonSchemaResponseFormat}, uses JSON
+ * Schema mode; otherwise falls back to `json_object` when `response_format` is
+ * supported. This permissive shape remains for non-pipeline surfaces.
+ *
+ * Durable pipeline callers (Subject Graph Generation, Topic Content Pipeline, Topic
+ * Expansion, Crystal Trial) must pass `requireJsonSchema: true` and
+ * `allowProviderHealing: true`. With `requireJsonSchema: true` the function never
+ * returns `json_object` extras: if the bound model lacks `structured_outputs` support
+ * or no JSON Schema is supplied, it returns `null` so the caller fails at the
+ * boundary instead of degrading to permissive output. Binding-time / config-validation
+ * enforcement of strict JSON Schema for pipeline-bound surfaces lands in Phase 0
+ * step 6; full removal of pipeline `json_object` reliance lands in Phase 0 step 8;
+ * recording `providerHealingRequested` on jobs/runs derived from
+ * `allowProviderHealing` + the resolved store value lands in Phase 0 step 7.
  *
  * Returns null when the surface is not OpenRouter or the bound config does not list
- * `response_format` among supported parameters (existing no-`response_format` behavior).
+ * `response_format` among supported parameters (existing no-`response_format`
+ * behavior).
  */
 export function resolveOpenRouterStructuredChatExtrasForJob(
   surfaceId: InferenceSurfaceId,
@@ -86,25 +102,69 @@ export function resolveOpenRouterStructuredChatExtrasForJob(
   if (!openRouterConfigSupportsParameter(config, 'response_format')) {
     return null;
   }
-  const healing = studySettingsStore.getState().openRouterResponseHealing;
+
+  const requireJsonSchema = options?.requireJsonSchema ?? false;
+  const allowProviderHealing = options?.allowProviderHealing ?? true;
   const jsonSchemaResponseFormat = options?.jsonSchemaResponseFormat;
+
+  const supportsStructuredOutputs = openRouterConfigSupportsParameter(config, 'structured_outputs');
   const useJsonSchema =
     jsonSchemaResponseFormat !== undefined
-    && openRouterConfigSupportsParameter(config, 'structured_outputs');
+    && supportsStructuredOutputs;
+
+  if (requireJsonSchema && !useJsonSchema) {
+    // Pipeline caller demands strict JSON Schema mode; never fall back to
+    // `json_object`. Surface-level signal only — Phase 0 step 6 will additionally
+    // throw at config-validation time before any LLM call is reached.
+    return null;
+  }
 
   const responseFormat: ChatResponseFormat = useJsonSchema
     ? jsonSchemaResponseFormat
     : { type: 'json_object' };
 
+  const healingEnabledByStore = studySettingsStore.getState().openRouterResponseHealing;
+  const includeHealingPlugin = allowProviderHealing && healingEnabledByStore;
+
   return {
     responseFormat,
-    plugins: healing ? [{ id: 'response-healing' }] : undefined,
+    plugins: includeHealingPlugin ? [{ id: 'response-healing' }] : undefined,
     forceNonStreaming: true,
   };
 }
 
 export type OpenRouterStructuredChatExtrasOptions = {
+  /**
+   * When supplied together with a model that declares `structured_outputs`, the
+   * returned extras carry strict JSON Schema response format. Required for durable
+   * pipeline callers; ignored when the model only supports `response_format` unless
+   * `requireJsonSchema` is also set, in which case the function returns null.
+   */
   jsonSchemaResponseFormat?: ChatResponseFormatJsonSchema;
+  /**
+   * When true, the caller is a durable pipeline and demands strict JSON Schema mode.
+   * The function will never return `json_object` extras: if the bound model lacks
+   * `structured_outputs` or no JSON Schema is supplied, it returns `null` so the
+   * caller fails at the boundary (no permissive fallback). Defaults to `false`,
+   * preserving the legacy permissive shape used by non-pipeline surfaces.
+   *
+   * Aligns with Plan v3 Q5 (parse fail-loud) and the strict-structured-output gate.
+   * Binding-time enforcement for pipeline-bound surfaces lands in Phase 0 step 6;
+   * full removal of `json_object` reliance from pipeline paths lands in Phase 0
+   * step 8.
+   */
+  requireJsonSchema?: boolean;
+  /**
+   * When true (default), respect the workspace `openRouterResponseHealing` setting
+   * and attach the OpenRouter `response-healing` plugin when enabled. When false,
+   * the caller forbids provider healing entirely and `plugins` is left undefined.
+   *
+   * Plan v3 Q22 keeps `response-healing` enabled for v1 pipelines together with
+   * strict JSON Schema mode — durable callers should pass `true` and Phase 0 step 7
+   * will record `providerHealingRequested` on jobs/runs derived from this flag
+   * combined with the resolved store value.
+   */
+  allowProviderHealing?: boolean;
 };
 
 export type OpenRouterStructuredChatExtras = {
