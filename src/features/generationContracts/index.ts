@@ -60,3 +60,49 @@ export {
   type TopicStudyCardsRunInputSnapshot,
   type TopicTheoryRunInputSnapshot,
 } from './snapshots';
+
+export {
+  // Strict v1 schemas, one per ArtifactKind
+  subjectGraphTopicsArtifactSchema,
+  subjectGraphTopicsSchemaVersion,
+  type SubjectGraphTopicsArtifactPayload,
+  subjectGraphEdgesArtifactSchema,
+  subjectGraphEdgesSchemaVersion,
+  type SubjectGraphEdgesArtifactPayload,
+  topicTheoryArtifactSchema,
+  topicTheorySchemaVersion,
+  type TopicTheoryArtifactPayload,
+  topicStudyCardsArtifactSchema,
+  topicStudyCardsSchemaVersion,
+  type TopicStudyCardsArtifactPayload,
+  topicMiniGameCategorySortArtifactSchema,
+  topicMiniGameCategorySortSchemaVersion,
+  type TopicMiniGameCategorySortArtifactPayload,
+  topicMiniGameSequenceBuildArtifactSchema,
+  topicMiniGameSequenceBuildSchemaVersion,
+  type TopicMiniGameSequenceBuildArtifactPayload,
+  topicMiniGameMatchPairsArtifactSchema,
+  topicMiniGameMatchPairsSchemaVersion,
+  type TopicMiniGameMatchPairsArtifactPayload,
+  topicExpansionCardsArtifactSchema,
+  topicExpansionCardsSchemaVersion,
+  type TopicExpansionCardsArtifactPayload,
+  crystalTrialArtifactSchema,
+  crystalTrialSchemaVersion,
+  type CrystalTrialArtifactPayload,
+  // Shared Zod primitives reused across schemas
+  NonEmptyString,
+  KebabId,
+  IsoTimestamp,
+  DifficultyTier,
+  StudyCardType,
+  MiniGameType,
+} from './schemas';
+
+export {
+  strictParse,
+  strictParseArtifact,
+  ARTIFACT_KIND_TO_SCHEMA,
+  type StrictParseFailureCode,
+  type StrictParseResult,
+} from './strictParsers';
