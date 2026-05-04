@@ -23,12 +23,17 @@ test.describe('Discovery/Unlock Journey', () => {
     await waitForPageHydrated(page);
     await waitForAbyssDev(page);
 
-    // Load deck first
+    // Load deck first. The discovery grid is meaningless without a deck, so
+    // the seed UI is a hard precondition for this spec — fail loudly here
+    // (10 s) instead of timing out 15 s later on a downstream assertion if
+    // the loader button has been renamed / feature-flagged out.
     const loadDeckButton = page.locator('button:has-text("Load Default Deck")');
-    if (await loadDeckButton.count() > 0) {
-      await loadDeckButton.click();
-      await waitForDeckReady(page);
-    }
+    await expect(
+      loadDeckButton,
+      'Default deck loader is required to seed the discovery grid',
+    ).toBeVisible({ timeout: 10_000 });
+    await loadDeckButton.click();
+    await waitForDeckReady(page);
 
     // Click altar to open discovery modal
     const { box: canvasBox } = await waitForCanvasClickBox(page);
@@ -67,12 +72,15 @@ test.describe('Discovery/Unlock Journey', () => {
     await waitForPageHydrated(page);
     await waitForAbyssDev(page);
 
-    // Load deck
+    // Load deck. As above, fail-fast on a missing seed UI rather than
+    // letting the downstream assertions time out.
     const loadDeckButton = page.locator('button:has-text("Load Default Deck")');
-    if (await loadDeckButton.count() > 0) {
-      await loadDeckButton.click();
-      await waitForDeckReady(page);
-    }
+    await expect(
+      loadDeckButton,
+      'Default deck loader is required to seed the discovery grid',
+    ).toBeVisible({ timeout: 10_000 });
+    await loadDeckButton.click();
+    await waitForDeckReady(page);
 
     // Click altar
     const { canvas, box: canvasBox } = await waitForCanvasClickBox(page);
