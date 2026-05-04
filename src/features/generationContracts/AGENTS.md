@@ -30,12 +30,27 @@ src/features/generationContracts/
 ├── runEvents.ts                     # RunEvent type union (durable & local)
 ├── artifacts/
 │   └── types.ts                     # Artifact, ArtifactKind, ArtifactEnvelope
-└── snapshots/
-    └── types.ts                     # RunInputSnapshot discriminated union
+├── snapshots/
+│   ├── types.ts                     # RunInputSnapshot discriminated union
+│   └── build*Snapshot.ts            # per-pipeline snapshot builders
+├── schemas/                         # strict Zod artifact schemas (Phase 0 step 3)
+│   ├── _shared.ts
+│   ├── subjectGraphTopics.ts
+│   ├── subjectGraphEdges.ts
+│   ├── topicTheory.ts
+│   ├── topicStudyCards.ts
+│   ├── topicMiniGameCategorySort.ts
+│   ├── topicMiniGameSequenceBuild.ts
+│   ├── topicMiniGameMatchPairs.ts
+│   ├── topicExpansionCards.ts
+│   └── crystalTrial.ts
+└── strictParsers/                   # single-pass parsers + ArtifactKind registry (Phase 0 step 3)
+    ├── strictParse.ts
+    └── byKind.ts
 ```
 
-Follow-up Phase 0 PRs will add `schemas/`, `strictParsers/`,
-`semanticValidators/`, `prompts/`, and `evalFixtures/` here.
+Follow-up Phase 0 PRs will add `semanticValidators/`, `prompts/`, and
+`evalFixtures/` here.
 
 ## Hashing rules
 
@@ -47,6 +62,22 @@ Follow-up Phase 0 PRs will add `schemas/`, `strictParsers/`,
   Worker WebCrypto.
 - Migrating to a different digest in the future MUST change the prefix so
   cached artifacts cannot silently collide.
+
+## Strict pipeline parser policy
+
+1. Strict parsers (`strictParsers/`) consume EXACT JSON output from the LLM
+   provider in strict `json_schema` mode. No markdown-fence stripping. No
+   embedded-JSON extraction. No multi-shape acceptance.
+2. The Zod schema for an `ArtifactKind` is the single source of truth for
+   accepted shapes. Extra keys on `.strict()` objects are rejected with
+   `parse:zod-shape`. JSON parse errors surface as `parse:json-mode-violation`.
+3. No second parser. No fallback. No probabilistic recovery (the existing
+   subject-graph Stage B `correctPrereqEdges` repair stays where it is and is
+   the only documented exception in the root `AGENTS.md`).
+4. Domain rules (card-pool size, difficulty distribution, mini-game
+   playability, Crystal Trial question count, lattice/edge invariants) live
+   in `semanticValidators/` (Phase 0 step 9), which runs AFTER the strict
+   parser as a separate single pass.
 
 ## Authoritative rules
 
