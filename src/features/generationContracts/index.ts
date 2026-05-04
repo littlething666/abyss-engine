@@ -106,3 +106,28 @@ export {
   type StrictParseFailureCode,
   type StrictParseResult,
 } from './strictParsers';
+
+export {
+  // Semantic validators (Phase 0 step 9): one per ArtifactKind, run AFTER strictParseArtifact
+  SEMANTIC_VALIDATORS_BY_KIND,
+  semanticValidateArtifact,
+  validateSubjectGraphTopicsArtifact,
+  validateSubjectGraphEdgesArtifact,
+  validateTopicTheoryArtifact,
+  validateTopicStudyCardsArtifact,
+  validateStudyCardLikeCards,
+  validateTopicMiniGameCategorySortArtifact,
+  validateTopicMiniGameSequenceBuildArtifact,
+  validateTopicMiniGameMatchPairsArtifact,
+  validateTopicExpansionCardsArtifact,
+  validateCrystalTrialArtifact,
+  SEMANTIC_TRIAL_QUESTION_COUNT_DEFAULT,
+  SEMANTIC_MAX_CARD_DIFFICULTY,
+  SEMANTIC_TOPIC_ICON_NAMES_ALLOWLIST,
+  SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE,
+  type SemanticFailureCode,
+  type SemanticValidator,
+  type SemanticValidatorByKind,
+  type SemanticValidatorContext,
+  type SemanticValidatorResult,
+} from './semanticValidators';

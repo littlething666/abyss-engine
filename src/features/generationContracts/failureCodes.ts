@@ -24,6 +24,7 @@ export const GENERATION_FAILURE_CODES = [
   // --- Validation (post-parse domain checks) ---
   'validation:bad-grounding',
   'validation:semantic-card-pool-size',
+  'validation:semantic-card-content-shape',
   'validation:semantic-difficulty-distribution',
   'validation:semantic-grounding',
   'validation:semantic-duplicate-concept',

@@ -18,6 +18,12 @@ eval fixtures.
   `src/types/*` and pure standard-library / `zod` primitives. The Worker
   compiles the same files; pulling in feature-only code (zustand stores,
   R3F, etc.) would break the Worker build.
+- Lockstep tests in `semanticValidators/semanticValidators.test.ts` import
+  upstream feature constants (`TRIAL_QUESTION_COUNT`, `MAX_CARD_DIFFICULTY`,
+  `TOPIC_ICON_NAMES`) and assert equality with locally-redeclared mirrors
+  in `semanticValidators/_constants.ts`. Test files are excluded from the
+  Worker build, so the lockstep imports do not violate the runtime
+  feature-import boundary.
 
 ## Layout
 
@@ -44,13 +50,26 @@ src/features/generationContracts/
 │   ├── topicMiniGameMatchPairs.ts
 │   ├── topicExpansionCards.ts
 │   └── crystalTrial.ts
-└── strictParsers/                   # single-pass parsers + ArtifactKind registry (Phase 0 step 3)
-    ├── strictParse.ts
+├── strictParsers/                   # single-pass parsers + ArtifactKind registry (Phase 0 step 3)
+│   ├── strictParse.ts
+│   └── byKind.ts
+└── semanticValidators/              # per-kind domain-rule validators (Phase 0 step 9)
+    ├── _constants.ts                # locally-mirrored semantic constants (lockstep)
+    ├── types.ts                     # SemanticValidatorResult, SemanticFailureCode
+    ├── cardContentShape.ts          # shared per-card-content shape + concept stem
+    ├── subjectGraphTopics.ts
+    ├── subjectGraphEdges.ts
+    ├── topicTheory.ts
+    ├── topicStudyCards.ts
+    ├── topicMiniGameCategorySort.ts
+    ├── topicMiniGameSequenceBuild.ts
+    ├── topicMiniGameMatchPairs.ts
+    ├── topicExpansionCards.ts
+    ├── crystalTrial.ts
     └── byKind.ts
 ```
 
-Follow-up Phase 0 PRs will add `semanticValidators/`, `prompts/`, and
-`evalFixtures/` here.
+Follow-up Phase 0 PRs will add `prompts/` and `evalFixtures/` here.
 
 ## Hashing rules
 
@@ -76,8 +95,24 @@ Follow-up Phase 0 PRs will add `semanticValidators/`, `prompts/`, and
    the only documented exception in the root `AGENTS.md`).
 4. Domain rules (card-pool size, difficulty distribution, mini-game
    playability, Crystal Trial question count, lattice/edge invariants) live
-   in `semanticValidators/` (Phase 0 step 9), which runs AFTER the strict
-   parser as a separate single pass.
+   in `semanticValidators/`, which runs AFTER the strict parser as a
+   separate single pass and emits `validation:semantic-*` failure codes.
+
+## Semantic validator policy
+
+1. Validators receive the strict-parsed payload + an optional
+   `SemanticValidatorContext` (e.g., `latticeTopicIds` for edges,
+   `existingConceptStems` for expansion, `expectedQuestionCount` for the
+   Crystal Trial). A validator that requires a context field but doesn't
+   receive one fails loudly rather than silently passing.
+2. Validators NEVER throw and NEVER mutate the payload. They return
+   `SemanticValidatorResult` so the orchestrator decides whether the
+   `validation:semantic-*` failure is terminal or surfaced via telemetry.
+3. Authoritative semantic constants that live in feature code
+   (`TRIAL_QUESTION_COUNT`, `MAX_CARD_DIFFICULTY`, `TOPIC_ICON_NAMES`) are
+   redeclared locally in `semanticValidators/_constants.ts` to preserve
+   the no-feature-import runtime boundary; lockstep tests assert equality
+   with the upstream constants and fail CI on drift.
 
 ## Authoritative rules
 
