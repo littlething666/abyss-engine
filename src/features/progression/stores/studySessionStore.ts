@@ -40,6 +40,13 @@ export interface StudySessionActions {
 
 export type StudySessionStore = StudySessionState & StudySessionActions;
 
+type StudySessionPersistedState = {
+	currentSession: StudySession | null;
+	pendingRitual: PendingRitualState | null;
+	lastRitualSubmittedAt: number | null;
+	currentSubjectId: string | null;
+};
+
 const STUDY_SESSION_STORAGE_KEY = 'abyss-study-session-v0';
 
 export const useStudySessionStore = create<StudySessionStore>()(
@@ -64,6 +71,12 @@ export const useStudySessionStore = create<StudySessionStore>()(
 				lastRitualSubmittedAt: state.lastRitualSubmittedAt,
 				currentSubjectId: state.currentSubjectId,
 			}),
+			// Reserved schema-upgrade slot. Identity at v0 so a future v1 bump
+			// has a defined entry point instead of having to retro-fit a
+			// migration path. Replace with the real shape transform when
+			// `version` is bumped past 0.
+			migrate: (persistedState) =>
+				persistedState as unknown as StudySessionPersistedState,
 		},
 	),
 );

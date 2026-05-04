@@ -24,6 +24,10 @@ export interface SM2Actions {
 
 export type SM2Store = SM2State & SM2Actions;
 
+type SM2PersistedState = {
+	sm2Data: Record<string, SM2Data>;
+};
+
 const SM2_STORAGE_KEY = 'abyss-sm2-v0';
 
 export const useSM2Store = create<SM2Store>()(
@@ -40,6 +44,12 @@ export const useSM2Store = create<SM2Store>()(
 			partialize: (state) => ({
 				sm2Data: state.sm2Data,
 			}),
+			// Reserved schema-upgrade slot. Identity at v0 so a future v1 bump
+			// has a defined entry point instead of having to retro-fit a
+			// migration path. Replace with the real shape transform when
+			// `version` is bumped past 0.
+			migrate: (persistedState) =>
+				persistedState as unknown as SM2PersistedState,
 		},
 	),
 );
