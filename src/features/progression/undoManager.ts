@@ -35,6 +35,32 @@ function trimUndoSnapshotStack<T>(
   return stack.slice(Math.max(0, stack.length - maxDepth));
 }
 
+/**
+ * Build the partial ProgressionState that an undo / redo applies back into
+ * the four progression stores.
+ *
+ * Card-submission undo intentionally does NOT restore the following fields,
+ * even though they live on `ProgressionState`. Verified during the
+ * progression monolith follow-up plan (§4 cleanup-debt review):
+ *
+ *   - `currentSubjectId`: a UI viewport signal scoping which subject the
+ *     player is engaged with. The player may have navigated to a different
+ *     subject between card submissions; teleporting them back on undo would
+ *     be surprising and unrelated to the per-card state being rolled back.
+ *
+ *   - `pendingRitual`: queued attunement-ritual state that belongs to a
+ *     potentially different topic's lifecycle. Per-card undo is scoped to
+ *     the active study session and must not perturb a queued ritual on
+ *     another topic.
+ *
+ *   - `lastRitualSubmittedAt`: the cooldown gate enforced between
+ *     attunement-ritual submissions. Rolling it back on a card-submission
+ *     undo would let undo / redo loops bypass the attunement cooldown.
+ *
+ * Restored fields are limited to the SM-2 schedule, the crystal garden
+ * (`activeCrystals` + `unlockPoints` + `resonancePoints`), the active
+ * buffs, and the in-flight `currentSession` snapshot.
+ */
 function buildRestoredPartial(
   state: ProgressionState,
   snapshot: StudyUndoSnapshot,
