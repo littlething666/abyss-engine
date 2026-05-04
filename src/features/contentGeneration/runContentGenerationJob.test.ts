@@ -157,6 +157,7 @@ describe('runContentGenerationJob', () => {
       responseFormat: { type: 'json_object' },
       plugins: [{ id: 'response-healing' }],
       forceNonStreaming: true,
+      providerHealingRequested: true,
     });
 
     const streamChat = vi.fn(async function* stream() {
@@ -241,6 +242,7 @@ describe('runContentGenerationJob', () => {
       responseFormat: schemaFormat,
       plugins: undefined,
       forceNonStreaming: true,
+      providerHealingRequested: false,
     });
 
     const streamChat = vi.fn(async function* stream() {
@@ -275,8 +277,49 @@ describe('runContentGenerationJob', () => {
     expect(jobs[0]?.metadata).toMatchObject({
       structuredOutputMode: 'json_schema',
       structuredOutputSchemaName: 'topic_theory_syllabus',
-      responseHealingEnabled: false,
+      providerHealingRequested: false,
     });
+  });
+
+  it('records providerHealingRequested whenever resolver returns extras (Phase 0 step 7)', async () => {
+    // Plan v3 Q22: record the request, not the structured-output mode. Even in
+    // legacy permissive json_object mode, the metadata must mirror the resolver
+    // flag (lockstep with `plugins` presence) so durable Worker telemetry can
+    // consume it without re-deriving.
+    surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue({
+      responseFormat: { type: 'json_object' },
+      plugins: [{ id: 'response-healing' }],
+      forceNonStreaming: true,
+      providerHealingRequested: true,
+    });
+
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: '{}' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'Theory — T',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      llmSurfaceId: 'topicContent',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableReasoning: false,
+      parseOutput: async () => ({ ok: true, data: 42 }),
+      persistOutput: vi.fn(),
+    });
+
+    const j = Object.values(useContentGenerationStore.getState().jobs)[0];
+    expect(j?.metadata).toMatchObject({
+      providerHealingRequested: true,
+    });
+    // Should NOT carry json_schema-only metadata because the resolver returned
+    // json_object mode.
+    expect((j?.metadata as Record<string, unknown> | undefined)?.structuredOutputMode).toBeUndefined();
   });
 
   it('merges structured-output contract violation metadata when json_schema parse fails', async () => {
@@ -295,6 +338,7 @@ describe('runContentGenerationJob', () => {
       responseFormat: schemaFormat,
       plugins: [{ id: 'response-healing' }],
       forceNonStreaming: true,
+      providerHealingRequested: true,
     });
 
     const streamChat = vi.fn(async function* stream() {
@@ -324,7 +368,7 @@ describe('runContentGenerationJob', () => {
       structuredOutputMode: 'json_schema',
       structuredOutputSchemaName: 'topic_theory_syllabus',
       localParserError: 'bad parse',
-      responseHealingEnabled: true,
+      providerHealingRequested: true,
     });
 
     consoleSpy.mockRestore();

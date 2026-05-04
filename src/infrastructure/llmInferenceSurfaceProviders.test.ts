@@ -598,4 +598,149 @@ describe('llmInferenceSurfaceProviders', () => {
       expect(() => assertPipelineSurfaceConfigValid('topicContent')).not.toThrow();
     });
   });
+
+  // --- Phase 0 step 7: providerHealingRequested authoritative metadata flag ---
+
+  describe('providerHealingRequested (Phase 0 step 7)', () => {
+    function bindSchemaCapable(): void {
+      studySettingsStore.setState({
+        ...studySettingsStore.getState(),
+        openRouterConfigs: [
+          {
+            id: 'schema-capable',
+            label: 'Schema',
+            model: 'org/model',
+            enableReasoning: false,
+            enableStreaming: true,
+            supportedParameters: ['response_format', 'structured_outputs'],
+          },
+        ],
+        surfaceProviders: {
+          ...studySettingsStore.getState().surfaceProviders,
+          topicContent: { provider: 'openrouter', openRouterConfigId: 'schema-capable' },
+        },
+      });
+    }
+
+    it('is true when allowProviderHealing defaults to true and the store enables healing', () => {
+      bindSchemaCapable();
+      studySettingsStore.setState({
+        ...studySettingsStore.getState(),
+        openRouterResponseHealing: true,
+      });
+
+      const out = resolveOpenRouterStructuredChatExtrasForJob('topicContent', {
+        jsonSchemaResponseFormat: dummyJsonSchemaFormat,
+        requireJsonSchema: true,
+      });
+      expect(out?.providerHealingRequested).toBe(true);
+      expect(out?.plugins).toEqual([{ id: 'response-healing' }]);
+    });
+
+    it('is false when allowProviderHealing=false even though the store enables healing', () => {
+      bindSchemaCapable();
+      studySettingsStore.setState({
+        ...studySettingsStore.getState(),
+        openRouterResponseHealing: true,
+      });
+
+      const out = resolveOpenRouterStructuredChatExtrasForJob('topicContent', {
+        jsonSchemaResponseFormat: dummyJsonSchemaFormat,
+        requireJsonSchema: true,
+        allowProviderHealing: false,
+      });
+      expect(out?.providerHealingRequested).toBe(false);
+      expect(out?.plugins).toBeUndefined();
+    });
+
+    it('is false when allowProviderHealing=true but the store disables healing', () => {
+      bindSchemaCapable();
+      studySettingsStore.setState({
+        ...studySettingsStore.getState(),
+        openRouterResponseHealing: false,
+      });
+
+      const out = resolveOpenRouterStructuredChatExtrasForJob('topicContent', {
+        jsonSchemaResponseFormat: dummyJsonSchemaFormat,
+        requireJsonSchema: true,
+        allowProviderHealing: true,
+      });
+      expect(out?.providerHealingRequested).toBe(false);
+      expect(out?.plugins).toBeUndefined();
+    });
+
+    it('is false when both allowProviderHealing=false and the store disables healing', () => {
+      bindSchemaCapable();
+      studySettingsStore.setState({
+        ...studySettingsStore.getState(),
+        openRouterResponseHealing: false,
+      });
+
+      const out = resolveOpenRouterStructuredChatExtrasForJob('topicContent', {
+        jsonSchemaResponseFormat: dummyJsonSchemaFormat,
+        requireJsonSchema: true,
+        allowProviderHealing: false,
+      });
+      expect(out?.providerHealingRequested).toBe(false);
+      expect(out?.plugins).toBeUndefined();
+    });
+
+    it('is recorded in legacy permissive json_object fallback mode for non-pipeline callers', () => {
+      // Step 8 will remove pipeline reliance on json_object entirely; this test
+      // pins the metadata behavior on the legacy permissive path used by
+      // non-pipeline surfaces during the transition. Plan v3 Q22 records the
+      // request, not the structured-output mode.
+      studySettingsStore.setState({
+        ...studySettingsStore.getState(),
+        openRouterResponseHealing: true,
+        openRouterConfigs: [
+          {
+            id: 'json-only',
+            label: 'JSON',
+            model: 'org/model',
+            enableReasoning: false,
+            enableStreaming: true,
+            supportedParameters: ['response_format'],
+          },
+        ],
+        surfaceProviders: {
+          ...studySettingsStore.getState().surfaceProviders,
+          studyQuestionExplain: { provider: 'openrouter', openRouterConfigId: 'json-only' },
+        },
+      });
+
+      const out = resolveOpenRouterStructuredChatExtrasForJob('studyQuestionExplain');
+      expect(out?.responseFormat).toEqual({ type: 'json_object' });
+      expect(out?.providerHealingRequested).toBe(true);
+      expect(out?.plugins).toEqual([{ id: 'response-healing' }]);
+    });
+
+    it('mirrors plugins presence: providerHealingRequested === true iff response-healing plugin is attached', () => {
+      // Property-style coverage: across the option×store matrix, the flag and
+      // the plugin attachment must always agree, since callers will record the
+      // flag while telemetry will inspect the actual chat-completions request
+      // body. Plan v3 Q22 + lockstep policy on the resolver JSDoc.
+      bindSchemaCapable();
+      const matrix: Array<{ allow: boolean; store: boolean }> = [
+        { allow: true, store: true },
+        { allow: true, store: false },
+        { allow: false, store: true },
+        { allow: false, store: false },
+      ];
+      for (const { allow, store } of matrix) {
+        studySettingsStore.setState({
+          ...studySettingsStore.getState(),
+          openRouterResponseHealing: store,
+        });
+        const out = resolveOpenRouterStructuredChatExtrasForJob('topicContent', {
+          jsonSchemaResponseFormat: dummyJsonSchemaFormat,
+          requireJsonSchema: true,
+          allowProviderHealing: allow,
+        });
+        const pluginAttached = (out?.plugins?.length ?? 0) > 0;
+        expect(out?.providerHealingRequested).toBe(pluginAttached);
+        expect(out?.providerHealingRequested).toBe(allow && store);
+      }
+    });
+  });
 });
