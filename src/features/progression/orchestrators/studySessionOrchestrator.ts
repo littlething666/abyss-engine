@@ -19,6 +19,11 @@
  * are pure single-store mutations and live as thin module-level helpers
  * colocated with `stores/buffStore.ts` -- they are NOT part of this
  * orchestrator.
+ *
+ * Buff merge primitives (`dedupeBuffsById`, `normalizeActiveBuffs`) are
+ * imported from `../buffs/buffMerge` so this file, `stores/buffStore.ts`,
+ * and `orchestrators/crystalGardenOrchestrator.ts` share a single
+ * interface (fix #4 of the progression monolith verification plan).
  */
 
 import { cardRefKey, parseCardRefKey } from '@/lib/topicRef';
@@ -28,7 +33,6 @@ import type { Card, TopicRef } from '@/types/core';
 import {
 	type AttunementRitualPayload,
 	type AttunementRitualResult,
-	type Buff,
 	type CoarseChoice,
 	type CoarseRatingResult,
 	type CoarseReviewMeta,
@@ -64,6 +68,7 @@ import {
 	deriveRitualBuffs,
 } from '../policies/progressionRitual';
 import { BuffEngine } from '../buffs/buffEngine';
+import { normalizeActiveBuffs } from '../buffs/buffMerge';
 import { defaultSM2, sm2 } from '../policies/sm2';
 import { undoManager } from '../undoManager';
 
@@ -118,36 +123,6 @@ function applyRestoredState(restored: Partial<ProgressionState>): void {
 	if (restored.activeBuffs !== undefined) {
 		useBuffStore.setState({ activeBuffs: restored.activeBuffs });
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Buff merge helpers (single-store mutations, colocated for the ritual flow).
-// ---------------------------------------------------------------------------
-
-function dedupeBuffsById(buffs: Buff[]): Buff[] {
-	const seen = new Set<string>();
-	const deduped: Buff[] = [];
-	for (let index = buffs.length - 1; index >= 0; index -= 1) {
-		const buff = buffs[index];
-		const dedupeKey = !buff
-			? ''
-			: `${buff.buffId}|${buff.source ?? 'unknown'}|${buff.condition}`;
-		if (!buff || seen.has(dedupeKey)) {
-			continue;
-		}
-		seen.add(dedupeKey);
-		derived.push(buff);
-	}
-	return deduped.reverse();
-}
-
-function normalizeActiveBuffs(currentBuffs: Buff[], incoming: Buff[]): Buff[] {
-	const nonSession = currentBuffs
-		.map((buff) => BuffEngine.get().hydrateBuff(buff))
-		.filter((buff) => buff.condition !== 'session_end');
-	const sanitizedIncoming = incoming.map((buff) => BuffEngine.get().hydrateBuff(buff));
-	const combined = [...nonSession, ...sanitizedIncoming];
-	return dedupeBuffsById(combined);
 }
 
 // ---------------------------------------------------------------------------
