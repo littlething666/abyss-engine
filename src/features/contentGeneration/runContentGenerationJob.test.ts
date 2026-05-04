@@ -598,10 +598,18 @@ describe('runContentGenerationJob', () => {
       persistOutput: vi.fn(),
     });
 
-    const call = streamChat.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
-    expect(call).toBeDefined();
-    expect(call!.responseFormat).toBeUndefined();
-    expect(call!.plugins).toBeUndefined();
+    // The chat-completions request body must not carry `responseFormat` and
+    // must not carry `plugins`. Asserted via `expect.not.objectContaining` so
+    // the test does not depend on the inferred `Parameters` tuple of the
+    // generator-shaped `vi.fn` (which has zero formal params and would
+    // otherwise trip TS2493 on `streamChat.mock.calls[0]?.[0]`).
+    expect(streamChat).toHaveBeenCalledTimes(1);
+    expect(streamChat).toHaveBeenCalledWith(
+      expect.not.objectContaining({ responseFormat: expect.anything() }),
+    );
+    expect(streamChat).toHaveBeenCalledWith(
+      expect.not.objectContaining({ plugins: expect.anything() }),
+    );
 
     const jobs = Object.values(useContentGenerationStore.getState().jobs);
     expect((jobs[0]?.metadata as Record<string, unknown> | undefined)?.structuredOutputMode).toBeUndefined();
