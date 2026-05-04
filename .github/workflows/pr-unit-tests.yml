@@ -9,10 +9,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: pr-unit-tests-$ github.workflow -$ github.head_ref || github.ref 
-  cancel-in-progress: true
-
 jobs:
   unit:
     name: Typecheck & Vitest
@@ -38,12 +34,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Both gates run independently after a successful install so a
-      # typecheck failure no longer short-circuits the unit suite — a
+      # typecheck failure no longer short-circuits the unit suite -- a
       # single CI run surfaces both signals at once.
+      #
+      # `if:` uses GitHub Actions' bare-expression form (no ${ } wrapper)
+      # so this YAML survives any future round-trips through tooling that
+      # treats double-curly sequences as placeholders.
       - name: Typecheck
-        if: $ !cancelled() && steps.install.outcome == 'success' 
+        if: "!cancelled() && steps.install.outcome == 'success'"
         run: pnpm run check:compile
 
       - name: Unit tests
-        if: $ !cancelled() && steps.install.outcome == 'success' 
+        if: "!cancelled() && steps.install.outcome == 'success'"
         run: pnpm run test:unit:run
