@@ -43,7 +43,7 @@ describe('canonicalJson', () => {
   });
 
   it('rejects bigint', () => {
-    expect(() => canonicalJson(1n)).toThrow();
+    expect(() => canonicalJson(BigInt(1))).toThrow();
   });
 });
 
