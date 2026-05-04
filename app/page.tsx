@@ -10,7 +10,7 @@ import {
   studySessionOrchestrator,
   useBuffStore,
   useCrystalGardenStore,
-  useRemainingRitualCooldownMs,
+  useRitualCooldownClock,
   useSM2Store,
   useStudySessionStore,
   whenProgressionHydrated,
@@ -178,10 +178,14 @@ const HomeContent: React.FC = () => {
   const openStudyPanel = useUIStore((state) => state.openStudyPanel);
   const openGenerationProgress = useUIStore((state) => state.openGenerationProgress);
 
-  // The cooldown hook subscribes to `lastRitualSubmittedAt`; the
-  // render-driven re-evaluation off `Date.now()` matches the legacy
-  // facade behavior, which also recomputed the value each render.
-  const ritualCooldownRemainingMs = useRemainingRitualCooldownMs(Date.now());
+  // Fix #7: cooldown clock unification. `useRitualCooldownClock`
+  // centralizes the wall-clock interval, the modal-open freeze, and
+  // the `useRemainingRitualCooldownMs(atMs)` derivation. Prior
+  // page.tsx code called `useRemainingRitualCooldownMs(Date.now())`
+  // inline, which only re-evaluated the cooldown as a side effect of
+  // unrelated re-renders. The new hook drives both `AttunementRitualModal`
+  // and `DiscoveryModal` on the same 1Hz tick that powers `WisdomAltar`.
+  const ritualCooldownRemainingMs = useRitualCooldownClock();
 
   const currentTopicId = currentSession?.topicId || null;
   const currentSubjectIdSession = currentSession?.subjectId ?? null;
