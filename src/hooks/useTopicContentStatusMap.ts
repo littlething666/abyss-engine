@@ -1,5 +1,5 @@
 import { useQueries } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { topicRefKey } from '@/lib/topicRef';
@@ -20,11 +20,40 @@ const CRYSTAL_CONTENT_JOB_KINDS = new Set<ContentGenerationJobKind>([
   'topic-expansion-cards',
 ]);
 
+/**
+ * Fix #6: shared empty-map constant. Returning the same empty object
+ * across renders (graphs-not-loaded case, first paint) gives every
+ * consumer a stable reference for the empty state, which preserves
+ * `React.memo` / `useMemo` skip-rerender behavior on downstream
+ * components.
+ */
+const EMPTY_TOPIC_CONTENT_STATUS_MAP: Readonly<Record<string, TopicContentStatus>> =
+  Object.freeze({});
+
 export type { TopicContentStatus };
 
 /** TanStack key for whether a topic has theory + difficulty-1 cards (study-ready). */
 export function topicContentAvailabilityQueryKey(subjectId: string, topicId: string) {
   return ['content', 'topic-ready', subjectId, topicId] as const;
+}
+
+/**
+ * Compare two `Record<string, TopicContentStatus>` maps by key-set and
+ * value identity. Used by `useTopicContentStatusMap` to reuse the
+ * previous return reference when every per-topic status is unchanged.
+ */
+function topicContentStatusMapsEqual(
+  a: Record<string, TopicContentStatus>,
+  b: Record<string, TopicContentStatus>,
+): boolean {
+  if (a === b) return true;
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const k of keysA) {
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
 }
 
 /**
@@ -35,6 +64,11 @@ export function topicContentAvailabilityQueryKey(subjectId: string, topicId: str
  * - `'unavailable'`: no content and no active generation
  *
  * Keyed by `topicRefKey` (`subjectId::topicId`).
+ *
+ * Reference contract (Fix #6): the returned object is reference-stable
+ * across renders when no per-topic status has changed. Consumers that
+ * key `useMemo` / `useEffect` / `React.memo` on the map identity will
+ * skip rerenders correctly.
  */
 export function useTopicContentStatusMap(): Record<string, TopicContentStatus> {
   const allGraphs = useAllGraphs();
@@ -91,19 +125,43 @@ export function useTopicContentStatusMap(): Record<string, TopicContentStatus> {
 
   const activeJobKeySet = useMemo(() => new Set(activeJobKeys), [activeJobKeys]);
 
-  return useMemo(() => {
-    const map: Record<string, TopicContentStatus> = {};
-    topicRefs.forEach((t, i) => {
-      const r = results[i];
-      const key = topicRefKey(t);
-      if (activeJobKeySet.has(key)) {
-        map[key] = 'generating';
-      } else if (r?.data === true) {
-        map[key] = 'ready';
-      } else {
-        map[key] = 'unavailable';
-      }
-    });
-    return map;
-  }, [topicRefs, results, activeJobKeySet]);
+  // Identity-cache the derived map. `useQueries` returns a fresh outer
+  // array on every render even when each query is reference-stable, so
+  // a plain `useMemo([results])` would recompute and return a new
+  // object every render. Compare the freshly-computed map against the
+  // previous return shallowly; if every (key, value) pair matches,
+  // return the previous reference.
+  const previousMapRef = useRef<Record<string, TopicContentStatus>>(
+    EMPTY_TOPIC_CONTENT_STATUS_MAP,
+  );
+
+  const next: Record<string, TopicContentStatus> = {};
+  for (let i = 0; i < topicRefs.length; i++) {
+    const t = topicRefs[i]!;
+    const r = results[i];
+    const key = topicRefKey(t);
+    if (activeJobKeySet.has(key)) {
+      next[key] = 'generating';
+    } else if (r?.data === true) {
+      next[key] = 'ready';
+    } else {
+      next[key] = 'unavailable';
+    }
+  }
+
+  // Reuse the shared empty-map constant when there are no topics so
+  // the empty-state reference stays stable across renders even before
+  // the first cache hit populates `previousMapRef`.
+  if (topicRefs.length === 0) {
+    if (previousMapRef.current !== EMPTY_TOPIC_CONTENT_STATUS_MAP) {
+      previousMapRef.current = EMPTY_TOPIC_CONTENT_STATUS_MAP;
+    }
+    return EMPTY_TOPIC_CONTENT_STATUS_MAP;
+  }
+
+  if (topicContentStatusMapsEqual(previousMapRef.current, next)) {
+    return previousMapRef.current;
+  }
+  previousMapRef.current = next;
+  return next;
 }
