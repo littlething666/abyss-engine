@@ -68,6 +68,17 @@ export {
 	toggleBuffFromCatalog,
 } from './stores/buffStore';
 
+// Hydration barrier (Fix #1): boot work that touches multiple
+// progression stores must run after every persisted slice has resolved
+// `persist.hasHydrated()`. Cross-feature consumers (e.g. `app/page.tsx`'s
+// boot effect) wrap `crystalGardenOrchestrator.initialize()` with
+// `whenProgressionHydrated(...)` so an async storage adapter cannot drop
+// persisted active buffs on the floor at boot.
+export {
+	progressionStoresHydrated,
+	whenProgressionHydrated,
+} from './hydration';
+
 // Orchestrators (cross-store mutation seams). Imported as namespaces so
 // callers can pick the actions they need without ambient name collisions.
 export * as studySessionOrchestrator from './orchestrators/studySessionOrchestrator';
