@@ -53,23 +53,38 @@ src/features/generationContracts/
 ├── strictParsers/                   # single-pass parsers + ArtifactKind registry (Phase 0 step 3)
 │   ├── strictParse.ts
 │   └── byKind.ts
-└── semanticValidators/              # per-kind domain-rule validators (Phase 0 step 9)
-    ├── _constants.ts                # locally-mirrored semantic constants (lockstep)
-    ├── types.ts                     # SemanticValidatorResult, SemanticFailureCode
-    ├── cardContentShape.ts          # shared per-card-content shape + concept stem
-    ├── subjectGraphTopics.ts
-    ├── subjectGraphEdges.ts
-    ├── topicTheory.ts
-    ├── topicStudyCards.ts
-    ├── topicMiniGameCategorySort.ts
-    ├── topicMiniGameSequenceBuild.ts
-    ├── topicMiniGameMatchPairs.ts
-    ├── topicExpansionCards.ts
-    ├── crystalTrial.ts
-    └── byKind.ts
+├── semanticValidators/              # per-kind domain-rule validators (Phase 0 step 9)
+│   ├── _constants.ts                # locally-mirrored semantic constants (lockstep)
+│   ├── types.ts                     # SemanticValidatorResult, SemanticFailureCode
+│   ├── cardContentShape.ts          # shared per-card-content shape + concept stem
+│   ├── subjectGraphTopics.ts
+│   ├── subjectGraphEdges.ts
+│   ├── topicTheory.ts
+│   ├── topicStudyCards.ts
+│   ├── topicMiniGameCategorySort.ts
+│   ├── topicMiniGameSequenceBuild.ts
+│   ├── topicMiniGameMatchPairs.ts
+│   ├── topicExpansionCards.ts
+│   ├── crystalTrial.ts
+│   └── byKind.ts
+└── evalFixtures/                    # golden fixtures + harness (Phase 0 step 10)
+    ├── _helpers.ts                  # fx/mut/acc/pfJson/pfShape/sf builders
+    ├── types.ts                     # EvalFixture, EvalOutcome, EvalFixturesByKind
+    ├── runFixture.ts                # strictParse + semanticValidate runner
+    ├── byKind.ts                    # ArtifactKind -> EvalFixture[] registry
+    ├── evalHarness.test.ts          # vitest harness (locks the floor)
+    ├── subjectGraphTopics.fixtures.ts
+    ├── subjectGraphEdges.fixtures.ts
+    ├── topicTheory.fixtures.ts
+    ├── topicStudyCards.fixtures.ts
+    ├── topicMiniGameCategorySort.fixtures.ts
+    ├── topicMiniGameSequenceBuild.fixtures.ts
+    ├── topicMiniGameMatchPairs.fixtures.ts
+    ├── topicExpansionCards.fixtures.ts
+    └── crystalTrial.fixtures.ts
 ```
 
-Follow-up Phase 0 PRs will add `prompts/` and `evalFixtures/` here.
+Follow-up Phase 0 PRs will add `prompts/` here.
 
 ## Hashing rules
 
@@ -113,6 +128,30 @@ Follow-up Phase 0 PRs will add `prompts/` and `evalFixtures/` here.
    redeclared locally in `semanticValidators/_constants.ts` to preserve
    the no-feature-import runtime boundary; lockstep tests assert equality
    with the upstream constants and fail CI on drift.
+
+## Eval fixture policy
+
+1. Every `ArtifactKind` ships at least 25 golden fixtures in
+   `evalFixtures/<kind>.fixtures.ts` covering all four pipeline outcomes:
+   `accept`, `parse-fail/<code>`, `semantic-fail/<code>`. The harness
+   (`evalHarness.test.ts`) enforces that floor and runs every fixture
+   through `strictParseArtifact` + `semanticValidateArtifact`, asserting
+   bit-for-bit identity with the declared expectation.
+2. Fixtures are TypeScript (NOT JSON-on-disk). Deliberately malformed
+   `raw` strings — markdown fences, embedded prose, trailing commas,
+   truncated JSON — are embedded literally so a JSON-on-disk loader
+   cannot mask them. Valid payloads are constructed via the `mut` helper
+   that JSON-clones a per-kind base object so each diff stays localized
+   to the field under test.
+3. Adding a new failure code or schema constraint requires extending
+   the relevant fixture file. Removing a constraint without removing
+   its fixture turns CI red, which is the intended forcing function:
+   the harness is the single place that locks failure-code identity
+   per pipeline kind.
+4. Fixtures MUST NOT depend on feature-only modules. The contracts
+   module's no-feature-import boundary applies here too — fixtures
+   import only from `./*`, `../strictParsers`, `../semanticValidators`,
+   and `../artifacts/types`.
 
 ## Authoritative rules
 

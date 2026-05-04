@@ -131,3 +131,15 @@ export {
   type SemanticValidatorContext,
   type SemanticValidatorResult,
 } from './semanticValidators';
+
+export {
+  // Golden eval fixtures (Phase 0 step 10): per-kind harness inputs that lock
+  // the four-outcome coverage matrix (accept / parse-fail / semantic-fail).
+  EVAL_FIXTURES_BY_KIND,
+  fixturesForKind,
+  runFixture,
+  type EvalFixture,
+  type EvalFixtureRunResult,
+  type EvalFixturesByKind,
+  type EvalOutcome,
+} from './evalFixtures';
