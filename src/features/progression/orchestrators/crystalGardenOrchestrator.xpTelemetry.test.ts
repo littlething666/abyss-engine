@@ -31,7 +31,11 @@ import {
 } from './__testHelpers';
 
 function xpGainedCalls(emitSpy: ReturnType<typeof vi.spyOn>) {
-	return emitSpy.mock.calls.filter(([eventName]) => eventName === 'xp:gained');
+	// Index `c[0]` (the event name) instead of array-destructuring — the
+	// destructured binding inherits `vi.spyOn`'s ambient `any` typing and
+	// fails the project's noImplicitAny gate. The existing parity tests in
+	// crystalGardenOrchestrator.test.ts use the same pattern.
+	return emitSpy.mock.calls.filter((c) => c[0] === 'xp:gained');
 }
 
 describe('crystalGardenOrchestrator.addXP — xp:gained telemetry', () => {

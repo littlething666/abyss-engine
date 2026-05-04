@@ -74,12 +74,15 @@ describe('whenProgressionHydrated', () => {
 		const hasHydratedSpy = vi
 			.spyOn(useBuffStore.persist, 'hasHydrated')
 			.mockImplementation(() => hydrated);
+		// Don't annotate `listener` — zustand's PersistListener takes a state
+		// argument we don't care about in this test. Cast to `() => void`
+		// only at the call site, where we synthesize the deferred firing.
 		const onFinishSpy = vi
 			.spyOn(useBuffStore.persist, 'onFinishHydration')
-			.mockImplementation((listener: () => void) => {
+			.mockImplementation((listener) => {
 				pendingResolver = () => {
 					hydrated = true;
-					listener();
+					(listener as unknown as () => void)();
 				};
 				return () => {
 					pendingResolver = null;
@@ -93,7 +96,7 @@ describe('whenProgressionHydrated', () => {
 
 		// Resolve hydration: callback fires exactly once.
 		expect(pendingResolver).not.toBeNull();
-		pendingResolver!();
+		(pendingResolver as unknown as () => void)();
 		expect(cb).toHaveBeenCalledTimes(1);
 
 		// Idempotent unsubscribe after firing.
@@ -112,8 +115,8 @@ describe('whenProgressionHydrated', () => {
 			.mockReturnValue(false);
 		const onFinishSpy = vi
 			.spyOn(useBuffStore.persist, 'onFinishHydration')
-			.mockImplementation((listener: () => void) => {
-				pendingResolver = listener;
+			.mockImplementation((listener) => {
+				pendingResolver = () => (listener as unknown as () => void)();
 				return disposeSpy;
 			});
 
@@ -125,7 +128,7 @@ describe('whenProgressionHydrated', () => {
 		expect(disposeSpy).toHaveBeenCalledTimes(1);
 
 		// Even if the underlying listener fires later, the callback must not run.
-		pendingResolver?.();
+		(pendingResolver as unknown as (() => void) | null)?.();
 		expect(cb).not.toHaveBeenCalled();
 
 		hasHydratedSpy.mockRestore();
