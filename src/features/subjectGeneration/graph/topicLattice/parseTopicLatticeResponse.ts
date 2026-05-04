@@ -5,6 +5,28 @@ import { topicLatticeResponseSchema } from './topicLatticeSchema';
 
 export type ParseTopicLatticeResult = { ok: true; lattice: TopicLattice } | { ok: false; error: string };
 
+/**
+ * Permissive Subject Graph Stage A topic-lattice parser.
+ *
+ * @deprecated **Do not use in durable pipeline code paths.**
+ *
+ * This parser strips markdown fences via `extractJsonString` before running
+ * `topicLatticeResponseSchema.safeParse`. The durable Subject Graph Generation
+ * pipeline (Stage A) must call OpenRouter with strict `json_schema` mode and
+ * fail loudly via `parse:json-mode-violation` / `parse:zod-shape` on anything
+ * other than exact, schema-conformant JSON. Use the strict pipeline parser
+ * instead, via `strictParseArtifact('subject-graph-topics', raw)` from
+ * `@/features/generationContracts`.
+ *
+ * Note: this deprecation is **for the parser only**. The Stage B
+ * `correctPrereqEdges` deterministic repair pass for `subject-graph-edges`
+ * (AGENTS.md curriculum-prerequisite-edges narrow exception) is unaffected
+ * and continues to run before the strict schema check on Stage B output.
+ *
+ * Allowed remaining callers: legacy in-tab Subject Graph runners until Phase 2
+ * migrates Subject Graph Generation to the durable runner. Scheduled for
+ * removal from generation pipeline code paths in Phase 4.
+ */
 export function parseTopicLatticeResponse(raw: string): ParseTopicLatticeResult {
   const jsonStr = extractJsonString(raw);
   if (!jsonStr) {

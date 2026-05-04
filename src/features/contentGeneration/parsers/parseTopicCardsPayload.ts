@@ -39,6 +39,29 @@ function cardIdOf(raw: unknown): string | null {
   return null;
 }
 
+/**
+ * Permissive Topic study-card / mini-game payload parser.
+ *
+ * @deprecated **Do not use in durable pipeline code paths.**
+ *
+ * This parser strips markdown fences via `extractJsonString`, accepts both a
+ * top-level JSON array and a `{ cards: [...] }` envelope, and applies ratio
+ * thresholds for invalid / duplicate cards. None of that is acceptable for the
+ * durable Topic Content Pipeline, which must call OpenRouter with strict
+ * `json_schema` mode and fail loudly via `parse:json-mode-violation` /
+ * `parse:zod-shape` on anything other than exact, schema-conformant JSON.
+ *
+ * Use the strict pipeline parser instead, via
+ * `strictParseArtifact('topic-study-cards', raw)` (and the analogous
+ * `topic-mini-game-*` artifact kinds) from `@/features/generationContracts`.
+ * Card-pool size, difficulty distribution, mini-game playability, and
+ * duplicate-concept enforcement are deferred to the Phase 0 step 9 semantic
+ * validators that run after the strict parser.
+ *
+ * Allowed remaining callers: legacy in-tab runners until the Topic Content
+ * Pipeline migrates to the durable runner (Phase 2). Scheduled for removal
+ * from generation pipeline code paths in Phase 4.
+ */
 export function parseTopicCardsPayload(
   raw: string,
   options: ParseTopicCardsOptions = {},
@@ -165,7 +188,13 @@ export function parseTopicCardsPayload(
   return { ok: true, cards, qualityReport };
 }
 
-/** Debug-only: why parsing/validation failed without changing `parseTopicCardsPayload` behavior. */
+/**
+ * Debug-only: why parsing/validation failed without changing
+ * `parseTopicCardsPayload` behavior.
+ *
+ * @deprecated Same scope as `parseTopicCardsPayload` — debug companion of the
+ * permissive parser. Do not call from durable pipeline code paths.
+ */
 export function diagnoseTopicCardsPayload(raw: string): Record<string, unknown> {
   const jsonStr = extractJsonString(raw);
   if (!jsonStr) {
