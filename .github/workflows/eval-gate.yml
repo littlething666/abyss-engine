@@ -1,0 +1,79 @@
+# Eval merge gate — runs the contracts-module golden eval harness on
+# pull requests that touch prompt / schema / model surfaces.
+#
+# Phase 0 step 11 of the Durable Workflow Orchestration plan: this is
+# the merge gate that prevents a schema constraint, semantic validator,
+# strict parser, or eval fixture from drifting without forcing the
+# golden corpus to be regenerated in the same PR.
+#
+# The harness itself (src/features/generationContracts/evalFixtures/
+# evalHarness.test.ts) asserts ≥25 fixtures per ArtifactKind and
+# bit-for-bit identity between observed and declared outcomes. Wiring
+# it as a path-filtered required check is the single forcing function
+# that locks failure-code identity per pipeline kind.
+name: Eval Gate
+
+on:
+  pull_request:
+    paths:
+      # Generation-contracts surface — schemas, strict parsers, semantic
+      # validators, eval fixtures, failure codes, snapshots, and any
+      # future prompts/ directory. This is the durable-pipeline
+      # contract that locks input_hash + content_hash identity.
+      - 'src/features/generationContracts/**'
+      # Legacy prompt builders that produce the model-facing prompt
+      # text. They are deprecated for durable pipeline paths (Phase 0
+      # step 4) but still control today's in-tab pipeline output, so a
+      # change here must re-run the eval harness against the matching
+      # ArtifactKind fixtures.
+      - 'src/features/contentGeneration/messages/**'
+      - 'src/features/contentGeneration/parsers/**'
+      - 'src/features/subjectGeneration/graph/topicLattice/**'
+      - 'src/features/subjectGeneration/graph/prerequisiteEdges/**'
+      # Model bindings + inference-surface providers — model_id,
+      # response_format, structured_outputs capability, pipeline-vs-
+      # non-pipeline surface routing, and the provider-healing flag
+      # all flow through these two files.
+      - 'src/infrastructure/llmInferenceSurfaceProviders.ts'
+      - 'src/types/llmInference.ts'
+      # The gate itself — a change to the workflow or to the script it
+      # invokes must re-run on the same PR so a regression in the gate
+      # cannot silently land alongside the change it was supposed to
+      # cover.
+      - '.github/workflows/eval-gate.yml'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    name: Golden Eval Harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        id: install
+        run: pnpm install --frozen-lockfile
+
+      # `if:` uses GitHub Actions' bare-expression form (no ${ } wrapper)
+      # so this YAML survives any future round-trips through tooling that
+      # treats double-curly sequences as placeholders. Mirrors the pattern
+      # used by .github/workflows/pr-unit-tests.yml.
+      - name: Run golden eval harness
+        if: "!cancelled() && steps.install.outcome == 'success'"
+        run: pnpm run test:eval
