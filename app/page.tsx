@@ -200,7 +200,7 @@ const HomeContent: React.FC = () => {
     // resolved `persist.hasHydrated()` would observe a blank `activeBuffs`
     // array and clobber the persisted snapshot. The barrier composes
     // zustand's per-store `persist.hasHydrated()` /
-    // `onFinishHydration()` API — no frame delays, no polling.
+    // `onFinishHydration()` API - no frame delays, no polling.
     const unsubscribe = whenProgressionHydrated(() => {
       initialize();
     });
@@ -313,12 +313,12 @@ const HomeContent: React.FC = () => {
     setIsIncrementalSubjectOpen(true);
   }, [closeDiscoveryModal]);
 
-  // Quick Actions "\ud83d\udde3\ufe0f Mentor" \u2014 keyboard-accessible parity with the
+  // Quick Actions "Mentor" - keyboard-accessible parity with the
   // MentorBubble billboard. Both paths route through the contextual entry
   // helper, which encodes the v1 selection rules:
-  //   overlay open    \u2192 no-op
-  //   queue non-empty \u2192 no-op (queued head wins)
-  //   else            \u2192 resolve trigger from live context, enqueue.
+  //   overlay open    -> no-op
+  //   queue non-empty -> no-op (queued head wins)
+  //   else            -> resolve trigger from live context, enqueue.
   const entryContext = useMentorEntryContext();
   const {
     subjectGraphActiveStage,
@@ -409,7 +409,7 @@ const HomeContent: React.FC = () => {
           <DropdownMenuTrigger render={quickActionsTrigger} />
           <DropdownMenuContent side="top" align="end" sideOffset={8}>
             <DropdownMenuItem onClick={handleQuickActionWisdomAltar}>
-              \ud83c\udfdb\ufe0f Wisdom Altar
+              🏛️ Wisdom Altar
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={handleQuickActionGenerationProgress}
@@ -419,13 +419,13 @@ const HomeContent: React.FC = () => {
               Background generation
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleQuickActionMentor} data-testid="quick-action-mentor">
-              \ud83d\udde3\ufe0f Mentor
+              🗣️ Mentor
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleQuickActionCommandPalette}>
-              \ud83d\udd0d Command palette (\u2318K)
+              🔍 Command palette (Cmd+K)
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleQuickActionSettings}>
-              \u2699\ufe0f Settings
+              ⚙️ Settings
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

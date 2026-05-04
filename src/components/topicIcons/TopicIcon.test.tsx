@@ -21,7 +21,7 @@ describe('TOPIC_ICON_COMPONENTS', () => {
     }
   });
 
-  it('contains exactly TOPIC_ICON_NAMES \u2014 no extras, no gaps', () => {
+  it('contains exactly TOPIC_ICON_NAMES - no extras, no gaps', () => {
     const registryKeys = Object.keys(TOPIC_ICON_COMPONENTS).sort();
     const allowlist = [...TOPIC_ICON_NAMES].sort();
     expect(registryKeys).toEqual(allowlist);

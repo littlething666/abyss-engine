@@ -6,7 +6,7 @@ import {
 } from '../overlayController';
 
 // The controller is a module-scoped zustand store, so resetting between
-// tests is mandatory — otherwise the previous test's published step state
+// tests is mandatory - otherwise the previous test's published step state
 // or registered handlers leak into the next.
 beforeEach(() => {
   useMentorOverlayController.getState().clear();
@@ -37,10 +37,10 @@ function primeHandlers(): { skipReveal: ReturnType<typeof vi.fn>; advance: Retur
   return { skipReveal, advance };
 }
 
-describe('overlayController \u2014 requestAmbientAdvance', () => {
+describe('overlayController - requestAmbientAdvance', () => {
   it('returns noop when no dialog is active (planId null)', () => {
     const { skipReveal, advance } = primeHandlers();
-    // No primeStep — planId stays null.
+    // No primeStep - planId stays null.
     expect(requestAmbientAdvance()).toBe('noop');
     expect(skipReveal).not.toHaveBeenCalled();
     expect(advance).not.toHaveBeenCalled();
@@ -48,7 +48,7 @@ describe('overlayController \u2014 requestAmbientAdvance', () => {
 
   it('returns noop when handlers are not registered, even with an active step', () => {
     primeStep({ isFullyRevealed: true });
-    // Handlers stay null — the overlay component is unmounted.
+    // Handlers stay null - the overlay component is unmounted.
     expect(requestAmbientAdvance()).toBe('noop');
   });
 

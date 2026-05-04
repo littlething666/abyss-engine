@@ -27,7 +27,7 @@ function makeDeps(
 }
 
 describe('applyOpenTopicStudyEffect', () => {
-  it('selects the topic, starts a study session with the available cards, and opens the panel \u2014 in that order', () => {
+  it('selects the topic, starts a study session with the available cards, and opens the panel - in that order', () => {
     const deps = makeDeps([{ id: 'c1' }, { id: 'c2' }]);
 
     applyOpenTopicStudyEffect(

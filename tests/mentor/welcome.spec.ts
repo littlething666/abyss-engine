@@ -13,7 +13,7 @@ test.describe('Mentor onboarding (pre-first-subject)', () => {
     await expect(page.getByTestId('mentor-name-input')).toBeVisible();
   });
 
-  test('returning player (playerName persisted) skips the name input', async ({ page }) => {
+  test('returning player (playerName persisted) skips the name input', async ({ seededApp: page }) => {
     await page.addInitScript(() => {
       window.localStorage.setItem(
         'abyss-mentor-v1',

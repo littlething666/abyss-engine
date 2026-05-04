@@ -2,7 +2,7 @@ import { test as base, expect } from '@playwright/test';
 import { seedApp } from '../fixtures/app';
 
 /**
- * Discovery empty-state CTA → IncrementalSubjectModal flow.
+ * Discovery empty-state CTA -> IncrementalSubjectModal flow.
  *
  * When the workspace has no subjects, the Wisdom Altar shows an Empty
  * placeholder (data-testid="discovery-empty-no-subjects") with a single
@@ -27,7 +27,7 @@ const test = base.extend<{ noDeckApp: import('@playwright/test').Page }>({
   },
 });
 
-test.describe('Mentor \u2014 Discovery empty-state CTA', () => {
+test.describe('Mentor — Discovery empty-state CTA', () => {
   test(
     'clicking "New subject" closes Discovery and opens IncrementalSubjectModal',
     async ({ noDeckApp: page }) => {

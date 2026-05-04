@@ -40,7 +40,7 @@ function truncateToWidth(
   if (ctx.measureText(text).width <= maxWidth) {
     return text;
   }
-  const ellipsis = '\u2026';
+  const ellipsis = '...';
   let candidate = text;
   while (candidate.length > 1 && ctx.measureText(candidate + ellipsis).width > maxWidth) {
     candidate = candidate.slice(0, -1);
@@ -68,7 +68,7 @@ function paintRoundedRect(
 }
 
 /**
- * Rasterizes label text — and optionally a Lucide topic icon glyph — into a
+ * Rasterizes label text - and optionally a Lucide topic icon glyph - into a
  * CanvasTexture on the main thread. Produces a WebGPU-compatible
  * THREE.CanvasTexture with mipmaps + sRGB color space.
  *
@@ -78,7 +78,7 @@ function paintRoundedRect(
  *
  * When `iconName` is provided, the icon's raw vector primitives are sourced
  * from the build-time-generated `topicIconNodes.ts` (NEVER from `lucide` or
- * `lucide-react` at runtime — see `scripts/generate-topic-icon-nodes.ts`).
+ * `lucide-react` at runtime - see `scripts/generate-topic-icon-nodes.ts`).
  */
 export function createCrystalLabelTexture(
   text: string,

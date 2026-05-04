@@ -378,7 +378,7 @@ export function AbyssCommandPalette({
     'add-xp': { id: 'add-xp', label: 'Add +80 XP to selected crystal', value: 'add xp crystal dev', icon: Sparkles, onSelect: () => handleCommandSelect('add-xp', canDevAddXp, handleDevAddXp), disabled: !canDevAddXp },
     'subtract-xp': { id: 'subtract-xp', label: 'Subtract 80 XP from selected crystal', value: 'subtract xp crystal dev', icon: Minus, onSelect: () => handleCommandSelect('subtract-xp', canDevAddXp, handleDevSubtractXp), disabled: !canDevAddXp },
     'trigger-level-up-animation': { id: 'trigger-level-up-animation', label: 'Trigger selected crystal level-up animation', value: 'trigger crystal level up animation dev', icon: Sparkles, onSelect: () => handleCommandSelect('trigger-level-up-animation', canTriggerLevelUpAnimation, handleDevTriggerLevelUpAnimation), disabled: !canTriggerLevelUpAnimation },
-    'toggle-xp-buff': { id: 'toggle-xp-buff', label: devXpBuffActive ? 'Turn off 5\u00d7 XP multiplier (dev)' : 'Turn on 5\u00d7 XP multiplier (dev)', value: 'toggle xp multiplier buff dev', icon: Zap, onSelect: () => handleCommandSelect('toggle-xp-buff', isDebugMode, handleDevXpBuffToggle), disabled: !isDebugMode },
+    'toggle-xp-buff': { id: 'toggle-xp-buff', label: devXpBuffActive ? 'Turn off 5x XP multiplier (dev)' : 'Turn on 5x XP multiplier (dev)', value: 'toggle xp multiplier buff dev', icon: Zap, onSelect: () => handleCommandSelect('toggle-xp-buff', isDebugMode, handleDevXpBuffToggle), disabled: !isDebugMode },
   };
 
   const visibleRecentCommands = recentCommands

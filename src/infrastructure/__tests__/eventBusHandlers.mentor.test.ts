@@ -199,7 +199,7 @@ async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
 
-describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
+describe('eventBusHandlers - crystal-trial availability watcher', () => {
   it('fires when status flips to awaiting_player AND XP is already at the band cap', () => {
     progressionApi.setActiveCrystals([{ subjectId: 'subj-1', topicId: 'topic-1', xp: BAND_CAP_XP }]);
     handleMentorTriggerSpy.mockReset();
@@ -353,7 +353,7 @@ describe('eventBusHandlers \u2014 crystal-trial availability watcher', () => {
   });
 });
 
-describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
+describe('eventBusHandlers - subject generation mentor wiring', () => {
   it('fires the start mentor trigger and records the first subject generation enqueue', async () => {
     busApi.emit('subject-graph:generation-requested', { subjectId: 'calculus', checklist: { topicName: 'Calculus' } });
     await flushMicrotasks();
@@ -498,7 +498,7 @@ describe('eventBusHandlers \u2014 subject generation mentor wiring', () => {
   });
 });
 
-describe('eventBusHandlers \u2014 content generation mentor wiring (Phase C)', () => {
+describe('eventBusHandlers - content generation mentor wiring (Phase C)', () => {
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {

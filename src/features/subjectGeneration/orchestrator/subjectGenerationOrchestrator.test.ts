@@ -253,7 +253,7 @@ describe('createSubjectGenerationOrchestrator', () => {
   });
 });
 
-describe('createSubjectGenerationOrchestrator \u2014 terminal failure events', () => {
+describe('createSubjectGenerationOrchestrator - terminal failure events', () => {
   let emitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {

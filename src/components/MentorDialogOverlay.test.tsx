@@ -76,7 +76,7 @@ beforeEach(() => {
     isCurrentCardFlipped: false,
   });
   reducedMotionMock.enabled = true;
-  // The overlay controller is module-scoped — reset between tests so
+  // The overlay controller is module-scoped - reset between tests so
   // the previous test's published step / registered handlers do not
   // leak.
   useMentorOverlayController.getState().clear();
@@ -130,7 +130,7 @@ describe('MentorDialogOverlay', () => {
 
       const { root } = renderOverlay();
 
-      // Modal is open — the queued plan must stay parked.
+      // Modal is open - the queued plan must stay parked.
       expect(useMentorStore.getState().currentDialog).toBeNull();
       expect(document.body.querySelector('[data-testid="mentor-dialog-overlay"]')).toBeNull();
 
@@ -163,7 +163,7 @@ describe('MentorDialogOverlay', () => {
 
     expect(useMentorStore.getState().currentDialog).toBeNull();
 
-    // Closing one modal but leaving another open must NOT pop the queue —
+    // Closing one modal but leaving another open must NOT pop the queue -
     // proves the gate is the OR-across-flags `selectIsAnyModalOpen`, not
     // a single-flag check that would race on the most-recent transition.
     await act(async () => {
@@ -185,7 +185,7 @@ describe('MentorDialogOverlay', () => {
   it('explicit openCurrentFromQueue() bypasses the gate even while a modal is open', async () => {
     // Bubble click and explicit user actions route through
     // `openCurrentFromQueue()` (or `handleMentorTrigger` followed by an
-    // explicit pop). The gate suppresses background auto-open only — it
+    // explicit pop). The gate suppresses background auto-open only - it
     // must not block explicit user-driven pops.
     enqueueFixturePlan('queued-bypass');
     uiStore.setState({ isRitualModalOpen: true });
@@ -253,7 +253,7 @@ describe('MentorDialogOverlay', () => {
   });
 });
 
-describe('MentorDialogOverlay \u2014 overlayController integration', () => {
+describe('MentorDialogOverlay - overlayController integration', () => {
   it('publishes step state on mount for a plain non-interactive message', () => {
     useMentorStore.setState({
       ...DEFAULT_PERSISTED_STATE,
@@ -348,7 +348,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
     expect(text).not.toBeNull();
     expect(useMentorOverlayController.getState().messageIndex).toBe(0);
 
-    // Tap on the dialog text — same code path as the canvas-miss tap.
+    // Tap on the dialog text - same code path as the canvas-miss tap.
     act(() => {
       text?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
@@ -467,7 +467,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
     // Must not have advanced past the choice prompt.
     expect(useMentorOverlayController.getState().messageIndex).toBe(0);
     expect(useMentorOverlayController.getState().messageId).toBe('msg-prompt');
-    // Dialog must still be present — not dismissed.
+    // Dialog must still be present - not dismissed.
     expect(useMentorStore.getState().currentDialog?.id).toBe('plan-interactive-noop');
 
     root.unmount();
@@ -513,7 +513,7 @@ describe('MentorDialogOverlay \u2014 overlayController integration', () => {
   });
 });
 
-describe('MentorDialogOverlay — generation failure acknowledgement', () => {
+describe('MentorDialogOverlay - generation failure acknowledgement', () => {
   beforeEach(() => {
     useContentGenerationStore.setState({
       jobs: {},
