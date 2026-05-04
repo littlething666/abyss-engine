@@ -9,6 +9,7 @@ const { surfaceProvidersApi } = vi.hoisted(() => ({
   surfaceProvidersApi: {
     resolveIncludeOpenRouterReasoningParam: vi.fn(),
     resolveOpenRouterStructuredChatExtrasForJob: vi.fn(),
+    validatePipelineSurfaceConfig: vi.fn(),
   },
 }));
 
@@ -22,6 +23,7 @@ vi.mock('@/infrastructure/repositories/contentGenerationLogRepository', () => ({
 vi.mock('@/infrastructure/llmInferenceSurfaceProviders', () => ({
   resolveIncludeOpenRouterReasoningParam: surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam,
   resolveOpenRouterStructuredChatExtrasForJob: surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob,
+  validatePipelineSurfaceConfig: surfaceProvidersApi.validatePipelineSurfaceConfig,
 }));
 
 function resetStore(): void {
@@ -40,6 +42,8 @@ describe('runContentGenerationJob', () => {
     surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam.mockReturnValue(false);
     surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReset();
     surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue(null);
+    surfaceProvidersApi.validatePipelineSurfaceConfig.mockReset();
+    surfaceProvidersApi.validatePipelineSurfaceConfig.mockReturnValue({ ok: true });
   });
 
   it('runs pending → streaming → parsing → saving → completed', async () => {
@@ -151,7 +155,11 @@ describe('runContentGenerationJob', () => {
     consoleSpy.mockRestore();
   });
 
-  it('preserves requested reasoning in structured OpenRouter requests', async () => {
+  it('preserves requested reasoning in structured OpenRouter requests (non-pipeline surface)', async () => {
+    // Phase 0 step 8: pipeline surfaces never receive json_object extras. The
+    // legacy permissive shape is exercised here against `studyQuestionExplain`,
+    // which is NOT a pipeline-bound surface and therefore continues to accept
+    // `json_object` fallback until the durable migration completes.
     surfaceProvidersApi.resolveIncludeOpenRouterReasoningParam.mockReturnValue(true);
     surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue({
       responseFormat: { type: 'json_object' },
@@ -171,7 +179,7 @@ describe('runContentGenerationJob', () => {
       pipelineId: null,
       subjectId: 'sub',
       topicId: 'top',
-      llmSurfaceId: 'topicContent',
+      llmSurfaceId: 'studyQuestionExplain',
       chat: chat as IChatCompletionsRepository,
       model: 'm',
       messages: [{ role: 'user', content: 'hi' }],
@@ -180,6 +188,14 @@ describe('runContentGenerationJob', () => {
       persistOutput: vi.fn(),
     });
 
+    // Non-pipeline surfaces never invoke validatePipelineSurfaceConfig.
+    expect(surfaceProvidersApi.validatePipelineSurfaceConfig).not.toHaveBeenCalled();
+    // Resolver is called with `requireJsonSchema: false` for non-pipeline
+    // surfaces, preserving the legacy permissive shape.
+    expect(surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob).toHaveBeenCalledWith(
+      'studyQuestionExplain',
+      expect.objectContaining({ requireJsonSchema: false, allowProviderHealing: true }),
+    );
     expect(streamChat).toHaveBeenCalledWith(expect.objectContaining({
       includeOpenRouterReasoning: true,
       enableReasoning: true,
@@ -189,7 +205,7 @@ describe('runContentGenerationJob', () => {
     }));
   });
 
-  it('forwards JSON Schema override to the structured extras resolver', async () => {
+  it('forwards JSON Schema override and pipeline strictness flags to the structured extras resolver', async () => {
     surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue(null);
 
     const streamChat = vi.fn(async function* stream() {
@@ -222,9 +238,16 @@ describe('runContentGenerationJob', () => {
       persistOutput: vi.fn(),
     });
 
+    // Phase 0 step 8: pipeline-bound surfaces always pass
+    // `requireJsonSchema: true` and `allowProviderHealing: true` so the
+    // resolver never returns permissive `json_object` extras for them.
     expect(surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob).toHaveBeenCalledWith(
       'topicContent',
-      { jsonSchemaResponseFormat: schemaFormat },
+      {
+        requireJsonSchema: true,
+        allowProviderHealing: true,
+        jsonSchemaResponseFormat: schemaFormat,
+      },
     );
   });
 
@@ -285,7 +308,8 @@ describe('runContentGenerationJob', () => {
     // Plan v3 Q22: record the request, not the structured-output mode. Even in
     // legacy permissive json_object mode, the metadata must mirror the resolver
     // flag (lockstep with `plugins` presence) so durable Worker telemetry can
-    // consume it without re-deriving.
+    // consume it without re-deriving. Exercised here against a non-pipeline
+    // surface because Phase 0 step 8 forbids json_object on pipeline paths.
     surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue({
       responseFormat: { type: 'json_object' },
       plugins: [{ id: 'response-healing' }],
@@ -304,7 +328,7 @@ describe('runContentGenerationJob', () => {
       pipelineId: null,
       subjectId: 'sub',
       topicId: 'top',
-      llmSurfaceId: 'topicContent',
+      llmSurfaceId: 'studyQuestionExplain',
       chat: chat as IChatCompletionsRepository,
       model: 'm',
       messages: [{ role: 'user', content: 'hi' }],
@@ -401,5 +425,186 @@ describe('runContentGenerationJob', () => {
       includeOpenRouterReasoning: true,
       enableReasoning: true,
     }));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Phase 0 step 8 — pipeline strictness gate at the in-tab boundary
+  // ---------------------------------------------------------------------------
+
+  it('Phase 0 step 8: invokes validatePipelineSurfaceConfig for each pipeline-bound surface', async () => {
+    const pipelineSurfaces = [
+      'subjectGenerationTopics',
+      'subjectGenerationEdges',
+      'topicContent',
+      'crystalTrial',
+    ] as const;
+
+    for (const surfaceId of pipelineSurfaces) {
+      resetStore();
+      surfaceProvidersApi.validatePipelineSurfaceConfig.mockClear();
+      const streamChat = vi.fn(async function* stream() {
+        yield { type: 'content' as const, text: 'ok' };
+      });
+      const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+      await runContentGenerationJob({
+        kind: 'topic-theory',
+        label: `L — ${surfaceId}`,
+        pipelineId: null,
+        subjectId: 'sub',
+        topicId: 'top',
+        llmSurfaceId: surfaceId,
+        chat: chat as IChatCompletionsRepository,
+        model: 'm',
+        messages: [{ role: 'user', content: 'hi' }],
+        enableReasoning: false,
+        parseOutput: async () => ({ ok: true, data: 42 }),
+        persistOutput: vi.fn(),
+      });
+
+      expect(surfaceProvidersApi.validatePipelineSurfaceConfig).toHaveBeenCalledWith(surfaceId);
+    }
+  });
+
+  it('Phase 0 step 8: does NOT invoke validatePipelineSurfaceConfig for non-pipeline surfaces', async () => {
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: 'ok' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'L',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      llmSurfaceId: 'studyFormulaExplain',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableReasoning: false,
+      parseOutput: async () => ({ ok: true, data: 42 }),
+      persistOutput: vi.fn(),
+    });
+
+    expect(surfaceProvidersApi.validatePipelineSurfaceConfig).not.toHaveBeenCalled();
+  });
+
+  it('Phase 0 step 8: pipeline surface fails BEFORE LLM call when config validation fails', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    surfaceProvidersApi.validatePipelineSurfaceConfig.mockReturnValue({
+      ok: false,
+      code: 'config:missing-structured-output',
+      message:
+        "Pipeline-bound surface 'topicContent' is bound to OpenRouter config 'm0' (model 'mock'), which does not declare 'structured_outputs' among its supported parameters.",
+    });
+
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: 'should not arrive' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    const persistOutput = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'Theory — T',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      llmSurfaceId: 'topicContent',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableReasoning: false,
+      parseOutput: async () => ({ ok: true, data: 42 }),
+      persistOutput,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('structured_outputs');
+
+    // No LLM call, no resolver, no persist.
+    expect(streamChat).not.toHaveBeenCalled();
+    expect(surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob).not.toHaveBeenCalled();
+    expect(persistOutput).not.toHaveBeenCalled();
+
+    const j = Object.values(useContentGenerationStore.getState().jobs)[0];
+    expect(j?.status).toBe('failed');
+    expect(j?.metadata).toMatchObject({
+      configValidationFailureCode: 'config:missing-structured-output',
+    });
+    expect(j?.error).toContain('structured_outputs');
+
+    consoleSpy.mockRestore();
+  });
+
+  it('Phase 0 step 8: passes requireJsonSchema=true and allowProviderHealing=true for pipeline surfaces (no responseFormatOverride)', async () => {
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: 'ok' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    await runContentGenerationJob({
+      kind: 'crystal-trial',
+      label: 'Crystal Trial — T',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      llmSurfaceId: 'crystalTrial',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableReasoning: false,
+      parseOutput: async () => ({ ok: true, data: 42 }),
+      persistOutput: vi.fn(),
+    });
+
+    expect(surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob).toHaveBeenCalledWith(
+      'crystalTrial',
+      {
+        requireJsonSchema: true,
+        allowProviderHealing: true,
+        jsonSchemaResponseFormat: undefined,
+      },
+    );
+  });
+
+  it('Phase 0 step 8: pipeline surface with null resolver result emits NO responseFormat (no json_object fallback)', async () => {
+    // Mirrors the real-resolver behavior under requireJsonSchema=true with no
+    // jsonSchemaResponseFormat or no `structured_outputs` model capability:
+    // returns null. The chat-completions request body must not carry any
+    // responseFormat at all — the strict parser still runs against raw text.
+    surfaceProvidersApi.resolveOpenRouterStructuredChatExtrasForJob.mockReturnValue(null);
+
+    const streamChat = vi.fn(async function* stream() {
+      yield { type: 'content' as const, text: '{}' };
+    });
+    const chat: Pick<IChatCompletionsRepository, 'streamChat'> = { streamChat };
+
+    await runContentGenerationJob({
+      kind: 'topic-theory',
+      label: 'Theory — T',
+      pipelineId: null,
+      subjectId: 'sub',
+      topicId: 'top',
+      llmSurfaceId: 'topicContent',
+      chat: chat as IChatCompletionsRepository,
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      enableReasoning: false,
+      parseOutput: async () => ({ ok: true, data: 42 }),
+      persistOutput: vi.fn(),
+    });
+
+    const call = streamChat.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    expect(call).toBeDefined();
+    expect(call!.responseFormat).toBeUndefined();
+    expect(call!.plugins).toBeUndefined();
+
+    const jobs = Object.values(useContentGenerationStore.getState().jobs);
+    expect((jobs[0]?.metadata as Record<string, unknown> | undefined)?.structuredOutputMode).toBeUndefined();
+    expect((jobs[0]?.metadata as Record<string, unknown> | undefined)?.responseFormat).toBeUndefined();
   });
 });

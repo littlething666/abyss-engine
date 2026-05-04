@@ -3,10 +3,12 @@ import { v4 as uuid } from 'uuid';
 import type { ChatCompletionTool, ChatMessage, ChatResponseFormat, IChatCompletionsRepository } from '@/types/llm';
 import type { ContentGenerationJob, ContentGenerationJobKind } from '@/types/contentGeneration';
 import type { InferenceSurfaceId } from '@/types/llmInference';
+import { isPipelineInferenceSurfaceId } from '@/types/llmInference';
 import { isContentGenerationAbortReason } from '@/types/contentGenerationAbort';
 import {
   resolveIncludeOpenRouterReasoningParam,
   resolveOpenRouterStructuredChatExtrasForJob,
+  validatePipelineSurfaceConfig,
 } from '@/infrastructure/llmInferenceSurfaceProviders';
 
 import { buildPipelineFailureDebugBundle } from './debug/buildPipelineFailureDebugBundle';
@@ -24,7 +26,17 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
   pipelineId: string | null;
   subjectId: string | null;
   topicId: string | null;
-  /** Used to apply OpenRouter `json_object` / response-healing only when that surface uses OpenRouter. */
+  /**
+   * Surface id used to (a) resolve OpenRouter structured-output extras and
+   * reasoning flags and (b) gate pipeline-bound surfaces through
+   * {@link validatePipelineSurfaceConfig} BEFORE any LLM call (Phase 0
+   * step 6 + step 8 of the Durable Workflow Orchestration plan v3). For the
+   * four pipeline-bound surfaces (subjectGenerationTopics,
+   * subjectGenerationEdges, topicContent, crystalTrial) the resolver is
+   * called with `requireJsonSchema: true` so permissive `json_object`
+   * extras are never returned and the job runs in strict JSON Schema mode
+   * or fails loudly at the boundary.
+   */
   llmSurfaceId: InferenceSurfaceId;
 
   chat: IChatCompletionsRepository;
@@ -40,6 +52,12 @@ export interface ContentGenerationJobParams<TParsed = unknown> {
   /**
    * When set with `type: 'json_schema'`, passed to {@link resolveOpenRouterStructuredChatExtrasForJob}
    * so JSON Schema mode is used only when the bound model declares `structured_outputs`.
+   *
+   * Pipeline-bound surfaces are expected to provide this; without it the
+   * resolver returns null (no permissive `json_object` fallback) and the
+   * call proceeds in plain text mode while the strict parser still parses
+   * raw output. Non-pipeline surfaces continue to accept the legacy
+   * permissive shape when this is omitted.
    */
   responseFormatOverride?: ChatResponseFormat;
 
@@ -93,13 +111,53 @@ export async function runContentGenerationJob<TParsed>(
     }
   }
 
-  const structured = resolveOpenRouterStructuredChatExtrasForJob(params.llmSurfaceId, {
-    jsonSchemaResponseFormat:
-      params.responseFormatOverride?.type === 'json_schema'
-        ? params.responseFormatOverride
-        : undefined,
-  });
-  const includeOpenRouterReasoning = resolveIncludeOpenRouterReasoningParam(params.llmSurfaceId);
+  // -------------------------------------------------------------------------
+  // Phase 0 step 8 (Plan v3): pipeline-bound surfaces never run in permissive
+  // `json_object` mode. Two complementary gates:
+  //
+  //   1. validatePipelineSurfaceConfig (Phase 0 step 6) inspects the binding
+  //      + bound OpenRouter config and fails the job BEFORE any LLM call when
+  //      the surface is incapable of strict JSON Schema mode (no provider
+  //      binding / unknown config / missing `response_format` /
+  //      `structured_outputs`). Failure is recorded as a structured
+  //      `configValidationFailureCode` on job metadata so HUD / mentor /
+  //      telemetry can route it without re-parsing the message. The durable
+  //      Worker handler will mirror this gate in Phase 1 via
+  //      `generationRunEventHandlers.ts`.
+  //
+  //   2. resolveOpenRouterStructuredChatExtrasForJob is called with
+  //      `requireJsonSchema: true` for pipeline surfaces (Phase 0 step 5
+  //      option) so the resolver returns null when no `jsonSchemaResponseFormat`
+  //      is supplied or the model lacks `structured_outputs`. With null
+  //      extras the chat-completions request body carries NO `responseFormat`
+  //      at all — the strict parser still runs against the raw text and
+  //      fails loudly. This eliminates the previous `{ type: 'json_object' }`
+  //      fallback for pipeline paths.
+  //
+  // Non-pipeline surfaces (studyQuestionExplain, studyFormulaExplain) keep
+  // their existing permissive shape: validation is a no-op and the resolver
+  // is called with `requireJsonSchema: false` (default), preserving the
+  // legacy `json_object` fallback for those callers until the durable
+  // migration completes.
+  // -------------------------------------------------------------------------
+  const isPipelineSurface = isPipelineInferenceSurfaceId(params.llmSurfaceId);
+  const configValidation = isPipelineSurface
+    ? validatePipelineSurfaceConfig(params.llmSurfaceId)
+    : ({ ok: true } as const);
+
+  const structured = configValidation.ok
+    ? resolveOpenRouterStructuredChatExtrasForJob(params.llmSurfaceId, {
+        requireJsonSchema: isPipelineSurface,
+        allowProviderHealing: true,
+        jsonSchemaResponseFormat:
+          params.responseFormatOverride?.type === 'json_schema'
+            ? params.responseFormatOverride
+            : undefined,
+      })
+    : null;
+  const includeOpenRouterReasoning = configValidation.ok
+    ? resolveIncludeOpenRouterReasoningParam(params.llmSurfaceId)
+    : false;
   const enableStreamingForJob =
     structured?.forceNonStreaming ? false : params.enableStreaming;
 
@@ -128,6 +186,11 @@ export async function runContentGenerationJob<TParsed>(
     ...(structured?.responseFormat ? { responseFormat: structured.responseFormat } : {}),
     ...(structured?.plugins ? { plugins: structured.plugins } : {}),
     ...(params.tools ? { tools: params.tools } : {}),
+    // Phase 0 step 8: surface the structured config-validation failure code
+    // on the failed job's metadata so HUD / mentor / telemetry consumers can
+    // route on the typed `config:*` identity (lockstep with
+    // GENERATION_FAILURE_CODES) without re-parsing the error message.
+    ...(!configValidation.ok ? { configValidationFailureCode: configValidation.code } : {}),
     ...(params.metadata ?? {}),
   };
 
@@ -157,6 +220,15 @@ export async function runContentGenerationJob<TParsed>(
     useContentGenerationStore.getState().jobs[jobId];
 
   const debugCtx = params.failureDebugContext;
+
+  // Phase 0 step 8: bail out before any LLM call when the pipeline-bound
+  // surface is misconfigured. The job is registered first so HUD / debug
+  // surfaces see the failure as a normal terminal job entry.
+  if (!configValidation.ok) {
+    store.setJobError(jobId, configValidation.message);
+    finalizeJobFailedWithDebug(jobId, debugCtx);
+    return { ok: false, jobId, error: configValidation.message };
+  }
 
   try {
     const t0 = Date.now();
