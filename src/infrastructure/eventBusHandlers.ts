@@ -467,8 +467,39 @@ if (!g.__abyssEventBusHandlersRegistered) {
     }
   }
 
-  useCrystalTrialStore.subscribe(recomputeTrialAvailability);
-  useCrystalGardenStore.subscribe(recomputeTrialAvailability);
+  // Fix #1: gate the trial-availability watcher subscriptions on both
+  // stores reporting `persist.hasHydrated()`. Without this gate, the
+  // subscriptions attached at module-import time can fire
+  // `recomputeTrialAvailability` against a half-hydrated snapshot and
+  // either announce trials that are not yet available, or skip a real
+  // false→true edge once hydration completes. We compose zustand's
+  // per-store persist API (`hasHydrated()` /
+  // `onFinishHydration()`) -- no frame delays, no polling -- exactly as
+  // `@/features/progression/hydration.ts` does for boot init. The
+  // single recompute on attach guarantees an availability that already
+  // exists at the moment of hydration still produces a false→true
+  // announcement.
+  const attachTrialAvailabilityWatcher = (): void => {
+    useCrystalTrialStore.subscribe(recomputeTrialAvailability);
+    useCrystalGardenStore.subscribe(recomputeTrialAvailability);
+    recomputeTrialAvailability();
+  };
+  const trialHydrated = useCrystalTrialStore.persist.hasHydrated();
+  const gardenHydrated = useCrystalGardenStore.persist.hasHydrated();
+  if (trialHydrated && gardenHydrated) {
+    attachTrialAvailabilityWatcher();
+  } else {
+    let attached = false;
+    const tryAttach = (): void => {
+      if (attached) return;
+      if (!useCrystalTrialStore.persist.hasHydrated()) return;
+      if (!useCrystalGardenStore.persist.hasHydrated()) return;
+      attached = true;
+      attachTrialAvailabilityWatcher();
+    };
+    if (!trialHydrated) useCrystalTrialStore.persist.onFinishHydration(tryAttach);
+    if (!gardenHydrated) useCrystalGardenStore.persist.onFinishHydration(tryAttach);
+  }
 
   // ---- Phase C: content-generation terminal events → mentor triggers ----
   //
