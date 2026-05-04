@@ -115,9 +115,16 @@ export async function runContentGenerationJob<TParsed>(
       ? {
           structuredOutputMode: 'json_schema' as const,
           structuredOutputSchemaName: structured.responseFormat.json_schema.name,
-          responseHealingEnabled: Boolean(structured.plugins && structured.plugins.length > 0),
         }
       : {}),
+    // Phase 0 step 7 (Plan v3 Q22): record `providerHealingRequested` whenever
+    // the resolver returns OpenRouter structured extras. The flag is the
+    // authoritative source of truth from the resolver, mirrors `plugins`
+    // presence in the chat-completions request body, and is preserved across
+    // telemetry, failure dashboards, and the durable Worker `jobs.metadata_json`
+    // (Phase 1). Recording is unconditional on response-format mode because
+    // Q22 records the request, not the structured-output shape.
+    ...(structured ? { providerHealingRequested: structured.providerHealingRequested } : {}),
     ...(structured?.responseFormat ? { responseFormat: structured.responseFormat } : {}),
     ...(structured?.plugins ? { plugins: structured.plugins } : {}),
     ...(params.tools ? { tools: params.tools } : {}),
@@ -203,6 +210,7 @@ export async function runContentGenerationJob<TParsed>(
           structuredOutputContractViolation: true,
           structuredOutputMode: 'json_schema',
           structuredOutputSchemaName: rf.json_schema.name,
+          providerHealingRequested: structured.providerHealingRequested,
           localParserError: parsed.parseError ?? parsed.error,
         });
       }

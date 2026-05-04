@@ -69,7 +69,7 @@ export function resolveOpenRouterReasoningChatOptions(
 
 /**
  * OpenRouter-only: structured generation extras (`response_format`, optional `plugins`,
- * non-streaming).
+ * non-streaming, plus the authoritative `providerHealingRequested` metadata flag).
  *
  * Default behavior (no options or `requireJsonSchema: false`): when the bound model
  * declares `structured_outputs` and the caller supplies
@@ -85,9 +85,16 @@ export function resolveOpenRouterReasoningChatOptions(
  * boundary instead of degrading to permissive output. Binding-time / config-validation
  * enforcement of strict JSON Schema for pipeline-bound surfaces lives in
  * {@link assertPipelineSurfaceConfigValid} (Phase 0 step 6); full removal of
- * pipeline `json_object` reliance lands in Phase 0 step 8; recording
- * `providerHealingRequested` on jobs/runs derived from `allowProviderHealing` + the
- * resolved store value lands in Phase 0 step 7.
+ * pipeline `json_object` reliance lands in Phase 0 step 8.
+ *
+ * The returned `providerHealingRequested` flag is the AUTHORITATIVE source of truth
+ * for the "OpenRouter response-healing was requested for this call" signal. It is
+ * computed deterministically as `allowProviderHealing && healingEnabledByStore` and
+ * ALWAYS mirrors `plugins` presence (the `response-healing` plugin attaches iff
+ * `providerHealingRequested === true`). Per Plan v3 Q22, callers MUST record it on
+ * job/run metadata and telemetry; downstream parsers MUST still fail loudly when it
+ * is `true`. Provider healing is provider-side structured-output support, NOT
+ * permission for parser fallback.
  *
  * Returns null when the surface is not OpenRouter or the bound config does not list
  * `response_format` among supported parameters (existing no-`response_format`
@@ -127,12 +134,18 @@ export function resolveOpenRouterStructuredChatExtrasForJob(
     : { type: 'json_object' };
 
   const healingEnabledByStore = studySettingsStore.getState().openRouterResponseHealing;
-  const includeHealingPlugin = allowProviderHealing && healingEnabledByStore;
+  // Phase 0 step 7 (Plan v3 Q22): `providerHealingRequested` is the authoritative
+  // metadata flag surfaced to callers. The OpenRouter `response-healing` plugin
+  // attaches iff this flag is true — keeping the two in lockstep prevents the
+  // local job log / Worker `jobs.metadata_json` (Phase 1) from disagreeing with
+  // the actual chat-completions request body.
+  const providerHealingRequested = allowProviderHealing && healingEnabledByStore;
 
   return {
     responseFormat,
-    plugins: includeHealingPlugin ? [{ id: 'response-healing' }] : undefined,
+    plugins: providerHealingRequested ? [{ id: 'response-healing' }] : undefined,
     forceNonStreaming: true,
+    providerHealingRequested,
   };
 }
 
@@ -163,9 +176,10 @@ export type OpenRouterStructuredChatExtrasOptions = {
    * the caller forbids provider healing entirely and `plugins` is left undefined.
    *
    * Plan v3 Q22 keeps `response-healing` enabled for v1 pipelines together with
-   * strict JSON Schema mode — durable callers should pass `true` and Phase 0 step 7
-   * will record `providerHealingRequested` on jobs/runs derived from this flag
-   * combined with the resolved store value.
+   * strict JSON Schema mode. The resolved value of this flag combined with the
+   * store setting is surfaced authoritatively as
+   * {@link OpenRouterStructuredChatExtras.providerHealingRequested} for callers to
+   * record on job/run metadata (Phase 0 step 7).
    */
   allowProviderHealing?: boolean;
 };
@@ -174,6 +188,15 @@ export type OpenRouterStructuredChatExtras = {
   responseFormat: ChatResponseFormat;
   plugins: Array<{ id: string }> | undefined;
   forceNonStreaming: boolean;
+  /**
+   * Authoritative metadata flag for the OpenRouter `response-healing` plugin
+   * (Plan v3 Q22). Computed as `allowProviderHealing && healingEnabledByStore`
+   * and ALWAYS mirrors `plugins` presence. Callers MUST record this on job/run
+   * metadata and telemetry; downstream parsers MUST still fail loudly even when
+   * this is `true`. Provider healing is provider-side structured-output support,
+   * NOT permission for parser fallback.
+   */
+  providerHealingRequested: boolean;
 };
 
 /**
