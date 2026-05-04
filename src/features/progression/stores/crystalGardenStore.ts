@@ -27,6 +27,12 @@ export interface CrystalGardenActions {
 
 export type CrystalGardenStore = CrystalGardenState & CrystalGardenActions;
 
+type CrystalGardenPersistedState = {
+	activeCrystals: ActiveCrystal[];
+	unlockPoints: number;
+	resonancePoints: number;
+};
+
 const CRYSTAL_GARDEN_STORAGE_KEY = 'abyss-crystal-garden-v0';
 
 export const useCrystalGardenStore = create<CrystalGardenStore>()(
@@ -48,6 +54,12 @@ export const useCrystalGardenStore = create<CrystalGardenStore>()(
 				unlockPoints: state.unlockPoints,
 				resonancePoints: state.resonancePoints,
 			}),
+			// Reserved schema-upgrade slot. Identity at v0 so a future v1 bump
+			// has a defined entry point instead of having to retro-fit a
+			// migration path. Replace with the real shape transform when
+			// `version` is bumped past 0.
+			migrate: (persistedState) =>
+				persistedState as unknown as CrystalGardenPersistedState,
 		},
 	),
 );
