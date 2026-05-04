@@ -6,24 +6,30 @@ import {
 import { waitForSceneProbe } from '../utils/three-probe';
 
 /**
- * Verifies that a level-up sequence fires `abyss-crystal:leveled` and that the
- * ceremony store lifecycle transitions through "in progress" then clears.
+ * Verifies the crystal-trial pass sequence dispatches
+ * `abyss-crystal-trial:completed` with `passed === true` via the
+ * production trial API exposed on `AbyssDev` (`triggerTrial` →
+ * `submitTrialCorrect`).
  *
- * This test is written defensively: if the test harness does not expose an
- * `awardXp`/`forceLevelUp` hook, it is skipped rather than faking progression.
+ * History: this spec previously drove a now-retired `AbyssDev.forceLevelUp`
+ * shim (follow-up plan §1 Option B retired the surface as a no-op
+ * stub). Routing through the real trial path doubles this test as
+ * regression coverage for the user-visible trial flow that the dev
+ * shim used to bypass.
+ *
+ * Scope note: crossing the level boundary itself (the
+ * `abyss-crystal:leveled` event) is gated on the player clicking the
+ * Level Up button in `CrystalTrialModal` after a passing trial — that
+ * UI step is exercised by `tests/crystal-trial/*.spec.ts` and is
+ * intentionally out of scope here. This spec asserts the deterministic
+ * slice reachable from `AbyssDev` alone (trial pass), keeping the
+ * level-boundary contract testable from a single canonical place.
  */
-test.describe('3D scene — crystal level-up', () => {
-  test('crystal level-up dispatches abyss-crystal:leveled', async ({ seededApp: page }) => {
+test.describe('3D scene — crystal trial pass', () => {
+  test('passing a crystal trial dispatches abyss-crystal-trial:completed', async ({
+    seededApp: page,
+  }) => {
     await waitForSceneProbe(page);
-
-    const canForce = await page.evaluate(() => {
-      const dev = (window as unknown as {
-        abyssDev?: { forceLevelUp?: (topicId: string) => Promise<boolean> };
-      }).abyssDev;
-      return typeof dev?.forceLevelUp === 'function';
-    });
-
-    test.skip(!canForce, 'abyssDev.forceLevelUp not available in this build');
 
     const topicId = await page.evaluate(async () => {
       const dev = (window as unknown as {
@@ -32,7 +38,6 @@ test.describe('3D scene — crystal level-up', () => {
             t: 'FLASHCARD',
           ) => Promise<{ topicId: string; cardId: string } | null>;
           spawnCrystal?: (id: string) => Promise<void>;
-          forceLevelUp?: (id: string) => Promise<boolean>;
         };
       }).abyssDev;
       if (!dev) return null;
@@ -45,18 +50,37 @@ test.describe('3D scene — crystal level-up', () => {
     expect(topicId).toBeTruthy();
 
     const priorEvents = await getProgressionEventCount(page);
-    const applied = await page.evaluate(async (id: string) => {
+
+    const triggered = await page.evaluate(async (id: string) => {
       const dev = (window as unknown as {
-        abyssDev?: { forceLevelUp?: (id: string) => Promise<boolean> };
+        abyssDev?: { triggerTrial?: (id: string) => Promise<boolean> };
       }).abyssDev;
-      return Boolean(await dev?.forceLevelUp?.(id));
+      return Boolean(await dev?.triggerTrial?.(id));
     }, topicId!);
 
-    test.skip(!applied, 'forceLevelUp did not apply (requires progression store support)');
+    expect(triggered).toBe(true);
 
-    const leveled = await waitForProgressionEvent(page, 'abyss-crystal:leveled', priorEvents, 5000);
-    const detail = leveled.detail as { topicId?: string; to?: number } | undefined;
+    const submitted = await page.evaluate(async (id: string) => {
+      const dev = (window as unknown as {
+        abyssDev?: { submitTrialCorrect?: (id: string) => Promise<unknown> };
+      }).abyssDev;
+      const r = await dev?.submitTrialCorrect?.(id);
+      return r ?? null;
+    }, topicId!);
+
+    expect(submitted).not.toBeNull();
+
+    const completed = await waitForProgressionEvent(
+      page,
+      'abyss-crystal-trial:completed',
+      priorEvents,
+      5000,
+    );
+    const detail = completed.detail as
+      | { topicId?: string; passed?: boolean; targetLevel?: number }
+      | undefined;
     expect(detail?.topicId).toBe(topicId);
-    expect(typeof detail?.to).toBe('number');
+    expect(detail?.passed).toBe(true);
+    expect(typeof detail?.targetLevel).toBe('number');
   });
 });

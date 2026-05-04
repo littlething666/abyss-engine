@@ -79,7 +79,6 @@ export interface AbyssDev {
   rateCurrentCard: (rating: 0 | 1 | 2 | 3) => void;
   getMiniGameContent: () => unknown | null;
   getMiniGameState: () => unknown | null;
-  forceLevelUp: (topicId: string) => Promise<boolean>;
   triggerTrial: (topicId: string) => Promise<boolean>;
   submitTrialCorrect: (topicId: string) => Promise<unknown>;
   submitTrialWrong: (topicId: string) => Promise<unknown>;
@@ -346,14 +345,17 @@ const abyssDev: AbyssDev = {
     return ui.getMiniGameState?.() ?? ui.miniGameInteraction ?? null;
   },
 
-  // No `forceCrystalLevelUp` exists on the new store surface and the legacy
-  // implementation already returned `false` (the cast probed for a method
-  // that was never defined). Preserving that contract avoids introducing
-  // new behavior during the refactor window; specs that need a real level
-  // up should drive `triggerTrial` + `submitTrialCorrect`.
-  forceLevelUp: async (_topicId: string) => {
-    return false;
-  },
+  // Note: the prior `forceLevelUp(topicId)` no-op stub was retired here
+  // (follow-up plan §1 Option B). The previous implementation always
+  // returned `false` because the legacy `forceCrystalLevelUp` it tried
+  // to call never existed on the new domain stores; specs that drove it
+  // skipped silently. E2E specs that need a real level-up should drive
+  // the production trial path: `triggerTrial(topicId)` →
+  // `submitTrialCorrect(topicId)`, then click the Level Up button in
+  // `CrystalTrialModal` (the user-facing flow). Crossing the level
+  // boundary is gated on that click; see
+  // `src/infrastructure/eventBusHandlers.ts` (`crystal-trial:completed`
+  // handler) for the contract.
 
   triggerTrial: async (topicId: string) => {
     const subjectId = subjectIdForTopic(topicId);

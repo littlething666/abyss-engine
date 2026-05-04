@@ -53,7 +53,6 @@ declare global {
       rateCurrentCard: (rating: 0 | 1 | 2 | 3) => void;
       getMiniGameContent: () => unknown | null;
       getMiniGameState: () => unknown | null;
-      forceLevelUp: (topicId: string) => Promise<boolean>;
       triggerTrial: (topicId: string) => Promise<boolean>;
       submitTrialCorrect: (topicId: string) => Promise<unknown>;
       submitTrialWrong: (topicId: string) => Promise<unknown>;
