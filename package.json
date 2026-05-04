@@ -17,6 +17,7 @@
     "test:unit": "vitest",
     "test:unit:run": "vitest run",
     "test:unit:coverage": "vitest run --coverage",
+    "test:eval": "vitest run src/features/generationContracts/evalFixtures",
     "generate:topic-icons": "tsx scripts/generate-topic-icon-nodes.ts",
     "check:topic-icons": "pnpm generate:topic-icons && git diff --exit-code -- src/graphics/labels/generated/topicIconNodes.ts",
     "generate:mentor-icons": "tsx scripts/generate-mentor-icon-nodes.ts",
