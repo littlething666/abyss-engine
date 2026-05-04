@@ -34,14 +34,29 @@ export {
 
 export type { Artifact, ArtifactEnvelope, ArtifactKind } from './artifacts/types';
 
-export type {
-  CrystalTrialRunInputSnapshot,
-  RunInputSnapshot,
-  RunInputSnapshotEnvelope,
-  SubjectGraphEdgesRunInputSnapshot,
-  SubjectGraphTopicsRunInputSnapshot,
-  TopicExpansionRunInputSnapshot,
-  TopicMiniGameCardsRunInputSnapshot,
-  TopicStudyCardsRunInputSnapshot,
-  TopicTheoryRunInputSnapshot,
-} from './snapshots/types';
+export {
+  buildSubjectGraphTopicsSnapshot,
+  type BuildSubjectGraphTopicsSnapshotParams,
+  buildSubjectGraphEdgesSnapshot,
+  type BuildSubjectGraphEdgesSnapshotParams,
+  buildTopicTheorySnapshot,
+  type BuildTopicTheorySnapshotParams,
+  buildTopicStudyCardsSnapshot,
+  type BuildTopicStudyCardsSnapshotParams,
+  buildTopicMiniGameCardsSnapshot,
+  type BuildTopicMiniGameCardsSnapshotParams,
+  type MiniGamePipelineKind,
+  buildTopicExpansionSnapshot,
+  type BuildTopicExpansionSnapshotParams,
+  buildCrystalTrialSnapshot,
+  type BuildCrystalTrialSnapshotParams,
+  type CrystalTrialRunInputSnapshot,
+  type RunInputSnapshot,
+  type RunInputSnapshotEnvelope,
+  type SubjectGraphEdgesRunInputSnapshot,
+  type SubjectGraphTopicsRunInputSnapshot,
+  type TopicExpansionRunInputSnapshot,
+  type TopicMiniGameCardsRunInputSnapshot,
+  type TopicStudyCardsRunInputSnapshot,
+  type TopicTheoryRunInputSnapshot,
+} from './snapshots';
