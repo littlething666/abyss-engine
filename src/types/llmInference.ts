@@ -16,6 +16,42 @@ export const ALL_SURFACE_IDS: readonly InferenceSurfaceId[] = [
   'crystalTrial',
 ] as const;
 
+/**
+ * Subset of inference surfaces that drive durable, pipeline-bound generation:
+ * Subject Graph topics (`subjectGenerationTopics`), Subject Graph edges
+ * (`subjectGenerationEdges`), Topic Content Pipeline / Topic Expansion
+ * (`topicContent`), and Crystal Trial (`crystalTrial`).
+ *
+ * These surfaces require strict JSON Schema-capable model bindings because
+ * their parsers run in `json_schema` strict mode (Phase 0 step 3) and never
+ * fall back to permissive `json_object` output (Phase 0 step 4 deprecation;
+ * Phase 0 step 8 removal). Non-pipeline surfaces (e.g. `studyQuestionExplain`,
+ * `studyFormulaExplain`) are NOT in this set: they continue to accept the
+ * legacy permissive `json_object` shape until the durable migration completes.
+ *
+ * Adding a surface here requires adding the corresponding pipeline snapshot
+ * builder + binding-time validation entry.
+ */
+export const PIPELINE_INFERENCE_SURFACE_IDS = [
+  'subjectGenerationTopics',
+  'subjectGenerationEdges',
+  'topicContent',
+  'crystalTrial',
+] as const satisfies readonly InferenceSurfaceId[];
+
+export type PipelineInferenceSurfaceId = (typeof PIPELINE_INFERENCE_SURFACE_IDS)[number];
+
+const PIPELINE_SURFACE_ID_SET: ReadonlySet<InferenceSurfaceId> = new Set(
+  PIPELINE_INFERENCE_SURFACE_IDS,
+);
+
+/** True when the surface drives a durable, pipeline-bound generation flow. */
+export function isPipelineInferenceSurfaceId(
+  surfaceId: InferenceSurfaceId,
+): surfaceId is PipelineInferenceSurfaceId {
+  return PIPELINE_SURFACE_ID_SET.has(surfaceId);
+}
+
 export type LlmInferenceProviderId = 'local' | 'openrouter';
 
 export const ALL_PROVIDER_IDS: readonly LlmInferenceProviderId[] = [
