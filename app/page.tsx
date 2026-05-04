@@ -13,6 +13,7 @@ import {
   useRemainingRitualCooldownMs,
   useSM2Store,
   useStudySessionStore,
+  whenProgressionHydrated,
 } from '@/features/progression';
 import { undoManager } from '@/features/progression/undoManager';
 import { useUIStore } from '@/store/uiStore';
@@ -187,10 +188,19 @@ const HomeContent: React.FC = () => {
 
   useEffect(() => {
     initAbyssDev();
-    if (!initializedRef.current) {
-      initializedRef.current = true;
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    // Fix #1: gate boot init on the progression hydration barrier. The
+    // orchestrator's `initialize()` reads `useBuffStore` and writes the
+    // hydrated/pruned result back; running it before the buff slice has
+    // resolved `persist.hasHydrated()` would observe a blank `activeBuffs`
+    // array and clobber the persisted snapshot. The barrier composes
+    // zustand's per-store `persist.hasHydrated()` /
+    // `onFinishHydration()` API — no frame delays, no polling.
+    const unsubscribe = whenProgressionHydrated(() => {
       initialize();
-    }
+    });
+    return unsubscribe;
   }, [initialize]);
 
   const handleRate = (cardId: string, isCorrect?: boolean, selfRating?: Rating) => {
