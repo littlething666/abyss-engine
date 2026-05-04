@@ -136,7 +136,7 @@ function dedupeBuffsById(buffs: Buff[]): Buff[] {
 			continue;
 		}
 		seen.add(dedupeKey);
-		deduped.push(buff);
+		derived.push(buff);
 	}
 	return deduped.reverse();
 }
@@ -191,10 +191,14 @@ export function startTopicStudySession(ref: TopicRef, cards: Card[]): void {
 		return acc;
 	}, {});
 	const pending = ss.pendingRitual;
-	const sessionId =
-		pending?.subjectId === ref.subjectId && pending?.topicId === ref.topicId
-			? pending.sessionId
-			: makeStudySessionId(ref);
+	// Fix #3: the same gate decides BOTH whether to adopt the pending
+	// ritual's sessionId and whether to clear it. Starting topic-B must
+	// not destroy a queued ritual for topic-A.
+	const pendingMatchesTopic =
+		pending?.subjectId === ref.subjectId && pending?.topicId === ref.topicId;
+	const sessionId = pendingMatchesTopic
+		? pending!.sessionId
+		: makeStudySessionId(ref);
 	const startedAt = Date.now();
 	const activeBuffIds = buff.activeBuffs.map((b) => b.buffId);
 
@@ -216,7 +220,9 @@ export function startTopicStudySession(ref: TopicRef, cards: Card[]): void {
 			cardTypeById,
 			hintUsedByCardId: {},
 		},
-		pendingRitual: null,
+		// Only consume the pending ritual when it belongs to the topic
+		// we're starting; otherwise leave it intact for its owning topic.
+		...(pendingMatchesTopic ? { pendingRitual: null } : {}),
 	});
 
 	appEventBus.emit('study-panel:history-applied', {
@@ -229,18 +235,78 @@ export function startTopicStudySession(ref: TopicRef, cards: Card[]): void {
 	});
 }
 
+/**
+ * Focus a specific card within the current topic's study session.
+ *
+ * Fix #2: when an active session for the same topic already exists,
+ * preserve all session state -- attempts, sessionId, startedAt,
+ * activeBuffIds, hintUsedByCardId, undo stack, etc. -- and just fold
+ * the requested card into the queue (in-place if already queued,
+ * prepended otherwise). Only when there is no active session, or the
+ * active session belongs to a different topic, is
+ * `startTopicStudySession` invoked. That single fresh-session path is
+ * the only thing that resets the per-session bookkeeping.
+ */
 export function focusStudyCard(
 	ref: TopicRef,
 	cards: Card[],
 	focusCardId: string | null = null,
 ): void {
-	startTopicStudySession(ref, cards);
-	if (!focusCardId) {
+	const priorSession = useStudySessionStore.getState().currentSession;
+	const sameTopicActiveSession =
+		priorSession !== null &&
+		priorSession.subjectId === ref.subjectId &&
+		priorSession.topicId === ref.topicId;
+
+	if (!sameTopicActiveSession) {
+		// Fresh-session path: no active session, or it belongs to a
+		// different topic. `startTopicStudySession` rebuilds the queue,
+		// resets attempts/undo/etc. This is the only branch that
+		// destroys per-session bookkeeping.
+		startTopicStudySession(ref, cards);
+		if (!focusCardId) {
+			return;
+		}
+
+		const fresh = useStudySessionStore.getState().currentSession;
+		if (
+			!fresh ||
+			fresh.subjectId !== ref.subjectId ||
+			fresh.topicId !== ref.topicId
+		) {
+			return;
+		}
+		if (!cards.some((card) => card.id === focusCardId)) {
+			return;
+		}
+
+		const focusKey = cardRefKey({ ...ref, cardId: focusCardId });
+		if (fresh.queueCardIds.includes(focusKey)) {
+			useStudySessionStore.setState({
+				currentSession: { ...fresh, currentCardId: focusKey },
+			});
+			return;
+		}
+
+		const freshQueue = [
+			focusKey,
+			...fresh.queueCardIds.filter((id) => id !== focusKey),
+		];
+		useStudySessionStore.setState({
+			currentSession: {
+				...fresh,
+				queueCardIds: freshQueue,
+				currentCardId: focusKey,
+				totalCards: freshQueue.length,
+			},
+		});
 		return;
 	}
 
-	const session = useStudySessionStore.getState().currentSession;
-	if (!session || session.subjectId !== ref.subjectId || session.topicId !== ref.topicId) {
+	// Same-topic in-flight session: PRESERVE state. Re-entering
+	// `focusStudyCard` with no focus target (e.g. a duplicate "open
+	// study panel" event) is a no-op -- not a session restart.
+	if (!focusCardId) {
 		return;
 	}
 	if (!cards.some((card) => card.id === focusCardId)) {
@@ -248,20 +314,60 @@ export function focusStudyCard(
 	}
 
 	const focusKey = cardRefKey({ ...ref, cardId: focusCardId });
-	if (session.queueCardIds.includes(focusKey)) {
+	const now = Date.now();
+
+	// Merge incoming card metadata. New entries (deck expanded since the
+	// session started -- e.g. level-up triggered expansion) take their
+	// values from the fresh `cards` list; existing entries are preserved
+	// so we never overwrite metadata for cards already in the session.
+	const incomingDifficulty = cards.reduce<Record<string, number>>((acc, card) => {
+		acc[card.id] = card.difficulty;
+		return acc;
+	}, {});
+	const incomingType = cards.reduce<Record<string, string>>((acc, card) => {
+		acc[card.id] = card.type;
+		return acc;
+	}, {});
+	const mergedCardDifficultyById: Record<string, number> = {
+		...incomingDifficulty,
+		...(priorSession.cardDifficultyById ?? {}),
+	};
+	const mergedCardTypeById: Record<string, string> = {
+		...incomingType,
+		...(priorSession.cardTypeById ?? {}),
+	};
+
+	if (priorSession.queueCardIds.includes(focusKey)) {
+		// Already queued: shift focus only, preserve queue order so any
+		// reordering the player did via the timeline survives. Refresh
+		// `lastCardStart` so per-card timing measures from "now".
 		useStudySessionStore.setState({
-			currentSession: { ...session, currentCardId: focusKey },
+			currentSession: {
+				...priorSession,
+				currentCardId: focusKey,
+				lastCardStart: now,
+				cardDifficultyById: mergedCardDifficultyById,
+				cardTypeById: mergedCardTypeById,
+			},
 		});
 		return;
 	}
 
-	const queue = [focusKey, ...session.queueCardIds.filter((id) => id !== focusKey)];
+	// Not yet queued (e.g. the player re-opened the study panel for a
+	// card that wasn't due originally): prepend the focus card. The
+	// total card count grows by one so the progress UI reflects the new
+	// queue length. `attempts` is preserved -- already-reviewed cards
+	// stay reviewed.
+	const nextQueue = [focusKey, ...priorSession.queueCardIds];
 	useStudySessionStore.setState({
 		currentSession: {
-			...session,
-			queueCardIds: queue,
+			...priorSession,
+			queueCardIds: nextQueue,
 			currentCardId: focusKey,
-			totalCards: queue.length,
+			totalCards: nextQueue.length,
+			lastCardStart: now,
+			cardDifficultyById: mergedCardDifficultyById,
+			cardTypeById: mergedCardTypeById,
 		},
 	});
 }
