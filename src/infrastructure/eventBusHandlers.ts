@@ -90,6 +90,22 @@ function assertStudyPanelHistoryContext(
 if (!g.__abyssEventBusHandlersRegistered) {
   g.__abyssEventBusHandlersRegistered = true;
 
+  // Fix #8: HMR-safe subscription teardown. Every listener
+  // registration -- `appEventBus.on`, store `subscribe`, `pubSubClient.on`
+  // -- pushes its unsubscribe function here. The `import.meta.hot?.dispose`
+  // hook at the bottom of the registration block invokes them in
+  // reverse on a hot re-evaluation so the new module load registers
+  // fresh handlers without ghost listeners from the prior load.
+  const disposers: Array<() => void> = [];
+
+  // `useCrystalTrialStore.persist.onFinishHydration` cannot be
+  // cancelled via the zustand persist API. The async hydration could
+  // resolve after dispose and try to attach store subscribers to a
+  // torn-down disposer list. Guard with a module-local flag so the
+  // post-hydration attach path becomes a no-op once the module is
+  // disposed.
+  let disposed = false;
+
   const activeExpansionJobs = new Map<string, AbortController>();
 
   // Module-scoped dedupe for the post-curriculum onboarding trigger.
@@ -100,7 +116,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
   // keeps the celebration line for subjects already engaged with.
   const firedSubjectUnlockFirstCrystal = new Set<string>();
 
-  appEventBus.on('card:reviewed', (e) => {
+  disposers.push(appEventBus.on('card:reviewed', (e) => {
     telemetry.log(
       'study-card:reviewed',
       {
@@ -154,9 +170,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
         }
       }
     }
-  });
+  }));
 
-  appEventBus.on('xp:gained', (e) => {
+  disposers.push(appEventBus.on('xp:gained', (e) => {
     telemetry.log(
       'xp:gained',
       {
@@ -168,9 +184,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       },
       { subjectId: e.subjectId, topicId: e.topicId, sessionId: e.sessionId },
     );
-  });
+  }));
 
-  appEventBus.on('topic-content:generation-requested', (e) => {
+  disposers.push(appEventBus.on('topic-content:generation-requested', (e) => {
     void runTopicGenerationPipeline({
       chat: getChatCompletionsRepositoryForSurface('topicContent'),
       deckRepository,
@@ -181,9 +197,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       forceRegenerate: e.forceRegenerate,
       stage: e.stage,
     });
-  });
+  }));
 
-  appEventBus.on('subject-graph:generation-requested', (e) => {
+  disposers.push(appEventBus.on('subject-graph:generation-requested', (e) => {
     const subjectName = e.checklist.topicName.trim() || e.subjectId;
     recordFirstSubjectGenerationEnqueued(e.subjectId);
     // The bus enqueue is always the topics stage of the subject pipeline;
@@ -201,9 +217,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       { subjectId: e.subjectId, checklist: e.checklist },
       { stageBindings, writer: deckWriter },
     );
-  });
+  }));
 
-  appEventBus.on('subject-graph:generated', (e) => {
+  disposers.push(appEventBus.on('subject-graph:generated', (e) => {
     void (async () => {
       const subjectName = await resolveSubjectDisplayName(e.subjectId);
 
@@ -252,9 +268,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       },
       { subjectId: e.subjectId },
     );
-  });
+  }));
 
-  appEventBus.on('subject-graph:generation-failed', (e) => {
+  disposers.push(appEventBus.on('subject-graph:generation-failed', (e) => {
     // Phase D: the failure toast is gone. The mentor failure dialog
     // (priority 82) carries the player-facing surface; the rule engine
     // always exposes an `open_generation_hud` choice so the player can
@@ -278,9 +294,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       },
       { subjectId: e.subjectId },
     );
-  });
+  }));
 
-  appEventBus.on('subject-graph:validation-failed', (e) => {
+  disposers.push(appEventBus.on('subject-graph:validation-failed', (e) => {
     console.error(
       `[subject-graph:validation-failed] subject=${e.subjectId} stage=${e.stage} ` +
         `model=${e.boundModel} retryCount=${e.retryCount}: ${e.error}`,
@@ -303,20 +319,20 @@ if (!g.__abyssEventBusHandlersRegistered) {
       },
       { subjectId: e.subjectId },
     );
-  });
+  }));
 
   // Crystal unlocked: present spawn ceremony with UI-store-sourced isDialogOpen.
   // Phase 1 step 6 chokepoint — `crystalGardenOrchestrator.unlockTopic` emits
   // this; the legacy `progressionStore.unlockTopic` still calls
   // `presentCeremony` directly until Phase 2 caller migration retires it.
-  appEventBus.on('crystal:unlocked', (e) => {
+  disposers.push(appEventBus.on('crystal:unlocked', (e) => {
     const isDialogOpen = selectIsAnyModalOpen(useUIStore.getState());
     crystalCeremonyStore
       .getState()
       .presentCeremony({ subjectId: e.subjectId, topicId: e.topicId }, isDialogOpen);
-  });
+  }));
 
-  appEventBus.on('crystal:leveled', (e) => {
+  disposers.push(appEventBus.on('crystal:leveled', (e) => {
     telemetry.log(
       'crystal:leveled',
       {
@@ -358,10 +374,10 @@ if (!g.__abyssEventBusHandlersRegistered) {
     // Mentor side-effect: forward level-up to the mentor rule engine. Cooldown
     // and one-shot suppression are enforced by the engine + mentor store.
     handleMentorTrigger('crystal:leveled', { from: e.from, to: e.to });
-  });
+  }));
 
   // Crystal Trial: background pre-generation triggered on positive XP gains
-  appEventBus.on('crystal-trial:pregeneration-requested', (e) => {
+  disposers.push(appEventBus.on('crystal-trial:pregeneration-requested', (e) => {
     const trialStore = useCrystalTrialStore.getState();
     const ref = { subjectId: e.subjectId, topicId: e.topicId };
 
@@ -389,14 +405,14 @@ if (!g.__abyssEventBusHandlersRegistered) {
       topicId: e.topicId,
       targetLevel: e.targetLevel,
     });
-  });
+  }));
 
   // Crystal Trial: completed (pass or fail)
   // NOTE: On pass, the trial is NOT cleared here. It stays in 'passed' status
   // so the modal can display results. clearTrial() is called from the modal's
   // handleLevelUp callback after the user clicks the Level Up button and XP
   // is applied to cross the level boundary.
-  appEventBus.on('crystal-trial:completed', (e) => {
+  disposers.push(appEventBus.on('crystal-trial:completed', (e) => {
     telemetry.log(
       'crystal-trial:completed',
       {
@@ -413,7 +429,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
     // On failure, trial status is already set to 'cooldown' by submitTrial().
     // On pass, trial status is already set to 'passed' by submitTrial().
     // clearTrial for passed trials is handled by the modal's Level Up button.
-  });
+  }));
 
   // ---- Mentor side-effect: trial-availability watcher ----
   //
@@ -479,9 +495,15 @@ if (!g.__abyssEventBusHandlersRegistered) {
   // single recompute on attach guarantees an availability that already
   // exists at the moment of hydration still produces a false→true
   // announcement.
+  //
+  // Fix #8: each subscription's unsubscribe is pushed onto `disposers`
+  // so a hot re-evaluation tears them down. The deferred attach path
+  // additionally checks `disposed` so a hydration that resolves *after*
+  // dispose becomes a no-op rather than re-attaching dead listeners.
   const attachTrialAvailabilityWatcher = (): void => {
-    useCrystalTrialStore.subscribe(recomputeTrialAvailability);
-    useCrystalGardenStore.subscribe(recomputeTrialAvailability);
+    if (disposed) return;
+    disposers.push(useCrystalTrialStore.subscribe(recomputeTrialAvailability));
+    disposers.push(useCrystalGardenStore.subscribe(recomputeTrialAvailability));
     recomputeTrialAvailability();
   };
   const trialHydrated = useCrystalTrialStore.persist.hasHydrated();
@@ -491,7 +513,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
   } else {
     let attached = false;
     const tryAttach = (): void => {
-      if (attached) return;
+      if (attached || disposed) return;
       if (!useCrystalTrialStore.persist.hasHydrated()) return;
       if (!useCrystalGardenStore.persist.hasHydrated()) return;
       attached = true;
@@ -510,7 +532,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
   // (subjectId, topicId)) and failure CTA wiring live in the rule engine,
   // so each handler stays thin.
 
-  appEventBus.on('topic-content:generation-completed', (e) => {
+  disposers.push(appEventBus.on('topic-content:generation-completed', (e) => {
     // Only the full-pipeline success surfaces the topic-ready prod.
     // Partial-stage successes (theory / study-cards / mini-games) are
     // progress signals owned by the generation HUD; surfacing them as
@@ -522,9 +544,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       topicLabel: e.topicLabel,
       pipelineId: e.pipelineId,
     });
-  });
+  }));
 
-  appEventBus.on('topic-content:generation-failed', (e) => {
+  disposers.push(appEventBus.on('topic-content:generation-failed', (e) => {
     console.error(
       `[topic-content:generation-failed] subject=${e.subjectId} topic=${e.topicId} ` +
         `stage=${e.stage}: ${e.errorMessage}`,
@@ -536,9 +558,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       errorMessage: e.errorMessage,
       ...(e.jobId && e.failureKey ? { jobId: e.jobId, failureKey: e.failureKey } : {}),
     });
-  });
+  }));
 
-  appEventBus.on('topic-expansion:generation-failed', (e) => {
+  disposers.push(appEventBus.on('topic-expansion:generation-failed', (e) => {
     console.error(
       `[topic-expansion:generation-failed] subject=${e.subjectId} topic=${e.topicId} ` +
         `level=${e.level}: ${e.errorMessage}`,
@@ -551,9 +573,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       errorMessage: e.errorMessage,
       ...(e.jobId && e.failureKey ? { jobId: e.jobId, failureKey: e.failureKey } : {}),
     });
-  });
+  }));
 
-  appEventBus.on('crystal-trial:generation-failed', (e) => {
+  disposers.push(appEventBus.on('crystal-trial:generation-failed', (e) => {
     console.error(
       `[crystal-trial:generation-failed] subject=${e.subjectId} topic=${e.topicId} ` +
         `level=${e.level}: ${e.errorMessage}`,
@@ -566,9 +588,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       errorMessage: e.errorMessage,
       ...(e.jobId && e.failureKey ? { jobId: e.jobId, failureKey: e.failureKey } : {}),
     });
-  });
+  }));
 
-  appEventBus.on('content-generation:retry-failed', (e) => {
+  disposers.push(appEventBus.on('content-generation:retry-failed', (e) => {
     console.error(
       `[content-generation:retry-failed] subject=${e.subjectId} jobLabel=${e.jobLabel}: ` +
         `${e.errorMessage}`,
@@ -583,12 +605,14 @@ if (!g.__abyssEventBusHandlersRegistered) {
       failureInstanceId: e.failureInstanceId,
       failureKey: e.failureKey,
     });
-  });
+  }));
 
   // Card pool change detection: invalidate pre-generated trials.
   // Subscribes to the renamed v1 pubsub event `topic-cards:updated` published
   // by `deckContentWriter.persistTopicContentBundle(...)`.
-  pubSubClient.on('topic-cards:updated', (msg) => {
+  // `pubSubClient.on(...)` follows the same `() => void` unsubscribe
+  // contract as `appEventBus.on(...)`, so the disposer wiring is symmetric.
+  disposers.push(pubSubClient.on('topic-cards:updated', (msg) => {
     if (!msg.subjectId || !msg.topicId) {
       return;
     }
@@ -629,9 +653,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
         currentLevel,
       });
     }
-  });
+  }));
 
-  appEventBus.on('session:completed', (e) => {
+  disposers.push(appEventBus.on('session:completed', (e) => {
     telemetry.log(
       'study-session:completed',
       {
@@ -651,9 +675,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       correctRate: e.correctRate,
       totalAttempts: e.totalAttempts,
     });
-  });
+  }));
 
-  appEventBus.on('attunement-ritual:submitted', (e) => {
+  disposers.push(appEventBus.on('attunement-ritual:submitted', (e) => {
     telemetry.log(
       'attunement-ritual:submitted',
       {
@@ -664,9 +688,9 @@ if (!g.__abyssEventBusHandlersRegistered) {
       },
       { subjectId: e.subjectId, topicId: e.topicId },
     );
-  });
+  }));
 
-  appEventBus.on('study-panel:history-applied', (e) => {
+  disposers.push(appEventBus.on('study-panel:history-applied', (e) => {
     assertStudyPanelHistoryContext(e);
 
     if (e.action === 'submit') {
@@ -706,14 +730,35 @@ if (!g.__abyssEventBusHandlersRegistered) {
         { sessionId: e.sessionId, subjectId: e.subjectId, topicId: e.topicId },
       );
     }
-  });
+  }));
 
-  appEventBus.on('study-panel:opened', () => {
+  disposers.push(appEventBus.on('study-panel:opened', () => {
     const session = useStudySessionStore.getState().currentSession;
     if (!session) {
       return;
     }
     const key = topicRefKey({ subjectId: session.subjectId, topicId: session.topicId });
     useCrystalContentCelebrationStore.getState().dismissPending(key);
-  });
+  }));
+
+  // Fix #8: HMR teardown. On a hot re-evaluation of this module,
+  // dispose every registered subscription and clear the global gate so
+  // the new module load registers fresh handlers. `import.meta.hot` is
+  // undefined in production builds, so this block compiles to a no-op
+  // there. Disposers run in reverse order to mirror typical setup
+  // ordering.
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      disposed = true;
+      for (let i = disposers.length - 1; i >= 0; i--) {
+        try {
+          disposers[i]?.();
+        } catch (err) {
+          console.error('[eventBusHandlers] disposer threw on HMR dispose', err);
+        }
+      }
+      disposers.length = 0;
+      g.__abyssEventBusHandlersRegistered = false;
+    });
+  }
 }
