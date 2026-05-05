@@ -180,9 +180,36 @@ export async function* openSseStream(
   let buffer = '';
 
   try {
+    let currentEventId: string | undefined;
+    let currentData = '';
+
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        // Flush the remaining buffer. Append a final newline so the
+        // last event's terminating blank line is processed.
+        buffer += '\n';
+        const finalLines = buffer.split('\n');
+        for (const line of finalLines) {
+          if (line.startsWith('id:')) {
+            currentEventId = line.slice(3).trim();
+          } else if (line.startsWith('data:')) {
+            currentData += line.slice(5);
+          } else if (line === '') {
+            if (currentData.trim()) {
+              try {
+                const row: WorkerEventRow = JSON.parse(currentData);
+                yield rowToRunEvent(row);
+              } catch (err) {
+                console.error('[sseClient] failed to parse SSE data:', err);
+              }
+            }
+            currentEventId = undefined;
+            currentData = '';
+          }
+        }
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
 
@@ -190,9 +217,6 @@ export async function* openSseStream(
       const lines = buffer.split('\n');
       // The last element may be incomplete — keep it in the buffer
       buffer = lines.pop() ?? '';
-
-      let currentEventId: string | undefined;
-      let currentData = '';
 
       for (const line of lines) {
         if (line.startsWith('id:')) {
