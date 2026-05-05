@@ -1,0 +1,9 @@
+# pnpm workspace — Phase 1 Durable Orchestrator
+#
+# The root `app/` package is the Next.js static-export frontend (private, not
+# published). `backend/` is the Cloudflare Worker durable orchestrator (Phase 1+),
+# also private and unpublished. `workers/llm-proxy` remains a standalone package
+# (it has its own lockfile and node_modules); it is deliberately excluded from
+# this workspace so its dependency resolution stays isolated.
+packages:
+  - backend

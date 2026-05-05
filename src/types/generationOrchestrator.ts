@@ -1,5 +1,6 @@
 import type { SubjectGraph } from './core';
 import type { StudyChecklist } from './studyChecklist';
+import type { TopicLattice } from './topicLattice';
 
 export interface SubjectGenerationRequest {
   subjectId: string;
@@ -7,7 +8,7 @@ export interface SubjectGenerationRequest {
 }
 
 export type SubjectGenerationResult =
-  | { ok: true; subjectId: string; graph: SubjectGraph }
+  | { ok: true; subjectId: string; graph: SubjectGraph; lattice: TopicLattice }
   | {
       ok: false;
       error: string;

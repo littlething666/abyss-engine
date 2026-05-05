@@ -6,60 +6,35 @@ import { appEventBus } from '@/infrastructure/eventBus';
 import { useContentGenerationStore } from './contentGenerationStore';
 import { canRetryJob, canRetryPipeline, retryFailedJob, retryFailedPipeline } from './retryContentGeneration';
 
-// ── Mocks ────────────────────────────────────────────
-//
-// Phase D dropped the `@/infrastructure/toast` import from
-// retryContentGeneration entirely; routing-collapse failures now go
-// through console.error + the `content-generation:retry-failed` bus event
-// instead of toasts. We intentionally do NOT mock toast here — importing
-// it would suggest the surface is still wired.
+const mockSubmitRun = vi.fn().mockResolvedValue({ runId: 'run-1' });
+const mockPrepareTopicContentRunInput = vi.fn();
+const mockPrepareCrystalTrialRunInput = vi.fn();
+const mockPrepareTopicExpansionRunInput = vi.fn();
+const mockPrepareSubjectGraphTopicsRunInput = vi.fn();
 
-const mockRunTopicPipeline = vi.fn();
-const mockRunExpansionJob = vi.fn();
-const mockOrchExecute = vi.fn();
-const mockGetManifest = vi.fn();
-const mockGenerateTrialQuestions = vi.fn();
-
-vi.mock('./pipelines/runTopicGenerationPipeline', () => ({
-  runTopicGenerationPipeline: (...args: unknown[]) => mockRunTopicPipeline(...args),
-}));
-
-vi.mock('./jobs/runExpansionJob', () => ({
-  runExpansionJob: (...args: unknown[]) => mockRunExpansionJob(...args),
-}));
-
-vi.mock('@/features/crystalTrial/generateTrialQuestions', () => ({
-  generateTrialQuestions: (...args: unknown[]) => mockGenerateTrialQuestions(...args),
-}));
-
-vi.mock('@/features/subjectGeneration', () => ({
-  createSubjectGenerationOrchestrator: () => ({ execute: mockOrchExecute }),
-  resolveSubjectGenerationStageBindings: () => ({
-    topics: {
-      chat: {},
-      model: 'topics-model',
-      enableStreaming: true,
-      enableReasoning: false,
-    },
-    edges: {
-      chat: {},
-      model: 'edges-model',
-      enableStreaming: false,
-      enableReasoning: false,
-    },
+vi.mock('./generationClient', () => ({
+  getGenerationClient: () => ({
+    submitRun: mockSubmitRun,
   }),
 }));
+
+vi.mock('./prepareGenerationRunSubmit', () => ({
+  prepareTopicContentRunInput: (...args: unknown[]) => mockPrepareTopicContentRunInput(...args),
+  prepareCrystalTrialRunInput: (...args: unknown[]) => mockPrepareCrystalTrialRunInput(...args),
+  prepareTopicExpansionRunInput: (...args: unknown[]) => mockPrepareTopicExpansionRunInput(...args),
+  prepareSubjectGraphTopicsRunInput: (...args: unknown[]) => mockPrepareSubjectGraphTopicsRunInput(...args),
+}));
+
+const mockGetManifest = vi.fn();
 
 vi.mock('@/infrastructure/di', () => ({
   deckRepository: { getManifest: (...args: unknown[]) => mockGetManifest(...args) },
   deckWriter: {},
 }));
 
-vi.mock('@/infrastructure/llmInferenceRegistry', () => ({
-  getChatCompletionsRepositoryForSurface: () => ({
-    completeChat: vi.fn(),
-    streamChat: vi.fn(),
-  }),
+vi.mock('@/infrastructure/llmInferenceSurfaceProviders', () => ({
+  resolveModelForSurface: (surface: string) => `model:${surface}`,
+  resolveEnableReasoningForSurface: () => false,
 }));
 
 vi.mock('@/infrastructure/repositories/contentGenerationLogRepository', () => ({
@@ -68,8 +43,6 @@ vi.mock('@/infrastructure/repositories/contentGenerationLogRepository', () => ({
   clearPersistedLogs: vi.fn().mockResolvedValue(undefined),
   loadPersistedLogs: vi.fn().mockResolvedValue({ jobs: [], pipelines: [] }),
 }));
-
-// ── Helpers ───────────────────────────────────────────
 
 function resetStore(): void {
   useContentGenerationStore.setState({
@@ -105,7 +78,15 @@ function makeJob(overrides: Partial<ContentGenerationJob>): ContentGenerationJob
   };
 }
 
-// ── Tests ─────────────────────────────────────────────
+function stubTopicRunInput(): Record<string, unknown> {
+  return {
+    pipelineKind: 'topic-content',
+    subjectId: 'sub-1',
+    topicId: 'top-1',
+    snapshot: { pipeline_kind: 'topic-theory' },
+    topicContentLegacyOptions: {},
+  };
+}
 
 describe('canRetryJob', () => {
   it('returns true for failed job with subjectId', () => {
@@ -142,54 +123,80 @@ describe('canRetryPipeline', () => {
 describe('retryFailedJob', () => {
   beforeEach(() => {
     resetStore();
-    mockRunTopicPipeline.mockReset();
-    mockRunExpansionJob.mockReset();
-    mockOrchExecute.mockReset();
+    mockSubmitRun.mockClear();
+    mockPrepareTopicContentRunInput.mockReset().mockResolvedValue(stubTopicRunInput());
+    mockPrepareCrystalTrialRunInput.mockReset().mockResolvedValue({
+      pipelineKind: 'crystal-trial',
+      subjectId: 'sub-1',
+      topicId: 'top-1',
+      currentLevel: 0,
+      snapshot: { pipeline_kind: 'crystal-trial' },
+    });
+    mockPrepareTopicExpansionRunInput.mockReset().mockResolvedValue({
+      pipelineKind: 'topic-expansion',
+      subjectId: 'sub-1',
+      topicId: 'top-1',
+      nextLevel: 2,
+      snapshot: { pipeline_kind: 'topic-expansion-cards' },
+    });
+    mockPrepareSubjectGraphTopicsRunInput.mockReset().mockResolvedValue({
+      pipelineKind: 'subject-graph',
+      subjectId: 'sub-1',
+      stage: 'topics',
+      snapshot: { pipeline_kind: 'subject-graph-topics' },
+    });
     mockGetManifest.mockReset();
-    mockGenerateTrialQuestions.mockReset();
   });
 
-  it('calls runTopicGenerationPipeline for topic-theory jobs', async () => {
+  it('submits topic-theory retries via GenerationClient', async () => {
     const job = makeJob({ kind: 'topic-theory', metadata: { enableReasoning: true } });
     await retryFailedJob(job);
 
-    expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
-    const params = mockRunTopicPipeline.mock.calls[0]?.[0];
-    expect(params.stage).toBe('theory');
-    expect(params.enableReasoning).toBe(true);
-    expect(params.retryContext.pipelineRetryOf).toBeNull();
-    expect(params.retryContext.jobRetryOfByStage.theory).toBe('job-1');
-    expect(params.forceRegenerate).toBe(true);
+    expect(mockPrepareTopicContentRunInput).toHaveBeenCalledTimes(1);
+    const req = mockPrepareTopicContentRunInput.mock.calls[0]?.[3] as Record<string, unknown>;
+    expect(req.stage).toBe('theory');
+    expect(req.enableReasoning).toBe(true);
+    const rc = req.retryContext as { pipelineRetryOf: unknown; jobRetryOfByStage: Record<string, string> };
+    expect(rc.pipelineRetryOf).toBeNull();
+    expect(rc.jobRetryOfByStage.theory).toBe('job-1');
+    expect(req.forceRegenerate).toBe(true);
+
+    expect(mockSubmitRun).toHaveBeenCalledTimes(1);
+    expect(mockSubmitRun.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^retry:job:job-1:/) }),
+    );
   });
 
-  it('calls runTopicGenerationPipeline for topic-study-cards jobs', async () => {
+  it('submits topic-study-cards retries', async () => {
     const job = makeJob({ kind: 'topic-study-cards' });
     await retryFailedJob(job);
 
-    expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
-    expect(mockRunTopicPipeline.mock.calls[0]?.[0]?.stage).toBe('study-cards');
+    expect(mockPrepareTopicContentRunInput.mock.calls[0]?.[3]).toEqual(
+      expect.objectContaining({ stage: 'study-cards' }),
+    );
   });
 
-  it('calls runTopicGenerationPipeline for per-type mini-game jobs with override', async () => {
+  it('submits per-type mini-game retries with override', async () => {
     const job = makeJob({ id: 'mg-1', kind: 'topic-mini-game-category-sort' });
     await retryFailedJob(job);
 
-    expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
-    const params = mockRunTopicPipeline.mock.calls[0]?.[0];
-    expect(params.stage).toBe('mini-games');
-    expect(params.miniGameKindsOverride).toEqual(['CATEGORY_SORT']);
-    expect(params.retryContext.jobRetryOfByStage['mini-games']).toBe('mg-1');
+    const req = mockPrepareTopicContentRunInput.mock.calls[0]?.[3] as Record<string, unknown>;
+    expect(req.stage).toBe('mini-games');
+    expect(req.miniGameKindsOverride).toEqual(['CATEGORY_SORT']);
+    const rc = req.retryContext as { jobRetryOfByStage: Record<string, string> };
+    expect(rc.jobRetryOfByStage['mini-games']).toBe('mg-1');
   });
 
-  it('calls runTopicGenerationPipeline for topic-mini-games jobs', async () => {
+  it('submits topic-mini-games retries', async () => {
     const job = makeJob({ kind: 'topic-mini-games' });
     await retryFailedJob(job);
 
-    expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
-    expect(mockRunTopicPipeline.mock.calls[0]?.[0]?.stage).toBe('mini-games');
+    expect(mockPrepareTopicContentRunInput.mock.calls[0]?.[3]).toEqual(
+      expect.objectContaining({ stage: 'mini-games', miniGameKindsOverride: undefined }),
+    );
   });
 
-  it('calls generateTrialQuestions for crystal-trial jobs using metadata currentLevel', async () => {
+  it('submits crystal-trial retries with retryOf metadata', async () => {
     const job = makeJob({
       kind: 'crystal-trial',
       label: 'Crystal Trial L3 — Topic A',
@@ -198,22 +205,19 @@ describe('retryFailedJob', () => {
 
     await retryFailedJob(job);
 
-    expect(mockGenerateTrialQuestions).toHaveBeenCalledTimes(1);
-    expect(mockGenerateTrialQuestions).toHaveBeenCalledWith(
-      expect.objectContaining({
-        chat: expect.objectContaining({
-          completeChat: expect.any(Function),
-          streamChat: expect.any(Function),
-        }),
-        subjectId: 'sub-1',
-        topicId: 'top-1',
-        currentLevel: 2,
-        retryOf: 'job-1',
-      }),
+    expect(mockPrepareCrystalTrialRunInput).toHaveBeenCalledWith(
+      expect.anything(),
+      'model:crystalTrial',
+      expect.any(String),
+      'sub-1',
+      'top-1',
+      2,
+      { retryOf: 'job-1' },
     );
+    expect(mockSubmitRun).toHaveBeenCalled();
   });
 
-  it('falls back to label parsing when crystal-trial metadata is missing', async () => {
+  it('parses crystal-trial currentLevel from label when metadata is missing', async () => {
     const job = makeJob({
       kind: 'crystal-trial',
       label: 'Crystal Trial L4 — Topic A',
@@ -222,11 +226,10 @@ describe('retryFailedJob', () => {
 
     await retryFailedJob(job);
 
-    expect(mockGenerateTrialQuestions).toHaveBeenCalledTimes(1);
-    expect(mockGenerateTrialQuestions.mock.calls[0]?.[0]?.currentLevel).toBe(3);
+    expect(mockPrepareCrystalTrialRunInput.mock.calls[0]?.[5]).toBe(3);
   });
 
-  it('calls runExpansionJob with nextLevel from metadata', async () => {
+  it('submits expansion retries with nextLevel from metadata', async () => {
     const job = makeJob({
       kind: 'topic-expansion-cards',
       label: 'Expansion L2 — Topic A',
@@ -234,13 +237,11 @@ describe('retryFailedJob', () => {
     });
     await retryFailedJob(job);
 
-    expect(mockRunExpansionJob).toHaveBeenCalledTimes(1);
-    const params = mockRunExpansionJob.mock.calls[0]?.[0];
-    expect(params.nextLevel).toBe(2);
-    expect(params.retryOf).toBe('job-1');
+    expect(mockPrepareTopicExpansionRunInput.mock.calls[0]?.[5]).toBe(2);
+    expect(mockPrepareTopicExpansionRunInput.mock.calls[0]?.[7]).toEqual({ retryOf: 'job-1' });
   });
 
-  it('falls back to label parsing for expansion when metadata lacks nextLevel', async () => {
+  it('parses expansion nextLevel from label when metadata lacks nextLevel', async () => {
     const job = makeJob({
       kind: 'topic-expansion-cards',
       label: 'Expansion L3 — Topic B',
@@ -248,11 +249,10 @@ describe('retryFailedJob', () => {
     });
     await retryFailedJob(job);
 
-    expect(mockRunExpansionJob).toHaveBeenCalledTimes(1);
-    expect(mockRunExpansionJob.mock.calls[0]?.[0]?.nextLevel).toBe(3);
+    expect(mockPrepareTopicExpansionRunInput.mock.calls[0]?.[5]).toBe(3);
   });
 
-  it('calls orchestrator.execute for subject-graph-topics jobs', async () => {
+  it('submits subject-graph-topics retries via prepare + submitRun', async () => {
     mockGetManifest.mockResolvedValue({
       subjects: [
         {
@@ -269,18 +269,15 @@ describe('retryFailedJob', () => {
     const job = makeJob({ kind: 'subject-graph-topics', topicId: null });
     await retryFailedJob(job);
 
-    expect(mockOrchExecute).toHaveBeenCalledTimes(1);
-    const [req, deps] = mockOrchExecute.mock.calls[0] ?? [];
-    expect(req.subjectId).toBe('sub-1');
-    expect(deps.retryOf).toBe('job-1');
-    expect(deps).toEqual(
-      expect.objectContaining({
-        stageBindings: expect.objectContaining({
-          topics: expect.any(Object),
-          edges: expect.any(Object),
-        }),
-      }),
+    expect(mockPrepareSubjectGraphTopicsRunInput).toHaveBeenCalledWith(
+      expect.anything(),
+      'model:subjectGenerationTopics',
+      expect.any(String),
+      'sub-1',
+      { topicName: 'Test' },
+      { orchestratorRetryOf: 'job-1' },
     );
+    expect(mockSubmitRun).toHaveBeenCalled();
   });
 
   it('prefers job metadata checklist for subject-graph jobs without manifest checklist', async () => {
@@ -306,14 +303,9 @@ describe('retryFailedJob', () => {
     });
     await retryFailedJob(job);
 
-    expect(mockOrchExecute).toHaveBeenCalledTimes(1);
-    const [req] = mockOrchExecute.mock.calls[0] ?? [];
-    expect(req).toEqual(
-      expect.objectContaining({
-        subjectId: 'sub-1',
-        checklist: { topicName: 'Metadata topic' },
-      }),
-    );
+    expect(mockPrepareSubjectGraphTopicsRunInput.mock.calls[0]?.[4]).toEqual({
+      topicName: 'Metadata topic',
+    });
   });
 
   it('falls back to label topic for subject-graph jobs when checklist metadata is missing', async () => {
@@ -327,14 +319,9 @@ describe('retryFailedJob', () => {
     });
     await retryFailedJob(job);
 
-    expect(mockOrchExecute).toHaveBeenCalledTimes(1);
-    const [req] = mockOrchExecute.mock.calls[0] ?? [];
-    expect(req).toEqual(
-      expect.objectContaining({
-        subjectId: 'sub-1',
-        checklist: { topicName: 'Label Topic' },
-      }),
-    );
+    expect(mockPrepareSubjectGraphTopicsRunInput.mock.calls[0]?.[4]).toEqual({
+      topicName: 'Label Topic',
+    });
   });
 
   it('parses topic name from prefixed curriculum labels', async () => {
@@ -348,34 +335,32 @@ describe('retryFailedJob', () => {
     });
     await retryFailedJob(job);
 
-    expect(mockOrchExecute).toHaveBeenCalledTimes(1);
-    const [req] = mockOrchExecute.mock.calls[0] ?? [];
-    expect(req).toEqual(
-      expect.objectContaining({
-        subjectId: 'sub-1',
-        checklist: { topicName: 'Quantum Foo' },
-      }),
-    );
+    expect(mockPrepareSubjectGraphTopicsRunInput.mock.calls[0]?.[4]).toEqual({
+      topicName: 'Quantum Foo',
+    });
   });
 
   it('does not retry a completed job', async () => {
     const job = makeJob({ status: 'completed' });
     await retryFailedJob(job);
 
-    expect(mockRunTopicPipeline).not.toHaveBeenCalled();
-    expect(mockRunExpansionJob).not.toHaveBeenCalled();
-    expect(mockOrchExecute).not.toHaveBeenCalled();
-    expect(mockGenerateTrialQuestions).not.toHaveBeenCalled();
+    expect(mockSubmitRun).not.toHaveBeenCalled();
+    expect(mockPrepareTopicContentRunInput).not.toHaveBeenCalled();
   });
 });
 
 describe('retryFailedPipeline', () => {
   beforeEach(() => {
     resetStore();
-    mockRunTopicPipeline.mockReset();
-    mockOrchExecute.mockReset();
+    mockSubmitRun.mockClear();
+    mockPrepareTopicContentRunInput.mockReset().mockResolvedValue(stubTopicRunInput());
+    mockPrepareSubjectGraphTopicsRunInput.mockReset().mockResolvedValue({
+      pipelineKind: 'subject-graph',
+      subjectId: 'sub-1',
+      stage: 'topics',
+      snapshot: { pipeline_kind: 'subject-graph-topics' },
+    });
     mockGetManifest.mockReset();
-    mockGenerateTrialQuestions.mockReset();
   });
 
   it('resumes topic pipeline from first failed stage', async () => {
@@ -406,12 +391,14 @@ describe('retryFailedPipeline', () => {
 
     await retryFailedPipeline('p1');
 
-    expect(mockRunTopicPipeline).toHaveBeenCalledTimes(1);
-    const params = mockRunTopicPipeline.mock.calls[0]?.[0];
-    expect(params.resumeFromStage).toBe('study-cards');
-    expect(params.enableReasoning).toBe(true);
-    expect(params.retryContext.pipelineRetryOf).toBe('p1');
-    expect(params.retryContext.jobRetryOfByStage['study-cards']).toBe('j2');
+    expect(mockPrepareTopicContentRunInput).toHaveBeenCalledTimes(1);
+    const req = mockPrepareTopicContentRunInput.mock.calls[0]?.[3] as Record<string, unknown>;
+    expect(req.stage).toBe('study-cards');
+    expect(req.resumeFromStage).toBe('study-cards');
+    expect(req.enableReasoning).toBe(true);
+    const rc = req.retryContext as { pipelineRetryOf: string; jobRetryOfByStage: Record<string, string> };
+    expect(rc.pipelineRetryOf).toBe('p1');
+    expect(rc.jobRetryOfByStage['study-cards']).toBe('j2');
   });
 
   it('does nothing when no jobs exist for pipeline', async () => {
@@ -425,10 +412,10 @@ describe('retryFailedPipeline', () => {
     });
 
     await retryFailedPipeline('nonexistent');
-    expect(mockRunTopicPipeline).not.toHaveBeenCalled();
+    expect(mockSubmitRun).not.toHaveBeenCalled();
   });
 
-  it('delegates failed subject-graph-edges pipeline to orchestrator retry', async () => {
+  it('delegates failed subject-graph-edges pipeline to retryFailedJob', async () => {
     mockGetManifest.mockResolvedValue({
       subjects: [
         {
@@ -463,7 +450,7 @@ describe('retryFailedPipeline', () => {
 
     await retryFailedPipeline('p-subj');
 
-    expect(mockOrchExecute).toHaveBeenCalledTimes(1);
+    expect(mockPrepareSubjectGraphTopicsRunInput).toHaveBeenCalled();
   });
 });
 
@@ -472,11 +459,12 @@ describe('content-generation:retry-failed terminal events', () => {
 
   beforeEach(() => {
     resetStore();
-    mockRunTopicPipeline.mockReset();
-    mockRunExpansionJob.mockReset();
-    mockOrchExecute.mockReset();
+    mockSubmitRun.mockClear();
+    mockPrepareTopicContentRunInput.mockReset().mockResolvedValue(stubTopicRunInput());
+    mockPrepareCrystalTrialRunInput.mockReset().mockResolvedValue({});
+    mockPrepareTopicExpansionRunInput.mockReset().mockResolvedValue({});
+    mockPrepareSubjectGraphTopicsRunInput.mockReset().mockResolvedValue({});
     mockGetManifest.mockReset();
-    mockGenerateTrialQuestions.mockReset();
     emitSpy = vi.spyOn(appEventBus, 'emit');
   });
 
@@ -492,7 +480,7 @@ describe('content-generation:retry-failed terminal events', () => {
     });
     await retryFailedJob(job);
 
-    expect(mockGenerateTrialQuestions).not.toHaveBeenCalled();
+    expect(mockPrepareCrystalTrialRunInput).not.toHaveBeenCalled();
     expect(emitSpy).toHaveBeenCalledWith(
       'content-generation:retry-failed',
       expect.objectContaining({
@@ -515,7 +503,7 @@ describe('content-generation:retry-failed terminal events', () => {
     });
     await retryFailedJob(job);
 
-    expect(mockRunExpansionJob).not.toHaveBeenCalled();
+    expect(mockPrepareTopicExpansionRunInput).not.toHaveBeenCalled();
     expect(emitSpy).toHaveBeenCalledWith(
       'content-generation:retry-failed',
       expect.objectContaining({
@@ -539,7 +527,7 @@ describe('content-generation:retry-failed terminal events', () => {
     });
     await retryFailedJob(job);
 
-    expect(mockOrchExecute).not.toHaveBeenCalled();
+    expect(mockPrepareSubjectGraphTopicsRunInput).not.toHaveBeenCalled();
     expect(emitSpy).toHaveBeenCalledWith(
       'content-generation:retry-failed',
       expect.objectContaining({
@@ -568,8 +556,8 @@ describe('content-generation:retry-failed terminal events', () => {
     );
   });
 
-  it('emits when retryFailedJob throws', async () => {
-    mockRunTopicPipeline.mockRejectedValueOnce(new Error('pipeline blew up'));
+  it('emits when retryFailedJob throws inside submitRun', async () => {
+    mockSubmitRun.mockRejectedValueOnce(new Error('submit blew up'));
     const job = makeJob({ kind: 'topic-theory' });
     await retryFailedJob(job);
 
@@ -577,7 +565,7 @@ describe('content-generation:retry-failed terminal events', () => {
       'content-generation:retry-failed',
       expect.objectContaining({
         jobLabel: 'Theory — Test',
-        errorMessage: 'pipeline blew up',
+        errorMessage: 'submit blew up',
         jobId: 'job-1',
         failureInstanceId: expect.any(String),
         failureKey: expect.any(String),
@@ -617,7 +605,7 @@ describe('content-generation:retry-failed terminal events', () => {
   });
 
   it('emits when retryFailedPipeline throws', async () => {
-    mockRunTopicPipeline.mockRejectedValueOnce(new Error('pipe boom'));
+    mockSubmitRun.mockRejectedValueOnce(new Error('submit boom'));
     const failed = makeJob({
       id: 'j2',
       pipelineId: 'p1',
@@ -639,7 +627,7 @@ describe('content-generation:retry-failed terminal events', () => {
       'content-generation:retry-failed',
       expect.objectContaining({
         jobLabel: 'Pipeline P1',
-        errorMessage: 'pipe boom',
+        errorMessage: 'submit boom',
         jobId: 'j2',
         failureInstanceId: expect.any(String),
         failureKey: expect.any(String),

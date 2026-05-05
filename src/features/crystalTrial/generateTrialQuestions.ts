@@ -29,6 +29,8 @@ export interface GenerateTrialQuestionsParams {
   subjectId: string;
   topicId: string;
   currentLevel: number;
+  /** Cooperative cancel forwarded into `runContentGenerationJob`. */
+  signal?: AbortSignal;
   /** If this job is a retry, the ID of the original job. */
   retryOf?: string;
   /** Optional hook after questions are written (status is `awaiting_player`). */
@@ -38,7 +40,8 @@ export interface GenerateTrialQuestionsParams {
 export async function generateTrialQuestions(
   params: GenerateTrialQuestionsParams,
 ): Promise<{ ok: boolean; jobId?: string; error?: string }> {
-  const { chat, deckRepository, subjectId, topicId, currentLevel, onQuestionsPersisted, retryOf } = params;
+  const { chat, deckRepository, subjectId, topicId, currentLevel, signal, onQuestionsPersisted, retryOf } =
+    params;
   const ref: TopicRef = { subjectId, topicId };
   const trialStore = useCrystalTrialStore.getState();
   const existingTrial = trialStore.getCurrentTrial(ref);
@@ -138,6 +141,7 @@ export async function generateTrialQuestions(
     }),
     enableReasoning,
     enableStreaming,
+    externalSignal: signal,
     retryOf: retryOf ?? undefined,
     parseOutput: async (raw) => {
       const parsed = parseCrystalTrialPayload(raw);

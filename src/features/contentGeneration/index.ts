@@ -1,6 +1,30 @@
 export { useContentGenerationStore, MAX_PERSISTED_LOGS } from './contentGenerationStore';
 export type { ContentGenerationState, SessionRetryRoutingFailureSurface } from './contentGenerationStore';
 
+export {
+  createGenerationClient,
+  getGenerationClient,
+  registerGenerationClient,
+} from './generationClient';
+export type {
+  CreateGenerationClientDeps,
+  CrystalTrialStartInput,
+  GenerationClient,
+  GenerationClientFlags,
+  SubjectGraphStartInput,
+  TopicContentStageTag,
+  TopicContentStartInput,
+  TopicExpansionStartInput,
+} from './generationClient';
+
+export {
+  prepareCrystalTrialRunInput,
+  prepareSubjectGraphTopicsRunInput,
+  prepareTopicContentRunInput,
+  prepareTopicExpansionRunInput,
+} from './prepareGenerationRunSubmit';
+export type { TopicContentGenerationRequest } from './prepareGenerationRunSubmit';
+
 export { failureKeyForJob, failureKeyForRetryRoutingInstance } from './failureKeys';
 
 export { runContentGenerationJob } from './runContentGenerationJob';
@@ -62,3 +86,15 @@ export { parseTopicCardsPayload, diagnoseTopicCardsPayload } from './parsers/par
 export type { ParseTopicCardsResult } from './parsers/parseTopicCardsPayload';
 export { validateGeneratedCard } from './parsers/validateGeneratedCard';
 export { normalizeMiniGameCardContent } from './parsers/normalizeMiniGameCardContent';
+
+// Phase 0.5 step 5 — Artifact Appliers
+export {
+  createTopicContentApplier,
+  type TopicContentApplier,
+  type TopicContentApplierDeps,
+} from './appliers/topicContentApplier';
+export {
+  createTopicExpansionApplier,
+  type TopicExpansionApplier,
+  type TopicExpansionApplierDeps,
+} from './appliers/topicExpansionApplier';

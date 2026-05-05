@@ -4,6 +4,7 @@ import { PIPELINE_FAILURE_DEBUG_SCHEMA_VERSION } from '@/types/pipelineFailureDe
 import { buildShellPipelineFailureBundle } from '../debug/buildPipelineFailureDebugBundle';
 import { formatPipelineFailureMarkdown } from '../debug/formatPipelineFailureMarkdown';
 import { logPipelineFailure } from '../debug/logPipelineFailure';
+import type { Card } from '@/types/core';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { IDeckContentWriter, IDeckRepository } from '@/types/repository';
 import {
@@ -35,7 +36,7 @@ export interface RunExpansionJobParams {
 
 export async function runExpansionJob(
   params: RunExpansionJobParams,
-): Promise<{ ok: boolean; jobId?: string; error?: string; skipped?: boolean }> {
+): Promise<{ ok: boolean; jobId?: string; error?: string; skipped?: boolean; generatedCards?: Card[] }> {
   const {
     chat,
     deckRepository,
@@ -120,6 +121,8 @@ export async function runExpansionJob(
 
   const syllabusQuestions = bucket.map((q, i) => `${i + 1}. ${q}`).join('\n');
 
+  let persistedCards: Card[] | undefined;
+
   const result = await runContentGenerationJob({
     kind: 'topic-expansion-cards',
     label: `Expansion L${nextLevel} — ${topicTitle}`,
@@ -172,6 +175,7 @@ export async function runExpansionJob(
       return { ok: true, data: parsed.cards.map((c) => ({ ...c, difficulty })) };
     },
     persistOutput: async (normalized) => {
+      persistedCards = normalized;
       await writer.appendTopicCards(subjectId, topicId, normalized);
     },
   });
@@ -195,5 +199,10 @@ export async function runExpansionJob(
     });
   }
 
-  return { ok: result.ok, jobId: result.jobId, error: result.error };
+  return {
+    ok: result.ok,
+    jobId: result.jobId,
+    error: result.error,
+    generatedCards: result.ok ? persistedCards : undefined,
+  };
 }

@@ -1,0 +1,68 @@
+/**
+ * SSE event stream for a run — GET /v1/runs/:id/events.
+ *
+ * Phase 1 PR-C: minimal stub.  Replays persisted events then closes.
+ * A live tail via the RunEventBus Durable Object lands in PR-D/PR-G.
+ */
+
+import { Hono } from 'hono';
+import { makeRepos } from '../repositories';
+import type { Env } from '../env';
+
+const runEvents = new Hono<{ Bindings: Env; Variables: { deviceId: string } }>();
+
+runEvents.get('/:id/events', async (c) => {
+  const deviceId = c.get('deviceId');
+  const runId = c.req.param('id');
+  const repos = makeRepos(c.env);
+
+  // Verify the run belongs to this device.
+  const run = await repos.runs.load(runId);
+  if (run.device_id !== deviceId) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+
+  // Parse Last-Event-ID or ?lastSeq= query param.
+  const lastSeq = parseInt(
+    c.req.header('last-event-id') ?? c.req.query('lastSeq') ?? '0',
+    10,
+  );
+
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // Replay persisted events with seq > lastSeq.
+        const rows = await repos.runs.eventsAfter(runId, deviceId, lastSeq);
+        for (const row of rows) {
+          const line = `id: ${row.seq}\ndata: ${JSON.stringify(row)}\n\n`;
+          controller.enqueue(encoder.encode(line));
+        }
+
+        // PR-D: subscribe to live events via RunEventBus Durable Object.
+        // For now, check if the run is still active and send a keepalive comment.
+        const updated = await repos.runs.load(runId);
+        if (!updated.finished_at) {
+          controller.enqueue(encoder.encode(': keepalive — run still active (live tail stubbed)\n\n'));
+        }
+
+        controller.close();
+      } catch (err) {
+        console.error(`[runEvents] stream error for ${runId}:`, err);
+        controller.error(err);
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache, no-transform',
+      'x-accel-buffering': 'no',
+      'connection': 'keep-alive',
+    },
+  });
+});
+
+export { runEvents };

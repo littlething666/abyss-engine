@@ -4,22 +4,24 @@ import type { AppEventMap } from './eventBus';
 import { appEventBus } from './eventBus';
 import { telemetry } from '@/features/telemetry';
 import { crystalCeremonyStore } from '@/features/progression/crystalCeremonyStore';
-import { deckRepository, deckWriter } from './di';
-import { getChatCompletionsRepositoryForSurface } from './llmInferenceRegistry';
-import { runExpansionJob } from '@/features/contentGeneration/jobs/runExpansionJob';
-import type { ContentGenerationAbortReason } from '@/types/contentGenerationAbort';
-import { runTopicGenerationPipeline } from '@/features/contentGeneration/pipelines/runTopicGenerationPipeline';
+import { deckRepository } from './di';
 import {
-  createSubjectGenerationOrchestrator,
-  resolveSubjectGenerationStageBindings,
-} from '@/features/subjectGeneration';
-import { resolveEnableReasoningForSurface } from './llmInferenceSurfaceProviders';
-import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
-import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
+  getGenerationClient,
+  prepareCrystalTrialRunInput,
+  prepareSubjectGraphTopicsRunInput,
+  prepareTopicContentRunInput,
+  prepareTopicExpansionRunInput,
+} from '@/features/contentGeneration';
+import { ensureGenerationClientRegistered, observeGenerationRun } from './wireGenerationClient';
+import {
+  resolveEnableReasoningForSurface,
+  resolveModelForSurface,
+} from './llmInferenceSurfaceProviders';
 import {
   busMayStartTrialPregeneration,
   isCrystalTrialAvailableForPlayer,
 } from '@/features/crystalTrial';
+import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 import { useCrystalGardenStore } from '@/features/progression/stores/crystalGardenStore';
 import { useStudySessionStore } from '@/features/progression/stores/studySessionStore';
 import { calculateLevelFromXP, MAX_CRYSTAL_LEVEL } from '@/types/crystalLevel';
@@ -30,11 +32,6 @@ import {
   useMentorStore,
 } from '@/features/mentor';
 import { pubSubClient } from './pubsub';
-
-const expansionSupersededAbortReason: ContentGenerationAbortReason = {
-  kind: 'superseded',
-  source: 'expansion-replaced',
-};
 
 const g = globalThis as typeof globalThis & {
   __abyssEventBusHandlersRegistered?: boolean;
@@ -89,6 +86,7 @@ function assertStudyPanelHistoryContext(
 
 if (!g.__abyssEventBusHandlersRegistered) {
   g.__abyssEventBusHandlersRegistered = true;
+  ensureGenerationClientRegistered();
 
   // Fix #8: HMR-safe subscription teardown. Every listener
   // registration -- `appEventBus.on`, store `subscribe` -- pushes its
@@ -113,8 +111,6 @@ if (!g.__abyssEventBusHandlersRegistered) {
   // post-hydration attach path becomes a no-op once the module is
   // disposed.
   let disposed = false;
-
-  const activeExpansionJobs = new Map<string, AbortController>();
 
   // Module-scoped dedupe for the post-curriculum onboarding trigger.
   // Ensures `onboarding:subject-unlock-first-crystal` fires at most once per
@@ -168,13 +164,23 @@ if (!g.__abyssEventBusHandlersRegistered) {
         );
         if (crystal) {
           const currentLevel = calculateLevelFromXP(crystal.xp);
-          void generateTrialQuestions({
-            chat: getChatCompletionsRepositoryForSurface('crystalTrial'),
-            deckRepository,
-            subjectId: ref.subjectId,
-            topicId: ref.topicId,
-            currentLevel,
-          });
+          void (async () => {
+            try {
+              const modelId = resolveModelForSurface('crystalTrial');
+              const runInput = await prepareCrystalTrialRunInput(
+                deckRepository,
+                modelId,
+                new Date().toISOString(),
+                ref.subjectId,
+                ref.topicId,
+                currentLevel,
+              );
+              const { runId: ctCooldownRunId } = await getGenerationClient().submitRun(runInput);
+              observeGenerationRun(ctCooldownRunId, runInput);
+            } catch (err) {
+              console.error('[eventBusHandlers] crystal trial cooldown regeneration failed', err);
+            }
+          })();
         }
       }
     }
@@ -195,16 +201,22 @@ if (!g.__abyssEventBusHandlersRegistered) {
   }));
 
   disposers.push(appEventBus.on('topic-content:generation-requested', (e) => {
-    void runTopicGenerationPipeline({
-      chat: getChatCompletionsRepositoryForSurface('topicContent'),
-      deckRepository,
-      writer: deckWriter,
-      subjectId: e.subjectId,
-      topicId: e.topicId,
-      enableReasoning: e.enableReasoning ?? resolveEnableReasoningForSurface('topicContent'),
-      forceRegenerate: e.forceRegenerate,
-      stage: e.stage,
-    });
+    void (async () => {
+      try {
+        const modelId = resolveModelForSurface('topicContent');
+        const runInput = await prepareTopicContentRunInput(deckRepository, modelId, new Date().toISOString(), {
+          subjectId: e.subjectId,
+          topicId: e.topicId,
+          enableReasoning: e.enableReasoning ?? resolveEnableReasoningForSurface('topicContent'),
+          forceRegenerate: e.forceRegenerate ?? false,
+          stage: e.stage,
+        });
+        const { runId: tcGenRunId } = await getGenerationClient().submitRun(runInput);
+        observeGenerationRun(tcGenRunId, runInput);
+      } catch (err) {
+        console.error('[eventBusHandlers] topic-content generation submit failed', err);
+      }
+    })();
   }));
 
   disposers.push(appEventBus.on('subject-graph:generation-requested', (e) => {
@@ -219,12 +231,22 @@ if (!g.__abyssEventBusHandlersRegistered) {
     // `subject-graph:generation-failed` event. The handler chain that turns
     // that event into a mentor trigger + telemetry is registered below as a
     // `subject-graph:generation-failed` listener.
-    const stageBindings = resolveSubjectGenerationStageBindings();
-    const orchestrator = createSubjectGenerationOrchestrator();
-    void orchestrator.execute(
-      { subjectId: e.subjectId, checklist: e.checklist },
-      { stageBindings, writer: deckWriter },
-    );
+    void (async () => {
+      try {
+        const modelId = resolveModelForSurface('subjectGenerationTopics');
+        const runInput = await prepareSubjectGraphTopicsRunInput(
+          deckRepository,
+          modelId,
+          new Date().toISOString(),
+          e.subjectId,
+          e.checklist,
+        );
+        const { runId: sgGenRunId } = await getGenerationClient().submitRun(runInput);
+        observeGenerationRun(sgGenRunId, runInput);
+      } catch (err) {
+        console.error('[eventBusHandlers] subject-graph generation submit failed', err);
+      }
+    })();
   }));
 
   disposers.push(appEventBus.on('subject-graph:generated', (e) => {
@@ -359,24 +381,25 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
     // UPDATED: Expansion now runs for L1 through L3 (was L2-L3 only).
     // L1 level-up creates difficulty 2 cards, L2 creates diff 3, L3 creates diff 4.
-    const expansionKey = topicRefKey({ subjectId: e.subjectId, topicId: e.topicId });
     if (e.to >= 1 && e.to <= 3) {
-      const prev = activeExpansionJobs.get(expansionKey);
-      prev?.abort(expansionSupersededAbortReason);
-      const ac = new AbortController();
-      activeExpansionJobs.set(expansionKey, ac);
-      void runExpansionJob({
-        chat: getChatCompletionsRepositoryForSurface('topicContent'),
-        deckRepository,
-        writer: deckWriter,
-        subjectId: e.subjectId,
-        topicId: e.topicId,
-        nextLevel: e.to,
-        enableReasoning: resolveEnableReasoningForSurface('topicContent'),
-        signal: ac.signal,
-      }).finally(() => {
-        activeExpansionJobs.delete(expansionKey);
-      });
+      void (async () => {
+        try {
+          const modelId = resolveModelForSurface('topicContent');
+          const runInput = await prepareTopicExpansionRunInput(
+            deckRepository,
+            modelId,
+            new Date().toISOString(),
+            e.subjectId,
+            e.topicId,
+            e.to as 1 | 2 | 3,
+            resolveEnableReasoningForSurface('topicContent'),
+          );
+          const { runId: teGenRunId } = await getGenerationClient().submitRun(runInput);
+          observeGenerationRun(teGenRunId, runInput);
+        } catch (err) {
+          console.error('[eventBusHandlers] topic expansion on crystal leveled failed', err);
+        }
+      })();
     }
 
     // Mentor side-effect: forward level-up to the mentor rule engine. Cooldown
@@ -400,13 +423,23 @@ if (!g.__abyssEventBusHandlersRegistered) {
       targetLevel: e.targetLevel,
     });
 
-    void generateTrialQuestions({
-      chat: getChatCompletionsRepositoryForSurface('crystalTrial'),
-      deckRepository,
-      subjectId: e.subjectId,
-      topicId: e.topicId,
-      currentLevel: e.currentLevel,
-    });
+    void (async () => {
+      try {
+        const modelId = resolveModelForSurface('crystalTrial');
+        const runInput = await prepareCrystalTrialRunInput(
+          deckRepository,
+          modelId,
+          new Date().toISOString(),
+          e.subjectId,
+          e.topicId,
+          e.currentLevel,
+        );
+        const { runId: ctGenRunId } = await getGenerationClient().submitRun(runInput);
+        observeGenerationRun(ctGenRunId, runInput);
+      } catch (err) {
+        console.error('[eventBusHandlers] crystal-trial pregeneration submit failed', err);
+      }
+    })();
 
     telemetry.log('crystal-trial:pregeneration-started', {
       subjectId: e.subjectId,
@@ -666,13 +699,23 @@ if (!g.__abyssEventBusHandlersRegistered) {
       });
 
       // Now trigger the LLM generation (trial already exists in store in pregeneration state)
-      void generateTrialQuestions({
-        chat: getChatCompletionsRepositoryForSurface('crystalTrial'),
-        deckRepository,
-        subjectId: ref.subjectId,
-        topicId: ref.topicId,
-        currentLevel,
-      });
+      void (async () => {
+        try {
+          const modelId = resolveModelForSurface('crystalTrial');
+          const runInput = await prepareCrystalTrialRunInput(
+            deckRepository,
+            modelId,
+            new Date().toISOString(),
+            ref.subjectId,
+            ref.topicId,
+            currentLevel,
+          );
+          const { runId: ctCardsGenRunId } = await getGenerationClient().submitRun(runInput);
+          observeGenerationRun(ctCardsGenRunId, runInput);
+        } catch (err) {
+          console.error('[eventBusHandlers] crystal trial topic-cards:updated regeneration failed', err);
+        }
+      })();
     }
   });
 
