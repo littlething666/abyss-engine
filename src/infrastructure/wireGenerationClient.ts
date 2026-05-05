@@ -28,6 +28,8 @@ import {
 import { appEventBus } from '@/infrastructure/eventBus';
 import { deckRepository, deckWriter } from '@/infrastructure/di';
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
+import { DurableGenerationRunRepository } from '@/infrastructure/repositories/DurableGenerationRunRepository';
+import { createApiClient } from '@/infrastructure/http/apiClient';
 import type { IGenerationRunRepository, RunInput } from '@/types/repository';
 
 const DEVICE_STORAGE_KEY = 'abyss.deviceId';
@@ -49,6 +51,11 @@ function readOrMintDeviceId(): string {
   }
 }
 
+/**
+ * Stub that returns synthetic failures when the Worker is unreachable.
+ * Kept for builds where `NEXT_PUBLIC_DURABLE_RUNS` is off and no
+ * `NEXT_PUBLIC_DURABLE_GENERATION_URL` is configured.
+ */
 const unreachableDurableRepo: IGenerationRunRepository = {
   submitRun: async () => {
     throw new Error('Durable generation runs are not wired in this build (NEXT_PUBLIC_DURABLE_RUNS).');
@@ -70,6 +77,28 @@ const unreachableDurableRepo: IGenerationRunRepository = {
     throw new Error('Durable generation runs are not wired in this build (NEXT_PUBLIC_DURABLE_RUNS).');
   },
 };
+
+/**
+ * Resolve the durable repo for this build.
+ *
+ * When `NEXT_PUBLIC_DURABLE_RUNS` is on AND `NEXT_PUBLIC_DURABLE_GENERATION_URL`
+ * is set, returns a real `DurableGenerationRunRepository` wired to the Worker.
+ * Otherwise returns the unreachable stub.
+ */
+function resolveDurableRepo(deviceId: string): IGenerationRunRepository {
+  const workerUrl =
+    typeof process !== 'undefined' &&
+    typeof process.env.NEXT_PUBLIC_DURABLE_GENERATION_URL === 'string'
+      ? process.env.NEXT_PUBLIC_DURABLE_GENERATION_URL.trim()
+      : '';
+
+  if (durableRunsEnabled && workerUrl) {
+    const http = createApiClient({ baseUrl: workerUrl, deviceId });
+    return new DurableGenerationRunRepository({ http, deviceId });
+  }
+
+  return unreachableDurableRepo;
+}
 
 let wired = false;
 let handlersInstance: GenerationRunEventHandlers | null = null;
@@ -103,12 +132,14 @@ export function ensureGenerationClientRegistered(): GenerationClient {
     }),
   });
 
+  const durableRepo = resolveDurableRepo(deviceId);
+
   const client = createGenerationClient({
     deviceId,
     now,
     flags: { durableRuns: durableRunsEnabled },
     localRepo,
-    durableRepo: unreachableDurableRepo,
+    durableRepo,
   });
   registerGenerationClient(client);
 
