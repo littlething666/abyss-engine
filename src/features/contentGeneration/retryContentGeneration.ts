@@ -6,7 +6,6 @@ import type {
   ContentGenerationJob,
   ContentGenerationJobKind,
   ContentGenerationPipeline,
-  TopicPipelineRetryStage,
 } from '@/types/contentGeneration';
 import type { MiniGameType } from '@/types/core';
 import type { StudyChecklist } from '@/types/studyChecklist';
@@ -14,16 +13,16 @@ import type { TopicGenerationStage } from './pipelines/topicGenerationStage';
 import { useContentGenerationStore } from './contentGenerationStore';
 import { failureKeyForRetryRoutingInstance } from './failureKeys';
 import { appEventBus } from '@/infrastructure/eventBus';
-import { deckRepository, deckWriter } from '@/infrastructure/di';
-import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
-import { runTopicGenerationPipeline } from './pipelines/runTopicGenerationPipeline';
-import { runExpansionJob } from './jobs/runExpansionJob';
+import { deckRepository } from '@/infrastructure/di';
+import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProviders';
+import { getGenerationClient } from './generationClient';
 import {
-  createSubjectGenerationOrchestrator,
-  resolveSubjectGenerationStageBindings,
-} from '@/features/subjectGeneration';
+  prepareCrystalTrialRunInput,
+  prepareSubjectGraphTopicsRunInput,
+  prepareTopicContentRunInput,
+  prepareTopicExpansionRunInput,
+} from './prepareGenerationRunSubmit';
 import { resolveSubjectGraphRetryContextFromJob } from './subjectGenerationPipelineContext';
-import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
 
 type _StudyChecklistKept = StudyChecklist;
 
@@ -136,26 +135,34 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
   const subjectId = job.subjectId!;
   const topicId = job.topicId;
   const enableReasoning = getEnableReasoningFromJobMetadata(job);
+  const modelTopic = resolveModelForSurface('topicContent');
+  const modelCrystal = resolveModelForSurface('crystalTrial');
+  const modelSubjectTopics = resolveModelForSurface('subjectGenerationTopics');
+  const capturedAt = () => new Date().toISOString();
 
   try {
     const stage = JOB_KIND_TO_STAGE[job.kind];
     if (stage && topicId) {
-      const jobRetryOfByStage: Partial<Record<TopicPipelineRetryStage, string>> = { [stage]: job.id };
       const miniRedo = MINI_GAME_KIND_TO_TYPE[job.kind];
-      await runTopicGenerationPipeline({
-        chat: getChatCompletionsRepositoryForSurface('topicContent'),
+      const runInput = await prepareTopicContentRunInput(
         deckRepository,
-        writer: deckWriter,
-        subjectId,
-        topicId,
-        enableReasoning,
-        forceRegenerate: true,
-        stage,
-        retryContext: {
-          pipelineRetryOf: null,
-          jobRetryOfByStage,
+        modelTopic,
+        capturedAt(),
+        {
+          subjectId,
+          topicId,
+          enableReasoning,
+          forceRegenerate: true,
+          stage,
+          miniGameKindsOverride: miniRedo ? [miniRedo] : undefined,
+          retryContext: {
+            pipelineRetryOf: null,
+            jobRetryOfByStage: { [stage]: job.id },
+          },
         },
-        ...(miniRedo ? { miniGameKindsOverride: [miniRedo] } : {}),
+      );
+      await getGenerationClient().submitRun(runInput, {
+        idempotencyKey: `retry:job:${job.id}:${Date.now()}`,
       });
       return;
     }
@@ -169,34 +176,41 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         return;
       }
 
-      await generateTrialQuestions({
-        chat: getChatCompletionsRepositoryForSurface('crystalTrial'),
+      const runInput = await prepareCrystalTrialRunInput(
         deckRepository,
+        modelCrystal,
+        capturedAt(),
         subjectId,
         topicId,
-        currentLevel: trialCurrentLevel,
-        retryOf: job.id,
+        trialCurrentLevel,
+        { retryOf: job.id },
+      );
+      await getGenerationClient().submitRun(runInput, {
+        idempotencyKey: `retry:job:${job.id}:${Date.now()}`,
       });
       return;
     }
 
     if (job.kind === 'topic-expansion-cards' && topicId) {
       const nextLevel = getNextLevel(job);
-      if (!nextLevel) {
+      if (!nextLevel || nextLevel < 1 || nextLevel > 3) {
         const errorMessage = `Cannot retry expansion: unable to determine crystal level from job "${job.label}"`;
         logRetryRoutingCollapse(job.label, errorMessage);
         emitRetryFailed(job, job.label, errorMessage);
         return;
       }
-      await runExpansionJob({
-        chat: getChatCompletionsRepositoryForSurface('topicContent'),
+      const runInput = await prepareTopicExpansionRunInput(
         deckRepository,
-        writer: deckWriter,
+        modelTopic,
+        capturedAt(),
         subjectId,
         topicId,
-        nextLevel,
+        nextLevel as 1 | 2 | 3,
         enableReasoning,
-        retryOf: job.id,
+        { retryOf: job.id },
+      );
+      await getGenerationClient().submitRun(runInput, {
+        idempotencyKey: `retry:job:${job.id}:${Date.now()}`,
       });
       return;
     }
@@ -210,16 +224,17 @@ export async function retryFailedJob(job: ContentGenerationJob): Promise<void> {
         emitRetryFailed(job, job.label, errorMessage);
         return;
       }
-      const stageBindings = resolveSubjectGenerationStageBindings();
-      const orchestrator = createSubjectGenerationOrchestrator();
-      void orchestrator.execute(
-        { subjectId: ctx.subjectId, checklist: ctx.checklist },
-        {
-          stageBindings,
-          writer: deckWriter,
-          retryOf: job.id,
-        },
+      const runInput = await prepareSubjectGraphTopicsRunInput(
+        deckRepository,
+        modelSubjectTopics,
+        capturedAt(),
+        ctx.subjectId,
+        ctx.checklist,
+        { orchestratorRetryOf: job.id },
       );
+      await getGenerationClient().submitRun(runInput, {
+        idempotencyKey: `retry:job:${job.id}:${Date.now()}`,
+      });
       return;
     }
 
@@ -250,23 +265,31 @@ export async function retryFailedPipeline(pipelineId: string): Promise<void> {
 
   const enableReasoning = getEnableReasoningFromJobMetadata(failedJob);
   const pipelineLabel = store.pipelines[pipelineId]?.label ?? `pipeline ${pipelineId}`;
+  const modelTopic = resolveModelForSurface('topicContent');
+  const capturedAt = () => new Date().toISOString();
 
   try {
     const resumeStage = JOB_KIND_TO_STAGE[failedJob.kind];
     if (resumeStage && topicId) {
-      await runTopicGenerationPipeline({
-        chat: getChatCompletionsRepositoryForSurface('topicContent'),
+      const runInput = await prepareTopicContentRunInput(
         deckRepository,
-        writer: deckWriter,
-        subjectId,
-        topicId,
-        enableReasoning,
-        forceRegenerate: true,
-        resumeFromStage: resumeStage,
-        retryContext: {
-          pipelineRetryOf: pipelineId,
-          jobRetryOfByStage: { [resumeStage]: failedJob.id },
+        modelTopic,
+        capturedAt(),
+        {
+          subjectId,
+          topicId,
+          enableReasoning,
+          forceRegenerate: true,
+          stage: resumeStage,
+          resumeFromStage: resumeStage,
+          retryContext: {
+            pipelineRetryOf: pipelineId,
+            jobRetryOfByStage: { [resumeStage]: failedJob.id },
+          },
         },
+      );
+      await getGenerationClient().submitRun(runInput, {
+        idempotencyKey: `retry:pipeline:${pipelineId}:${Date.now()}`,
       });
       return;
     }

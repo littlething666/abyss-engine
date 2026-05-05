@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { RunEvent } from '@/features/generationContracts';
+import type { RunEvent, TopicTheoryRunInputSnapshot } from '@/features/generationContracts';
 import { inputHash } from '@/features/generationContracts';
 import type { IGenerationRunRepository, RunInput, RunSnapshot } from '@/types/repository';
 
@@ -285,6 +285,47 @@ describe('createGenerationClient', () => {
     expect(local.listRuns).toHaveBeenCalledWith({ status: 'recent', limit: 15 });
   });
 
+  it('submitRun forwards to repo with default idempotency key when omitted', async () => {
+    const local = mockRepo();
+    const client = createGenerationClient({
+      deviceId: 'dev-1',
+      now: () => 0,
+      flags: { durableRuns: false },
+      localRepo: local,
+      durableRepo: mockRepo(),
+    });
+
+    const snapshot = {
+      snapshot_version: 1,
+      pipeline_kind: 'topic-theory',
+      schema_version: 1,
+      prompt_template_version: 'v1',
+      model_id: 'm',
+      captured_at: '2026-05-04T00:00:00.000Z',
+      subject_id: 'sub-1',
+      topic_id: 'topic-1',
+      topic_title: 'T',
+      learning_objective: 'L',
+    } as TopicTheoryRunInputSnapshot;
+
+    const runInput: Extract<RunInput, { pipelineKind: 'topic-content' }> = {
+      pipelineKind: 'topic-content' as const,
+      subjectId: 'sub-1',
+      topicId: 'topic-1',
+      snapshot,
+      topicContentLegacyOptions: {
+        enableReasoning: false,
+        forceRegenerate: false,
+        legacyStage: 'full' as const,
+      },
+    };
+
+    await client.submitRun(runInput);
+
+    expect(local.submitRun).toHaveBeenCalledTimes(1);
+    const [, key] = vi.mocked(local.submitRun).mock.calls[0]!;
+    expect(key).toMatch(/^tc:sub-1:topic-1:full:/);
+  });
 });
 
 describe('registerGenerationClient / getGenerationClient', () => {

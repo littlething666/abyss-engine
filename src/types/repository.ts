@@ -1,4 +1,5 @@
-import type { Card, Subject, SubjectGraph, TopicDetails } from './core';
+import type { Card, MiniGameType, Subject, SubjectGraph, TopicDetails } from './core';
+import type { TopicPipelineRetryContext } from './contentGeneration';
 import type {
   ArtifactEnvelope,
   CrystalTrialRunInputSnapshot,
@@ -156,6 +157,19 @@ export type RunInput =
       snapshot: TopicContentRunInputSnapshot;
       subjectId: string;
       topicId: string;
+      /**
+       * Bridges today's `runTopicGenerationPipeline` surface (full pipeline,
+       * per-stage retries, `forceRegenerate`, mini-game subset) until durable
+       * stage checkpoints own every flag on the snapshot envelope.
+       */
+      topicContentLegacyOptions?: {
+        enableReasoning: boolean;
+        forceRegenerate: boolean;
+        legacyStage?: 'theory' | 'study-cards' | 'mini-games' | 'full';
+        miniGameKindsOverride?: MiniGameType[];
+        retryContext?: TopicPipelineRetryContext;
+        resumeFromStage?: 'theory' | 'study-cards' | 'mini-games' | 'full';
+      };
     }
   | {
       pipelineKind: 'topic-expansion';
@@ -163,12 +177,19 @@ export type RunInput =
       subjectId: string;
       topicId: string;
       nextLevel: 1 | 2 | 3;
+      topicExpansionLegacyOptions?: {
+        enableReasoning: boolean;
+        retryOf?: string;
+      };
     }
   | {
       pipelineKind: 'subject-graph';
       snapshot: SubjectGraphTopicsRunInputSnapshot | SubjectGraphEdgesRunInputSnapshot;
       subjectId: string;
       stage: 'topics' | 'edges';
+      subjectGraphLegacyOptions?: {
+        orchestratorRetryOf?: string;
+      };
     }
   | {
       pipelineKind: 'crystal-trial';
@@ -176,6 +197,9 @@ export type RunInput =
       subjectId: string;
       topicId: string;
       currentLevel: number;
+      crystalTrialLegacyOptions?: {
+        retryOf?: string;
+      };
     };
 
 /**

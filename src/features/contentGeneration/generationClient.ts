@@ -24,8 +24,8 @@ import type {
   TopicContentRunInputSnapshot,
 } from '@/types/repository';
 
-/** Checkpoint tag for topic-content idempotency keys and snapshot routing. */
-export type TopicContentStageTag = 'theory' | 'study-cards' | 'mini-games';
+/** Stage segment for topic-content idempotency keys and snapshot routing. */
+export type TopicContentStageTag = 'theory' | 'study-cards' | 'mini-games' | 'full';
 
 /**
  * Resolved inputs for a topic-content run. Each variant maps to one snapshot
@@ -82,6 +82,12 @@ export interface GenerationClient {
     input: CrystalTrialStartInput,
     opts?: { idempotencyKey?: string },
   ): Promise<{ runId: string }>;
+  /**
+   * Low-level submit when a `RunInput` is already assembled (legacy bridge,
+   * composition roots, retries). Computes the default Idempotency-Key from
+   * `input.snapshot` when `opts.idempotencyKey` is omitted.
+   */
+  submitRun(input: RunInput, opts?: { idempotencyKey?: string }): Promise<{ runId: string }>;
   cancel(runId: string, reason: CancelReason): Promise<void>;
   retry(
     runId: string,
@@ -160,6 +166,46 @@ function defaultCrystalTrialIdempotencyKey(
   return inputHash(snapshot).then(
     (h) => `ct:${subjectId}:${topicId}:${currentLevel}:${h}`,
   );
+}
+
+function topicContentIdempotencySegment(
+  input: Extract<RunInput, { pipelineKind: 'topic-content' }>,
+): TopicContentStageTag {
+  const ls = input.topicContentLegacyOptions?.legacyStage;
+  if (ls === 'full') return 'full';
+  if (ls === 'theory') return 'theory';
+  if (ls === 'study-cards') return 'study-cards';
+  if (ls === 'mini-games') return 'mini-games';
+  const snap = input.snapshot;
+  if (snap.pipeline_kind === 'topic-theory') return 'theory';
+  if (snap.pipeline_kind === 'topic-study-cards') return 'study-cards';
+  return 'mini-games';
+}
+
+async function defaultIdempotencyKeyForRunInput(input: RunInput): Promise<string> {
+  switch (input.pipelineKind) {
+    case 'topic-content': {
+      const h = await inputHash(input.snapshot);
+      const seg = topicContentIdempotencySegment(input);
+      return `tc:${input.subjectId}:${input.topicId}:${seg}:${h}`;
+    }
+    case 'topic-expansion':
+      return defaultTopicExpansionIdempotencyKey(
+        input.subjectId,
+        input.topicId,
+        input.nextLevel,
+        input.snapshot,
+      );
+    case 'subject-graph':
+      return defaultSubjectGraphIdempotencyKey(input.subjectId, input.stage, input.snapshot);
+    case 'crystal-trial':
+      return defaultCrystalTrialIdempotencyKey(
+        input.subjectId,
+        input.topicId,
+        input.currentLevel,
+        input.snapshot,
+      );
+  }
 }
 
 export function createGenerationClient(deps: CreateGenerationClientDeps): GenerationClient {
@@ -242,6 +288,12 @@ export function createGenerationClient(deps: CreateGenerationClientDeps): Genera
         currentLevel: input.currentLevel,
       };
       return repo().submitRun(runInput, idempotencyKey);
+    },
+
+    async submitRun(input, opts) {
+      const idempotencyKey =
+        opts?.idempotencyKey ?? (await defaultIdempotencyKeyForRunInput(input));
+      return repo().submitRun(input, idempotencyKey);
     },
 
     cancel(runId, reason) {

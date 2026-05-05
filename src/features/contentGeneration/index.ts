@@ -17,6 +17,14 @@ export type {
   TopicExpansionStartInput,
 } from './generationClient';
 
+export {
+  prepareCrystalTrialRunInput,
+  prepareSubjectGraphTopicsRunInput,
+  prepareTopicContentRunInput,
+  prepareTopicExpansionRunInput,
+} from './prepareGenerationRunSubmit';
+export type { TopicContentGenerationRequest } from './prepareGenerationRunSubmit';
+
 export { failureKeyForJob, failureKeyForRetryRoutingInstance } from './failureKeys';
 
 export { runContentGenerationJob } from './runContentGenerationJob';

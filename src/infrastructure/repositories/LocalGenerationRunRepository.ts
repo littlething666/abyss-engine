@@ -9,11 +9,11 @@ import {
   type SubjectGraphTopicsRunInputSnapshot,
 } from '@/features/generationContracts';
 import type { MiniGameType } from '@/types/core';
+import type { TopicGenerationStage } from '@/features/contentGeneration/pipelines/topicGenerationStage';
 import type { IChatCompletionsRepository } from '@/types/llm';
 import type { StudyChecklist } from '@/types/studyChecklist';
 import { runExpansionJob } from '@/features/contentGeneration/jobs/runExpansionJob';
 import { runTopicGenerationPipeline } from '@/features/contentGeneration/pipelines/runTopicGenerationPipeline';
-import type { TopicGenerationStage } from '@/features/contentGeneration/pipelines/topicGenerationStage';
 import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 import {
@@ -27,6 +27,9 @@ import {
   sealSubjectGraphEdges,
   sealSubjectGraphTopics,
 } from './localGenerationRunArtifactCapture';
+import {
+  resolveEnableReasoningForSurface,
+} from '@/infrastructure/llmInferenceSurfaceProviders';
 import type {
   CancelReason,
   IDeckContentWriter,
@@ -553,7 +556,10 @@ export class LocalGenerationRunRepository implements IGenerationRunRepository {
 // --- Phase 0.5 step 2b: default dispatchers wrapping legacy in-tab runners ---
 
 export interface LegacyLocalRunnerWiringDeps {
+  /** Chat surface for topic pipeline + expansion + subject graph jobs. */
   chat: IChatCompletionsRepository;
+  /** Optional override for Crystal Trial (defaults to `chat` when omitted). */
+  crystalTrialChat?: IChatCompletionsRepository;
   deckRepository: IDeckRepository;
   writer: IDeckContentWriter;
 }
@@ -608,23 +614,65 @@ export function createLegacyLocalRunnerDispatchers(
   deps: LegacyLocalRunnerWiringDeps,
 ): LocalRunnerDispatchers {
   const { chat, deckRepository, writer } = deps;
+  const crystalChat = deps.crystalTrialChat ?? chat;
 
   const topicContent: LocalRunnerDispatch = async (invocation) => {
     const { input, signal } = invocation;
     if (input.pipelineKind !== 'topic-content') {
       throw new Error('topicContent dispatcher invoked with non-topic-content input');
     }
-    const stageArgs = topicContentStageFromSnapshot(input.snapshot);
-    const result = await runTopicGenerationPipeline({
-      chat,
-      deckRepository,
-      writer,
-      subjectId: input.subjectId,
-      topicId: input.topicId,
-      signal,
-      forceRegenerate: true,
-      ...stageArgs,
-    });
+    const legacy = input.topicContentLegacyOptions;
+    const forceRegenerate = legacy?.forceRegenerate ?? false;
+    const enableReasoning =
+      legacy?.enableReasoning ?? resolveEnableReasoningForSurface('topicContent');
+
+    const runWithStage = async (
+      stage: TopicGenerationStage,
+      miniGameKindsOverride?: MiniGameType[],
+    ) => {
+      return runTopicGenerationPipeline({
+        chat,
+        deckRepository,
+        writer,
+        subjectId: input.subjectId,
+        topicId: input.topicId,
+        signal,
+        forceRegenerate,
+        enableReasoning,
+        stage,
+        miniGameKindsOverride,
+        retryContext: legacy?.retryContext,
+        resumeFromStage: legacy?.resumeFromStage,
+      });
+    };
+
+    let result: Awaited<ReturnType<typeof runTopicGenerationPipeline>>;
+    const ls = legacy?.legacyStage;
+    if (ls === 'full') {
+      result = await runWithStage('full');
+    } else if (ls === 'theory') {
+      result = await runWithStage('theory');
+    } else if (ls === 'study-cards') {
+      result = await runWithStage('study-cards');
+    } else if (ls === 'mini-games') {
+      result = await runWithStage('mini-games', legacy?.miniGameKindsOverride);
+    } else {
+      const stageArgs = topicContentStageFromSnapshot(input.snapshot);
+      result = await runTopicGenerationPipeline({
+        chat,
+        deckRepository,
+        writer,
+        subjectId: input.subjectId,
+        topicId: input.topicId,
+        signal,
+        forceRegenerate,
+        enableReasoning,
+        ...stageArgs,
+        miniGameKindsOverride: legacy?.miniGameKindsOverride,
+        retryContext: legacy?.retryContext,
+        resumeFromStage: legacy?.resumeFromStage,
+      });
+    }
     if (signal.aborted) {
       return { status: 'cancelled' };
     }
@@ -648,6 +696,7 @@ export function createLegacyLocalRunnerDispatchers(
     if (input.pipelineKind !== 'topic-expansion') {
       throw new Error('topicExpansion dispatcher invoked with non-topic-expansion input');
     }
+    const legacy = input.topicExpansionLegacyOptions;
     const result = await runExpansionJob({
       chat,
       deckRepository,
@@ -656,6 +705,9 @@ export function createLegacyLocalRunnerDispatchers(
       topicId: input.topicId,
       nextLevel: input.nextLevel,
       signal,
+      enableReasoning:
+        legacy?.enableReasoning ?? resolveEnableReasoningForSurface('topicContent'),
+      retryOf: legacy?.retryOf,
     });
     if (signal.aborted) {
       return { status: 'cancelled' };
@@ -700,7 +752,12 @@ export function createLegacyLocalRunnerDispatchers(
     const orchestrator = createSubjectGenerationOrchestrator();
     const execResult = await orchestrator.execute(
       { subjectId: input.subjectId, checklist },
-      { stageBindings, writer, signal },
+      {
+        stageBindings,
+        writer,
+        signal,
+        retryOf: input.subjectGraphLegacyOptions?.orchestratorRetryOf,
+      },
     );
     if (signal.aborted) {
       return { status: 'cancelled' };
@@ -732,12 +789,13 @@ export function createLegacyLocalRunnerDispatchers(
       throw new Error('crystalTrial dispatcher invoked with non-crystal-trial input');
     }
     const genResult = await generateTrialQuestions({
-      chat,
+      chat: crystalChat,
       deckRepository,
       subjectId: input.subjectId,
       topicId: input.topicId,
       currentLevel: input.currentLevel,
       signal,
+      retryOf: input.crystalTrialLegacyOptions?.retryOf,
     });
     if (signal.aborted) {
       return { status: 'cancelled' };

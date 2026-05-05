@@ -7,7 +7,6 @@ const BAND_CAP_XP = 99; // CRYSTAL_XP_PER_LEVEL (100) - 1
 const {
   busApi,
   mentorApi,
-  orchestratorApi,
   telemetryApi,
   deckApi,
   progressionApi,
@@ -70,13 +69,56 @@ const {
       }),
     },
     mentorApi: { handleMentorTrigger: vi.fn(), state: mentorState },
-    orchestratorApi: { execute: vi.fn().mockResolvedValue({ ok: true }) },
     telemetryApi: { log: vi.fn() },
     deckApi: { getManifest: vi.fn().mockResolvedValue({ subjects: [] }) },
     progressionApi: crystalGardenStoreMock,
     studySessionApi: studySessionStoreMock,
   };
 });
+
+const { mockSubmitRun } = vi.hoisted(() => ({
+  mockSubmitRun: vi.fn().mockResolvedValue({ runId: 'run-1' }),
+}));
+
+vi.mock('@/infrastructure/wireGenerationClient', () => ({
+  ensureGenerationClientRegistered: vi.fn(),
+}));
+
+vi.mock('@/features/contentGeneration/generationClient', () => ({
+  getGenerationClient: () => ({ submitRun: mockSubmitRun }),
+  registerGenerationClient: vi.fn(),
+  createGenerationClient: vi.fn(),
+}));
+
+vi.mock('@/features/contentGeneration/prepareGenerationRunSubmit', () => ({
+  prepareTopicContentRunInput: vi.fn().mockResolvedValue({
+    pipelineKind: 'topic-content',
+    subjectId: 'x',
+    topicId: 'y',
+    snapshot: { pipeline_kind: 'topic-theory' },
+    topicContentLegacyOptions: {},
+  }),
+  prepareSubjectGraphTopicsRunInput: vi.fn().mockResolvedValue({
+    pipelineKind: 'subject-graph',
+    subjectId: 'x',
+    stage: 'topics',
+    snapshot: { pipeline_kind: 'subject-graph-topics' },
+  }),
+  prepareTopicExpansionRunInput: vi.fn().mockResolvedValue({
+    pipelineKind: 'topic-expansion',
+    subjectId: 'x',
+    topicId: 'y',
+    nextLevel: 1,
+    snapshot: { pipeline_kind: 'topic-expansion-cards' },
+  }),
+  prepareCrystalTrialRunInput: vi.fn().mockResolvedValue({
+    pipelineKind: 'crystal-trial',
+    subjectId: 'x',
+    topicId: 'y',
+    currentLevel: 0,
+    snapshot: { pipeline_kind: 'crystal-trial' },
+  }),
+}));
 
 vi.mock('@/features/mentor', () => ({
   handleMentorTrigger: mentorApi.handleMentorTrigger,
@@ -96,23 +138,7 @@ vi.mock('@/infrastructure/llmInferenceRegistry', () => ({
 
 vi.mock('@/infrastructure/llmInferenceSurfaceProviders', () => ({
   resolveEnableReasoningForSurface: vi.fn(() => false),
-}));
-
-vi.mock('@/features/contentGeneration/jobs/runExpansionJob', () => ({
-  runExpansionJob: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('@/features/contentGeneration/pipelines/runTopicGenerationPipeline', () => ({
-  runTopicGenerationPipeline: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('@/features/subjectGeneration', () => ({
-  createSubjectGenerationOrchestrator: vi.fn(() => ({ execute: orchestratorApi.execute })),
-  resolveSubjectGenerationStageBindings: vi.fn(() => ({})),
-}));
-
-vi.mock('@/features/crystalTrial/generateTrialQuestions', () => ({
-  generateTrialQuestions: vi.fn().mockResolvedValue(undefined),
+  resolveModelForSurface: vi.fn(() => 'test-model'),
 }));
 
 vi.mock('@/features/crystalTrial', () => ({
@@ -185,8 +211,8 @@ beforeEach(() => {
   progressionApi.reset();
   mentorApi.state.firstSubjectGenerationEnqueuedAt = null;
   mentorApi.state.markFirstSubjectGenerationEnqueued.mockClear();
-  orchestratorApi.execute.mockReset();
-  orchestratorApi.execute.mockResolvedValue({ ok: true });
+  mockSubmitRun.mockReset();
+  mockSubmitRun.mockResolvedValue({ runId: 'run-1' });
   deckApi.getManifest.mockReset();
   deckApi.getManifest.mockResolvedValue({ subjects: [] });
   telemetryApi.log.mockReset();
@@ -371,7 +397,7 @@ describe('eventBusHandlers - subject generation mentor wiring', () => {
   });
 
   it('routes failed subject generation to a mentor failure trigger and telemetry', async () => {
-    orchestratorApi.execute.mockImplementationOnce(async () => {
+    mockSubmitRun.mockImplementationOnce(async () => {
       busApi.emit('subject-graph:generation-failed', {
         subjectId: 'calculus',
         subjectName: 'Calculus',
@@ -381,11 +407,14 @@ describe('eventBusHandlers - subject generation mentor wiring', () => {
         jobId: 'edges-job-1',
         failureKey: failureKeyForJob('edges-job-1'),
       });
-      return { ok: false, error: 'edges failed', pipelineId: 'pipeline-1', stage: 'edges' };
+      return { runId: 'run-x' };
     });
 
     busApi.emit('subject-graph:generation-requested', { subjectId: 'calculus', checklist: { topicName: 'Calculus' } });
     await flushMicrotasks();
+    await new Promise<void>((r) => {
+      setTimeout(r, 0);
+    });
 
     expect(handleMentorTriggerSpy).toHaveBeenCalledWith('subject:generation-failed', {
       subjectName: 'Calculus',
