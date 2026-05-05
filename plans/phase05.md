@@ -325,16 +325,34 @@ The `@/features/contentGeneration/index.ts` re-export of `runTopicGenerationPipe
 ```tsx
 import type { Artifact, ArtifactEnvelope, ArtifactKind } from './types';
 
+export type AppliedArtifactRecordScope =
+	| { variant: 'topic-expansion'; subjectId: string; topicId: string; targetLevel: number };
+
 export interface ArtifactApplyContext {
 	runId: string;
 	deviceId: string;
 	now: () => number;
 	dedupeStore: AppliedArtifactsStore;
+	subjectId?: string;
+	topicId?: string;
+	/** Run snapshot `next_level` — required for topic-expansion supersession. */
+	topicExpansionTargetLevel?: number;
+	/** Stage A lattice `contentHash` for subject-graph Stage B. */
+	subjectGraphLatticeContentHash?: string;
 }
 
 export interface AppliedArtifactsStore {
 	has(contentHash: string): Promise<boolean>;
-	record(contentHash: string, kind: ArtifactKind, appliedAt: number): Promise<void>;
+	record(
+		contentHash: string,
+		kind: ArtifactKind,
+		appliedAt: number,
+		scope?: AppliedArtifactRecordScope,
+	): Promise<void>;
+	getLatestTopicExpansionScope(
+		subjectId: string,
+		topicId: string,
+	): Promise<{ contentHash: string; targetLevel: number; appliedAt: number } | null>;
 }
 
 export interface ArtifactApplier<K extends ArtifactKind = ArtifactKind> {
@@ -366,7 +384,7 @@ Owns the writes that today happen at the tail of `runTopicGenerationPipeline.ts`
 Owns the tail writes from `runExpansionJob.ts` for the `topic-expansion-cards` artifact kind.
 
 - Calls `deckWriter.appendTopicCards(...)` (NOT `upsertTopicCards`) per the Phase 0 expansion semantics.
-- Supersession: if `context.dedupeStore` records a NEWER expansion `contentHash` for the same `(subjectId, topicId)`, the applier returns `{ applied: false, reason: 'superseded' }` and `generationRunEventHandlers.ts` swallows the event without firing player-facing failure copy (Plan v3 cancel/supersession gate).
+- Supersession: when `context.topicExpansionTargetLevel` is set (from the run snapshot’s `next_level`), the applier compares against `dedupeStore.getLatestTopicExpansionScope(subjectId, topicId)` (backed by scoped rows in `applied_artifacts`). If a **stale** run’s artifact arrives after a winning run for the same target level (or an older level after a newer level was already applied), it returns `{ applied: false, reason: 'superseded' }` and `generationRunEventHandlers.ts` swallows the event without firing player-facing failure copy. Legitimate later level-ups (higher `next_level`) still apply. Each successful apply calls `record(..., scope: { variant: 'topic-expansion', subjectId, topicId, targetLevel })` when the target level is known.
 
 ### 5.4 Subject Graph applier
 
@@ -374,7 +392,7 @@ Owns the tail writes from `runExpansionJob.ts` for the `topic-expansion-cards` a
 
 Applies `subject-graph-topics` (Stage A) then `subject-graph-edges` (Stage B). Today the `subjectGenerationOrchestrator.ts` writes both via `deckWriter.upsertGraph(...)` / `upsertSubject(...)` directly; that final-write block moves into the applier.
 
-- Stage B requires Stage A's `contentHash` to be applied first. If absent, returns `{ applied: false, reason: 'missing-stage-a' }`; `generationRunEventHandlers.ts` retries on the next observed event.
+- Stage B requires the Stage A lattice `contentHash` for **this** run to already be present in the dedupe store. The composition root passes `context.subjectGraphLatticeContentHash` (equals `SubjectGraphEdgesRunInputSnapshot.lattice_artifact_content_hash` and the Stage A artifact’s `contentHash`). If missing or not `has(...)` in the store, returns `{ applied: false, reason: 'missing-stage-a' }` so the handler can retry after Stage A applies or replays (including the case where Stage A is a deduped no-op but the hash remains recorded).
 - The Subject Graph Stage B `correctPrereqEdges` deterministic-correction (the narrow [AGENTS.md](http://AGENTS.md) curriculum-prerequisite-edges exception preserved by PR #44) STAYS inside `parseTopicLatticeResponse.ts` — the applier consumes the corrected lattice without re-running the correction.
 
 ### 5.5 Crystal Trial applier
@@ -390,7 +408,7 @@ Applies the `crystal-trial` artifact: writes the prepared `CrystalTrialScenarioQ
 
 **File:** `src/infrastructure/repositories/appliedArtifactsStore.ts` (NEW)
 
-Dexie table `applied_artifacts` keyed by `contentHash`, value `{ contentHash, kind, appliedAt }`. Bounded by hygiene cap (separate from `MAX_PERSISTED_LOGS`); pruning policy lives in this file.
+Dexie database `abyss-applied-artifacts`, table keyed by `contentHash`, value `{ contentHash, kind, appliedAt }` plus optional `topicScopeKey` / `expansionTargetLevel` for scoped topic-expansion rows. **v2** schema adds `topicScopeKey` index for `getLatestTopicExpansionScope` queries. Bounded by hygiene cap (separate from `MAX_PERSISTED_LOGS`); pruning policy lives in this file.
 
 ### 5.7 Tests
 

@@ -86,3 +86,15 @@ export { parseTopicCardsPayload, diagnoseTopicCardsPayload } from './parsers/par
 export type { ParseTopicCardsResult } from './parsers/parseTopicCardsPayload';
 export { validateGeneratedCard } from './parsers/validateGeneratedCard';
 export { normalizeMiniGameCardContent } from './parsers/normalizeMiniGameCardContent';
+
+// Phase 0.5 step 5 — Artifact Appliers
+export {
+  createTopicContentApplier,
+  type TopicContentApplier,
+  type TopicContentApplierDeps,
+} from './appliers/topicContentApplier';
+export {
+  createTopicExpansionApplier,
+  type TopicExpansionApplier,
+  type TopicExpansionApplierDeps,
+} from './appliers/topicExpansionApplier';
