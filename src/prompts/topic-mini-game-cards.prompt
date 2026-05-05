@@ -48,6 +48,17 @@ Replace the `content` object with the canonical shape for **{{expectedGameType}}
 
 Inside JSON string values, use **doubled** backslashes for LaTeX: `$\\theta$`, `$\\alpha$`, not `$\theta$` / `$\alpha$` (those break JSON: `\t` → tab, `\a` invalid).
 
+Before emitting JSON, verify:
+1. `cards.length === 1`.
+2. `cards[0].type === "MINI_GAME"`.
+3. `cards[0].content.gameType` is verbatim equal to `{{expectedGameType}}`.
+4. `cards[0].id` is unique, kebab-case, and starts with `{{topicId}}-mg-`.
+5. `cards[0].difficulty` is exactly `{{targetDifficulty}}`.
+6. If `gameType === "CATEGORY_SORT"`: every category id is unique; every category has at least one item; every item's `categoryId` references a category declared in this card; every item id is unique.
+7. If `gameType === "SEQUENCE_BUILD"`: every step id is unique; the multiset of `order` values is exactly 1..N with no gaps and no duplicates (e.g. for 5 steps, `order` values are exactly the set 1, 2, 3, 4, 5).
+8. If `gameType === "MATCH_PAIRS"`: every pair id is unique; the set of `left` values is unique under case-insensitive trimmed comparison; the set of `right` values is unique under case-insensitive trimmed comparison.
+9. The output object has exactly one top-level key: `cards`.
+
 Topic id: {{topicId}}
 Topic title: {{topicTitle}}
 Target difficulty: {{targetDifficulty}}

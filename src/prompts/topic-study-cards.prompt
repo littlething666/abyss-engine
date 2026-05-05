@@ -40,6 +40,16 @@ In JSON, `\` starts an escape. Single-backslash LaTeX inside string values **bre
 
 Use LaTeX syntax in `question`, `options`, `explanation`, `front`, `back`, etc. only with **`\\command`** form inside JSON strings (or write math without backslashes when possible).
 
+Before emitting JSON, verify:
+1. `cards.length` is 8 to 12.
+2. Every `id` is unique, lowercase kebab-case, and starts with the literal prefix `{{topicId}}-` (the value injected above).
+3. `difficulty` is exactly `{{targetDifficulty}}` on every card.
+4. Every FLASHCARD card has `content` with exactly two string fields: `front` and `back`. Never use `question` / `answer` for FLASHCARD.
+5. Every SINGLE_CHOICE card has `content` with `question` (string), `options` (array of exactly 4 strings), `correctAnswer` (string verbatim equal to one entry in `options`), and `explanation` (string). Never use `answer`; always `correctAnswer`.
+6. Every MULTI_CHOICE card has `content` with `question`, `options`, `correctAnswers` (array of strings, length ≥ 2, every entry verbatim in `options`), and `explanation`. Never use `answer` / `correctAnswer`; always `correctAnswers`.
+7. No two cards share the same normalized concept stem (lowercased, whitespace-collapsed primary noun phrase). Treat near-duplicates as duplicates.
+8. The output object has exactly one top-level key: `cards`.
+
 Topic id: {{topicId}}
 Topic title: {{topicTitle}}
 Target difficulty: {{targetDifficulty}}

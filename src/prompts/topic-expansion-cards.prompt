@@ -11,13 +11,24 @@ Requirements:
 - Every `id` must be unique, kebab-case, prefixed `{{topicId}}-d{{difficulty}}-`.
 - Ground every card in the theory and the questions below.
 - Do not repeat existing concept stems or mini-game item labels listed below.
-- Difficulty 2 should apply, calculate, and classify in straightforward single-concept contexts.
-- Difficulty 3 should analyze, contrast, debug, and use multi-step reasoning across composed concepts.
-- Difficulty 4 should synthesize, design, critique, and transfer to novel scenarios.
+- Difficulty 2 = single-concept *apply / calculate / classify* in straightforward contexts. The card stem must require the learner to perform the operation, not merely recall its definition.
+- Difficulty 3 = multi-step *analyze / contrast / debug* across composed concepts. The card stem must require reasoning across at least two concepts from the theory, not a single-concept restatement.
+- Difficulty 4 = *synthesize / design / critique / transfer* to novel scenarios. The card stem must place the learner in a scenario not present verbatim in the theory and require them to combine concepts to produce the answer.
 
 ### JSON strings and LaTeX
 
 In JSON, LaTeX commands must use doubled backslashes in source strings (e.g. `$\\theta$`, `$\\alpha$`), never a single `\` before `t`, `n`, `a`, etc.
+
+Before emitting JSON, verify:
+1. `cards.length` is 6 to 10.
+2. The number of cards with `type === "MINI_GAME"` is 1 or 2.
+3. Every card's `difficulty` is exactly `{{difficulty}}`.
+4. Every card's `id` is unique, kebab-case, and starts with `{{topicId}}-d{{difficulty}}-`.
+5. No card's concept stem (lowercased, whitespace-collapsed primary noun phrase) appears in the *Existing concept stems to avoid* block above (case-insensitive normalized comparison; treat near-duplicates as duplicates).
+6. No mini-game card declares a category, item, sequence step, or pair label whose normalized form appears in the *Existing mini-game item labels to avoid* block above.
+7. Every FLASHCARD / SINGLE_CHOICE / MULTI_CHOICE card satisfies the same per-shape rules as `topic-study-cards.prompt`: FLASHCARD `{ front, back }`; SINGLE_CHOICE `{ question, options[4], correctAnswer ∈ options, explanation }`; MULTI_CHOICE `{ question, options, correctAnswers (≥ 2, ⊆ options), explanation }`.
+8. Every MINI_GAME card satisfies the playability rules from `topic-mini-game-cards.prompt`.
+9. The output object has exactly one top-level key: `cards`.
 
 Topic id: {{topicId}}
 Topic title: {{topicTitle}}

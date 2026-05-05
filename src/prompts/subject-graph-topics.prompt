@@ -32,3 +32,12 @@ Output valid JSON matching this shape:
 }
 
 There must be exactly {{topicCount}} objects in `topics`, with tiers ranging from 1 through {{maxTier}} and counts per tier exactly {{topicsPerTier}} each.
+
+Before emitting JSON, verify:
+1. `topics.length` equals exactly `{{topicCount}}`.
+2. The multiset of `tier` values is exactly `{{topicsPerTier}}` copies each of `1`, `2`, …, `{{maxTier}}`.
+3. Every `iconName` is a verbatim string from the curated allowlist above. No invented names; no spelling drift.
+4. Every `topicId` is unique across the array.
+5. Every `title` is unique across the array under case-insensitive trimmed comparison.
+6. Every `learningObjective` is a single non-empty learner-facing sentence and is NOT a verbatim rewording of its `title` (e.g. "Learners can explain Foo" for a topic titled "Foo" is a verbatim rewording — produce a more specific objective that names what the learner can DO).
+7. The output object has exactly one top-level key: `topics`. No `prerequisites` field on any topic — edges are generated in a later step.
