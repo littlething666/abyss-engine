@@ -1,0 +1,23 @@
+{
+  "name": "abyss-durable-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "hono": "^4.12.16"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260503.0",
+    "@supabase/supabase-js": "^2.57.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5",
+    "wrangler": "^4.83.0"
+  }
+}

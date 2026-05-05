@@ -1,0 +1,4 @@
+-- 0002_indexes.sql
+-- Placeholder for future performance indexes.
+-- All Phase 1 indexes are already defined inline in 0001_init.sql.
+-- Add any additional indexes here as query patterns emerge from Phase 2+.

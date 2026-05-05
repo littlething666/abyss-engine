@@ -1,0 +1,48 @@
+# abyss-durable-orchestrator — Phase 1 Crystal Trial pilot
+#
+# Secrets (set via `wrangler secret put`):
+#   SUPABASE_URL            — Supabase project URL (e.g. https://<ref>.supabase.co)
+#   SUPABASE_SERVICE_ROLE   — Supabase service-role key (server-side only)
+#   OPENROUTER_API_KEY      — OpenRouter API key for LLM calls
+
+name = "abyss-durable-orchestrator"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ---------------------------------------------------------------------------
+# Build — esbuild aliases for the contracts module.
+# ---------------------------------------------------------------------------
+[build]
+alias = { "@contracts" = "../src/features/generationContracts" }
+
+# ---------------------------------------------------------------------------
+# Workflow bindings — one class per pipeline kind.
+# Only Crystal Trial is wired in Phase 1; Topic Content, Topic Expansion,
+# and Subject Graph land in Phase 2.
+# ---------------------------------------------------------------------------
+# [[workflows]]
+# binding = "CRYSTAL_TRIAL_WORKFLOW"
+# class_name = "CrystalTrialWorkflow"
+
+# ---------------------------------------------------------------------------
+# Durable Object binding for per-run event-bus pub/sub (SSE tailing).
+# ---------------------------------------------------------------------------
+# [[durable_objects.bindings]]
+# name = "RUN_EVENT_BUS"
+# class_name = "RunEventBus"
+
+# ---------------------------------------------------------------------------
+# Environment variables (non-secret — safe for version control).
+# ---------------------------------------------------------------------------
+[vars]
+# Allowed CORS origins for the API surface (comma-separated).
+# Production origin(s) go first; localhost is always included for dev.
+ALLOWED_ORIGINS = "https://abyss.globesoul.com,https://littlething666.github.io,http://localhost:3000"
+
+# ---------------------------------------------------------------------------
+# Placement — keep the Worker close to Supabase (us-east).
+# ---------------------------------------------------------------------------
+[placement]
+mode = "targeted"
+region = "gcp:us-east4"

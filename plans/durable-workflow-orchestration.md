@@ -38,7 +38,15 @@ Last updated: 2026-05-05. Reflects Phase 0 complete and Phase 0.5 complete (all 
 
 ### Phase 1 — Durable orchestrator + Crystal Trial pilot
 
-- [ ]  Pending.
+Last updated: 2026-05-05. PRs are stacked on `feat/durable-generation-client-phase0_5-step1`.
+
+- [x] **PR-A (`backend/` skeleton).** Workspace scaffold, `wrangler.toml`, `tsconfig.json` with `@contracts/*` path-mapping, minimal Hono app (`GET /health` + 404 catch-all), `Env` type, Vitest config, CI workflow (`backend-ci.yml`). All 2 smoke tests green; root 182-file / 1686-test suite unchanged. **Landed in workspace 2026-05-05.**
+- [x] **PR-B (Supabase schema).** Landed in workspace 2026-05-05. Adds `migrations/0001_init.sql` (full schema: devices, runs, jobs, events, artifacts, usage_counters + `allocate_event_seq`, `increment_runs_started`, `record_tokens` RPC functions + all Phase 1 indexes) and `migrations/0002_indexes.sql` (placeholder for future indexes). Adds `backend/src/repositories/` with shared types (`types.ts`), Supabase client factory (`supabaseClient.ts`), and four repos (`devicesRepo`, `runsRepo`, `artifactsRepo`, `usageCountersRepo`) bundled via `makeRepos(env)` barrel. 18 unit tests against manual DI mock clients (no `vi.mock` needed). Root 1706-test suite + 254 eval tests green.
+- [x] **PR-C (HTTP surface, no workflow yet).** Landed in workspace 2026-05-05. Adds full Hono API surface: `POST /v1/runs` (cache-hit path works, Workflow creation stubbed), `GET /v1/runs`, `GET /v1/runs/:id`, `POST /v1/runs/:id/cancel` (cooperative cancel with `requestCancel` repo method), `POST /v1/runs/:id/retry`, `GET /v1/runs/:id/events` (SSE replay of persisted events, live tail stubbed), `GET /v1/artifacts/:id`, `PUT /v1/settings` (Phase 1 mirror). Middleware chain: CORS → device-id (UUID validation + devices upsert) → idempotency (POST /v1/runs only). Budget guard (minimal Phase 1 caps: 10 runs/day, 500K tokens/day) returns 429 before run creation. Added `findByIdempotencyKey` and `requestCancel` to `IRunsRepo`. 22 tests pass, 1 skipped (idempotency integration test needs mock Supabase). Root 1708-test suite + 254 eval tests green.
+- [x] **PR-D (Workflow class).** Landed in workspace 2026-05-05. Adds `CrystalTrialWorkflow` extending `WorkflowEntrypoint` with all six steps (plan → generate → parse → validate → persist → ready), cooperative cancel via `checkCancel` before every boundary, `WorkflowFail`/`WorkflowAbort` error classes, server-side `openrouterClient.callCrystalTrial` (strict `json_schema` + response-healing plugin), `budgetGuard.assertBelowDailyCap` (10 runs/day, 500K tokens/day), `[build]` esbuild alias for `@contracts`, and `cloudflare:workers` type integration. Parse step carries `@ts-expect-error` for `Serializable<Record<string, unknown>>` constraint (safe at runtime — DB stores `jsonb`). 15 new tests (7 budget guard + 8 openrouter client) all green. Root 186 files / 1723 tests + 254 eval tests green.
+- [ ] **PR-E (Frontend wiring).** Pending.
+- [ ] **PR-F (Hydration + lifecycle).** Pending.
+- [ ] **PR-G (E2E + cancel + SSE-resume tests).** Pending.
 
 ### Phase 2 — Migrate remaining pipelines
 
