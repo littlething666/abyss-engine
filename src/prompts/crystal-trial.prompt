@@ -63,8 +63,12 @@ Return ONLY valid JSON:
 }
 ```
 
-IMPORTANT:
-- `correctAnswer` MUST exactly match one of the `options` strings
-- `category` MUST be one of: "interview", "troubleshooting", "architecture"
-- Generate exactly {{questionCount}} questions with ids trial-q1 through trial-q{{questionCount}}
-- Each `sourceCardSummaries` should have 2-3 entries referencing specific card concepts
+IMPORTANT — before emitting JSON, verify:
+1. `questions.length` equals exactly `{{questionCount}}`.
+2. The `id` values are exactly `trial-q1`, `trial-q2`, …, `trial-q{{questionCount}}` in order. No gaps, no duplicates.
+3. Every `correctAnswer` is verbatim equal to one entry in the same question's `options`.
+4. Every `category` is exactly one of `"interview"`, `"troubleshooting"`, `"architecture"`.
+5. Within every question, the `options` array contains 4 strings that are pairwise distinct under case-insensitive trimmed comparison.
+6. Every `sourceCardSummaries` array has length 2 or 3.
+7. Every input card supplied in the *Source Material* block above is referenced by at least one question's `sourceCardSummaries`. If a card is not referenced anywhere, regenerate.
+8. The output object has exactly one top-level key: `questions`.

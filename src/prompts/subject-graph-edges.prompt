@@ -17,3 +17,12 @@ Rules (must all hold):
 3. For a **tier-2** key, each prerequisite must be a **tier-1** topic id (string or `{ "topicId", "minLevel" }` with tier-1 `topicId` only).
 4. For a **tier-3** key, prerequisites may reference **tier-1 and tier-2** ids only. There must be **at least one tier-2** prerequisite. **Never** reference a tier-3 id in any value array.
 5. Use only topic ids that appear in the injected lattice lists—no invented ids.
+
+Before emitting JSON, verify:
+1. The `edges` object has exactly one key for every tier-2 topic id and every tier-3 topic id from the injected lattice. No tier-1 keys.
+2. For every tier-2 key, every prerequisite (whether bare string or `{ "topicId", "minLevel" }`) references a tier-1 topic id from the injected lattice. No tier-2 or tier-3 ids on the right-hand side of a tier-2 key.
+3. For every tier-3 key, every prerequisite references a tier-1 or tier-2 topic id from the injected lattice. At least one prerequisite per tier-3 key is tier-2. No tier-3 ids on the right-hand side of any key.
+4. No edge is a self-loop (`source === target`).
+5. No `(source, target)` pair is duplicated within a key's prerequisites array — even if the duplicates declare different `minLevel` values.
+6. Every prerequisite topic id is verbatim equal to a topic id in the injected lattice. No invented ids; no spelling drift.
+7. The output object has exactly one top-level key: `edges`.
