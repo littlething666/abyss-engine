@@ -1,6 +1,22 @@
 export { useContentGenerationStore, MAX_PERSISTED_LOGS } from './contentGenerationStore';
 export type { ContentGenerationState, SessionRetryRoutingFailureSurface } from './contentGenerationStore';
 
+export {
+  createGenerationClient,
+  getGenerationClient,
+  registerGenerationClient,
+} from './generationClient';
+export type {
+  CreateGenerationClientDeps,
+  CrystalTrialStartInput,
+  GenerationClient,
+  GenerationClientFlags,
+  SubjectGraphStartInput,
+  TopicContentStageTag,
+  TopicContentStartInput,
+  TopicExpansionStartInput,
+} from './generationClient';
+
 export { failureKeyForJob, failureKeyForRetryRoutingInstance } from './failureKeys';
 
 export { runContentGenerationJob } from './runContentGenerationJob';
