@@ -16,10 +16,17 @@ Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural
 ### 1. Feature-Sliced Modules
 - **Rule**: Domain/application modules that encode game-learning behavior must reside exclusively in `src/features/<feature>/`.
 - **Boundary Enforcement**: Modules communicate strictly through public APIs defined in `index.ts`. Cross-feature deep imports are prohibited.
-- **Dependency Flow**: Features may depend on `infrastructure` and `types`. Unidirectional coupling (feature → infrastructure/types) is mandatory. Cross-feature coupling must be documented.
+- **Dependency Flow**: Features depend on `types` and explicit contracts, not concrete infrastructure adapters. Any infrastructure seam a feature touches must be narrow, documented, and exposed through the feature's public `index.ts`; adapter details stay in infrastructure or composition roots.
 - **Authorized exception — `eventBusHandlers`**: `src/infrastructure/eventBusHandlers.ts` may import from `src/features/*` to register side-effect handlers (telemetry sinks, content-generation jobs, `crystalCeremonyStore` triggers, and similar) on the typed `AppEventBus`. This file is the **single sanctioned composition root** where infrastructure wires application-level reactions to domain events. Do not add new "infrastructure calls features" modules without updating this document.
 
-### 2. Strict Layered Architecture
+### 2. Module Depth
+- **Deep modules are encouraged**: a module hides substantial behavior, invariants, ordering, and error handling behind a small public interface.
+- **Deep imports are forbidden**: this is unrelated to module depth. Do not bypass a feature's public `index.ts` seam.
+- Public `index.ts` exports must be deliberate interfaces, not automatic barrels. Prefer fewer exports with more leverage.
+- Before adding a module, run the deletion test: if deleting it only removes indirection, do not add it; if deleting it would spread behavior across callers, the module is earning its depth.
+- Tests should exercise behavior through the module interface. Keep internal seams internal and do not widen a public interface only for tests.
+
+### 3. Strict Layered Architecture
 - **Types (`src/types`)**: Data contracts and interface shapes. Zero framework or runtime logic.
 - **Presentation (`src/components`)**: Rendering and UI event orchestration. Prohibited from owning primary business rules.
 - **Features (`src/features`)**: Domain/application modules. This includes **procedural generation models** (mathematical algorithms mapping SM-2 progression to physical growth parameters).
@@ -27,19 +34,19 @@ Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural
 - **Composition (`src/hooks`)**: State and query wiring. Prohibited from containing rule-bearing business logic.
 - **Infrastructure (`src/infrastructure`)**: External boundaries (I/O, storage, network adapters, realtime wiring). The typed app event bus (`eventBus.ts`) lives here; handler wiring (`eventBusHandlers.ts`) uses the feature-import exception documented under Feature-Sliced Modules.
 
-### 3. Repository Pattern & Data Access
+### 4. Repository Pattern & Data Access
 - **Rule**: Direct remote I/O (e.g., `fetch`) is strictly prohibited in domain and component files.
 - **Implementation**: Contracts must be defined in `src/types/repository.ts`. Concrete implementations must remain isolated in `src/infrastructure/repositories/*`.
 - **Query Orchestration**: Content reads must execute through repository-backed query helpers. Runtime environment decisions (URLs, stale policies, retry behavior) are managed via infrastructure hooks, not domain modules.
 
-### 4. Data-Driven Engine Pattern (Buff System)
+### 5. Data-Driven Engine Pattern (Buff System)
 - **Separation of Concerns**:
   - `buffDefinitions.ts`: Static configuration and entity definition (what exists).
   - `buffEngine.ts`: Core runtime rules and logic (how it behaves).
   - `buffDisplay.ts`: Presentation mapping (how it looks).
   - `progressionStore.ts`: Lifecycle and state management (when it triggers).
 
-### 5. WebGPU & Mobile-First Graphics Engine
+### 6. WebGPU & Mobile-First Graphics Engine
 - **Renderer Initialization**: The standard `<Canvas>` import from `@react-three/fiber` is strictly prohibited. You must import `<Canvas>` exclusively from `@react-three/fiber/webgpu` to natively initialize the asynchronous `WebGPURenderer`. Manual `gl` prop instantiation of the WebGPU renderer is deprecated.
 - **State API Refactoring**: The `state.gl` property is deprecated in R3F v10. Access the renderer exclusively via `state.renderer` across all components and `useFrame` hooks.
 - **Drei Component Import Paths**: The root `@react-three/drei` entry point is forbidden, as it defaults to legacy WebGL implementations. All Drei components must be imported via their dedicated WebGPU entry points (e.g., `@react-three/drei/webgpu`).
@@ -48,17 +55,6 @@ Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural
 - **Post-Processing & Pipelines**: The `@react-three/postprocessing` library and `EffectComposer` are forbidden. Implement post-processing using native WebGPU nodes and the R3F v10 `usePostProcessing` hook. Use the `RenderPipeline` API (Three r183+) instead of the deprecated `PostProcessing` API. Replace `WebGLCubeRenderTarget` with `CubeRenderTarget`. Apply additive blending for Screen Space Reflections (SSR) instead of `blendColor()`.
 - **Lifecycle & Timers**: `THREE.Clock` is deprecated. Implement all timing logic using `THREE.Timer`. Leverage the R3F v10 standalone scheduler to decouple frame loops and execute them outside the `<Canvas>` tree for UI synchronization when necessary.
 - **Lighting & Scene Graph**: Cameras are automatically attached to the scene graph; do not manually attach objects to cameras. WebGPU shadow precision requires decreasing or removing legacy WebGL shadow biases. Recalibrate exposures if using `RoomEnvironment` (PMREM positioning changed) or `Sky`/`SkyMesh` (legacy gamma removed).
-
-### Lucide icon imports
-- Lucide is used in two independent feature surfaces:
-  - **Topic icons.** 2D surfaces render through `src/components/topicIcons/TopicIcon.tsx`. 3D crystal labels render through the build-time-generated `src/graphics/labels/generated/topicIconNodes.ts`. Allowlist: `src/features/subjectGeneration/graph/topicIcons/topicIconAllowlist.ts`.
-  - **Mentor-bubble glyphs.** The 3D mentor bubble (`src/components/MentorBubble.tsx`) renders through the build-time-generated `src/graphics/labels/generated/mentorIconNodes.ts` via `src/graphics/labels/createMentorBubbleTexture.ts` and `src/graphics/labels/drawMentorIcon.ts`. Allowlist: `src/features/mentor/mentorIconAllowlist.ts`. The custom `philosopher-stone` neutral glyph is hand-authored inside the generator script, NOT in the emitted nodes file.
-- The two icon vocabularies are intentionally disjoint at the `Record<...>` key level. Both surfaces share a single rasterizer (`src/graphics/labels/drawIconPrimitives.ts`) consumed via thin `drawTopicIcon` / `drawMentorIcon` wrappers.
-- The runtime label/bubble paths never import `lucide` or `lucide-react`.
-- Outside `src/components/topicIcons/`, only static **named** imports from `lucide-react` are allowed. Wildcard `import * as ... from 'lucide-react'` and deep imports (`from 'lucide-react/...'`) are forbidden everywhere except `src/components/topicIcons/**`.
-- The non-react `lucide` package is a `devDependency` consumed only by `scripts/generate-topic-icon-nodes.ts` and `scripts/generate-mentor-icon-nodes.ts`. Never import it from runtime code.
-- The boundary is enforced by `src/components/topicIcons/lucideImportBoundary.test.ts` (runs as part of `pnpm test:unit:run`). The scan forbids: namespace imports from `lucide-react`, deep imports from `lucide-react/*` outside `src/components/topicIcons/`, and any runtime import of the non-react `lucide` package.
-- Adding or removing a topic icon requires updating `TOPIC_ICON_NAMES` + `TopicIconName` (in `src/types/core.ts`) + re-running `pnpm generate:topic-icons`. Adding or removing a mentor icon requires updating `MENTOR_ICON_NAMES` + `MentorIconName` + re-running `pnpm generate:mentor-icons`. `pnpm check:topic-icons` is wired into CI (`pnpm test:unit:run`); `pnpm check:mentor-icons` is manual-only by design until the mentor-icon set settles.
 
 ## Mandatory Project Rules
 - **Prioritize Strategic Programming over Tactical fixes.** You are strictly forbidden from implementing 'Workarounds,' 'Kludges,' 'Band-aids,' or 'Stopgaps' that introduce Architectural Erosion (e.g., leaking abstractions, breaking encapsulation, or creating brittle error handling) without my explicit consent.
@@ -76,9 +72,6 @@ Core systems: SM-2 progression, ritual-based attunement, buff engine, procedural
 - **Mobile-first UI**: Design for small screens and touch as the baseline. Tappable targets must meet comfortable touch sizing and spacing. Do not rely on hover, :hover-only styling, or cursor affordances (cursor-pointer, group-hover:*, tooltips that only appear on hover) to communicate interactivity; use always-visible labels, icons, borders, or other persistent cues. Pointer hover may refine appearance only if the default (non-hover) state is already clearly interactive.
 - **UI Composition**: Build 2D UI only from existing `src/components/ui/*` primitives. Do not add or modify files in this directory unless explicitly instructed to do so with mention of the filename in request.
 - **Analytics SDK isolation**: The `posthog-js` SDK is permitted only inside `src/infrastructure/posthog/*`. The single bootstrap entry point is `bootstrapPosthog()`, invoked from the project-root `instrumentation-client.ts`; the `__abyssPosthogBootstrapped` global guard makes it idempotent. Feature code communicates with analytics via the typed app-bus event `player-profile:updated` (and, post-Phase 2, the telemetry subscription API); feature code must never import `posthog-js` directly nor learn analytics deployment details (`appVersion`, `buildMode`, analytics timestamps), which are owned by the PostHog adapter. Disabled-mode contract: a null resolved config (no `NEXT_PUBLIC_POSTHOG_TOKEN`, querystring `?abyss-analytics=off`, `localStorage['abyss-analytics-disabled']='1'`, or browser hostname on localhost / IPv4 loopback) keeps the SDK uninitialized end-to-end. Session-replay posture: `recordCanvas: false` (the WebGPU canvas is never recorded); autocapture is allowlist-only (`click` / `submit` / `change`; `button` / `a` / `input` / `[role="button"]`); broadening either allowlist requires architectural review.
-- **Code Quality Protocol**: Enforce the following rules for all code modifications:
-  - **Use existing Tailwind classes** (e.g., `opacity-0`, `pointer-events-none`) over inline styles (e.g., `style= opacity: 0, pointerEvents: 'none' `).
-  - **JSX Prop Composition Discipline**: Do not inline object literals directly in JSX props (for example, `prop= ... `); always predefine or reuse a variable/constant and pass that variable as the prop.
 
 ## Agent Workflow & Decision Framework
 Agents must execute the following structured decision process before outputting code modifications to force planned, architectural alignment.
@@ -94,26 +87,12 @@ Before generating code, the agent must evaluate the request against the architec
 2. Locate and update existing related tests (`src/**/*.test.ts` for unit, `tests/` for e2e) before writing implementation code.
 3. Provide necessary unit or e2e tests for new feature paths.
 
-### III. Mandatory Collaboration Output
-Every agent response proposing code modifications **must begin** with a **Compliance, Risk & Drift Assessment** (before any code, rationale, or optimization proposal). This assessment enforces zero-tolerance architectural hygiene and must explicitly:
+### III. Collaboration Output
+For non-trivial code modifications, include a concise **Compliance, Risk & Drift Assessment** before implementation or in the final summary:
 
-1. **Misalignment Check**
-   Systematically verify the entire proposal against **every section** of this AGENTS.md (Scope, Project Vision, all Architectural Patterns, Mandatory Project Rules, WebGPU Strictness, Mobile-first UI, and Agent Workflow).
-   - List and highlight **every** misalignment or potential contradiction.
-   - If zero misalignments exist, state verbatim: **"Full alignment with AGENTS.md confirmed — zero deviations detected."**
-
-2. **Architectural Risk Highlight**
-   Identify and rate (Low/Medium/High) every architectural risk introduced by the change, including (but not limited to):
-   - Boundary violations or cross-feature coupling
-   - Erosion of strict layering, repository pattern, or data-driven execution
-   - WebGPU pipeline fragility, TSL/RenderPipeline regressions, or mobile-first violations
-   - Scalability, maintainability, or performance impacts on the crystal-garden rendering engine
-   For each risk, provide a concrete mitigation that preserves the authoritative architecture.
-
-3. **Prompt Drift Prevention**
-   Analyze how the proposed implementation could enable future prompt drift (e.g., introducing patterns that future agents might interpret as permission for workarounds, legacy code, magic strings, or tactical fixes).
-   Confirm explicit adherence to “Prioritize Strategic Programming over Tactical fixes” and “No Legacy Burden.”
-   If any drift vector exists, state the risk and the exact guardrail added to eliminate it.
+1. **Misalignment Check**: Name material contradictions with this file, or say that none were found. Do not recite every section.
+2. **Architectural Risk Highlight**: Rate meaningful risks and give mitigations when the change affects seams, layering, data access, WebGPU, mobile UI, or long-term maintainability.
+3. **Prompt Drift Prevention**: Call out any pattern that could normalize workarounds, legacy code, shallow pass-through modules, magic strings, or probabilistic recovery.
 
 This file is authoritative.
 If something in the codebase contradicts AGENTS.md, the codebase is wrong.
