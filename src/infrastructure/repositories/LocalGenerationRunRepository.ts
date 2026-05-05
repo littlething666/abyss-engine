@@ -6,19 +6,41 @@ import {
   type RunEvent,
   type RunStatus,
   type StageProgressEventBody,
+  type SubjectGraphTopicsRunInputSnapshot,
 } from '@/features/generationContracts';
+import type { MiniGameType } from '@/types/core';
+import type { IChatCompletionsRepository } from '@/types/llm';
+import type { StudyChecklist } from '@/types/studyChecklist';
+import { runExpansionJob } from '@/features/contentGeneration/jobs/runExpansionJob';
+import { runTopicGenerationPipeline } from '@/features/contentGeneration/pipelines/runTopicGenerationPipeline';
+import type { TopicGenerationStage } from '@/features/contentGeneration/pipelines/topicGenerationStage';
+import { generateTrialQuestions } from '@/features/crystalTrial/generateTrialQuestions';
+import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
+import {
+  createSubjectGenerationOrchestrator,
+  resolveSubjectGenerationStageBindings,
+} from '@/features/subjectGeneration';
+import {
+  collectTopicContentArtifactsForSnapshot,
+  sealCrystalTrialQuestions,
+  sealExpansionCards,
+  sealSubjectGraphEdges,
+  sealSubjectGraphTopics,
+} from './localGenerationRunArtifactCapture';
 import type {
   CancelReason,
+  IDeckContentWriter,
+  IDeckRepository,
   IGenerationRunRepository,
   JobSnapshot,
   PipelineKind,
   RunInput,
   RunListQuery,
   RunSnapshot,
+  TopicContentRunInputSnapshot,
 } from '@/types/repository';
 
-// ---------------------------------------------------------------------------
-// Durable Workflow Orchestration — Phase 0.5 step 2 (scaffold).
+// Durable Workflow Orchestration — Phase 0.5 step 2.
 //
 // `LocalGenerationRunRepository` is the in-tab adapter for
 // `IGenerationRunRepository`. It synthesizes per-run monotonic `seq`-numbered
@@ -27,15 +49,9 @@ import type {
 // `run.cancelled` per Plan v3 Q16), and owns supersession bookkeeping for
 // topic-expansion replacements.
 //
-// The four legacy runners are reached through an injectable
-// `LocalRunnerDispatchers` seam so the adapter logic is fully testable
-// without depending on runner internals. Wiring the four real runners
-// (`runTopicGenerationPipeline`, `runExpansionJob`, the Subject Graph
-// orchestrator, `generateTrialQuestions`) is step 2b on the same branch;
-// after that wiring lands, this file becomes the only file allowed to
-// import those entry points and the legacyRunnerBoundary.test.ts scope
-// widens to enforce that.
-// ---------------------------------------------------------------------------
+// Step 2b wires the four legacy runners through `createLegacyLocalRunnerDispatchers`.
+// This file is the only production module that may import those entry points;
+// `legacyRunnerBoundary.test.ts` enforces the invariant.
 
 /** Outcome a dispatcher hands back; the adapter synthesizes the terminal event. */
 export type LocalRunnerOutcome =
@@ -194,7 +210,7 @@ export class LocalGenerationRunRepository implements IGenerationRunRepository {
       return { runId: existing.runId };
     }
 
-    const hash = inputHash(input.snapshot);
+    const hash = await inputHash(input.snapshot);
     const runId = crypto.randomUUID();
     const record = this.createRecord(runId, input, hash);
     this.records.set(runId, record);
@@ -209,7 +225,7 @@ export class LocalGenerationRunRepository implements IGenerationRunRepository {
     record.status = 'planning';
     this.emit(record, { type: 'run.status', status: 'planning' });
 
-    void this.dispatch(record);
+    this.scheduleDispatch(record);
     return { runId };
   }
 
@@ -282,7 +298,7 @@ export class LocalGenerationRunRepository implements IGenerationRunRepository {
     record.status = 'planning';
     this.emit(record, { type: 'run.status', status: 'planning' });
 
-    void this.dispatch(record);
+    this.scheduleDispatch(record);
     return { runId: newRunId };
   }
 
@@ -315,6 +331,17 @@ export class LocalGenerationRunRepository implements IGenerationRunRepository {
   }
 
   // --- internals ---
+
+  /**
+   * Run `dispatch` on the next macrotask tick so callers can `cancelRun`
+   * immediately after `await submitRun` / `await retryRun` without losing the
+   * cancel-before-start race to promise microtasks (Plan v3 Q16).
+   */
+  private scheduleDispatch(record: LocalRunRecord): void {
+    globalThis.setTimeout(() => {
+      void this.dispatch(record);
+    }, 0);
+  }
 
   private requireRecord(runId: string): LocalRunRecord {
     const r = this.records.get(runId);
@@ -521,4 +548,218 @@ export class LocalGenerationRunRepository implements IGenerationRunRepository {
       jobs: record.jobs.slice(),
     };
   }
+}
+
+// --- Phase 0.5 step 2b: default dispatchers wrapping legacy in-tab runners ---
+
+export interface LegacyLocalRunnerWiringDeps {
+  chat: IChatCompletionsRepository;
+  deckRepository: IDeckRepository;
+  writer: IDeckContentWriter;
+}
+
+function topicContentStageFromSnapshot(snapshot: TopicContentRunInputSnapshot): {
+  stage: TopicGenerationStage;
+  miniGameKindsOverride?: MiniGameType[];
+} {
+  switch (snapshot.pipeline_kind) {
+    case 'topic-theory':
+      return { stage: 'theory' };
+    case 'topic-study-cards':
+      return { stage: 'study-cards' };
+    case 'topic-mini-game-category-sort':
+      return { stage: 'mini-games', miniGameKindsOverride: ['CATEGORY_SORT'] };
+    case 'topic-mini-game-sequence-build':
+      return { stage: 'mini-games', miniGameKindsOverride: ['SEQUENCE_BUILD'] };
+    case 'topic-mini-game-match-pairs':
+      return { stage: 'mini-games', miniGameKindsOverride: ['MATCH_PAIRS'] };
+    default: {
+      const _e: never = snapshot;
+      return _e;
+    }
+  }
+}
+
+function studyChecklistFromTopicsSnapshot(s: SubjectGraphTopicsRunInputSnapshot): StudyChecklist {
+  const checklist: StudyChecklist = {
+    topicName: s.checklist.topic_name,
+  };
+  if (s.checklist.study_goal !== undefined) {
+    checklist.studyGoal = s.checklist.study_goal as StudyChecklist['studyGoal'];
+  }
+  if (s.checklist.prior_knowledge !== undefined) {
+    checklist.priorKnowledge = s.checklist.prior_knowledge as StudyChecklist['priorKnowledge'];
+  }
+  if (s.checklist.learning_style !== undefined) {
+    checklist.learningStyle = s.checklist.learning_style as StudyChecklist['learningStyle'];
+  }
+  if (s.checklist.focus_areas !== undefined) {
+    checklist.focusAreas = s.checklist.focus_areas;
+  }
+  return checklist;
+}
+
+/**
+ * Default `LocalRunnerDispatchers` that invoke today's in-tab runners and
+ * rebuild strict-parseable artifact payloads from persisted deck / trial
+ * state after success.
+ */
+export function createLegacyLocalRunnerDispatchers(
+  deps: LegacyLocalRunnerWiringDeps,
+): LocalRunnerDispatchers {
+  const { chat, deckRepository, writer } = deps;
+
+  const topicContent: LocalRunnerDispatch = async (invocation) => {
+    const { input, signal } = invocation;
+    if (input.pipelineKind !== 'topic-content') {
+      throw new Error('topicContent dispatcher invoked with non-topic-content input');
+    }
+    const stageArgs = topicContentStageFromSnapshot(input.snapshot);
+    const result = await runTopicGenerationPipeline({
+      chat,
+      deckRepository,
+      writer,
+      subjectId: input.subjectId,
+      topicId: input.topicId,
+      signal,
+      forceRegenerate: true,
+      ...stageArgs,
+    });
+    if (signal.aborted) {
+      return { status: 'cancelled' };
+    }
+    if (!result.ok) {
+      return {
+        status: 'failure',
+        code: 'llm:unknown',
+        message: result.error ?? 'Topic content pipeline failed',
+      };
+    }
+    return collectTopicContentArtifactsForSnapshot(
+      deckRepository,
+      input.subjectId,
+      input.topicId,
+      input.snapshot,
+    );
+  };
+
+  const topicExpansion: LocalRunnerDispatch = async (invocation) => {
+    const { input, signal } = invocation;
+    if (input.pipelineKind !== 'topic-expansion') {
+      throw new Error('topicExpansion dispatcher invoked with non-topic-expansion input');
+    }
+    const result = await runExpansionJob({
+      chat,
+      deckRepository,
+      writer,
+      subjectId: input.subjectId,
+      topicId: input.topicId,
+      nextLevel: input.nextLevel,
+      signal,
+    });
+    if (signal.aborted) {
+      return { status: 'cancelled' };
+    }
+    if (result.skipped) {
+      return { status: 'success', artifacts: [] };
+    }
+    if (!result.ok) {
+      return {
+        status: 'failure',
+        code: 'llm:unknown',
+        message: result.error ?? 'Topic expansion failed',
+      };
+    }
+    const cards = result.generatedCards;
+    if (cards === undefined || cards.length === 0) {
+      return {
+        status: 'failure',
+        code: 'precondition:missing-topic',
+        message: 'Expansion completed without persisted card payloads for artifact sealing.',
+      };
+    }
+    return sealExpansionCards(input.topicId, cards);
+  };
+
+  const subjectGraph: LocalRunnerDispatch = async (invocation) => {
+    const { input, signal } = invocation;
+    if (input.pipelineKind !== 'subject-graph') {
+      throw new Error('subjectGraph dispatcher invoked with non-subject-graph input');
+    }
+    const snap = input.snapshot;
+    if (snap.pipeline_kind !== 'subject-graph-topics') {
+      return {
+        status: 'failure',
+        code: 'precondition:missing-topic',
+        message:
+          'In-tab subject-graph runs require a topics snapshot (checklist + strategy). Edges-only snapshots are Worker-routed.',
+      };
+    }
+    const checklist = studyChecklistFromTopicsSnapshot(snap);
+    const stageBindings = resolveSubjectGenerationStageBindings();
+    const orchestrator = createSubjectGenerationOrchestrator();
+    const execResult = await orchestrator.execute(
+      { subjectId: input.subjectId, checklist },
+      { stageBindings, writer, signal },
+    );
+    if (signal.aborted) {
+      return { status: 'cancelled' };
+    }
+    if (!execResult.ok) {
+      return {
+        status: 'failure',
+        code: 'llm:unknown',
+        message: execResult.error,
+      };
+    }
+    const topicsSeal = await sealSubjectGraphTopics({ topics: execResult.lattice.topics });
+    if (topicsSeal.status === 'failure') {
+      return topicsSeal;
+    }
+    const edgesSeal = await sealSubjectGraphEdges(execResult.graph);
+    if (edgesSeal.status === 'failure') {
+      return edgesSeal;
+    }
+    return {
+      status: 'success',
+      artifacts: [...topicsSeal.artifacts, ...edgesSeal.artifacts],
+    };
+  };
+
+  const crystalTrial: LocalRunnerDispatch = async (invocation) => {
+    const { input, signal } = invocation;
+    if (input.pipelineKind !== 'crystal-trial') {
+      throw new Error('crystalTrial dispatcher invoked with non-crystal-trial input');
+    }
+    const genResult = await generateTrialQuestions({
+      chat,
+      deckRepository,
+      subjectId: input.subjectId,
+      topicId: input.topicId,
+      currentLevel: input.currentLevel,
+      signal,
+    });
+    if (signal.aborted) {
+      return { status: 'cancelled' };
+    }
+    if (!genResult.ok) {
+      return {
+        status: 'failure',
+        code: 'llm:unknown',
+        message: genResult.error ?? 'Crystal trial generation failed',
+      };
+    }
+    const ref = { subjectId: input.subjectId, topicId: input.topicId };
+    const questions = useCrystalTrialStore.getState().getCurrentTrial(ref)?.questions;
+    if (questions === undefined) {
+      return {
+        status: 'failure',
+        code: 'precondition:no-card-pool',
+        message: 'Crystal trial generation succeeded but trial questions are missing from the store.',
+      };
+    }
+    return sealCrystalTrialQuestions(questions);
+  };
+
+  return { topicContent, topicExpansion, subjectGraph, crystalTrial };
 }

@@ -48,3 +48,4 @@ workers/
 .github/workflows/deploy-worker.yml
 
 .tmp/
+.pnpm-store/

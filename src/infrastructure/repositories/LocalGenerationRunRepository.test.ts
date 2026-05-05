@@ -98,7 +98,7 @@ const sampleTrialSnapshot = {
 function topicContentInput(suffix = ''): RunInput {
   return {
     pipelineKind: 'topic-content',
-    snapshot: { ...(sampleTopicTheorySnapshot as object), fixture: `topic-theory${suffix}` } as TopicTheoryRunInputSnapshot,
+    snapshot: { ...(sampleTopicTheorySnapshot as object), fixture: `topic-theory${suffix}` } as unknown as TopicTheoryRunInputSnapshot,
     subjectId: `subject-${suffix || 'a'}`,
     topicId: `topic-${suffix || 'a'}`,
   };
@@ -107,7 +107,7 @@ function topicContentInput(suffix = ''): RunInput {
 function expansionInput(subjectId: string, topicId: string, marker = 'm'): RunInput {
   return {
     pipelineKind: 'topic-expansion',
-    snapshot: { ...(sampleExpansionSnapshot as object), fixture: `topic-expansion-${marker}` } as TopicExpansionRunInputSnapshot,
+    snapshot: { ...(sampleExpansionSnapshot as object), fixture: `topic-expansion-${marker}` } as unknown as TopicExpansionRunInputSnapshot,
     subjectId,
     topicId,
     nextLevel: 1,
@@ -271,9 +271,9 @@ describe('LocalGenerationRunRepository', () => {
       }),
     });
     const { runId } = await repo.submitRun(topicContentInput(), 'idem-cancel-mid');
-    // Yield the microtask queue so the dispatch async branch runs to its `await`.
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, 0);
+    });
     const cancelPromise = repo.cancelRun(runId, 'user');
     // The acknowledgement must land before the cancel awaits terminal.
     const ackSnapshot = await repo.getRun(runId);
@@ -333,7 +333,9 @@ describe('LocalGenerationRunRepository', () => {
       expansionInput('subject-x', 'topic-y', 'first'),
       'idem-exp-1',
     );
-    await Promise.resolve();
+    await new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, 0);
+    });
     // Replace the topicExpansion dispatcher for the second submission so the new
     // run resolves immediately and we can observe the prior cancellation.
     (repo as unknown as { dispatchers: LocalRunnerDispatchers }).dispatchers.topicExpansion =
@@ -370,9 +372,9 @@ describe('LocalGenerationRunRepository', () => {
       'idem-stream',
     );
     // Let the dispatcher run far enough to emit `stage.progress`.
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, 0);
+    });
     const buffered = await repo.getRun(runId);
     expect(buffered.status).toBe('generating-stage');
     const liveEventsPromise = (async () => {

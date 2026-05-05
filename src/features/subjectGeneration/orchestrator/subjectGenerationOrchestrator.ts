@@ -304,7 +304,12 @@ export function createSubjectGenerationOrchestrator(): SubjectGenerationOrchestr
     if (!lastValidatedGraph) {
       throw new Error('Subject generation completed without validated graph');
     }
-    return { ok: true, subjectId: request.subjectId, graph: lastValidatedGraph };
+    return {
+      ok: true,
+      subjectId: request.subjectId,
+      graph: lastValidatedGraph,
+      lattice: resolvedLattice,
+    };
   }
 
   return { execute };
