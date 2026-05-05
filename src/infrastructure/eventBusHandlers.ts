@@ -12,7 +12,7 @@ import {
   prepareTopicContentRunInput,
   prepareTopicExpansionRunInput,
 } from '@/features/contentGeneration';
-import { ensureGenerationClientRegistered } from './wireGenerationClient';
+import { ensureGenerationClientRegistered, observeGenerationRun } from './wireGenerationClient';
 import {
   resolveEnableReasoningForSurface,
   resolveModelForSurface,
@@ -175,7 +175,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
                 ref.topicId,
                 currentLevel,
               );
-              await getGenerationClient().submitRun(runInput);
+              const { runId: ctCooldownRunId } = await getGenerationClient().submitRun(runInput);
+              observeGenerationRun(ctCooldownRunId, runInput);
             } catch (err) {
               console.error('[eventBusHandlers] crystal trial cooldown regeneration failed', err);
             }
@@ -210,7 +211,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
           forceRegenerate: e.forceRegenerate ?? false,
           stage: e.stage,
         });
-        await getGenerationClient().submitRun(runInput);
+        const { runId: tcGenRunId } = await getGenerationClient().submitRun(runInput);
+        observeGenerationRun(tcGenRunId, runInput);
       } catch (err) {
         console.error('[eventBusHandlers] topic-content generation submit failed', err);
       }
@@ -239,7 +241,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
           e.subjectId,
           e.checklist,
         );
-        await getGenerationClient().submitRun(runInput);
+        const { runId: sgGenRunId } = await getGenerationClient().submitRun(runInput);
+        observeGenerationRun(sgGenRunId, runInput);
       } catch (err) {
         console.error('[eventBusHandlers] subject-graph generation submit failed', err);
       }
@@ -391,7 +394,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
             e.to as 1 | 2 | 3,
             resolveEnableReasoningForSurface('topicContent'),
           );
-          await getGenerationClient().submitRun(runInput);
+          const { runId: teGenRunId } = await getGenerationClient().submitRun(runInput);
+          observeGenerationRun(teGenRunId, runInput);
         } catch (err) {
           console.error('[eventBusHandlers] topic expansion on crystal leveled failed', err);
         }
@@ -430,7 +434,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
           e.topicId,
           e.currentLevel,
         );
-        await getGenerationClient().submitRun(runInput);
+        const { runId: ctGenRunId } = await getGenerationClient().submitRun(runInput);
+        observeGenerationRun(ctGenRunId, runInput);
       } catch (err) {
         console.error('[eventBusHandlers] crystal-trial pregeneration submit failed', err);
       }
@@ -705,7 +710,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
             ref.topicId,
             currentLevel,
           );
-          await getGenerationClient().submitRun(runInput);
+          const { runId: ctCardsGenRunId } = await getGenerationClient().submitRun(runInput);
+          observeGenerationRun(ctCardsGenRunId, runInput);
         } catch (err) {
           console.error('[eventBusHandlers] crystal trial topic-cards:updated regeneration failed', err);
         }

@@ -1,4 +1,4 @@
-import type { RunEvent, RunInputSnapshot } from '@/features/generationContracts';
+import type { ArtifactEnvelope, RunEvent, RunInputSnapshot } from '@/features/generationContracts';
 import {
   buildCrystalTrialSnapshot,
   buildSubjectGraphEdgesSnapshot,
@@ -20,6 +20,7 @@ import type {
   CancelReason,
   IGenerationRunRepository,
   RunInput,
+  RunListQuery,
   RunSnapshot,
   TopicContentRunInputSnapshot,
 } from '@/types/repository';
@@ -96,6 +97,10 @@ export interface GenerationClient {
   observe(runId: string, lastSeq?: number): AsyncIterable<RunEvent>;
   listActive(): Promise<RunSnapshot[]>;
   listRecent(limit: number): Promise<RunSnapshot[]>;
+  /** Full list-query surface for hydration and composition roots. */
+  listRuns(query: RunListQuery): Promise<RunSnapshot[]>;
+  /** Fetch a persisted artifact envelope (inline or signed URL). */
+  getArtifact(artifactId: string): Promise<ArtifactEnvelope>;
 }
 
 let registeredClient: GenerationClient | null = null;
@@ -314,6 +319,14 @@ export function createGenerationClient(deps: CreateGenerationClientDeps): Genera
 
     listRecent(limit) {
       return repo().listRuns({ status: 'recent', limit });
+    },
+
+    listRuns(query) {
+      return repo().listRuns(query);
+    },
+
+    getArtifact(artifactId) {
+      return repo().getArtifact(artifactId);
     },
   };
 }
