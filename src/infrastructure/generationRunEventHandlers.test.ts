@@ -962,4 +962,68 @@ describe('generationRunEventHandlers', () => {
     handlers.stop();
     consoleErrorSpy.mockRestore();
   });
+
+  // ── getLastAppliedSeq (Phase 1 PR-F) ─────────────────────────
+
+  it('getLastAppliedSeq returns 0 for an unknown run', () => {
+    const handlers = createGenerationRunEventHandlers(buildDeps());
+    expect(handlers.getLastAppliedSeq('never-seen-run')).toBe(0);
+    handlers.stop();
+  });
+
+  it('getLastAppliedSeq tracks seq as events are processed', async () => {
+    const input = topicContentInput();
+    const runId = 'run-seq-track';
+    const hash = 'cnt_seq_hash';
+
+    const client = createMockGenerationClient({
+      activeRuns: [[
+        evt(runId, 1, { type: 'run.queued' }),
+        evt(runId, 2, { type: 'run.status', status: 'generating-stage' }),
+        evt(runId, 5, { type: 'artifact.ready', body: { artifactId: 'art-seq', kind: 'topic-theory', contentHash: hash, schemaVersion: 1, inputHash: 'inp_seq', subjectId: 'subj-1', topicId: 'topic-1' } }),
+        evt(runId, 7, { type: 'run.completed' }),
+      ]],
+      artifacts: new Map([['art-seq', artifactEnvelope({ id: 'art-seq', kind: 'topic-theory', contentHash: hash })]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_seq', createdAt: 1000, snapshotJson: input.snapshot, jobs: [] }]]),
+    });
+
+    const handlers = createGenerationRunEventHandlers(
+      buildDeps({ client }),
+    );
+
+    // Before observation, seq should be 0.
+    expect(handlers.getLastAppliedSeq(runId)).toBe(0);
+
+    await handlers.observeRun(runId, input);
+
+    // After observation completes, seq should be the last event seq (7).
+    expect(handlers.getLastAppliedSeq(runId)).toBe(7);
+
+    handlers.stop();
+  });
+
+  it('getLastAppliedSeq is monotonic and never decreases', async () => {
+    const input = topicContentInput();
+    const runId = 'run-mono';
+
+    const client = createMockGenerationClient({
+      activeRuns: [[
+        evt(runId, 3, { type: 'run.queued' }),
+        evt(runId, 1, { type: 'run.status', status: 'generating-stage' }), // out-of-order lower seq
+        evt(runId, 5, { type: 'run.completed' }),
+      ]],
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_mono', createdAt: 1000, snapshotJson: input.snapshot, jobs: [] }]]),
+    });
+
+    const handlers = createGenerationRunEventHandlers(
+      buildDeps({ client }),
+    );
+
+    await handlers.observeRun(runId, input);
+
+    // Should be 5 (max of 3, 1, 5) not 1.
+    expect(handlers.getLastAppliedSeq(runId)).toBe(5);
+
+    handlers.stop();
+  });
 });

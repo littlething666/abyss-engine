@@ -193,3 +193,23 @@ export function observeGenerationRun(runId: string, runInput: RunInput): void {
     );
   });
 }
+
+/**
+ * Get the registered `GenerationRunEventHandlers` instance.
+ *
+ * Used by `useContentGenerationHydration` to rehydrate durable runs.
+ * Returns `null` when the module hasn't been bootstrapped yet.
+ */
+export function getGenerationRunEventHandlers(): GenerationRunEventHandlers | null {
+  return handlersInstance;
+}
+
+/**
+ * Returns `true` when `NEXT_PUBLIC_DURABLE_RUNS` is set to `'true'`.
+ *
+ * Used by hooks and components that need to branch between local and
+ * durable generation paths without importing `process.env` directly.
+ */
+export function isDurableRunsEnabled(): boolean {
+  return durableRunsEnabled;
+}

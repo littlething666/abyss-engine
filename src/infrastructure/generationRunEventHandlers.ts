@@ -85,6 +85,13 @@ export interface GenerationRunEventHandlers {
    */
   observeRun(runId: string, runInput: RunInput): Promise<void>;
 
+  /**
+   * Returns the highest event `seq` applied for a run.
+   * Returns `0` if the run has never been observed (so SSE replay
+   * starts from the first event).
+   */
+  getLastAppliedSeq(runId: string): number;
+
   /** Stop all active observations. */
   stop(): void;
 }
@@ -442,7 +449,19 @@ export function createGenerationRunEventHandlers(
 ): GenerationRunEventHandlers {
   const { client, appliers, eventBus, dedupeStore, deckRepository } = deps;
   const activeRuns = new Set<string>();
+  /** Monotonic per-run event seq tracking; seed from rehydrated runs. */
+  const lastAppliedSeqs = new Map<string, number>();
   let stopped = false;
+
+  /**
+   * Record the highest seq we've seen for a run.
+   * Callers (hydration) can seed this before opening an event stream
+   * to avoid replaying already-processed events.
+   */
+  function trackSeq(runId: string, seq: number): void {
+    const prev = lastAppliedSeqs.get(runId) ?? 0;
+    if (seq > prev) lastAppliedSeqs.set(runId, seq);
+  }
 
   /**
    * Core observation loop. Creates an async context that reads the
@@ -469,6 +488,7 @@ export function createGenerationRunEventHandlers(
 
       for await (const event of client.observe(runId)) {
         if (stopped) break;
+        trackSeq(runId, event.seq);
 
         switch (event.type) {
           // ── artifact.ready: apply via applier ──────────────────
@@ -654,6 +674,9 @@ export function createGenerationRunEventHandlers(
 
   return {
     observeRun,
+    getLastAppliedSeq(runId: string): number {
+      return lastAppliedSeqs.get(runId) ?? 0;
+    },
     stop() {
       stopped = true;
     },
