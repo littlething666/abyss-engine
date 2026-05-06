@@ -7,7 +7,7 @@
  *   single function used by all four Workflow classes.
  */
 
-import type { Repos } from '../repositories';
+import type { Repos } from '../../repositories';
 import { createTracer, type LlmCallStart, type LlmCallTrace } from '../../observability/tracer';
 
 /**

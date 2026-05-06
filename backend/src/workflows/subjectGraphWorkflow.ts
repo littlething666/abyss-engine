@@ -59,6 +59,7 @@ async function runStage(
   deviceId: string,
   stage: string,
   snapshot: Record<string, unknown>,
+  inputHash: string,
   exec: () => Promise<{ kind: string; payload: unknown; usage: GenerateResult['usage'] }>,
 ): Promise<string> {
   await repos.runs.append(runId, deviceId, 'run.status:generating-stage', { stage });
@@ -170,7 +171,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       })) as PlanOutcome;
 
       if (!planOutcome.ok) return;
-      const { snapshot, checkpoints } = planOutcome;
+      const { snapshot, inputHash, checkpoints } = planOutcome;
 
       // ---- 2. STAGE A: TOPIC LATTICE ----
       const topicsCkp = checkpoints.find((c) => c.stage === 'topics');
@@ -180,7 +181,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       } else {
         await checkCancel('before-topics');
 
-        await runStage(step, repos, runId, deviceId, 'topics', snapshot, async () => {
+        await runStage(step, repos, runId, deviceId, 'topics', snapshot, inputHash, async () => {
           const messages = [
             {
               role: 'system',
