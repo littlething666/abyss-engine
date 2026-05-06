@@ -12,6 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       'cloudflare:workers': path.resolve(__dirname, './src/testStubs/cloudflareWorkers.ts'),
+      '@contracts': path.resolve(__dirname, '../src/features/generationContracts'),
     },
   },
 });

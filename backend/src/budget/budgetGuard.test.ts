@@ -1,119 +1,65 @@
 /**
- * Budget guard tests — Phase 2 per-kind caps.
+ * Budget guard tests — Phase 3.5 atomic RPC-based reservation.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { assertBelowDailyCap, PIPELINE_BUDGET_CAPS } from '../budget/budgetGuard';
-import type { IUsageCountersRepo } from '../repositories/usageCountersRepo';
-import type { UsageCounterRow, PipelineKind } from '../repositories/types';
+import type { PipelineKind } from '../repositories/types';
 
-function createFakeUsageRepo(
-  runsStarted: number,
-  tokensIn: number,
-  tokensOut: number,
-): IUsageCountersRepo {
+// Minimal Supabase client mock — only needs `rpc`.
+function createFakeDb(rpcResult: { ok: boolean; code?: string; message?: string } | null) {
   return {
-    async get(): Promise<UsageCounterRow | null> {
-      return {
-        device_id: 'dev-1',
-        day: '2026-05-05',
-        tokens_in: tokensIn,
-        tokens_out: tokensOut,
-        runs_started: runsStarted,
-      };
-    },
-    async incrementRunsStarted(): Promise<void> {},
-    async recordTokens(): Promise<void> {},
-  };
+    rpc: vi.fn().mockResolvedValue(rpcResult ? { data: rpcResult, error: null } : { data: null, error: new Error('RPC not deployed') }),
+  } as unknown as Parameters<typeof assertBelowDailyCap>[1];
 }
 
-function createEmptyUsageRepo(): IUsageCountersRepo {
-  return {
-    async get(): Promise<UsageCounterRow | null> {
-      return null;
-    },
-    async incrementRunsStarted(): Promise<void> {},
-    async recordTokens(): Promise<void> {},
-  };
-}
-
-describe('budgetGuard', () => {
-  it('allows when no prior usage', async () => {
-    const result = await assertBelowDailyCap('dev-1', createEmptyUsageRepo());
+describe('budgetGuard (Phase 3.5 atomic)', () => {
+  it('allows when RPC returns ok: true', async () => {
+    const db = createFakeDb({ ok: true });
+    const result = await assertBelowDailyCap('dev-1', db);
     expect(result.ok).toBe(true);
+    expect(db.rpc).toHaveBeenCalledWith('reserve_run_budget', expect.objectContaining({
+      p_device_id: 'dev-1',
+      p_run_cap: PIPELINE_BUDGET_CAPS['crystal-trial'].runsPerDay,
+      p_token_cap: PIPELINE_BUDGET_CAPS['crystal-trial'].tokensPerDay,
+    }));
   });
 
-  it('allows when below caps', async () => {
-    const result = await assertBelowDailyCap('dev-1', createFakeUsageRepo(5, 100_000, 50_000));
-    expect(result.ok).toBe(true);
-  });
-
-  it('blocks when runs started cap exceeded', async () => {
-    const cap = PIPELINE_BUDGET_CAPS['crystal-trial'];
-    const result = await assertBelowDailyCap('dev-1', createFakeUsageRepo(cap.runsPerDay, 0, 0));
+  it('blocks when RPC returns ok: false', async () => {
+    const db = createFakeDb({ ok: false, code: 'budget:over-cap', message: 'daily run cap (10) exceeded' });
+    const result = await assertBelowDailyCap('dev-1', db);
     expect(result.ok).toBe(false);
     expect(result.code).toBe('budget:over-cap');
   });
 
-  it('blocks when runs started cap exceeded (above)', async () => {
-    const cap = PIPELINE_BUDGET_CAPS['crystal-trial'];
-    const result = await assertBelowDailyCap('dev-1', createFakeUsageRepo(cap.runsPerDay + 5, 0, 0));
+  it('fails closed when RPC is not deployed (error)', async () => {
+    const db = createFakeDb(null);
+    const result = await assertBelowDailyCap('dev-1', db);
     expect(result.ok).toBe(false);
     expect(result.code).toBe('budget:over-cap');
+    expect(result.message).toContain('unavailable');
   });
 
-  it('blocks when token cap exceeded', async () => {
-    const cap = PIPELINE_BUDGET_CAPS['crystal-trial'];
-    const result = await assertBelowDailyCap('dev-1', createFakeUsageRepo(0, cap.tokensPerDay, 0));
-    expect(result.ok).toBe(false);
-    expect(result.code).toBe('budget:over-cap');
-  });
-
-  it('blocks when combined tokens exceed cap', async () => {
-    const cap = PIPELINE_BUDGET_CAPS['crystal-trial'];
-    const result = await assertBelowDailyCap('dev-1', createFakeUsageRepo(
-      0,
-      cap.tokensPerDay - 100,
-      100,
-    ));
-    expect(result.ok).toBe(false);
-    expect(result.code).toBe('budget:over-cap');
-  });
-
-  // ── Per-kind cap tests (Phase 2) ──────────────────────
-  const caps: Array<{ kind: PipelineKind; runsPerDay: number; tokensPerDay: number }> = [
-    { kind: 'crystal-trial', ...PIPELINE_BUDGET_CAPS['crystal-trial'] },
-    { kind: 'topic-content', ...PIPELINE_BUDGET_CAPS['topic-content'] },
-    { kind: 'topic-expansion', ...PIPELINE_BUDGET_CAPS['topic-expansion'] },
-    { kind: 'subject-graph', ...PIPELINE_BUDGET_CAPS['subject-graph'] },
-  ];
-
-  for (const { kind, runsPerDay, tokensPerDay } of caps) {
-    it(`blocks ${kind} when run cap (${runsPerDay}) exceeded`, async () => {
-      const result = await assertBelowDailyCap('dev-1', createFakeUsageRepo(runsPerDay, 0, 0), kind);
-      expect(result.ok).toBe(false);
-      expect(result.message).toContain(String(runsPerDay));
-    });
-
-    it(`allows ${kind} when under run cap`, async () => {
-      const result = await assertBelowDailyCap('dev-1', createFakeUsageRepo(runsPerDay - 1, 0, 0), kind);
-      expect(result.ok).toBe(true);
-    });
-
-    it(`blocks ${kind} when token cap (${tokensPerDay}) exceeded`, async () => {
-      const result = await assertBelowDailyCap('dev-1', createFakeUsageRepo(0, tokensPerDay, 0), kind);
-      expect(result.ok).toBe(false);
-      expect(result.message).toContain(String(tokensPerDay));
-    });
-
-    it(`allows ${kind} when under token cap`, async () => {
-      const result = await assertBelowDailyCap('dev-1', createFakeUsageRepo(0, tokensPerDay - 1, 0), kind);
-      expect(result.ok).toBe(true);
+  // ── Per-kind cap RPC parameters ──────────────────────
+  for (const [kind, caps] of Object.entries(PIPELINE_BUDGET_CAPS)) {
+    it(`passes ${kind} caps to RPC`, async () => {
+      const db = createFakeDb({ ok: true });
+      await assertBelowDailyCap('dev-1', db, kind as PipelineKind);
+      expect(db.rpc).toHaveBeenCalledWith('reserve_run_budget', expect.objectContaining({
+        p_run_cap: caps.runsPerDay,
+        p_token_cap: caps.tokensPerDay,
+      }));
     });
   }
 
-  it('uses UTC day correctly', () => {
-    expect(PIPELINE_BUDGET_CAPS['crystal-trial'].runsPerDay).toBe(10);
-    expect(PIPELINE_BUDGET_CAPS['crystal-trial'].tokensPerDay).toBe(500_000);
+  it('uses UTC day in RPC call', async () => {
+    const db = createFakeDb({ ok: true });
+    await assertBelowDailyCap('dev-1', db);
+    const calls = (db.rpc as ReturnType<typeof vi.fn>).mock.calls;
+    const p_day: string = calls[0][1].p_day;
+    expect(p_day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Must match today's UTC date.
+    const today = new Date().toISOString().slice(0, 10);
+    expect(p_day).toBe(today);
   });
 });

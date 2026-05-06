@@ -83,8 +83,23 @@ Last updated: 2026-05-06.
 
 **Deferred to later Phase 3 sub-steps:**
 - Full Langfuse integration adapter (tracer currently emits to console, ready for forwarding).
-- Budget enforcement from actual provider tokens (currently estimate-based `assertBelowDailyCap`).
 - Per-device usage dashboard querying `usage_counters` table.
+
+### Phase 3.5 — Contract Convergence + Backend Correctness
+
+Last updated: 2026-05-06.
+
+- [x]  **Step 1 (Worker Contract Adapter).** Created `backend/src/contracts/generationContracts.ts` — single import surface for backend workflows re-exporting `inputHash`, `contentHash`, `strictParseArtifact`, `semanticValidateArtifact`, `jsonSchemaResponseFormat`, `ArtifactKind`, schema version constants, failure codes, run event types, and eval fixtures from `@contracts`. Backend typecheck green with 0 direct `@contracts/*` imports outside the adapter.
+- [x]  **Step 1A (Feature-Owned JSON Schema Response Formats).** Created `src/features/generationContracts/schemas/jsonSchemaResponseFormats.ts` with `jsonSchemaResponseFormat(kind)` returning OpenRouter `{ type: 'json_schema', json_schema: { name, strict: true, schema } }` for all nine `ArtifactKind` literals. Derived from Zod schemas via `z.toJSONSchema()`. Stable schema names (e.g., `crystal_trial`, `topic_theory`, `subject_graph_topics`). Exported through the contracts barrel. Backend `openrouterClient.ts` updated to accept `JsonSchemaResponseFormat` instead of hand-written `jsonSchema` objects.
+- [x]  **Step 2 (Canonical Hashes Everywhere).** Removed all 5 local `computeInputHash` implementations from backend workflows + routes. All workflows and routes now use `inputHash(snapshot)` from contracts. All random `cnt_*` placeholder content hashes replaced with `await contentHash(parsedPayload)`. Stage checkpoints carry contract-owned `inputHash` values.
+- [x]  **Step 3 (Strict Parse + Semantic Validation).** All 4 workflows now use `strictParseArtifact(kind, raw)` + `semanticValidateArtifact(kind, payload, context)` instead of `JSON.parse` + ad-hoc manual validation. Parse failures produce `parse:json-mode-violation` / `parse:zod-shape` codes. Semantic failures produce `validation:semantic-*` codes. Subject Graph Stage B preserves the deterministic `correctPrereqEdges` exception.
+- [x]  **Step 4 (Typed RunEvent Emission).** All event emission uses canonical type names: `run.status` (with `{ status, stage }` body), `artifact.ready` (with full `{ artifactId, kind, contentHash, inputHash, schemaVersion }` payload), `run.completed`, `run.failed`, `run.cancelled`, `run.cancel-acknowledged`. No `run.status:planning` or `run.status:generating-stage` legacy event names remain. No partial `artifact.ready` payloads (all include `kind`, `inputHash`, `schemaVersion`).
+- [x]  **Step 4A (Artifact Cache Semantics).** Routes use artifact-kind-aware cache lookup (`cacheArtifactKind(kind)` mapping: crystal-trial→crystal-trial, topic-expansion→topic-expansion-cards, subject-graph→subject-graph-topics, topic-content→topic-theory). Cache-hit `artifact.ready` events include full typed payloads.
+- [x]  **Step 5 (Atomic Budget Reservation).** Created `0006_phase35_corrective.sql` migration with `reserve_run_budget` RPC function that locks `usage_counters` row, checks run/token caps, and increments `runs_started` in a single transaction. Updated `assertBelowDailyCap` signature from `(deviceId, IUsageCountersRepo, kind)` → `(deviceId, SupabaseClient, kind)` with fail-closed semantics when RPC is not deployed. Exposed `repos.db` on the `Repos` bundle. Updated all 5 call sites. Budget guard tests rewritten for atomic RPC mock.
+- [x]  **Step 5A (Durable Enqueue).** Workflow dispatch failure in `POST /v1/runs` now marks the run `failed_final` with `config:invalid` code, emits `run.failed` event, and returns `502` — no unowned `queued` runs can remain. Retry route also follows the same enqueue/failure policy.
+- [x]  **Step 6 (Browser Transport CORS).** Added `supersedes-key`, `last-event-id`, `cache-control` to CORS allowed request headers in `backend/src/middleware/cors.ts`.
+- [x]  **Step 6A (Supersession Transaction Fix).** Migration drops and recreates the `idx_runs_active_supersedes` partial unique index to exclude `ready` status. A completed (`ready`) Topic Expansion no longer blocks future superseding runs with the same `Supersedes-Key`. The `cancelSupersededRun` repo method already filtered by non-terminal active states.
+- [x]  **Step 7 (Stats Scope + Idempotency TTL).** Stats route now filters `listInWindow` results by the requesting device's `device_id` — pre-auth v1 stats are per-device. Idempotency middleware enforces 24-hour TTL: dedupes only when the existing run was created <24h ago; stale keys create fresh runs.
 
 ### Phase 4 — Productionization + cleanup
 

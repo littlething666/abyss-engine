@@ -104,6 +104,11 @@ export {
   DifficultyTier,
   StudyCardType,
   MiniGameType,
+  // JSON Schema response-format builders (OpenRouter strict json_schema)
+  jsonSchemaResponseFormat,
+  JSON_SCHEMA_RESPONSE_FORMAT_BY_KIND,
+  JSON_SCHEMA_RESPONSE_FORMAT_NAMES,
+  type JsonSchemaResponseFormat,
 } from './schemas';
 
 export {

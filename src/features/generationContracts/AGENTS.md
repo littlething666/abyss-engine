@@ -39,7 +39,7 @@ src/features/generationContracts/
 ├── snapshots/
 │   ├── types.ts                     # RunInputSnapshot discriminated union
 │   └── build*Snapshot.ts            # per-pipeline snapshot builders
-├── schemas/                         # strict Zod artifact schemas (Phase 0 step 3)
+├── schemas/                         # strict Zod artifact schemas + JSON Schema response-format builders
 │   ├── _shared.ts
 │   ├── subjectGraphTopics.ts
 │   ├── subjectGraphEdges.ts
@@ -49,7 +49,8 @@ src/features/generationContracts/
 │   ├── topicMiniGameSequenceBuild.ts
 │   ├── topicMiniGameMatchPairs.ts
 │   ├── topicExpansionCards.ts
-│   └── crystalTrial.ts
+│   ├── crystalTrial.ts
+│   └── jsonSchemaResponseFormats.ts  # OpenRouter strict json_schema response-format builders (Phase 3.5)
 ├── strictParsers/                   # single-pass parsers + ArtifactKind registry (Phase 0 step 3)
 │   ├── strictParse.ts
 │   └── byKind.ts

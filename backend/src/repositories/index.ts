@@ -25,6 +25,8 @@ export interface Repos {
   usage: IUsageCountersRepo;
   stageCheckpoints: IStageCheckpointsRepo;
   deviceSettings: IDeviceSettingsRepo;
+  /** Supabase client — consumed by `assertBelowDailyCap` for atomic RPC calls. */
+  db: ReturnType<typeof getSupabaseClient>;
 }
 
 /**
@@ -40,5 +42,6 @@ export function makeRepos(env: Env): Repos {
     usage: createUsageCountersRepo(db),
     stageCheckpoints: createStageCheckpointsRepo(db),
     deviceSettings: createDeviceSettingsRepo(db),
+    db,
   };
 }

@@ -2,14 +2,17 @@
  * Server-side OpenRouter client for the durable orchestrator Worker.
  *
  * Distinct from the browser-side `HttpChatCompletionsRepository` — both share
- * the canonical request-shape builders (from @contracts once prompts land in
- * Phase 0 step 12), but the Worker holds the API key and never exposes it.
+ * the canonical request-shape builders (from @contracts), but the Worker
+ * holds the API key and never exposes it.
  *
- * Phase 1 PR-D: Crystal Trial generation only.  Strict json_schema mode is
- * mandatory; response-healing is requested per Plan v3 Q22.
+ * Phase 3.5: All pipeline call sites accept `JsonSchemaResponseFormat` from
+ * the contracts module instead of hand-written inline JSON Schema payloads.
+ * Strict json_schema mode is mandatory; response-healing is requested per
+ * Plan v3 Q22.
  */
 
 import { WorkflowFail } from '../lib/workflowErrors';
+import type { JsonSchemaResponseFormat } from '../contracts/generationContracts';
 import type { Env } from '../env';
 
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -71,7 +74,8 @@ export interface OpenRouterCallResult {
 export interface CrystalTrialGenerateArgs {
   modelId: string;
   messages: Array<{ role: string; content: string }>;
-  jsonSchema: Record<string, unknown>;
+  /** Contract-owned JSON Schema response format (from `jsonSchemaResponseFormat('crystal-trial')`). */
+  responseFormat: JsonSchemaResponseFormat;
   providerHealingRequested: boolean;
 }
 
@@ -92,14 +96,7 @@ export async function callCrystalTrial(
   const body: Record<string, unknown> = {
     model: args.modelId,
     messages: args.messages,
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'crystal_trial',
-        strict: true,
-        schema: args.jsonSchema,
-      },
-    },
+    response_format: args.responseFormat,
     plugins: args.providerHealingRequested
       ? [{ id: 'response-healing' }]
       : undefined,
@@ -141,7 +138,7 @@ export async function callCrystalTrial(
 export interface TopicExpansionGenerateArgs {
   modelId: string;
   messages: Array<{ role: string; content: string }>;
-  jsonSchema: Record<string, unknown>;
+  responseFormat: JsonSchemaResponseFormat;
   providerHealingRequested: boolean;
 }
 
@@ -159,14 +156,7 @@ export async function callTopicExpansion(
   const body: Record<string, unknown> = {
     model: args.modelId,
     messages: args.messages,
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'topic_expansion',
-        strict: true,
-        schema: args.jsonSchema,
-      },
-    },
+    response_format: args.responseFormat,
     plugins: args.providerHealingRequested
       ? [{ id: 'response-healing' }]
       : undefined,
@@ -208,7 +198,7 @@ export async function callTopicExpansion(
 export interface SubjectGraphGenerateArgs {
   modelId: string;
   messages: Array<{ role: string; content: string }>;
-  jsonSchema: Record<string, unknown>;
+  responseFormat: JsonSchemaResponseFormat;
   providerHealingRequested: boolean;
   temperature?: number;
 }
@@ -227,14 +217,7 @@ export async function callSubjectGraph(
   const body: Record<string, unknown> = {
     model: args.modelId,
     messages: args.messages,
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'subject_graph',
-        strict: true,
-        schema: args.jsonSchema,
-      },
-    },
+    response_format: args.responseFormat,
     plugins: args.providerHealingRequested
       ? [{ id: 'response-healing' }]
       : undefined,
@@ -280,7 +263,7 @@ export async function callSubjectGraph(
 export interface TopicContentGenerateArgs {
   modelId: string;
   messages: Array<{ role: string; content: string }>;
-  jsonSchema: Record<string, unknown>;
+  responseFormat: JsonSchemaResponseFormat;
   providerHealingRequested: boolean;
   /** The stage being generated: theory, study-cards, or mini-games:<gameType>. */
   stage: string;
@@ -297,19 +280,10 @@ export async function callTopicContent(
     throw new WorkflowFail('config:invalid', 'missing OPENROUTER_API_KEY');
   }
 
-  const schemaName = `topic_content_${args.stage.replace(/[^a-z0-9_]/gi, '_')}`;
-
   const body: Record<string, unknown> = {
     model: args.modelId,
     messages: args.messages,
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: schemaName,
-        strict: true,
-        schema: args.jsonSchema,
-      },
-    },
+    response_format: args.responseFormat,
     plugins: args.providerHealingRequested
       ? [{ id: 'response-healing' }]
       : undefined,

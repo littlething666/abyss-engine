@@ -1,15 +1,16 @@
 /**
  * Idempotency middleware — checks `(device_id, idempotency_key)` uniqueness.
  *
- * On re-submit within 24h, returns the existing `runId` immediately without
- * creating a new run or Workflow.  The 24h window is enforced by a periodic
- * cleanup job (Phase 3) or a TTL index; for Phase 1, stale idempotency keys
- * are harmless (the `idempotency_key` column on `runs` is indexed but
- * stale keys just sit there).
+ * Phase 3.5 Step 7: Enforces the 24-hour dedupe window declared in the main
+ * plan. On re-submit within 24h, returns the existing `runId` immediately
+ * without creating a new run. After 24h, a stale key can create a new run.
  */
 
 import type { Context, Next } from 'hono';
 import { makeRepos } from '../repositories';
+
+/** Dedupe window in milliseconds (24 hours). */
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 export async function idempotencyMiddleware(c: Context, next: Next) {
   const key = c.req.header('idempotency-key');
@@ -27,7 +28,14 @@ export async function idempotencyMiddleware(c: Context, next: Next) {
   const existingRunId = await repos.runs.findByIdempotencyKey(deviceId, key.trim());
 
   if (existingRunId) {
-    return c.json({ runId: existingRunId }, 200);
+    // Check TTL: only dedupe if the existing run was created within 24h.
+    const run = await repos.runs.load(existingRunId);
+    const createdMs = new Date(run.created_at).getTime();
+    const ageMs = Date.now() - createdMs;
+    if (ageMs < IDEMPOTENCY_TTL_MS) {
+      return c.json({ runId: existingRunId }, 200);
+    }
+    // Outside TTL — allow a fresh run with the same key.
   }
 
   // Store the key on context so the handler can persist it.

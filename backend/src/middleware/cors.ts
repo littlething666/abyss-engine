@@ -29,7 +29,7 @@ export function corsMiddleware() {
         c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
         c.header(
           'Access-Control-Allow-Headers',
-          'accept, content-type, x-abyss-device, idempotency-key',
+          'accept, content-type, x-abyss-device, idempotency-key, supersedes-key, last-event-id, cache-control',
         );
         c.header('Access-Control-Max-Age', '86400');
         // Use Hono's responder so `c.header(...)` values are not dropped (a bare

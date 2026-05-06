@@ -21,10 +21,17 @@ const testEnv: Env = {
   ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
 };
 
+function makeResponseFormat(name: string, schema: Record<string, unknown>) {
+  return {
+    type: 'json_schema' as const,
+    json_schema: { name, strict: true as const, schema },
+  };
+}
+
 const testArgs = {
   modelId: 'openrouter/google/gemini-2.5-flash',
   messages: [{ role: 'user', content: 'Generate trial questions.' }],
-  jsonSchema: { type: 'object', properties: { questions: { type: 'array' } } },
+  responseFormat: makeResponseFormat('crystal_trial', { type: 'object', properties: { questions: { type: 'array' } } }),
   providerHealingRequested: true,
 };
 
@@ -149,7 +156,7 @@ describe('callTopicExpansion', () => {
   const expansionArgs = {
     modelId: 'openrouter/google/gemini-2.5-flash',
     messages: [{ role: 'user', content: 'Generate expansion cards.' }],
-    jsonSchema: { type: 'object', properties: { cards: { type: 'array' } } },
+    responseFormat: makeResponseFormat('topic_expansion', { type: 'object', properties: { cards: { type: 'array' } } }),
     providerHealingRequested: true,
   };
 
@@ -164,7 +171,7 @@ describe('callTopicExpansion', () => {
     expect(result.usage?.total_tokens).toBe(30);
   });
 
-  it('sets json_schema with topic_expansion name', async () => {
+  it('uses contract-owned response format with topic_expansion name', async () => {
     mockFetch(200, { choices: [{ message: { content: '{}' } }], usage: null });
     await callTopicExpansion(expansionArgs, testEnv);
 
@@ -189,7 +196,7 @@ describe('callSubjectGraph', () => {
   const sgArgs = {
     modelId: 'openrouter/google/gemini-2.5-flash',
     messages: [{ role: 'user', content: 'Generate topic lattice.' }],
-    jsonSchema: { type: 'object', properties: { topics: { type: 'array' } } },
+    responseFormat: makeResponseFormat('subject_graph', { type: 'object', properties: { topics: { type: 'array' } } }),
     providerHealingRequested: true,
   };
 
@@ -226,7 +233,7 @@ describe('callTopicContent', () => {
   const tcArgs = {
     modelId: 'openrouter/google/gemini-2.5-flash',
     messages: [{ role: 'user', content: 'Generate theory.' }],
-    jsonSchema: { type: 'object', properties: { coreConcept: { type: 'string' } } },
+    responseFormat: makeResponseFormat('topic_content_theory', { type: 'object', properties: { coreConcept: { type: 'string' } } }),
     providerHealingRequested: true,
     stage: 'theory',
   };
@@ -250,12 +257,17 @@ describe('callTopicContent', () => {
     expect(body.response_format.json_schema.name).toBe('topic_content_theory');
   });
 
-  it('sanitizes mini-game stage name', async () => {
+  it('uses response format name directly', async () => {
     mockFetch(200, { choices: [{ message: { content: '{}' } }], usage: null });
-    await callTopicContent({ ...tcArgs, stage: 'mini-games:CATEGORY_SORT' }, testEnv);
+    const miniArgs = {
+      ...tcArgs,
+      stage: 'mini-games:CATEGORY_SORT',
+      responseFormat: makeResponseFormat('topic_mini_game_category_sort', {}),
+    };
+    await callTopicContent(miniArgs, testEnv);
 
     const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-    expect(body.response_format.json_schema.name).toBe('topic_content_mini_games_CATEGORY_SORT');
+    expect(body.response_format.json_schema.name).toBe('topic_mini_game_category_sort');
   });
 
   it('throws WorkflowFail on 429', async () => {

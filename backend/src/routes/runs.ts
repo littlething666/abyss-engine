@@ -2,16 +2,15 @@
  * Run routes — POST /v1/runs, GET /v1/runs, GET /v1/runs/:id,
  * POST /v1/runs/:id/cancel, POST /v1/runs/:id/retry.
  *
- * Phase 2: expanded to cover all four pipeline kinds with per-kind budget
- * caps, supersession for topic-expansion, and cache-hit short-circuit across
- * all kinds. Workflow creation is stubbed for topic-content, topic-expansion,
- * and subject-graph (Workflow classes land in PR-2B / 2C / 2D).
+ * Phase 3.5: Uses contracts-owned `inputHash` and artifact-kind-aware
+ * cache lookup instead of local helpers.
  */
 
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
 import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { utcDay } from '../repositories/usageCountersRepo';
+import { inputHash } from '../contracts/generationContracts';
 import type { Env } from '../env';
 import type { PipelineKind, CancelReason } from '../repositories/types';
 import type { RunInputSnapshot, SubmitRunBody } from '../types/api';
@@ -67,17 +66,14 @@ function getSupersedesKey(req: Request): string | undefined {
   return val.trim();
 }
 
-/**
- * Compute a deterministic input hash for the snapshot.
- * TODO(PR-D): replace with @contracts canonicalHash.inputHash(snapshot).
- */
-async function computeInputHash(snapshot: RunInputSnapshot): Promise<string> {
-  const json = JSON.stringify(snapshot, Object.keys(snapshot).sort());
-  const data = new TextEncoder().encode(json);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return `inp_${Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')}`;
+/** Resolve the primary artifact kind for cache-hit lookup per pipeline kind. */
+function cacheArtifactKind(kind: PipelineKind): string {
+  switch (kind) {
+    case 'crystal-trial': return 'crystal-trial';
+    case 'topic-expansion': return 'topic-expansion-cards';
+    case 'subject-graph': return 'subject-graph-topics';
+    case 'topic-content': return 'topic-theory';
+  }
 }
 
 function today(): string {
@@ -121,16 +117,17 @@ runs.post('/', async (c) => {
   }
 
   // 3. Per-kind budget guard.
-  const budget = await assertBelowDailyCap(deviceId, repos.usage, kind);
+  const budget = await assertBelowDailyCap(deviceId, repos.db, kind);
   if (!budget.ok) {
     return c.json({ code: budget.code, message: budget.message }, 429);
   }
 
-  // 4. Compute input hash.
-  const inputHash = await computeInputHash(snapshot);
+  // 4. Compute contract-owned input hash.
+  const hash = await inputHash(snapshot);
 
-  // 5. Cache-hit short-circuit.
-  const cached = await repos.artifacts.findCacheHit(deviceId, kind, inputHash);
+  // 5. Cache-hit short-circuit (artifact-kind-aware).
+  const artifactKind = cacheArtifactKind(kind);
+  const cached = await repos.artifacts.findCacheHit(deviceId, artifactKind, hash);
 
   if (cached) {
     const run = await repos.runs.insertRun({
@@ -138,7 +135,7 @@ runs.post('/', async (c) => {
       device_id: deviceId,
       kind,
       status: 'ready',
-      input_hash: inputHash,
+      input_hash: hash,
       idempotency_key: idempotencyKey ?? null,
       parent_run_id: null,
       supersedes_key: supersedesKey ?? null,
@@ -153,12 +150,15 @@ runs.post('/', async (c) => {
       snapshot_json: snapshot as Record<string, unknown>,
     });
 
-    await repos.runs.append(run.id, deviceId, 'run.artifact-ready', {
+    await repos.runs.append(run.id, deviceId, 'artifact.ready', {
       artifactId: cached.id,
+      kind: cached.kind,
       contentHash: cached.content_hash,
+      inputHash: hash,
+      schemaVersion: cached.schema_version,
       fromCache: true,
     });
-    await repos.runs.append(run.id, deviceId, 'run.completed', { fromCache: true });
+    await repos.runs.append(run.id, deviceId, 'run.completed', {});
 
     try {
       await repos.usage.incrementRunsStarted(deviceId, today());
@@ -179,7 +179,7 @@ runs.post('/', async (c) => {
     device_id: deviceId,
     kind,
     status: 'queued',
-    input_hash: inputHash,
+    input_hash: hash,
     idempotency_key: idempotencyKey ?? null,
     parent_run_id: null,
     supersedes_key: supersedesKey ?? null,
@@ -207,14 +207,8 @@ runs.post('/', async (c) => {
     await repos.usage.incrementRunsStarted(deviceId, today());
   } catch { /* non-critical */ }
 
-  // TODO(PR-2B/2C/2D): create the appropriate Workflow class here.
-  // For now, topic-content / topic-expansion / subject-graph are stubbed
-  // and stay in 'queued' status.
-  const workflowKind = kind === 'crystal-trial' ? 'CrystalTrialWorkflow' : `${kind} (stubbed)`;
-  console.log(`[runs] run ${run.id} queued (kind=${kind}, workflow=${workflowKind})`);
-
-  // Phase 2: dispatch to the appropriate Workflow binding.
-  // Each binding creates the Workflow class asynchronously.
+  // Phase 3.5 Step 5A: Durable enqueue. Workflow dispatch failure is terminal
+  // — the run must not remain `queued` without an owner.
   try {
     switch (kind) {
       case 'crystal-trial':
@@ -243,8 +237,20 @@ runs.post('/', async (c) => {
         break;
     }
   } catch (err) {
+    // Workflow dispatch failed — mark the run terminated so no
+    // unowned `queued` run remains.
     console.error(`[runs] failed to create workflow for run ${run.id}:`, err);
-    // The run stays in 'queued' status; the workflow engine will retry.
+    const enqueueMsg = err instanceof Error ? err.message : String(err);
+    await repos.runs.markFailed(run.id, 'config:invalid', `Workflow dispatch failed: ${enqueueMsg}`);
+    await repos.runs.append(run.id, deviceId, 'run.failed', {
+      code: 'config:invalid',
+      message: `Workflow dispatch failed: ${enqueueMsg}`,
+    });
+    return c.json({
+      runId: run.id,
+      error: 'workflow_dispatch_failed',
+      message: enqueueMsg,
+    }, 502);
   }
 
   return c.json({ runId: run.id }, 201);

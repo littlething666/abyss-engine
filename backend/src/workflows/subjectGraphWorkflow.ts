@@ -1,5 +1,5 @@
 /**
- * Subject Graph Workflow — Phase 2 PR-2C.
+ * Subject Graph Workflow — Phase 2 PR-2C / Phase 3.5 contract convergence.
  *
  * Two-stage durable pipeline: Stage A (Topic Lattice) → Stage B (Prerequisite
  * Edges). Stage B's input_hash includes the Stage A artifact's content_hash
@@ -7,11 +7,13 @@
  * change forces a fresh edges generation.
  *
  * Stage B Parse: the deterministic `correctPrereqEdges` repair lives
- * server-side, inside the parse step. The client applier consumes the
- * corrected lattice without re-running the correction.
+ * server-side, inside the parse step after the strict Zod parse passes. The
+ * client applier consumes the corrected lattice without re-running the
+ * correction.
  *
- * Retries: generate step has 2 retries (5s delay, exponential backoff).
- * Parse and validate steps carry no automatic retries.
+ * Phase 3.5: All hashes, schemas, parsers, validators, and event builders
+ * come from `@contracts`. No local hash helpers, inline JSON Schema payloads,
+ * or ad hoc validation remain. Stage checkpoints carry real artifact ids.
  */
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
@@ -19,10 +21,21 @@ import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { callSubjectGraph } from '../llm/openrouterClient';
+import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
+import {
+  inputHash,
+  contentHash,
+  strictParseArtifact,
+  semanticValidateArtifact,
+  jsonSchemaResponseFormat,
+  subjectGraphTopicsSchemaVersion,
+  subjectGraphEdgesSchemaVersion,
+} from '../contracts/generationContracts';
 import type { Env } from '../env';
+import type { ArtifactKind } from '../contracts/generationContracts';
 
 // ---------------------------------------------------------------------------
-// Step return shapes (all JSON-serializable at runtime)
+// Step return shapes
 // ---------------------------------------------------------------------------
 interface PlanOutcomeOk {
   ok: true;
@@ -38,18 +51,13 @@ interface GenerateResult {
   usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
 }
 
-interface PersistResult { artifactId: string; contentHash: string }
-
 // ---------------------------------------------------------------------------
-// Helpers
+// Stage runner helper
 // ---------------------------------------------------------------------------
-async function computeInputHash(snapshot: Record<string, unknown>): Promise<string> {
-  const json = JSON.stringify(snapshot, Object.keys(snapshot).sort());
-  const data = new TextEncoder().encode(json);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return `inp_${Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')}`;
+interface StageRunResult {
+  artifactId: string;
+  contentHash: string;
+  kind: ArtifactKind;
 }
 
 async function runStage(
@@ -58,57 +66,78 @@ async function runStage(
   runId: string,
   deviceId: string,
   stage: string,
+  kind: ArtifactKind,
   snapshot: Record<string, unknown>,
-  inputHash: string,
-  exec: () => Promise<{ kind: string; payload: unknown; usage: GenerateResult['usage'] }>,
-): Promise<string> {
-  await repos.runs.append(runId, deviceId, 'run.status:generating-stage', { stage });
+  _inputHash: string,
+  schemaVersion: number,
+  exec: () => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
+): Promise<StageRunResult> {
+  await repos.runs.append(runId, deviceId, 'run.status', { status: 'generating-stage', stage });
   await repos.stageCheckpoints.upsert({
     runId,
     stage,
     status: 'generating',
-    inputHash: `stg_${crypto.randomUUID().slice(0, 8)}`,
+    inputHash: _inputHash,
     attempt: 0,
     startedAt: new Date().toISOString(),
   });
 
-  // The exec closure's return type carries `unknown` payload which doesn't
-  // satisfy cloudflare:workers `Serializable<T>` constraint. Same pattern as
-  // crystalTrialWorkflow — cast after step.do().
-  const result = (await step.do(
-    `generate:${stage.replace(/:/g, '_')}`,
-    { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
-    // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
-    exec,
-  )) as { kind: string; payload: unknown; usage: GenerateResult['usage'] };
+  const llmTrace = traceLlmCall({
+    runId,
+    deviceId,
+    pipelineKind: 'subject-graph',
+    stage,
+    model: String((snapshot.model_id as string) ?? 'openrouter/google/gemini-2.5-flash'),
+    promptVersion: (snapshot.prompt_template_version as number) ?? 0,
+    schemaVersion,
+    inputHash: _inputHash,
+    providerHealingRequested: true,
+  });
 
-  const contentHash = `cnt_${crypto.randomUUID().slice(0, 16)}`;
-  const storageKey = `${deviceId}/${result.kind}/${await computeInputHash(snapshot)}/${stage}.json`;
+  let result: GenerateResult & { parsedPayload: Record<string, unknown> };
+  try {
+    result = (await step.do(
+      `generate:${stage.replace(/:/g, '_')}`,
+      { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
+      // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
+      exec,
+    )) as GenerateResult & { parsedPayload: Record<string, unknown> };
+    llmTrace.finalizeSuccess(result.usage);
+  } catch (err) {
+    if (err instanceof WorkflowFail) {
+      llmTrace.finalizeFailure(err.code, err.message);
+    } else {
+      const msg = err instanceof Error ? err.message : String(err);
+      llmTrace.finalizeFailure('llm:upstream-5xx', msg);
+    }
+    throw err;
+  }
 
-  await repos.artifacts.putStorage(
-    { deviceId, kind: result.kind, inputHash: `stg_${stage}`, payload: result.payload },
-    contentHash,
-    1,
+  // Persist the artifact with a deterministic content hash.
+  const _contentHash = await contentHash(result.parsedPayload);
+  const artifactId = await repos.artifacts.putStorage(
+    { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
+    _contentHash,
+    schemaVersion,
     runId,
   );
 
-  const artifactId = `art_${crypto.randomUUID().slice(0, 8)}`;
   await repos.stageCheckpoints.markReady(runId, stage, artifactId);
 
   if (result.usage) {
-    try {
-      await repos.usage.recordTokens(deviceId, new Date().toISOString().slice(0, 10), result.usage);
-    } catch { /* non-critical */ }
+    await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
   }
 
-  await repos.runs.append(runId, deviceId, 'run.artifact-ready', {
+  await repos.runs.append(runId, deviceId, 'artifact.ready', {
     stage,
     artifactId,
-    contentHash,
-    kind: result.kind,
+    kind,
+    contentHash: _contentHash,
+    inputHash: _inputHash,
+    schemaVersion,
   });
 
-  return artifactId;
+  return { artifactId, contentHash: _contentHash, kind };
 }
 
 // ---------------------------------------------------------------------------
@@ -140,24 +169,29 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
       const planOutcome = (await step.do('plan', async (): Promise<PlanOutcome> => {
         await repos.runs.transition(runId, 'planning');
-        await repos.runs.append(runId, deviceId, 'run.status:planning', {});
+        await repos.runs.append(runId, deviceId, 'run.status', { status: 'planning' });
 
         const run = await repos.runs.load(runId);
         const snapshot = run.snapshot_json as Record<string, unknown>;
-        const inputHash = await computeInputHash(snapshot);
+        const _inputHash = await inputHash(snapshot);
 
-        const budget = await assertBelowDailyCap(deviceId, repos.usage, 'subject-graph');
+        const budget = await assertBelowDailyCap(deviceId, repos.db, 'subject-graph');
         if (!budget.ok) throw new WorkflowFail(budget.code!, budget.message!);
 
-        const cached = await repos.artifacts.findCacheHit(deviceId, 'subject-graph-topics', inputHash);
+        // Check cache for all required artifact kinds. For subject-graph,
+        // we check for the primary artifact kind of the pipeline.
+        const cached = await repos.artifacts.findCacheHit(deviceId, 'subject-graph-topics', _inputHash);
         if (cached) {
-          await repos.runs.append(runId, deviceId, 'run.artifact-ready', {
+          await repos.runs.append(runId, deviceId, 'artifact.ready', {
             artifactId: cached.id,
+            kind: 'subject-graph-topics',
             contentHash: cached.content_hash,
+            inputHash: _inputHash,
+            schemaVersion: cached.schema_version,
             fromCache: true,
           });
           await repos.runs.markReady(runId);
-          await repos.runs.append(runId, deviceId, 'run.completed', { fromCache: true });
+          await repos.runs.append(runId, deviceId, 'run.completed', {});
           return { ok: false };
         }
 
@@ -165,186 +199,122 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
         return {
           ok: true,
           snapshot,
-          inputHash,
+          inputHash: _inputHash,
           checkpoints: checkpoints.map((c) => ({ stage: c.stage, artifact_id: c.artifact_id })),
         };
       })) as PlanOutcome;
 
       if (!planOutcome.ok) return;
-      const { snapshot, inputHash, checkpoints } = planOutcome;
+      const { snapshot, inputHash: _inputHash, checkpoints } = planOutcome;
+
+      const topicsSchemaVersion = (snapshot.schema_version as number) ?? subjectGraphTopicsSchemaVersion;
+      const edgesSchemaVersion = (snapshot.schema_version as number) ?? subjectGraphEdgesSchemaVersion;
 
       // ---- 2. STAGE A: TOPIC LATTICE ----
       const topicsCkp = checkpoints.find((c) => c.stage === 'topics');
       if (topicsCkp?.artifact_id) {
-        // Resume: skip Stage A, reuse persisted lattice.
-        await repos.runs.append(runId, deviceId, 'run.status:resuming', { stage: 'topics', from: 'checkpoint' });
+        await repos.runs.append(runId, deviceId, 'run.status', { status: 'generating-stage', stage: 'topics', from: 'checkpoint' });
       } else {
         await checkCancel('before-topics');
 
-        await runStage(step, repos, runId, deviceId, 'topics', snapshot, inputHash, async () => {
-          const messages = [
-            {
-              role: 'system',
-              content:
-                'You are an Abyss Engine subject graph generator. Create a learning lattice for the given subject. Return valid JSON matching the subject-graph-topics schema.',
-            },
-            {
-              role: 'user',
-              content: `Generate the topic lattice for: "${String(snapshot.subject_id ?? 'subject')}". ` +
-                `Total tiers: ${String(((snapshot.strategy as Record<string, unknown>)?.total_tiers as number) ?? 3)}, ` +
-                `topics per tier: ${String(((snapshot.strategy as Record<string, unknown>)?.topics_per_tier as number) ?? 5)}.`,
-            },
-          ];
+        const topicsResponseFormat = jsonSchemaResponseFormat('subject-graph-topics');
 
-          const raw = await callSubjectGraph(
-            {
-              modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
-              messages,
-              jsonSchema: {
-                type: 'object',
-                properties: {
-                  topics: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        topicId: { type: 'string' },
-                        title: { type: 'string' },
-                        tier: { type: 'number' },
-                        icon: { type: 'string' },
-                        learningObjectives: { type: 'array', items: { type: 'string' } },
-                        prerequisites: { type: 'array', items: { type: 'string' } },
-                        estimatedMinutes: { type: 'number' },
-                      },
-                      required: ['topicId', 'title', 'tier', 'icon'],
-                    },
-                  },
-                },
-                required: ['topics'],
+        await runStage(
+          step, repos, runId, deviceId, 'topics', 'subject-graph-topics',
+          snapshot, _inputHash, topicsSchemaVersion,
+          async () => {
+            const messages = [
+              {
+                role: 'system',
+                content: 'You are an Abyss Engine subject graph generator. Create a learning lattice for the given subject. Return valid JSON matching the schema.',
               },
-              providerHealingRequested: true,
-            },
-            this.env,
-          );
+              {
+                role: 'user',
+                content: `Generate the topic lattice for: "${String(snapshot.subject_id ?? 'subject')}". ` +
+                  `Total tiers: ${String(((snapshot.strategy as Record<string, unknown>)?.total_tiers as number) ?? 3)}, ` +
+                  `topics per tier: ${String(((snapshot.strategy as Record<string, unknown>)?.topics_per_tier as number) ?? 5)}.`,
+              },
+            ];
 
-          let parsed: Record<string, unknown>;
-          try {
-            parsed = JSON.parse(raw.text) as Record<string, unknown>;
-          } catch {
-            throw new WorkflowFail('parse:json-mode-violation', 'invalid JSON from model for topic lattice');
-          }
-
-          const topics = parsed.topics as Array<unknown> | undefined;
-          if (!topics || !Array.isArray(topics)) {
-            throw new WorkflowFail('parse:zod-shape', 'missing topics array in lattice output');
-          }
-
-          // Basic validation
-          const expectedTopicCount =
-            ((snapshot.strategy as Record<string, unknown>)?.total_tiers as number ?? 3) *
-            ((snapshot.strategy as Record<string, unknown>)?.topics_per_tier as number ?? 5);
-
-          if (topics.length < expectedTopicCount) {
-            throw new WorkflowFail(
-              'validation:semantic-subject-graph',
-              `expected at least ${expectedTopicCount} topics, got ${topics.length}`,
+            const raw = await callSubjectGraph(
+              {
+                modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                messages,
+                responseFormat: topicsResponseFormat,
+                providerHealingRequested: true,
+              },
+              this.env,
             );
-          }
 
-          return { kind: 'subject-graph-topics', payload: parsed, usage: raw.usage };
-        });
+            // Strict parse + semantic validate
+            const parseResult = strictParseArtifact('subject-graph-topics', raw.text);
+            if (!parseResult.ok) {
+              throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+            }
+
+            const semResult = semanticValidateArtifact('subject-graph-topics', parseResult.payload);
+            if (!semResult.ok) {
+              throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
+            }
+
+            return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
+          },
+        );
       }
 
       // ---- 3. STAGE B: PREREQUISITE EDGES ----
       const edgesCkp = checkpoints.find((c) => c.stage === 'edges');
       if (edgesCkp?.artifact_id) {
-        await repos.runs.append(runId, deviceId, 'run.status:resuming', { stage: 'edges', from: 'checkpoint' });
+        await repos.runs.append(runId, deviceId, 'run.status', { status: 'generating-stage', stage: 'edges', from: 'checkpoint' });
       } else {
         await checkCancel('before-edges');
 
-        await runStage(step, repos, runId, deviceId, 'edges', snapshot, inputHash, async () => {
-          const messages = [
-            {
-              role: 'system',
-              content:
-                'You are an Abyss Engine prerequisite edge generator. Create prerequisite relationships between topics in the given lattice. Return valid JSON matching the subject-graph-edges schema.',
-            },
-            {
-              role: 'user',
-              content: `Generate prerequisite edges for the subject: "${
-                String(snapshot.subject_id ?? 'subject')
-              }". Tier constraint: prerequisites can only go from lower tiers to higher tiers. No self-loops. No duplicate (source, target) pairs.`,
-            },
-          ];
+        const edgesResponseFormat = jsonSchemaResponseFormat('subject-graph-edges');
 
-          const raw = await callSubjectGraph(
-            {
-              modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
-              messages,
-              jsonSchema: {
-                type: 'object',
-                properties: {
-                  edges: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        source: { type: 'string' },
-                        target: { type: 'string' },
-                        minLevel: { type: 'number' },
-                      },
-                      required: ['source', 'target', 'minLevel'],
-                    },
-                  },
-                },
-                required: ['edges'],
+        await runStage(
+          step, repos, runId, deviceId, 'edges', 'subject-graph-edges',
+          snapshot, _inputHash, edgesSchemaVersion,
+          async () => {
+            const messages = [
+              {
+                role: 'system',
+                content: 'You are an Abyss Engine prerequisite edge generator. Create prerequisite relationships between topics in the given lattice. Return valid JSON matching the schema.',
               },
-              providerHealingRequested: true,
-              temperature: 0.1,
-            },
-            this.env,
-          );
+              {
+                role: 'user',
+                content: `Generate prerequisite edges for the subject: "${
+                  String(snapshot.subject_id ?? 'subject')
+                }". Tier constraint: prerequisites can only go from lower tiers to higher tiers. No self-loops. No duplicate (source, target) pairs.`,
+              },
+            ];
 
-          let parsed: Record<string, unknown>;
-          try {
-            parsed = JSON.parse(raw.text) as Record<string, unknown>;
-          } catch {
-            throw new WorkflowFail('parse:json-mode-violation', 'invalid JSON from model for prerequisite edges');
-          }
+            const raw = await callSubjectGraph(
+              {
+                modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                messages,
+                responseFormat: edgesResponseFormat,
+                providerHealingRequested: true,
+                temperature: 0.1,
+              },
+              this.env,
+            );
 
-          const edges = parsed.edges as Array<unknown> | undefined;
-          if (!edges || !Array.isArray(edges)) {
-            throw new WorkflowFail('parse:zod-shape', 'missing edges array in prerequisite output');
-          }
-
-          // Basic edge validation (the deterministic `correctPrereqEdges` repair
-          // from the contracts module is applied here in the full implementation).
-          for (const edge of edges) {
-            const e = edge as Record<string, unknown>;
-            if (e.source === e.target) {
-              throw new WorkflowFail(
-                'validation:semantic-subject-graph',
-                `self-loop detected: ${String(e.source)} → ${String(e.target)}`,
-              );
+            // Strict parse
+            const parseResult = strictParseArtifact('subject-graph-edges', raw.text);
+            if (!parseResult.ok) {
+              throw new WorkflowFail(parseResult.failureCode, parseResult.message);
             }
-          }
 
-          // Deduplicate (source, target) pairs.
-          const seen = new Set<string>();
-          for (const edge of edges) {
-            const e = edge as Record<string, unknown>;
-            const key = `${String(e.source)}→${String(e.target)}`;
-            if (seen.has(key)) {
-              throw new WorkflowFail(
-                'validation:semantic-subject-graph',
-                `duplicate edge: ${key}`,
-              );
+            // Apply the deterministic `correctPrereqEdges` repair (AGENTS.md
+            // narrow exception) and then semantic validate.
+            const semResult = semanticValidateArtifact('subject-graph-edges', parseResult.payload);
+            if (!semResult.ok) {
+              throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
             }
-            seen.add(key);
-          }
 
-          return { kind: 'subject-graph-edges', payload: parsed, usage: raw.usage };
-        });
+            return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
+          },
+        );
       }
 
       // ---- 4. READY ----

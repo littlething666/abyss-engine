@@ -1,5 +1,5 @@
 /**
- * Topic Content Workflow — Phase 2 PR-2D.
+ * Topic Content Workflow — Phase 2 PR-2D / Phase 3.5 contract convergence.
  *
  * Three-stage durable pipeline mirroring `runTopicGenerationPipeline.ts`:
  * theory → study-cards → mini-games (×3 in parallel).
@@ -12,8 +12,10 @@
  * each gameType as its own checkpoint. Cross-bucket dedupe runs after all
  * three mini-games complete.
  *
- * Retries: generate step has 2 retries (5s delay, exponential backoff).
- * Parse and validate steps carry no automatic retries.
+ * Phase 3.5: All hashes, schemas, parsers, validators, and event builders
+ * come from `@contracts`. No local hash helpers, inline JSON Schema payloads,
+ * or ad hoc validation remain. Stage checkpoints carry real artifact ids and
+ * deterministic input hashes.
  */
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
@@ -22,13 +24,38 @@ import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { callTopicContent } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
+import {
+  inputHash,
+  contentHash,
+  strictParseArtifact,
+  semanticValidateArtifact,
+  jsonSchemaResponseFormat,
+  topicTheorySchemaVersion,
+  topicStudyCardsSchemaVersion,
+  topicMiniGameCategorySortSchemaVersion,
+  topicMiniGameSequenceBuildSchemaVersion,
+  topicMiniGameMatchPairsSchemaVersion,
+} from '../contracts/generationContracts';
 import type { Env } from '../env';
+import type { ArtifactKind } from '../contracts/generationContracts';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 const MINI_GAME_TYPES = ['CATEGORY_SORT', 'SEQUENCE_BUILD', 'MATCH_PAIRS'] as const;
 type MiniGameType = (typeof MINI_GAME_TYPES)[number];
+
+const MINI_GAME_ARTIFACT_KINDS: Record<MiniGameType, ArtifactKind> = {
+  CATEGORY_SORT: 'topic-mini-game-category-sort',
+  SEQUENCE_BUILD: 'topic-mini-game-sequence-build',
+  MATCH_PAIRS: 'topic-mini-game-match-pairs',
+};
+
+const MINI_GAME_SCHEMA_VERSIONS: Record<MiniGameType, number> = {
+  CATEGORY_SORT: topicMiniGameCategorySortSchemaVersion,
+  SEQUENCE_BUILD: topicMiniGameSequenceBuildSchemaVersion,
+  MATCH_PAIRS: topicMiniGameMatchPairsSchemaVersion,
+};
 
 // ---------------------------------------------------------------------------
 // Step return shapes
@@ -47,38 +74,33 @@ interface GenerateResult {
   usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-async function computeInputHash(snapshot: Record<string, unknown>): Promise<string> {
-  const json = JSON.stringify(snapshot, Object.keys(snapshot).sort());
-  const data = new TextEncoder().encode(json);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return `inp_${Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')}`;
+interface StageRunResult {
+  artifactId: string;
+  contentHash: string;
+  kind: ArtifactKind;
 }
 
-/**
- * Run a single stage: transition to generating → call LLM → parse → validate
- * → persist into stage_checkpoints. Returns the artifact_id.
- */
+// ---------------------------------------------------------------------------
+// Stage runner helper
+// ---------------------------------------------------------------------------
 async function runStage(
   step: WorkflowStep,
   repos: ReturnType<typeof makeRepos>,
   runId: string,
   deviceId: string,
   stage: string,
+  kind: ArtifactKind,
   snapshot: Record<string, unknown>,
-  inputHash: string,
-  exec: () => Promise<GenerateResult & { parsedPayload: Record<string, unknown>; kind: string; contentHash: string }>,
-): Promise<string> {
-  await repos.runs.append(runId, deviceId, 'run.status:generating-stage', { stage });
+  _inputHash: string,
+  schemaVersion: number,
+  exec: () => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
+): Promise<StageRunResult> {
+  await repos.runs.append(runId, deviceId, 'run.status', { status: 'generating-stage', stage });
   await repos.stageCheckpoints.upsert({
     runId,
     stage,
     status: 'generating',
-    inputHash: `stg_${crypto.randomUUID().slice(0, 8)}`,
+    inputHash: _inputHash,
     attempt: 0,
     startedAt: new Date().toISOString(),
   });
@@ -90,19 +112,19 @@ async function runStage(
     stage,
     model: String((snapshot.model_id as string) ?? 'openrouter/google/gemini-2.5-flash'),
     promptVersion: (snapshot.prompt_template_version as number) ?? 0,
-    schemaVersion: (snapshot.schema_version as number) ?? 0,
-    inputHash,
+    schemaVersion,
+    inputHash: _inputHash,
     providerHealingRequested: true,
   });
 
-  let result: GenerateResult & { parsedPayload: Record<string, unknown>; kind: string; contentHash: string };
+  let result: GenerateResult & { parsedPayload: Record<string, unknown> };
   try {
     result = (await step.do(
       `generate:${stage.replace(/:/g, '_')}`,
       { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
       // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
       exec,
-    )) as GenerateResult & { parsedPayload: Record<string, unknown>; kind: string; contentHash: string };
+    )) as GenerateResult & { parsedPayload: Record<string, unknown> };
     llmTrace.finalizeSuccess(result.usage);
   } catch (err) {
     if (err instanceof WorkflowFail) {
@@ -114,16 +136,12 @@ async function runStage(
     throw err;
   }
 
-  // Persist the artifact.
+  // Persist the artifact with a deterministic content hash.
+  const _contentHash = await contentHash(result.parsedPayload);
   const artifactId = await repos.artifacts.putStorage(
-    {
-      deviceId,
-      kind: result.kind,
-      inputHash: `stg_${stage}`,
-      payload: result.parsedPayload,
-    },
-    result.contentHash,
-    (snapshot.schema_version as number) ?? 1,
+    { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
+    _contentHash,
+    schemaVersion,
     runId,
   );
 
@@ -133,14 +151,16 @@ async function runStage(
     await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
   }
 
-  await repos.runs.append(runId, deviceId, 'run.artifact-ready', {
+  await repos.runs.append(runId, deviceId, 'artifact.ready', {
     stage,
     artifactId,
-    contentHash: result.contentHash,
-    kind: result.kind,
+    kind,
+    contentHash: _contentHash,
+    inputHash: _inputHash,
+    schemaVersion,
   });
 
-  return artifactId;
+  return { artifactId, contentHash: _contentHash, kind };
 }
 
 /**
@@ -152,22 +172,21 @@ function resolveWantedStages(
   checkpoints: Array<{ stage: string; artifact_id: string | null }>,
 ): string[] {
   const stage = (snapshot.stage as string) ?? 'full';
-  const resumeFrom = (snapshot.resumeFromStage as string) ?? 'theory';
-  const persistedStages = new Set(checkpoints.filter((c) => c.artifact_id).map((c) => c.stage));
+  const persisted = new Set(checkpoints.filter((c) => c.artifact_id).map((c) => c.stage));
 
-  if (stage === 'theory') return persistedStages.has('theory') ? [] : ['theory'];
+  if (stage === 'theory') return persisted.has('theory') ? [] : ['theory'];
   if (stage === 'study-cards') {
     const stages: string[] = [];
-    if (!persistedStages.has('theory')) stages.push('theory');
-    if (!persistedStages.has('study-cards')) stages.push('study-cards');
+    if (!persisted.has('theory')) stages.push('theory');
+    if (!persisted.has('study-cards')) stages.push('study-cards');
     return stages;
   }
   if (stage === 'mini-games') {
     const stages: string[] = [];
-    if (!persistedStages.has('theory')) stages.push('theory');
-    if (!persistedStages.has('study-cards')) stages.push('study-cards');
+    if (!persisted.has('theory')) stages.push('theory');
+    if (!persisted.has('study-cards')) stages.push('study-cards');
     for (const gt of MINI_GAME_TYPES) {
-      if (!persistedStages.has(`mini-games:${gt}`)) {
+      if (!persisted.has(`mini-games:${gt}`)) {
         stages.push(`mini-games:${gt}`);
       }
     }
@@ -176,10 +195,10 @@ function resolveWantedStages(
 
   // 'full': everything not yet persisted.
   const stages: string[] = [];
-  if (!persistedStages.has('theory')) stages.push('theory');
-  if (!persistedStages.has('study-cards')) stages.push('study-cards');
+  if (!persisted.has('theory')) stages.push('theory');
+  if (!persisted.has('study-cards')) stages.push('study-cards');
   for (const gt of MINI_GAME_TYPES) {
-    if (!persistedStages.has(`mini-games:${gt}`)) {
+    if (!persisted.has(`mini-games:${gt}`)) {
       stages.push(`mini-games:${gt}`);
     }
   }
@@ -215,24 +234,28 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
 
       const planOutcome = (await step.do('plan', async (): Promise<PlanOutcome> => {
         await repos.runs.transition(runId, 'planning');
-        await repos.runs.append(runId, deviceId, 'run.status:planning', {});
+        await repos.runs.append(runId, deviceId, 'run.status', { status: 'planning' });
 
         const run = await repos.runs.load(runId);
         const snapshot = run.snapshot_json as Record<string, unknown>;
-        const inputHash = await computeInputHash(snapshot);
+        const _inputHash = await inputHash(snapshot);
 
-        const budget = await assertBelowDailyCap(deviceId, repos.usage, 'topic-content');
+        const budget = await assertBelowDailyCap(deviceId, repos.db, 'topic-content');
         if (!budget.ok) throw new WorkflowFail(budget.code!, budget.message!);
 
-        const cached = await repos.artifacts.findCacheHit(deviceId, 'topic-theory', inputHash);
+        // Cache check: topic-theory is the primary entry point.
+        const cached = await repos.artifacts.findCacheHit(deviceId, 'topic-theory', _inputHash);
         if (cached) {
-          await repos.runs.append(runId, deviceId, 'run.artifact-ready', {
+          await repos.runs.append(runId, deviceId, 'artifact.ready', {
             artifactId: cached.id,
+            kind: 'topic-theory',
             contentHash: cached.content_hash,
+            inputHash: _inputHash,
+            schemaVersion: cached.schema_version,
             fromCache: true,
           });
           await repos.runs.markReady(runId);
-          await repos.runs.append(runId, deviceId, 'run.completed', { fromCache: true });
+          await repos.runs.append(runId, deviceId, 'run.completed', {});
           return { ok: false };
         }
 
@@ -240,152 +263,118 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         return {
           ok: true,
           snapshot,
-          inputHash,
+          inputHash: _inputHash,
           checkpoints: ckps.map((c) => ({ stage: c.stage, artifact_id: c.artifact_id })),
         };
       })) as PlanOutcome;
 
       if (!planOutcome.ok) return;
-      const { snapshot, inputHash, checkpoints } = planOutcome;
+      const { snapshot, inputHash: _inputHash, checkpoints } = planOutcome;
       const wantedStages = resolveWantedStages(snapshot, checkpoints);
 
       // ---- 2. THEORY ----
       if (wantedStages.includes('theory')) {
         await checkCancel('before-theory');
 
-        await runStage(step, repos, runId, deviceId, 'theory', snapshot, inputHash, async () => {
-          const messages = [
-            {
-              role: 'system',
-              content:
-                'You are an Abyss Engine topic content generator. Create comprehensive theory content for the given topic. Return valid JSON matching the topic-theory schema.',
-            },
-            {
-              role: 'user',
-              content: `Generate theory for topic: "${
-                String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
-              }". Learning objective: ${String(snapshot.learning_objective ?? 'master the concepts')}.`,
-            },
-          ];
+        const theoryResponseFormat = jsonSchemaResponseFormat('topic-theory');
+        const theorySchemaVersion = (snapshot.schema_version as number) ?? topicTheorySchemaVersion;
 
-          const raw = await callTopicContent(
-            {
-              modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
-              messages,
-              jsonSchema: {
-                type: 'object',
-                properties: {
-                  coreConcept: { type: 'string' },
-                  detailedExplanation: { type: 'string' },
-                  keyTakeaways: { type: 'array', items: { type: 'string' } },
-                  syllabusQuestions: {
-                    type: 'object',
-                    properties: {
-                      beginner: { type: 'array', items: { type: 'string' } },
-                      intermediate: { type: 'array', items: { type: 'string' } },
-                      advanced: { type: 'array', items: { type: 'string' } },
-                    },
-                    required: ['beginner', 'intermediate', 'advanced'],
-                  },
-                },
-                required: ['coreConcept', 'detailedExplanation', 'keyTakeaways', 'syllabusQuestions'],
+        await runStage(
+          step, repos, runId, deviceId, 'theory', 'topic-theory',
+          snapshot, _inputHash, theorySchemaVersion,
+          async () => {
+            const messages = [
+              {
+                role: 'system',
+                content: 'You are an Abyss Engine topic content generator. Create comprehensive theory content for the given topic. Return valid JSON matching the schema.',
               },
-              providerHealingRequested: true,
-              stage: 'theory',
-            },
-            this.env,
-          );
+              {
+                role: 'user',
+                content: `Generate theory for topic: "${
+                  String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
+                }". Learning objective: ${String(snapshot.learning_objective ?? 'master the concepts')}.`,
+              },
+            ];
 
-          let parsed: Record<string, unknown>;
-          try {
-            parsed = JSON.parse(raw.text) as Record<string, unknown>;
-          } catch {
-            throw new WorkflowFail('parse:json-mode-violation', 'invalid JSON from model for theory');
-          }
+            const raw = await callTopicContent(
+              {
+                modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                messages,
+                responseFormat: theoryResponseFormat,
+                providerHealingRequested: true,
+                stage: 'theory',
+              },
+              this.env,
+            );
 
-          if (typeof parsed.coreConcept !== 'string' || parsed.coreConcept.trim() === '') {
-            throw new WorkflowFail('parse:zod-shape', 'theory missing coreConcept');
-          }
-          if (!Array.isArray(parsed.keyTakeaways)) {
-            throw new WorkflowFail('parse:zod-shape', 'theory missing keyTakeaways array');
-          }
+            const parseResult = strictParseArtifact('topic-theory', raw.text);
+            if (!parseResult.ok) {
+              throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+            }
 
-          const contentHash = `cnt_${crypto.randomUUID().slice(0, 16)}`;
-          return { ...raw, parsedPayload: parsed, kind: 'topic-theory', contentHash };
-        });
+            const semResult = semanticValidateArtifact('topic-theory', parseResult.payload);
+            if (!semResult.ok) {
+              throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
+            }
+
+            return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
+          },
+        );
       }
 
       // ---- 3. STUDY CARDS ----
       if (wantedStages.includes('study-cards')) {
         await checkCancel('before-study-cards');
 
-        await runStage(step, repos, runId, deviceId, 'study-cards', snapshot, inputHash, async () => {
-          const messages = [
-            {
-              role: 'system',
-              content:
-                'You are an Abyss Engine study card generator. Create study cards based on the provided theory. Return valid JSON matching the topic-study-cards schema.',
-            },
-            {
-              role: 'user',
-              content: `Generate study cards for topic: "${
-                String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
-              }" using the theory content already generated. Create a mix of FLASHCARD, CLOZE, and MULTIPLE_CHOICE cards at various difficulty levels.`,
-            },
-          ];
+        const cardsResponseFormat = jsonSchemaResponseFormat('topic-study-cards');
+        const cardsSchemaVersion = (snapshot.schema_version as number) ?? topicStudyCardsSchemaVersion;
 
-          const raw = await callTopicContent(
-            {
-              modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
-              messages,
-              jsonSchema: {
-                type: 'object',
-                properties: {
-                  cards: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        id: { type: 'string' },
-                        cardType: { type: 'string', enum: ['FLASHCARD', 'CLOZE', 'MULTIPLE_CHOICE'] },
-                        difficulty: { type: 'number' },
-                        conceptStem: { type: 'string' },
-                      },
-                      required: ['id', 'cardType', 'difficulty', 'conceptStem'],
-                    },
-                  },
-                },
-                required: ['cards'],
+        await runStage(
+          step, repos, runId, deviceId, 'study-cards', 'topic-study-cards',
+          snapshot, _inputHash, cardsSchemaVersion,
+          async () => {
+            const messages = [
+              {
+                role: 'system',
+                content: 'You are an Abyss Engine study card generator. Create study cards based on the provided theory. Return valid JSON matching the schema. Include a mix of FLASHCARD, CLOZE, and MULTIPLE_CHOICE cards at various difficulty levels.',
               },
-              providerHealingRequested: true,
-              stage: 'study-cards',
-            },
-            this.env,
-          );
+              {
+                role: 'user',
+                content: `Generate study cards for topic: "${
+                  String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
+                }" using the theory content already generated.`,
+              },
+            ];
 
-          let parsed: Record<string, unknown>;
-          try {
-            parsed = JSON.parse(raw.text) as Record<string, unknown>;
-          } catch {
-            throw new WorkflowFail('parse:json-mode-violation', 'invalid JSON from model for study cards');
-          }
-
-          const cards = parsed.cards as Array<unknown> | undefined;
-          if (!cards || !Array.isArray(cards)) {
-            throw new WorkflowFail('parse:zod-shape', 'study cards missing cards array');
-          }
-
-          // Validate card pool size.
-          if (cards.length < 3) {
-            throw new WorkflowFail(
-              'validation:semantic-card-pool-size',
-              `study cards generated only ${cards.length} cards (minimum 3)`,
+            const raw = await callTopicContent(
+              {
+                modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                messages,
+                responseFormat: cardsResponseFormat,
+                providerHealingRequested: true,
+                stage: 'study-cards',
+              },
+              this.env,
             );
-          }
 
-          const contentHash = `cnt_${crypto.randomUUID().slice(0, 16)}`;
-          return { ...raw, parsedPayload: parsed, kind: 'topic-study-cards', contentHash };
-        });
+            const parseResult = strictParseArtifact('topic-study-cards', raw.text);
+            if (!parseResult.ok) {
+              throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+            }
+
+            // Provide existing concept stems from snapshot if available.
+            const existingStems = Array.isArray(snapshot.existing_concept_stems)
+              ? (snapshot.existing_concept_stems as string[])
+              : undefined;
+            const ctx = existingStems ? { existingConceptStems: existingStems } : undefined;
+            const semResult = semanticValidateArtifact('topic-study-cards', parseResult.payload, ctx);
+            if (!semResult.ok) {
+              throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
+            }
+
+            return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
+          },
+        );
       }
 
       // ---- 4. MINI-GAMES (three in parallel) ----
@@ -396,88 +385,59 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         await Promise.all(
           miniStages.map((miniStage) => {
             const gameType = miniStage.replace('mini-games:', '') as MiniGameType;
-            return runStage(step, repos, runId, deviceId, miniStage, snapshot, inputHash, async () => {
-              const messages = [
-                {
-                  role: 'system',
-                  content: `You are an Abyss Engine mini-game generator for ${gameType}. Create playable mini-game content based on the theory. Return valid JSON matching the topic-mini-game schema.`,
-                },
-                {
-                  role: 'user',
-                  content: `Generate ${gameType} mini-game cards for topic: "${
-                    String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
-                  }". Use the theory content already generated. ${
-                    gameType === 'CATEGORY_SORT'
-                      ? 'Create items with categories.'
-                      : gameType === 'SEQUENCE_BUILD'
-                      ? 'Create ordered steps from 1 to N.'
-                      : 'Create matching pairs.'
-                  }`,
-                },
-              ];
+            const kind = MINI_GAME_ARTIFACT_KINDS[gameType];
+            const schemaVersion = MINI_GAME_SCHEMA_VERSIONS[gameType];
+            const responseFormat = jsonSchemaResponseFormat(kind);
 
-              const kindMap: Record<MiniGameType, string> = {
-                CATEGORY_SORT: 'topic-mini-game-category-sort',
-                SEQUENCE_BUILD: 'topic-mini-game-sequence-build',
-                MATCH_PAIRS: 'topic-mini-game-match-pairs',
-              };
-
-              const raw = await callTopicContent(
-                {
-                  modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
-                  messages,
-                  jsonSchema: {
-                    type: 'object',
-                    properties: {
-                      items: { type: 'array', items: { type: 'object' } },
-                    },
-                    required: ['items'],
+            return runStage(
+              step, repos, runId, deviceId, miniStage, kind,
+              snapshot, _inputHash, schemaVersion,
+              async () => {
+                const messages = [
+                  {
+                    role: 'system',
+                    content: `You are an Abyss Engine mini-game generator for ${gameType}. Create playable mini-game content based on the theory. Return valid JSON matching the schema.`,
                   },
-                  providerHealingRequested: true,
-                  stage: miniStage,
-                },
-                this.env,
-              );
+                  {
+                    role: 'user',
+                    content: `Generate ${gameType} mini-game cards for topic: "${
+                      String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
+                    }". Use the theory content already generated. ${
+                      gameType === 'CATEGORY_SORT'
+                        ? 'Create items with categories where every category has ≥1 item.'
+                        : gameType === 'SEQUENCE_BUILD'
+                        ? 'Create ordered steps from 1 to N with no gaps or duplicates.'
+                        : 'Create matching pairs with unique pair ids, unique left values, and unique right values.'
+                    }`,
+                  },
+                ];
 
-              let parsed: Record<string, unknown>;
-              try {
-                parsed = JSON.parse(raw.text) as Record<string, unknown>;
-              } catch {
-                throw new WorkflowFail(
-                  'parse:json-mode-violation',
-                  `invalid JSON from model for mini-game ${gameType}`,
+                const raw = await callTopicContent(
+                  {
+                    modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                    messages,
+                    responseFormat,
+                    providerHealingRequested: true,
+                    stage: miniStage,
+                  },
+                  this.env,
                 );
-              }
 
-              const items = parsed.items as Array<unknown> | undefined;
-              if (!items || !Array.isArray(items)) {
-                throw new WorkflowFail(
-                  'parse:zod-shape',
-                  `mini-game ${gameType} missing items array`,
-                );
-              }
+                const parseResult = strictParseArtifact(kind, raw.text);
+                if (!parseResult.ok) {
+                  throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+                }
 
-              if (items.length < 2) {
-                throw new WorkflowFail(
-                  'validation:semantic-mini-game-playability',
-                  `mini-game ${gameType} generated only ${items.length} items (minimum 2)`,
-                );
-              }
+                const semResult = semanticValidateArtifact(kind, parseResult.payload);
+                if (!semResult.ok) {
+                  throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
+                }
 
-              const contentHash = `cnt_${crypto.randomUUID().slice(0, 16)}`;
-              return { ...raw, parsedPayload: parsed, kind: kindMap[gameType], contentHash };
-            });
+                return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
+              },
+            );
           }),
         );
-
-        // Cross-bucket dedupe after all mini-games complete.
-        await step.do('mini-games:cross-dedupe', async () => {
-          // Ensure the run hasn't been cancelled mid-dedupe.
-          await checkCancel('after-mini-games');
-          // In the full implementation, the contracts module's semantic validators
-          // handle cross-bucket concept-stem dedupe. The workflow just gates on
-          // all three mini-game artifacts being persisted.
-        });
       }
 
       // ---- 5. READY ----

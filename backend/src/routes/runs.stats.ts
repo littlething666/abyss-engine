@@ -37,6 +37,7 @@ export interface FailureStatsResponse {
 const stats = new Hono<{ Bindings: Env; Variables: { deviceId: string } }>();
 
 stats.get('/stats', async (c) => {
+  const deviceId = c.get('deviceId');
   const repos = makeRepos(c.env);
 
   const rawDays = parseInt(c.req.query('days') ?? '7', 10);
@@ -49,11 +50,14 @@ stats.get('/stats', async (c) => {
   const now = new Date();
   const windowStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  // Fetch runs in the window.
+  // Phase 3.5 Step 7: Stats are per-device in pre-auth v1.
+  // `listInWindow` returns all devices; we filter to the requesting device.
+  // Operator-wide stats require an explicit admin credential (future).
   const rawRuns = await repos.runs.listInWindow(days);
+  const deviceRuns = rawRuns.filter((r) => r.device_id === deviceId);
 
   // Filter by optional query params.
-  let runs = rawRuns;
+  let runs = deviceRuns;
   if (pipelineFilter) {
     runs = runs.filter((r) => r.kind === pipelineFilter);
   }

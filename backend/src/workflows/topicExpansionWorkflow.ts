@@ -1,16 +1,13 @@
 /**
- * Topic Expansion Workflow — Phase 2 PR-2B.
+ * Topic Expansion Workflow — Phase 2 PR-2B / Phase 3.5 contract convergence.
  *
  * Single-stage durable pipeline: generate → parse → validate → persist.
  * Mirrors `runExpansionJob.ts` but runs server-side on Cloudflare Workflows
- * with strict json_schema and cooperative cancel.
+ * with strict json_schema from the contracts module and cooperative cancel.
  *
- * Supersession: a newer level-up cancels in-flight expansion with
- * `cancel_reason='superseded'`. The composition root suppresses the
- * player-facing failure copy for superseded runs.
- *
- * Retries: generate step has 2 retries (5s delay, exponential backoff).
- * Parse and validate steps carry no automatic retries — failures are terminal.
+ * Phase 3.5: All hashes, schemas, parsers, validators, and event builders
+ * come from `@contracts`. No local hash helpers, inline JSON Schema payloads,
+ * or ad hoc validation remain.
  */
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
@@ -19,16 +16,20 @@ import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { callTopicExpansion } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
+import {
+  inputHash,
+  contentHash,
+  strictParseArtifact,
+  semanticValidateArtifact,
+  jsonSchemaResponseFormat,
+  topicExpansionCardsSchemaVersion,
+} from '../contracts/generationContracts';
 import type { Env } from '../env';
 
 // ---------------------------------------------------------------------------
-// Step return shapes (all JSON-serializable at runtime)
+// Step return shapes
 // ---------------------------------------------------------------------------
-interface PlanOutcomeOk {
-  ok: true;
-  snapshot: Record<string, unknown>;
-  inputHash: string;
-}
+interface PlanOutcomeOk { ok: true; snapshot: Record<string, unknown>; inputHash: string }
 interface PlanOutcomeCached { ok: false }
 type PlanOutcome = PlanOutcomeOk | PlanOutcomeCached;
 
@@ -38,18 +39,6 @@ interface GenerateResult {
 }
 
 interface PersistResult { artifactId: string; contentHash: string }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-async function computeInputHash(snapshot: Record<string, unknown>): Promise<string> {
-  const json = JSON.stringify(snapshot, Object.keys(snapshot).sort());
-  const data = new TextEncoder().encode(json);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return `inp_${Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')}`;
-}
 
 // ---------------------------------------------------------------------------
 // Workflow
@@ -80,34 +69,37 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
       const planOutcome = (await step.do('plan', async (): Promise<PlanOutcome> => {
         await repos.runs.transition(runId, 'planning');
-        await repos.runs.append(runId, deviceId, 'run.status:planning', {});
+        await repos.runs.append(runId, deviceId, 'run.status', { status: 'planning' });
 
         const run = await repos.runs.load(runId);
         const snapshot = run.snapshot_json as Record<string, unknown>;
-        const inputHash = await computeInputHash(snapshot);
+        const _inputHash = await inputHash(snapshot);
 
-        const budget = await assertBelowDailyCap(deviceId, repos.usage, 'topic-expansion');
+        const budget = await assertBelowDailyCap(deviceId, repos.db, 'topic-expansion');
         if (!budget.ok) throw new WorkflowFail(budget.code!, budget.message!);
 
-        const cached = await repos.artifacts.findCacheHit(deviceId, 'topic-expansion-cards', inputHash);
+        const cached = await repos.artifacts.findCacheHit(deviceId, 'topic-expansion-cards', _inputHash);
         if (cached) {
-          await repos.runs.append(runId, deviceId, 'run.artifact-ready', {
+          await repos.runs.append(runId, deviceId, 'artifact.ready', {
             artifactId: cached.id,
+            kind: 'topic-expansion-cards',
             contentHash: cached.content_hash,
+            inputHash: _inputHash,
+            schemaVersion: cached.schema_version,
             fromCache: true,
           });
           await repos.runs.markReady(runId);
-          await repos.runs.append(runId, deviceId, 'run.completed', { fromCache: true });
+          await repos.runs.append(runId, deviceId, 'run.completed', {});
           return { ok: false };
         }
 
-        return { ok: true, snapshot, inputHash };
+        return { ok: true, snapshot, inputHash: _inputHash };
       })) as PlanOutcome;
 
       if (!planOutcome.ok) return;
-      const { snapshot, inputHash } = planOutcome;
+      const { snapshot, inputHash: _inputHash } = planOutcome;
 
-      // ---- 2. GENERATE — retries: 2, 5s delay, exponential ----
+      // ---- 2. GENERATE ----
       await checkCancel('before-generate');
 
       const llmTrace = traceLlmCall({
@@ -117,10 +109,12 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
         stage: 'generate',
         model: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
         promptVersion: (snapshot.prompt_template_version as number) ?? 0,
-        schemaVersion: (snapshot.schema_version as number) ?? 0,
-        inputHash,
+        schemaVersion: (snapshot.schema_version as number) ?? topicExpansionCardsSchemaVersion,
+        inputHash: _inputHash,
         providerHealingRequested: true,
       });
+
+      const responseFormat = jsonSchemaResponseFormat('topic-expansion-cards');
 
       let genResult: GenerateResult;
       try {
@@ -129,13 +123,12 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
           { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
           async (): Promise<GenerateResult> => {
             await repos.runs.transition(runId, 'generating_stage');
-            await repos.runs.append(runId, deviceId, 'run.status:generating-stage', { stage: 'generate' });
+            await repos.runs.append(runId, deviceId, 'run.status', { status: 'generating-stage', stage: 'generate' });
 
             const messages = [
               {
                 role: 'system',
-                content:
-                  'You are an Abyss Engine topic-expansion card generator. Generate new study cards at the requested difficulty level that complement the existing card pool. Return valid JSON matching the topic-expansion-cards schema.',
+                content: 'You are an Abyss Engine topic-expansion card generator. Generate new study cards at the requested difficulty level that complement the existing card pool. Return valid JSON matching the schema.',
               },
               {
                 role: 'user',
@@ -149,25 +142,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
               {
                 modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
                 messages,
-                jsonSchema: {
-                  type: 'object',
-                  properties: {
-                    cards: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          id: { type: 'string' },
-                          cardType: { type: 'string', enum: ['FLASHCARD', 'CLOZE', 'MULTIPLE_CHOICE'] },
-                          difficulty: { type: 'number' },
-                          conceptStem: { type: 'string' },
-                        },
-                        required: ['id', 'cardType', 'difficulty', 'conceptStem'],
-                      },
-                    },
-                  },
-                  required: ['cards'],
-                },
+                responseFormat,
                 providerHealingRequested: true,
               },
               this.env,
@@ -185,67 +160,32 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
         throw err;
       }
 
-      // ---- 3. PARSE — no retries ----
+      // ---- 3. PARSE — strict contracts parser ----
       await checkCancel('before-parse');
 
-      // @ts-expect-error Serializable<Record> rejects `unknown` values; JSON.parse output is persisted as jsonb.
+      // @ts-expect-error Serializable<Record> rejects `unknown` values.
       const parsed = (await step.do('parse', async () => {
         await repos.runs.transition(runId, 'parsing');
-        try {
-          return JSON.parse(genResult.text) as Record<string, unknown>;
-        } catch {
-          throw new WorkflowFail('parse:json-mode-violation', 'invalid JSON from model');
+        const result = strictParseArtifact('topic-expansion-cards', genResult.text);
+        if (!result.ok) {
+          throw new WorkflowFail(result.failureCode, result.message);
         }
+        return result.payload;
       })) as Record<string, unknown>;
 
-      // ---- 4. VALIDATE — no retries ----
+      // ---- 4. VALIDATE — semantic validator ----
       await checkCancel('before-validate');
 
       await step.do('validate', async () => {
         await repos.runs.transition(runId, 'validating');
-
-        const cards = parsed.cards as Array<unknown> | undefined;
-        if (!cards || !Array.isArray(cards)) {
-          throw new WorkflowFail('parse:zod-shape', 'missing cards array in expansion output');
-        }
-
-        // Check that all cards have a difficulty value.
-        const expectedDifficulty = (snapshot.difficulty as number) ?? ((snapshot.next_level as number) ?? 1) + 1;
-        for (const card of cards) {
-          const c = card as Record<string, unknown>;
-          if (typeof c.id !== 'string' || c.id.trim() === '') {
-            throw new WorkflowFail('validation:semantic-card-content-shape', 'card missing id');
-          }
-          if (typeof c.cardType !== 'string') {
-            throw new WorkflowFail('validation:semantic-card-content-shape', 'card missing cardType');
-          }
-          if (typeof c.difficulty !== 'number') {
-            throw new WorkflowFail('validation:semantic-card-content-shape', 'card missing difficulty');
-          }
-          if (typeof c.conceptStem !== 'string' || c.conceptStem.trim() === '') {
-            throw new WorkflowFail('validation:semantic-card-content-shape', 'card missing conceptStem');
-          }
-        }
-
-        // Check for duplicate concept stems (case-insensitive).
-        const stems = new Set<string>();
-        for (const card of cards) {
-          const stem = String((card as Record<string, unknown>).conceptStem).toLowerCase().trim();
-          if (stems.has(stem)) {
-            throw new WorkflowFail(
-              'validation:semantic-duplicate-concept',
-              `duplicate concept stem: "${String((card as Record<string, unknown>).conceptStem)}"`,
-            );
-          }
-          stems.add(stem);
-        }
-
-        // Check pool size minimum (Phase 0 step 9 drift floor).
-        if (cards.length < 3) {
-          throw new WorkflowFail(
-            'validation:semantic-card-pool-size',
-            `expansion generated only ${cards.length} cards (minimum 3)`,
-          );
+        // Provide existing concept stems from snapshot if available.
+        const existingStems = Array.isArray(snapshot.existing_concept_stems)
+          ? (snapshot.existing_concept_stems as string[])
+          : undefined;
+        const ctx = existingStems ? { existingConceptStems: existingStems } : undefined;
+        const result = semanticValidateArtifact('topic-expansion-cards', parsed, ctx);
+        if (!result.ok) {
+          throw new WorkflowFail(result.failureCode, result.message ?? 'semantic validation failed');
         }
       });
 
@@ -254,12 +194,12 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
       const persisted = (await step.do('persist', async (): Promise<PersistResult> => {
         await repos.runs.transition(runId, 'persisting');
-        const contentHash = `cnt_${crypto.randomUUID().slice(0, 16)}`;
+        const _contentHash = await contentHash(parsed);
 
         const artifactId = await repos.artifacts.putStorage(
-          { deviceId, kind: 'topic-expansion-cards', inputHash, payload: parsed },
-          contentHash,
-          (snapshot.schema_version as number) ?? 1,
+          { deviceId, kind: 'topic-expansion-cards', inputHash: _inputHash, payload: parsed },
+          _contentHash,
+          (snapshot.schema_version as number) ?? topicExpansionCardsSchemaVersion,
           runId,
         );
 
@@ -267,15 +207,17 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
           await recordTokensRobust(deviceId, repos, llmTrace.trace, genResult.usage);
         }
 
-        return { artifactId, contentHash };
+        return { artifactId, contentHash: _contentHash };
       })) as PersistResult;
 
-      // ---- 6. READY ----
+      // ---- 6. READY — typed artifact.ready event ----
       await repos.runs.markReady(runId);
-      await repos.runs.append(runId, deviceId, 'run.artifact-ready', {
+      await repos.runs.append(runId, deviceId, 'artifact.ready', {
         artifactId: persisted.artifactId,
-        contentHash: persisted.contentHash,
         kind: 'topic-expansion-cards',
+        contentHash: persisted.contentHash,
+        inputHash: _inputHash,
+        schemaVersion: (snapshot.schema_version as number) ?? topicExpansionCardsSchemaVersion,
       });
       await repos.runs.append(runId, deviceId, 'run.completed', {});
     } catch (err) {
