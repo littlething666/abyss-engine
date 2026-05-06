@@ -662,9 +662,40 @@ Exit criteria per pipeline:
 
 1. Worker-only tracing (Langfuse or equivalent) for every LLM call with `device_id`, `run_id`, `job_id`, model, prompt version, schema version, input hash, output hash, and provider-healing requested flag.
 2. Token accounting from provider metadata.
-3. Full per-device daily budget enforcement using UTC `usage_[counters.day](http://counters.day)`.
+3. Full per-device daily budget enforcement using UTC `usage_counters.day`.
 4. Failure dashboard by pipeline, model, prompt version, schema version, and failure code.
 5. Settings endpoint persists model bindings and OpenRouter response-healing preference server-side per device.
+
+### Phase 3.5 — Contract convergence + backend correctness.
+
+Immediate corrective phase: [Phase 3.5 — Contract Convergence + Backend Correctness](phase35-contract-convergence.md).
+
+Phase 3.5 is a hard prerequisite for Phase 4. It closes the gap between the durable plan and the backend implementation now that backend compile errors are fixed; no Phase 4 productionization or destructive cleanup starts until the linked corrective plan exits.
+
+1. Worker workflows consume `src/features/generationContracts/` through a Worker-safe `@contracts` adapter for canonical hashes, strict parsers, semantic validators, JSON Schema response formats, failure codes, and run-event builders.
+2. Remove backend-local `computeInputHash`, random `contentHash`, inline response schemas, ad hoc `JSON.parse` validation, and loose/partial RunEvent payloads from durable workflow paths.
+3. `generationContracts` owns the OpenRouter JSON Schema response-format builders; backend workflows must not hand-write artifact response schemas.
+4. Artifact cache checks are artifact-kind-aware. Multi-artifact pipelines short-circuit only when every requested artifact exists; partial cache hits become skipped stages or checkpoints.
+5. Replace read-then-increment budget checks with atomic per-device UTC budget reservation before Workflow creation.
+6. Workflow dispatch is recoverable or fails loudly. Inserted runs must not remain `queued` without a Workflow owner or outbox dispatch record.
+7. `POST /v1/runs/:id/retry` returns `{ runId }` and follows the same budget, dispatch, and event contract as initial submission.
+8. Complete browser durable transport: CORS covers durable headers, SSE live tail or terminal-state reconnect is implemented, and replay remains `seq > lastSeq`.
+9. Fix Topic Expansion supersession transactionality and ensure terminal `ready` runs do not block new runs with the same `Supersedes-Key`.
+10. Resolve pre-auth visibility decisions: `/v1/runs/stats` is per-device by default unless explicitly admin-protected, and `Idempotency-Key` dedupe obeys the documented 24h window.
+
+Exit criteria:
+
+- Backend typecheck is green.
+- Frontend and backend produce the same `input_hash` and `content_hash` for the same snapshot/artifact payload.
+- Every durable `artifact.ready` event includes `artifactId`, `kind`, `contentHash`, `inputHash`, and `schemaVersion`.
+- Backend event rows are produced from typed `RunEvent` builders, not loose status-specific strings or partial payload objects.
+- Backend workflows consume contracts-owned JSON Schema response formats.
+- Cache-hit behavior is correct for single-artifact and multi-artifact pipelines.
+- Budget enforcement is atomic and fail-closed.
+- Workflow enqueue failures cannot strand queued runs.
+- Retry returns the child `{ runId }` and preserves lineage.
+- Topic Expansion supersession is transaction-backed and terminal `ready` runs do not block later expansions.
+- Durable browser flows survive reconnect/tab close without duplicate artifact application.
 
 ### Phase 4 — Productionization + cleanup.
 
@@ -778,3 +809,5 @@ Exit criteria per pipeline:
 [Phase 1 — Durable Orchestrator + Crystal Trial Pilot: Concrete Implementation](phase1.md)
 
 [Phase 0 Step 12 — Concrete Prompt-Quality Patches](phase0-step12.md)
+
+[Phase 3.5 — Contract Convergence + Backend Correctness](phase35-contract-convergence.md)
