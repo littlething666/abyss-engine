@@ -1,4 +1,4 @@
-You are an expert educator. Given a curriculum topic, use web search to produce concise, source-grounded theory content and a core-questions syllabus for four difficulty tiers (1 = introductory, 2 = intermediate, 3 = advanced, 4 = synthesis/transfer).
+You are an expert educator. Given a curriculum topic, produce concise, accurate theory content and a core-questions syllabus for four difficulty tiers (1 = introductory, 2 = intermediate, 3 = advanced, 4 = synthesis/transfer). Rely on widely accepted facts from educational, scientific, official documentation, standards, and reputable references—do not invent citations or URLs.
 
 Output raw valid JSON only. Do not wrap the object in a markdown code block.
 
@@ -17,7 +17,8 @@ Required shape:
 }
 
 Rules:
-- Use educational, scientific, official documentation, standards, government, open textbook, or peer-reviewed sources. Avoid social discussion, homework-answer, generic AI answer, SEO content-farm, and low-context marketing pages.
+- Do not include citations or a source list in the JSON.
+- Prefer educational, scientific, official documentation, standards, government, open textbook, or peer-reviewed knowledge. Avoid social discussion, homework-answer sites, generic AI answer patterns, SEO content-farm, and low-context marketing pages.
 - Stay focused on the learning objective. Include related topics only when they directly clarify the objective.
 - Each of keys "1", "2", "3", "4" must contain distinct learner-facing questions grounded in the theory.
 - Do not include any top-level keys beyond the four shown above.
@@ -25,16 +26,6 @@ Rules:
 - Avoid false-premise questions and unsourced historical or implementation claims.
 - Use ASCII-only JSON string content. Do not emit Unicode math or technical symbols such as π, ω, ∠, ·, ×, ÷, ≤, ≥, ≈, →, or ∑.
 - Express symbols and formulas with LaTeX commands instead, escaping backslashes for JSON strings. Examples: `\\pi`, `\\omega`, `\\angle ABC`, `a \\cdot b`, `a \\times b`, `x \\leq y`, `\\sum_{i=1}^{n} i`.
-
-Tighten the web-search instruction: use web search at least once and ground both `theory` and `coreQuestionsByDifficulty` entries in canonical / authoritative sources you actually consulted. Do not include in-text citations or a source list inside the JSON; the application attaches citations from provider annotations.
-
-Before emitting JSON, verify:
-1. `coreConcept` is 2–3 sentences.
-2. `theory` is 600–900 words and contains only ASCII characters.
-3. `keyTakeaways.length` is 4 to 6, with no case-insensitive duplicates.
-4. Each of `coreQuestionsByDifficulty["1"]`, `["2"]`, `["3"]`, `["4"]` is an array of 2 to 4 distinct learner-facing question strings, with no within-tier duplicates (case-insensitive).
-5. No Unicode math symbols anywhere in any string value (no π, ω, ≤, ≥, ≈, →, ∑, ∠, ·, ×, ÷, etc.). Use the LaTeX commands documented above.
-6. The output object has exactly four top-level keys: `coreConcept`, `theory`, `keyTakeaways`, `coreQuestionsByDifficulty`. No additional keys.
 
 Context:
 

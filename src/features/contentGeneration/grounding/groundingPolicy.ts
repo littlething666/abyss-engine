@@ -1,11 +1,14 @@
 import type { GroundingSearchPolicy } from '@/types/grounding';
 import type { OpenRouterWebSearchTool } from '@/types/llm';
 
-/** Topic-theory web citations: many subjects lack .edu/gov or allowlisted doc primaries; trust tiers still recorded per URL. */
+/**
+ * Target policy when topic theory is grounded via backend search (e.g. Firecrawl) and/or
+ * restored provider citations. Not used for the interim ungrounded theory stage.
+ */
 export const FIRECRAWL_TOPIC_GROUNDING_POLICY: GroundingSearchPolicy = {
   engine: 'firecrawl',
-  maxResults: 3,
-  maxTotalResults: 6,
+  maxResults: 2,
+  maxTotalResults: 4,
   requireWebSearch: true,
   minAcceptedSources: 2,
   requireAuthoritativePrimarySource: false,
@@ -38,6 +41,23 @@ export const FIRECRAWL_TOPIC_GROUNDING_POLICY: GroundingSearchPolicy = {
   rejectedDomains: [],
 };
 
+/**
+ * Topic theory stage while OpenRouter `openrouter:web_search` is disabled (upstream 500 /
+ * server-tool failures). Same trust-domain lists as {@link FIRECRAWL_TOPIC_GROUNDING_POLICY};
+ * validation allows zero accepted sources and does not require web-search usage metadata.
+ * Replace with backend-grounded flow + {@link FIRECRAWL_TOPIC_GROUNDING_POLICY} when ready.
+ */
+export const TOPIC_THEORY_INTERIM_UNGROUNDED_POLICY: GroundingSearchPolicy = {
+  ...FIRECRAWL_TOPIC_GROUNDING_POLICY,
+  requireWebSearch: false,
+  minAcceptedSources: 0,
+};
+
+/**
+ * @deprecated OpenRouter server-side web search is broken/unreliable; do not attach
+ * `openrouter:web_search` to chat completions. Backend Firecrawl (or equivalent) will
+ * replace this path. Kept only for tests and typed references during migration.
+ */
 export function buildOpenRouterWebSearchTools(
   policy: GroundingSearchPolicy,
 ): OpenRouterWebSearchTool[] {

@@ -47,6 +47,38 @@ describe('HttpChatCompletionsRepository', () => {
     expect(result.reasoningDetails).toBeNull();
   });
 
+  it('throws with provider choice error when content is null (e.g. server tool failure)', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            finish_reason: 'stop',
+            error: {
+              code: 500,
+              message: 'Server tool request failed',
+              metadata: { error_type: 'server' },
+            },
+            message: {
+              role: 'assistant',
+              content: null,
+              reasoning: 'Planning web search…',
+            },
+          },
+        ],
+      }),
+    })) as unknown as typeof fetch;
+
+    const repo = new HttpChatCompletionsRepository('https://example.com/chat/completions', 'm1');
+    await expect(repo.completeChat({ model: 'm1', messages: [{ role: 'user', content: 'Hi' }] })).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof Error &&
+        e.message.includes('"code": 500') &&
+        e.message.includes('Server tool request failed') &&
+        e.message.includes('"content": null'),
+    );
+  });
+
   it('returns reasoning_details text when present', async () => {
     globalThis.fetch = vi.fn(async () => ({
       ok: true,

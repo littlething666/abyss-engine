@@ -25,7 +25,7 @@ import {
   parseTopicTheoryContentPayload,
   type ParsedTopicTheoryContentPayload,
 } from '../parsers/parseTopicTheoryContentPayload';
-import { FIRECRAWL_TOPIC_GROUNDING_POLICY, buildOpenRouterWebSearchTools } from '../grounding/groundingPolicy';
+import { TOPIC_THEORY_INTERIM_UNGROUNDED_POLICY } from '../grounding/groundingPolicy';
 import { validateGroundingSources } from '../grounding/validateGroundingSources';
 import { buildGroundingJobMetadataSnapshot } from '../grounding/buildGroundingJobMetadata';
 import { buildShellPipelineFailureBundle } from '../debug/buildPipelineFailureDebugBundle';
@@ -335,14 +335,13 @@ export async function runTopicGenerationPipeline(
       }),
       enableReasoning,
       enableStreaming,
-      tools: buildOpenRouterWebSearchTools(FIRECRAWL_TOPIC_GROUNDING_POLICY),
       responseFormatOverride: topicTheoryStructuredOutputResponseFormat,
       externalSignal: pipelineAc.signal,
       retryOf: jobRetryOfForStage(retryContext, 'theory'),
       parseOutput: async (raw, job) => {
         const providerMetadata = job.metadata?.provider as Record<string, unknown> | undefined;
         const parsed = parseTopicTheoryContentPayload(raw, {
-          groundingPolicy: FIRECRAWL_TOPIC_GROUNDING_POLICY,
+          groundingPolicy: TOPIC_THEORY_INTERIM_UNGROUNDED_POLICY,
           providerMetadata,
           validateGroundingSources,
         });
@@ -351,6 +350,7 @@ export async function runTopicGenerationPipeline(
         }
         useContentGenerationStore.getState().mergeJobMetadata(job.id, {
           grounding: {
+            mode: 'interim-ungrounded',
             sourceCount: parsed.data.groundingSources.length,
             hasAuthoritativePrimarySource: parsed.data.groundingSources.some((s) => s.trustLevel === 'high'),
             sources: parsed.data.groundingSources,
