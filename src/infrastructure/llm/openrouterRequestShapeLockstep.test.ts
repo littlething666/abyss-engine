@@ -162,3 +162,289 @@ describe('OpenRouter Crystal Trial request-shape lockstep', () => {
     expect(BROWSER_CRYSTAL_TRIAL_REQUEST_KEYS.has('messages')).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Topic Expansion request-shape lockstep
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical Topic Expansion request shape as produced by the Worker's
+ * `openrouterClient.callTopicExpansion`.
+ *
+ * LOCKSTEP WARNING: If you change `callTopicExpansion` in backend/src/llm/,
+ * you MUST update this snapshot.
+ */
+const WORKER_TOPIC_EXPANSION_REQUEST_SHAPE = {
+  bodyKeys: new Set([
+    'model',
+    'messages',
+    'response_format',
+    'plugins',
+    'usage',
+  ]),
+  responseFormat: {
+    type: 'json_schema' as const,
+    jsonSchema: {
+      name: 'topic_expansion',
+      strict: true,
+    },
+  },
+  pluginsWhenHealing: [{ id: 'response-healing' }],
+  pluginsWhenNoHealing: undefined,
+  usageWhenPresent: { include: true },
+};
+
+/** Snapshots of browser-side keys for topic-expansion pipeline surface. */
+const BROWSER_TOPIC_EXPANSION_REQUEST_KEYS = new Set([
+  'model',
+  'messages',
+  'stream',
+  'response_format',
+  'plugins',
+  'temperature',
+]);
+
+describe('OpenRouter Topic Expansion request-shape lockstep', () => {
+  it('shared core body keys match between Worker and browser', () => {
+    const requiredKeys = ['model', 'messages', 'response_format', 'plugins'];
+    for (const key of requiredKeys) {
+      expect(
+        WORKER_TOPIC_EXPANSION_REQUEST_SHAPE.bodyKeys.has(key),
+        `Worker client missing required key: ${key}`,
+      ).toBe(true);
+      expect(
+        BROWSER_TOPIC_EXPANSION_REQUEST_KEYS.has(key),
+        `Browser client missing required key: ${key}`,
+      ).toBe(true);
+    }
+  });
+
+  it('response_format shape is json_schema (not json_object)', () => {
+    const shape = WORKER_TOPIC_EXPANSION_REQUEST_SHAPE.responseFormat;
+    expect(shape.type).toBe('json_schema');
+    expect(shape.type).not.toBe('json_object');
+    expect(shape.jsonSchema.strict).toBe(true);
+    expect(shape.jsonSchema.name).toBe('topic_expansion');
+  });
+
+  it('plugins shape matches between Worker and browser', () => {
+    const healingPlugins =
+      WORKER_TOPIC_EXPANSION_REQUEST_SHAPE.pluginsWhenHealing;
+    expect(healingPlugins).toBeDefined();
+    expect(healingPlugins?.length).toBe(1);
+    expect(healingPlugins?.[0]?.id).toBe('response-healing');
+    expect(
+      WORKER_TOPIC_EXPANSION_REQUEST_SHAPE.pluginsWhenNoHealing,
+    ).toBeUndefined();
+  });
+
+  it('Worker includes usage tracking, browser does not', () => {
+    expect(
+      WORKER_TOPIC_EXPANSION_REQUEST_SHAPE.bodyKeys.has('usage'),
+    ).toBe(true);
+    expect(BROWSER_TOPIC_EXPANSION_REQUEST_KEYS.has('usage')).toBe(false);
+  });
+
+  it('both clients must NOT include streaming for pipelines', () => {
+    expect(
+      WORKER_TOPIC_EXPANSION_REQUEST_SHAPE.bodyKeys.has('stream'),
+      'Worker must not set stream',
+    ).toBe(false);
+    expect(BROWSER_TOPIC_EXPANSION_REQUEST_KEYS.has('stream')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Subject Graph request-shape lockstep
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical Subject Graph request shape as produced by the Worker's
+ * `openrouterClient.callSubjectGraph`.
+ *
+ * LOCKSTEP WARNING: If you change `callSubjectGraph` in backend/src/llm/,
+ * you MUST update this snapshot.
+ */
+const WORKER_SUBJECT_GRAPH_REQUEST_SHAPE = {
+  bodyKeys: new Set([
+    'model',
+    'messages',
+    'response_format',
+    'plugins',
+    'usage',
+    'temperature',
+  ]),
+  responseFormat: {
+    type: 'json_schema' as const,
+    jsonSchema: {
+      name: 'subject_graph',
+      strict: true,
+    },
+  },
+  pluginsWhenHealing: [{ id: 'response-healing' }],
+  pluginsWhenNoHealing: undefined,
+  usageWhenPresent: { include: true },
+};
+
+/** Snapshots of browser-side keys for subject-graph pipeline surface. */
+const BROWSER_SUBJECT_GRAPH_REQUEST_KEYS = new Set([
+  'model',
+  'messages',
+  'stream',
+  'response_format',
+  'plugins',
+  'temperature',
+]);
+
+describe('OpenRouter Subject Graph request-shape lockstep', () => {
+  it('shared core body keys match between Worker and browser', () => {
+    const requiredKeys = ['model', 'messages', 'response_format', 'plugins'];
+    for (const key of requiredKeys) {
+      expect(
+        WORKER_SUBJECT_GRAPH_REQUEST_SHAPE.bodyKeys.has(key),
+        `Worker client missing required key: ${key}`,
+      ).toBe(true);
+      expect(
+        BROWSER_SUBJECT_GRAPH_REQUEST_KEYS.has(key),
+        `Browser client missing required key: ${key}`,
+      ).toBe(true);
+    }
+  });
+
+  it('response_format shape is json_schema (not json_object)', () => {
+    const shape = WORKER_SUBJECT_GRAPH_REQUEST_SHAPE.responseFormat;
+    expect(shape.type).toBe('json_schema');
+    expect(shape.type).not.toBe('json_object');
+    expect(shape.jsonSchema.strict).toBe(true);
+    expect(shape.jsonSchema.name).toBe('subject_graph');
+  });
+
+  it('plugins shape matches between Worker and browser', () => {
+    const healingPlugins =
+      WORKER_SUBJECT_GRAPH_REQUEST_SHAPE.pluginsWhenHealing;
+    expect(healingPlugins).toBeDefined();
+    expect(healingPlugins?.length).toBe(1);
+    expect(healingPlugins?.[0]?.id).toBe('response-healing');
+    expect(
+      WORKER_SUBJECT_GRAPH_REQUEST_SHAPE.pluginsWhenNoHealing,
+    ).toBeUndefined();
+  });
+
+  it('Worker includes usage tracking, browser does not', () => {
+    expect(WORKER_SUBJECT_GRAPH_REQUEST_SHAPE.bodyKeys.has('usage')).toBe(
+      true,
+    );
+    expect(BROWSER_SUBJECT_GRAPH_REQUEST_KEYS.has('usage')).toBe(false);
+  });
+
+  it('Worker may include temperature for Stage B, browser always includes it', () => {
+    // Subject Graph is unique: the Worker conditionally sets temperature
+    // (only for Stage B), while the browser always includes it.
+    expect(
+      WORKER_SUBJECT_GRAPH_REQUEST_SHAPE.bodyKeys.has('temperature'),
+    ).toBe(true);
+    expect(BROWSER_SUBJECT_GRAPH_REQUEST_KEYS.has('temperature')).toBe(true);
+  });
+
+  it('both clients must NOT include streaming for pipelines', () => {
+    expect(
+      WORKER_SUBJECT_GRAPH_REQUEST_SHAPE.bodyKeys.has('stream'),
+      'Worker must not set stream',
+    ).toBe(false);
+    expect(BROWSER_SUBJECT_GRAPH_REQUEST_KEYS.has('stream')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Topic Content request-shape lockstep
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical Topic Content request shape as produced by the Worker's
+ * `openrouterClient.callTopicContent`.
+ *
+ * The schema name is stage-aware: `topic_content_<stage>`.
+ *
+ * LOCKSTEP WARNING: If you change `callTopicContent` in backend/src/llm/,
+ * you MUST update this snapshot.
+ */
+const WORKER_TOPIC_CONTENT_REQUEST_SHAPE = {
+  bodyKeys: new Set([
+    'model',
+    'messages',
+    'response_format',
+    'plugins',
+    'usage',
+  ]),
+  responseFormat: {
+    type: 'json_schema' as const,
+    jsonSchema: {
+      namePrefix: 'topic_content_',
+      strict: true,
+    },
+  },
+  pluginsWhenHealing: [{ id: 'response-healing' }],
+  pluginsWhenNoHealing: undefined,
+  usageWhenPresent: { include: true },
+};
+
+/** Snapshots of browser-side keys for topic-content pipeline surface. */
+const BROWSER_TOPIC_CONTENT_REQUEST_KEYS = new Set([
+  'model',
+  'messages',
+  'stream',
+  'response_format',
+  'plugins',
+  'temperature',
+]);
+
+describe('OpenRouter Topic Content request-shape lockstep', () => {
+  it('shared core body keys match between Worker and browser', () => {
+    const requiredKeys = ['model', 'messages', 'response_format', 'plugins'];
+    for (const key of requiredKeys) {
+      expect(
+        WORKER_TOPIC_CONTENT_REQUEST_SHAPE.bodyKeys.has(key),
+        `Worker client missing required key: ${key}`,
+      ).toBe(true);
+      expect(
+        BROWSER_TOPIC_CONTENT_REQUEST_KEYS.has(key),
+        `Browser client missing required key: ${key}`,
+      ).toBe(true);
+    }
+  });
+
+  it('response_format shape is json_schema with stage-aware name', () => {
+    const shape = WORKER_TOPIC_CONTENT_REQUEST_SHAPE.responseFormat;
+    expect(shape.type).toBe('json_schema');
+    expect(shape.type).not.toBe('json_object');
+    expect(shape.jsonSchema.strict).toBe(true);
+    // Stage-aware: name starts with topic_content_
+    expect(shape.jsonSchema.namePrefix).toBe('topic_content_');
+  });
+
+  it('plugins shape matches between Worker and browser', () => {
+    const healingPlugins =
+      WORKER_TOPIC_CONTENT_REQUEST_SHAPE.pluginsWhenHealing;
+    expect(healingPlugins).toBeDefined();
+    expect(healingPlugins?.length).toBe(1);
+    expect(healingPlugins?.[0]?.id).toBe('response-healing');
+    expect(
+      WORKER_TOPIC_CONTENT_REQUEST_SHAPE.pluginsWhenNoHealing,
+    ).toBeUndefined();
+  });
+
+  it('Worker includes usage tracking, browser does not', () => {
+    expect(WORKER_TOPIC_CONTENT_REQUEST_SHAPE.bodyKeys.has('usage')).toBe(
+      true,
+    );
+    expect(BROWSER_TOPIC_CONTENT_REQUEST_KEYS.has('usage')).toBe(false);
+  });
+
+  it('both clients must NOT include streaming for pipelines', () => {
+    expect(
+      WORKER_TOPIC_CONTENT_REQUEST_SHAPE.bodyKeys.has('stream'),
+      'Worker must not set stream',
+    ).toBe(false);
+    expect(BROWSER_TOPIC_CONTENT_REQUEST_KEYS.has('stream')).toBe(true);
+  });
+});

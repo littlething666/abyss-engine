@@ -1,6 +1,8 @@
 <aside>
 📌
 
+**Important.** WARNING: This plan is not up to date with the current codebase.
+
 **Scope.** File-level implementation plan for Phase 4, the *final* phase of the Durable Workflow Orchestration program. Written against fork `littlething666/abyss-engine` @ `716b0780` plus the projected end-state of Phases 0 → 3. Phase 4 is **destructive cleanup + productionization**: it deletes the local in-tab runners, removes deprecated permissive parsers from generation pipeline code paths, drops the `'navigation'` abort reason, locks down CORS, ships the threat-model + retention docs, transfers `openRouterResponseHealing` ownership to the server, and lays the foundation for Supabase Auth migration.
 
 **Prerequisite gates (must be green before any Phase 4 PR opens):** every pipeline (`subject-graph`, `topic-content`, `topic-expansion`, `crystal-trial`) is backend-routed by default with `NEXT_PUBLIC_DURABLE_RUNS=true`; Phase 3 telemetry + token accounting is live; failure-rate dashboards have shown ≥ 14 consecutive days at the durable success-rate floor declared at Phase 3 exit.

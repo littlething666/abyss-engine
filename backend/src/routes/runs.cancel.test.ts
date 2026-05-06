@@ -54,6 +54,14 @@ function q(data: unknown): QueuedResult {
 // ---------------------------------------------------------------------------
 const DEVICE_ID = '00000000-0000-0000-0000-000000000001';
 
+/** All four pipeline kinds for cross-pipeline cancel coverage (Phase 2 PR-2E). */
+const PIPELINE_KINDS = [
+  'crystal-trial',
+  'topic-content',
+  'topic-expansion',
+  'subject-graph',
+] as const;
+
 function headers(deviceId = DEVICE_ID, extra?: Record<string, string>): Record<string, string> {
   return {
     'x-abyss-device': deviceId,
@@ -384,4 +392,197 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
     const body = (await response.json()) as { status: string };
     expect(body.status).toBe('cancel_acknowledged');
   });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2 PR-2E: Cross-pipeline cancel race tests
+// ---------------------------------------------------------------------------
+describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
+  const OLD_ENV = { ...process.env };
+
+  beforeEach(() => {
+    vi.resetModules();
+    process.env = { ...OLD_ENV };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    process.env = OLD_ENV;
+  });
+
+  for (const kind of PIPELINE_KINDS) {
+    describe(`cancel-before-start for ${kind}`, () => {
+      it(`accepts cancel on queued ${kind} run and returns cancel_acknowledged`, async () => {
+        const runId = `run-cancel-${kind}-001`;
+
+        const mockClient = createMockSupabaseClient([
+          q({ id: DEVICE_ID, user_id: null, created_at: '2026-01-01T00:00:00Z', last_seen_at: '2026-05-05T00:00:00Z' }),
+          q({
+            id: runId,
+            device_id: DEVICE_ID,
+            kind,
+            status: 'queued',
+            input_hash: 'inp_stub',
+            idempotency_key: null,
+            parent_run_id: null,
+            cancel_requested_at: null,
+            cancel_reason: null,
+            subject_id: 's1',
+            topic_id: 't1',
+            created_at: '2026-05-05T00:00:00Z',
+            started_at: null,
+            finished_at: null,
+            error_code: null,
+            error_message: null,
+            snapshot_json: {},
+            next_event_seq: 0,
+          }),
+          q({ id: runId, finished_at: null }),
+          q(null),
+          q(1),
+          q({
+            id: 'ev-x',
+            run_id: runId,
+            device_id: DEVICE_ID,
+            seq: 1,
+            ts: '2026-05-05T00:00:01Z',
+            type: 'run.cancel-acknowledged',
+            payload_json: { reason: 'user' },
+          }),
+        ]);
+
+        vi.doMock('@supabase/supabase-js', () => ({
+          createClient: () => mockClient,
+        }));
+
+        const { default: mockedApp } = await import('../index');
+        const response = await mockedApp.fetch(
+          new Request(`https://fakehost/v1/runs/${runId}/cancel`, {
+            method: 'POST',
+            headers: headers(),
+          }),
+          {
+            SUPABASE_URL: 'https://test.supabase.co',
+            SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+            OPENROUTER_API_KEY: 'sk-or-test',
+            ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
+          },
+        );
+
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as { status: string };
+        expect(body.status).toBe('cancel_acknowledged');
+      });
+
+      it(`returns 409 when ${kind} run is already terminal`, async () => {
+        const runId = `run-cancel-${kind}-002`;
+
+        const mockClient = createMockSupabaseClient([
+          q({ id: DEVICE_ID }),
+          q({
+            id: runId,
+            device_id: DEVICE_ID,
+            kind,
+            status: 'ready',
+            input_hash: 'inp_stub',
+            created_at: '2026-05-05T00:00:00Z',
+            started_at: '2026-05-05T00:00:00Z',
+            finished_at: '2026-05-05T00:05:00Z',
+            cancel_requested_at: null,
+            cancel_reason: null,
+            idempotency_key: null,
+            parent_run_id: null,
+            subject_id: 's1',
+            topic_id: 't1',
+            error_code: null,
+            error_message: null,
+            snapshot_json: {},
+            next_event_seq: 0,
+          }),
+        ]);
+
+        vi.doMock('@supabase/supabase-js', () => ({
+          createClient: () => mockClient,
+        }));
+
+        const { default: mockedApp } = await import('../index');
+        const response = await mockedApp.fetch(
+          new Request(`https://fakehost/v1/runs/${runId}/cancel`, {
+            method: 'POST',
+            headers: headers(),
+          }),
+          {
+            SUPABASE_URL: 'https://test.supabase.co',
+            SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+            OPENROUTER_API_KEY: 'sk-or-test',
+            ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
+          },
+        );
+
+        expect(response.status).toBe(409);
+      });
+
+      it(`cancel-mid-stage for ${kind} returns cancel_acknowledged`, async () => {
+        const runId = `run-cancel-${kind}-003`;
+
+        const mockClient = createMockSupabaseClient([
+          q({ id: DEVICE_ID }),
+          q({
+            id: runId,
+            device_id: DEVICE_ID,
+            kind,
+            status: 'generating_stage',
+            input_hash: 'inp_stub',
+            idempotency_key: null,
+            parent_run_id: null,
+            cancel_requested_at: null,
+            cancel_reason: null,
+            subject_id: 's1',
+            topic_id: 't1',
+            created_at: '2026-05-05T00:00:00Z',
+            started_at: '2026-05-05T00:01:00Z',
+            finished_at: null,
+            error_code: null,
+            error_message: null,
+            snapshot_json: {},
+            next_event_seq: 0,
+          }),
+          q({ id: runId, finished_at: null }),
+          q(null),
+          q(2),
+          q({
+            id: 'ev-y',
+            run_id: runId,
+            device_id: DEVICE_ID,
+            seq: 2,
+            ts: '2026-05-05T00:02:00Z',
+            type: 'run.cancel-acknowledged',
+            payload_json: { reason: 'user' },
+          }),
+        ]);
+
+        vi.doMock('@supabase/supabase-js', () => ({
+          createClient: () => mockClient,
+        }));
+
+        const { default: mockedApp } = await import('../index');
+        const response = await mockedApp.fetch(
+          new Request(`https://fakehost/v1/runs/${runId}/cancel`, {
+            method: 'POST',
+            headers: headers(),
+          }),
+          {
+            SUPABASE_URL: 'https://test.supabase.co',
+            SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+            OPENROUTER_API_KEY: 'sk-or-test',
+            ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
+          },
+        );
+
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as { status: string };
+        expect(body.status).toBe('cancel_acknowledged');
+      });
+    });
+  }
 });
