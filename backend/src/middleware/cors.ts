@@ -27,9 +27,14 @@ export function corsMiddleware() {
         c.header('Access-Control-Allow-Origin', origin);
         c.header('Vary', 'Origin');
         c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
-        c.header('Access-Control-Allow-Headers', 'content-type, x-abyss-device, idempotency-key');
+        c.header(
+          'Access-Control-Allow-Headers',
+          'accept, content-type, x-abyss-device, idempotency-key',
+        );
         c.header('Access-Control-Max-Age', '86400');
-        return new Response(null, { status: 204 });
+        // Use Hono's responder so `c.header(...)` values are not dropped (a bare
+        // `new Response(204)` bypasses the context and breaks browser preflight).
+        return c.body(null, 204);
       }
       return c.json({ error: 'origin_not_allowed' }, 403);
     }
