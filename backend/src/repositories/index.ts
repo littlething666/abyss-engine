@@ -9,12 +9,17 @@ import { createDevicesRepo, type IDevicesRepo } from './devicesRepo';
 import { createRunsRepo, type IRunsRepo } from './runsRepo';
 import { createArtifactsRepo, type IArtifactsRepo } from './artifactsRepo';
 import { createUsageCountersRepo, type IUsageCountersRepo } from './usageCountersRepo';
+import {
+  createStageCheckpointsRepo,
+  type IStageCheckpointsRepo,
+} from './stageCheckpointsRepo';
 
 export interface Repos {
   devices: IDevicesRepo;
   runs: IRunsRepo;
   artifacts: IArtifactsRepo;
   usage: IUsageCountersRepo;
+  stageCheckpoints: IStageCheckpointsRepo;
 }
 
 /**
@@ -28,5 +33,6 @@ export function makeRepos(env: Env): Repos {
     runs: createRunsRepo(db),
     artifacts: createArtifactsRepo(db),
     usage: createUsageCountersRepo(db),
+    stageCheckpoints: createStageCheckpointsRepo(db),
   };
 }

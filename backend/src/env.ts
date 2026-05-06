@@ -6,6 +6,11 @@
  * (`c.env`).
  */
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Workflow = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DurableObjectNamespace = any;
+
 export interface Env {
   // ---- secrets ----
   /** Supabase project URL (https://<ref>.supabase.co). */
@@ -21,7 +26,12 @@ export interface Env {
   /** OpenRouter referrer URL for attribution headers. */
   OPENROUTER_REFERRER?: string;
 
-  // ---- bindings (commented out until Workflow / DO classes land) ----
-  // CRYSTAL_TRIAL_WORKFLOW: Workflow<{ runId: string; deviceId: string }>;
+  // ---- workflow bindings (Phase 2: all four pipeline kinds) ----
+  CRYSTAL_TRIAL_WORKFLOW: Workflow;
+  TOPIC_EXPANSION_WORKFLOW: Workflow;
+  SUBJECT_GRAPH_WORKFLOW: Workflow;
+  TOPIC_CONTENT_WORKFLOW: Workflow;
+
+  // ---- durable object bindings ----
   // RUN_EVENT_BUS: DurableObjectNamespace;
 }

@@ -21,9 +21,21 @@ compatibility_flags = ["nodejs_compat"]
 # Only Crystal Trial is wired in Phase 1; Topic Content, Topic Expansion,
 # and Subject Graph land in Phase 2.
 # ---------------------------------------------------------------------------
-# [[workflows]]
-# binding = "CRYSTAL_TRIAL_WORKFLOW"
-# class_name = "CrystalTrialWorkflow"
+[[workflows]]
+binding = "CRYSTAL_TRIAL_WORKFLOW"
+class_name = "CrystalTrialWorkflow"
+
+[[workflows]]
+binding = "TOPIC_EXPANSION_WORKFLOW"
+class_name = "TopicExpansionWorkflow"
+
+[[workflows]]
+binding = "SUBJECT_GRAPH_WORKFLOW"
+class_name = "SubjectGraphWorkflow"
+
+[[workflows]]
+binding = "TOPIC_CONTENT_WORKFLOW"
+class_name = "TopicContentWorkflow"
 
 # ---------------------------------------------------------------------------
 # Durable Object binding for per-run event-bus pub/sub (SSE tailing).

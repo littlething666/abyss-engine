@@ -2,72 +2,86 @@
  * Run routes — POST /v1/runs, GET /v1/runs, GET /v1/runs/:id,
  * POST /v1/runs/:id/cancel, POST /v1/runs/:id/retry.
  *
- * Phase 1 PR-C: cache-hit path works fully. Workflow creation is stubbed
- * (returns a synthetic run with status 'queued').
+ * Phase 2: expanded to cover all four pipeline kinds with per-kind budget
+ * caps, supersession for topic-expansion, and cache-hit short-circuit across
+ * all kinds. Workflow creation is stubbed for topic-content, topic-expansion,
+ * and subject-graph (Workflow classes land in PR-2B / 2C / 2D).
  */
 
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
+import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { utcDay } from '../repositories/usageCountersRepo';
 import type { Env } from '../env';
-import type { RunInputSnapshot } from '../types/api';
-
-// ---------------------------------------------------------------------------
-// Minimal budget caps (Phase 1 — plan values).
-// ---------------------------------------------------------------------------
-const CRYSTAL_TRIAL_DAILY_RUN_CAP = 10;
-const CRYSTAL_TRIAL_DAILY_TOKEN_CAP = 500_000;
+import type { PipelineKind, CancelReason } from '../repositories/types';
+import type { RunInputSnapshot, SubmitRunBody } from '../types/api';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Lightweight snapshot assertion for Crystal Trial.
- * Full Zod validation lands in PR-D when @contracts is wired.
+ * Lightweight snapshot assertion. Full Zod validation lands in PR-D when
+ * @contracts is wired. Accepts any of the four pipeline kinds.
  */
-function assertCrystalTrialSnapshot(body: unknown): { snapshot: RunInputSnapshot; error?: string } {
+function assertSnapshot(body: unknown): {
+  kind: PipelineKind;
+  snapshot: RunInputSnapshot;
+  error?: string;
+} {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return { snapshot: {} as RunInputSnapshot, error: 'invalid_body' };
+    return { kind: 'crystal-trial', snapshot: {} as RunInputSnapshot, error: 'invalid_body' };
   }
 
-  const b = body as Record<string, unknown>;
+  const b = body as SubmitRunBody & { supersedesKey?: string };
 
-  if (b.kind !== 'crystal-trial') {
-    return { snapshot: {} as RunInputSnapshot, error: `unsupported kind: ${String(b.kind)}` };
+  const VALID_KINDS: PipelineKind[] = [
+    'crystal-trial',
+    'topic-content',
+    'topic-expansion',
+    'subject-graph',
+  ];
+
+  if (!VALID_KINDS.includes(b.kind)) {
+    return { kind: 'crystal-trial', snapshot: {} as RunInputSnapshot, error: `unsupported kind: ${String(b.kind)}` };
   }
 
   const snapshot = b.snapshot;
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
-    return { snapshot: {} as RunInputSnapshot, error: 'missing or invalid snapshot' };
+    return { kind: b.kind, snapshot: {} as RunInputSnapshot, error: 'missing or invalid snapshot' };
   }
 
   const s = snapshot as Record<string, unknown>;
-  if (!s.pipeline_kind || !s.schema_version || !s.subject_id || !s.topic_id) {
-    return { snapshot: {} as RunInputSnapshot, error: 'snapshot missing required fields' };
+  // subject_id is always required; topic_id is required except for subject-graph
+  if (!s.pipeline_kind || !s.schema_version || !s.subject_id) {
+    return { kind: b.kind, snapshot: {} as RunInputSnapshot, error: 'snapshot missing required fields (pipeline_kind, schema_version, subject_id)' };
   }
 
-  return { snapshot: s as unknown as RunInputSnapshot };
+  return { kind: b.kind, snapshot: s as unknown as RunInputSnapshot };
 }
 
-async function checkBudget(
-  deviceId: string,
-  env: Env,
-): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
-  const repos = makeRepos(env);
-  const today = utcDay(new Date());
-  const counter = await repos.usage.get(deviceId, today);
+/** Extract the supersedes key from request headers. */
+function getSupersedesKey(c: ReturnType<Hono['req']>): string | undefined {
+  const val = c.header('Supersedes-Key');
+  if (!val || val.trim() === '') return undefined;
+  return val.trim();
+}
 
-  if (counter && counter.runs_started >= CRYSTAL_TRIAL_DAILY_RUN_CAP) {
-    return { ok: false, code: 'budget:over-cap', message: 'daily run cap exceeded' };
-  }
+/**
+ * Compute a deterministic input hash for the snapshot.
+ * TODO(PR-D): replace with @contracts canonicalHash.inputHash(snapshot).
+ */
+async function computeInputHash(snapshot: RunInputSnapshot): Promise<string> {
+  const json = JSON.stringify(snapshot, Object.keys(snapshot).sort());
+  const data = new TextEncoder().encode(json);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return `inp_${Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
 
-  const estimatedTokens = (counter?.tokens_in ?? 0) + (counter?.tokens_out ?? 0);
-  if (estimatedTokens >= CRYSTAL_TRIAL_DAILY_TOKEN_CAP) {
-    return { ok: false, code: 'budget:over-cap', message: 'daily token estimate cap exceeded' };
-  }
-
-  return { ok: true };
+function today(): string {
+  return utcDay(new Date());
 }
 
 // ---------------------------------------------------------------------------
@@ -78,8 +92,9 @@ const runs = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotenc
 /**
  * POST /v1/runs — submit a new run.
  *
- * Headers: X-Abyss-Device, Idempotency-Key, Content-Type: application/json
- * Body: { kind: 'crystal-trial', snapshot: { ... } }
+ * Headers: X-Abyss-Device, Idempotency-Key, [Supersedes-Key],
+ *          Content-Type: application/json
+ * Body: { kind: PipelineKind, snapshot: { ... } }
  */
 runs.post('/', async (c) => {
   const deviceId = c.get('deviceId');
@@ -93,34 +108,40 @@ runs.post('/', async (c) => {
     return c.json({ error: 'invalid_json_body' }, 400);
   }
 
-  // 1. Validate snapshot.
-  const { snapshot, error: snapErr } = assertCrystalTrialSnapshot(body);
+  // 1. Validate snapshot + extract kind.
+  const { kind, snapshot, error: snapErr } = assertSnapshot(body);
   if (snapErr) {
     return c.json({ code: 'parse:json-mode-violation', message: snapErr }, 400);
   }
 
-  // 2. Budget guard.
-  const budget = await checkBudget(deviceId, c.env);
+  // 2. Supersedes-Key is only valid for topic-expansion.
+  const supersedesKey = getSupersedesKey(c.req);
+  if (supersedesKey && kind !== 'topic-expansion') {
+    return c.json({ code: 'config:unexpected-supersedes-key', message: 'Supersedes-Key is only valid for kind=topic-expansion' }, 400);
+  }
+
+  // 3. Per-kind budget guard.
+  const budget = await assertBelowDailyCap(deviceId, repos.usage, kind);
   if (!budget.ok) {
     return c.json({ code: budget.code, message: budget.message }, 429);
   }
 
-  // 3. Compute input hash (stub — real hash lands in PR-D with @contracts).
-  const inputHash = `stub-${crypto.randomUUID().slice(0, 8)}`;
+  // 4. Compute input hash.
+  const inputHash = await computeInputHash(snapshot);
 
-  // 4. Cache-hit short-circuit.
-  const cached = await repos.artifacts.findCacheHit(deviceId, 'crystal-trial', inputHash);
+  // 5. Cache-hit short-circuit.
+  const cached = await repos.artifacts.findCacheHit(deviceId, kind, inputHash);
 
   if (cached) {
-    // Create a synthetic run referencing the cached artifact.
     const run = await repos.runs.insertRun({
       id: crypto.randomUUID(),
       device_id: deviceId,
-      kind: 'crystal-trial',
+      kind,
       status: 'ready',
       input_hash: inputHash,
       idempotency_key: idempotencyKey ?? null,
       parent_run_id: null,
+      supersedes_key: supersedesKey ?? null,
       cancel_requested_at: null,
       cancel_reason: null,
       subject_id: (snapshot as Record<string, unknown>).subject_id as string ?? null,
@@ -132,7 +153,6 @@ runs.post('/', async (c) => {
       snapshot_json: snapshot as Record<string, unknown>,
     });
 
-    // Emit synthetic events.
     await repos.runs.append(run.id, deviceId, 'run.artifact-ready', {
       artifactId: cached.id,
       contentHash: cached.content_hash,
@@ -140,7 +160,6 @@ runs.post('/', async (c) => {
     });
     await repos.runs.append(run.id, deviceId, 'run.completed', { fromCache: true });
 
-    // Increment run counter (no tokens billed).
     try {
       await repos.usage.incrementRunsStarted(deviceId, today());
     } catch { /* non-critical */ }
@@ -148,16 +167,22 @@ runs.post('/', async (c) => {
     return c.json({ runId: run.id }, 201);
   }
 
-  // 5. Cache miss — create a queued run.
-  //    PR-D will wire the Workflow here.
+  // 6. Cache miss — handle supersession for topic-expansion.
+  let supersededRunId: string | null = null;
+  if (supersedesKey && kind === 'topic-expansion') {
+    supersededRunId = await repos.runs.cancelSupersededRun(deviceId, supersedesKey);
+  }
+
+  // 7. Create a queued run.
   const run = await repos.runs.insertRun({
     id: crypto.randomUUID(),
     device_id: deviceId,
-    kind: 'crystal-trial',
+    kind,
     status: 'queued',
     input_hash: inputHash,
     idempotency_key: idempotencyKey ?? null,
     parent_run_id: null,
+    supersedes_key: supersedesKey ?? null,
     cancel_requested_at: null,
     cancel_reason: null,
     subject_id: (snapshot as Record<string, unknown>).subject_id as string ?? null,
@@ -171,19 +196,63 @@ runs.post('/', async (c) => {
 
   await repos.runs.append(run.id, deviceId, 'run.queued', {});
 
+  // Emit cancel-acknowledged + cancelled for the superseded run.
+  if (supersededRunId) {
+    await repos.runs.append(supersededRunId, deviceId, 'run.cancel-acknowledged', { reason: 'superseded' });
+    await repos.runs.markCancelled(supersededRunId);
+    await repos.runs.append(supersededRunId, deviceId, 'run.cancelled', { boundary: 'supersession', reason: 'superseded' });
+  }
+
   try {
     await repos.usage.incrementRunsStarted(deviceId, today());
   } catch { /* non-critical */ }
 
-  // TODO(PR-D): create Workflow here.
-  console.log(`[runs] run ${run.id} queued (workflow stubbed — no Workflow binding yet)`);
+  // TODO(PR-2B/2C/2D): create the appropriate Workflow class here.
+  // For now, topic-content / topic-expansion / subject-graph are stubbed
+  // and stay in 'queued' status.
+  const workflowKind = kind === 'crystal-trial' ? 'CrystalTrialWorkflow' : `${kind} (stubbed)`;
+  console.log(`[runs] run ${run.id} queued (kind=${kind}, workflow=${workflowKind})`);
+
+  // Phase 2: dispatch to the appropriate Workflow binding.
+  // Each binding creates the Workflow class asynchronously.
+  try {
+    switch (kind) {
+      case 'crystal-trial':
+        await c.env.CRYSTAL_TRIAL_WORKFLOW.create({
+          id: run.id,
+          params: { runId: run.id, deviceId },
+        });
+        break;
+      case 'topic-expansion':
+        await c.env.TOPIC_EXPANSION_WORKFLOW.create({
+          id: run.id,
+          params: { runId: run.id, deviceId },
+        });
+        break;
+      case 'subject-graph':
+        await c.env.SUBJECT_GRAPH_WORKFLOW.create({
+          id: run.id,
+          params: { runId: run.id, deviceId },
+        });
+        break;
+      case 'topic-content':
+        await c.env.TOPIC_CONTENT_WORKFLOW.create({
+          id: run.id,
+          params: { runId: run.id, deviceId },
+        });
+        break;
+    }
+  } catch (err) {
+    console.error(`[runs] failed to create workflow for run ${run.id}:`, err);
+    // The run stays in 'queued' status; the workflow engine will retry.
+  }
 
   return c.json({ runId: run.id }, 201);
 });
 
 /**
  * GET /v1/runs — list runs for the authenticated device.
- * Query: ?status=active|recent|all&kind=crystal-trial&subjectId=&topicId=&limit=
+ * Query: ?status=active|recent|all&kind=&subjectId=&topicId=&limit=
  */
 runs.get('/', async (c) => {
   const deviceId = c.get('deviceId');
@@ -200,7 +269,7 @@ runs.get('/', async (c) => {
 });
 
 /**
- * GET /v1/runs/:id — get a single run with its jobs and events.
+ * GET /v1/runs/:id — get a single run with its events.
  */
 runs.get('/:id', async (c) => {
   const deviceId = c.get('deviceId');
@@ -234,7 +303,6 @@ runs.post('/:id/cancel', async (c) => {
     return c.json({ error: 'run_already_terminal', status: run.status }, 409);
   }
 
-  // Write cancel_requested_at + cancel_reason.
   const written = await repos.runs.requestCancel(runId, 'user');
 
   if (!written) {
@@ -259,7 +327,6 @@ runs.post('/:id/retry', async (c) => {
     return c.json({ error: 'not_found' }, 404);
   }
 
-  // Create a new run with parent_run_id.
   const newRunId = crypto.randomUUID();
   await repos.runs.insertRun({
     id: newRunId,
@@ -269,6 +336,7 @@ runs.post('/:id/retry', async (c) => {
     input_hash: run.input_hash,
     idempotency_key: null,
     parent_run_id: runId,
+    supersedes_key: null,
     cancel_requested_at: null,
     cancel_reason: null,
     subject_id: run.subject_id,
@@ -282,13 +350,29 @@ runs.post('/:id/retry', async (c) => {
 
   await repos.runs.append(newRunId, deviceId, 'run.queued', { retry_of: runId });
 
-  // TODO(PR-D): create Workflow here.
+  try {
+    await repos.usage.incrementRunsStarted(deviceId, today());
+  } catch { /* non-critical */ }
 
-  return c.json({ runId: newRunId }, 201);
+  // Dispatch to the appropriate Workflow.
+  try {
+    switch (run.kind) {
+      case 'crystal-trial':
+        await c.env.CRYSTAL_TRIAL_WORKFLOW.create({ id: newRunId, params: { runId: newRunId, deviceId } });
+        break;
+      case 'topic-expansion':
+        await c.env.TOPIC_EXPANSION_WORKFLOW.create({ id: newRunId, params: { runId: newRunId, deviceId } });
+        break;
+      case 'subject-graph':
+        await c.env.SUBJECT_GRAPH_WORKFLOW.create({ id: newRunId, params: { runId: newRunId, deviceId } });
+        break;
+      case 'topic-content':
+        await c.env.TOPIC_CONTENT_WORKFLOW.create({ id: newRunId, params: { runId: newRunId, deviceId } });
+        break;
+    }
+  } catch (err) {
+    console.error(`[runs] failed to create workflow for retry run ${newRunId}:`, err);
+  }
 });
-
-function today(): string {
-  return utcDay(new Date());
-}
 
 export { runs };

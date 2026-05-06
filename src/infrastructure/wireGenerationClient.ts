@@ -30,7 +30,7 @@ import { deckRepository, deckWriter } from '@/infrastructure/di';
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
 import { DurableGenerationRunRepository } from '@/infrastructure/repositories/DurableGenerationRunRepository';
 import { createApiClient } from '@/infrastructure/http/apiClient';
-import type { IGenerationRunRepository, RunInput } from '@/types/repository';
+import type { IGenerationRunRepository, PipelineKind, RunInput } from '@/types/repository';
 
 const DEVICE_STORAGE_KEY = 'abyss.deviceId';
 
@@ -121,6 +121,31 @@ export function ensureGenerationClientRegistered(): GenerationClient {
     typeof process.env.NEXT_PUBLIC_DURABLE_RUNS === 'string' &&
     process.env.NEXT_PUBLIC_DURABLE_RUNS === 'true';
 
+  // Phase 2: per-kind routing via NEXT_PUBLIC_DURABLE_RUNS_KINDS.
+  // Default when durableRuns is true: only crystal-trial (Phase 1 default).
+  // Operators add more kinds as they migrate: crystal-trial,topic-expansion,subject-graph,topic-content.
+  const durableKindsString =
+    typeof process !== 'undefined' &&
+    typeof process.env.NEXT_PUBLIC_DURABLE_RUNS_KINDS === 'string'
+      ? process.env.NEXT_PUBLIC_DURABLE_RUNS_KINDS.trim()
+      : '';
+
+  const ALL_KINDS: PipelineKind[] = [
+    'crystal-trial',
+    'topic-content',
+    'topic-expansion',
+    'subject-graph',
+  ];
+
+  const durableKinds: Set<PipelineKind> = durableKindsString
+    ? new Set<PipelineKind>(
+        durableKindsString
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s): s is PipelineKind => ALL_KINDS.includes(s as PipelineKind)),
+      )
+    : new Set<PipelineKind>(['crystal-trial']);
+
   const localRepo = new LocalGenerationRunRepository({
     deviceId,
     now,
@@ -138,6 +163,7 @@ export function ensureGenerationClientRegistered(): GenerationClient {
     deviceId,
     now,
     flags: { durableRuns: durableRunsEnabled },
+    durableKinds,
     localRepo,
     durableRepo,
   });

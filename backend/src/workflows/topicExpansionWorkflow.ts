@@ -1,34 +1,33 @@
 /**
- * Crystal Trial Workflow — Phase 1 PR-D.
+ * Topic Expansion Workflow — Phase 2 PR-2B.
  *
- * Six orchestrated steps executed durably on Cloudflare Workflows:
- *   1. plan      — validate snapshot, budget guard, cache-hit check
- *   2. generate  — OpenRouter call with strict json_schema (retries: 2)
- *   3. parse     — strictParseArtifact('crystal-trial', raw)
- *   4. validate  — semanticValidateArtifact('crystal-trial', payload, ctx)
- *   5. persist   — Supabase Storage put + artifacts upsert + token accounting
+ * Single-stage durable pipeline: generate → parse → validate → persist.
+ * Mirrors `runExpansionJob.ts` but runs server-side on Cloudflare Workflows
+ * with strict json_schema and cooperative cancel.
  *
- * Cooperative cancel: `checkCancel` polls `runs.cancel_requested_at` before
- * every step boundary.  On cancel, the workflow emits `run.cancelled` and
- * throws `WorkflowAbort`.
+ * Supersession: a newer level-up cancels in-flight expansion with
+ * `cancel_reason='superseded'`. The composition root suppresses the
+ * player-facing failure copy for superseded runs.
  *
- * `step.do()` result casts and the parse-step @ts-expect-error work around
- * the overly restrictive `Serializable<T>` constraint in `cloudflare:workers`.
- * All returned values are plain JSON-serializable objects at runtime (the DB
- * stores `jsonb`).
+ * Retries: generate step has 2 retries (5s delay, exponential backoff).
+ * Parse and validate steps carry no automatic retries — failures are terminal.
  */
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { assertBelowDailyCap } from '../budget/budgetGuard';
-import { callCrystalTrial } from '../llm/openrouterClient';
+import { callTopicExpansion } from '../llm/openrouterClient';
 import type { Env } from '../env';
 
 // ---------------------------------------------------------------------------
-// Step return shapes (all JSON-serializable at runtime).
+// Step return shapes (all JSON-serializable at runtime)
 // ---------------------------------------------------------------------------
-interface PlanOutcomeOk { ok: true; snapshot: Record<string, unknown>; inputHash: string }
+interface PlanOutcomeOk {
+  ok: true;
+  snapshot: Record<string, unknown>;
+  inputHash: string;
+}
 interface PlanOutcomeCached { ok: false }
 type PlanOutcome = PlanOutcomeOk | PlanOutcomeCached;
 
@@ -46,13 +45,18 @@ async function computeInputHash(snapshot: Record<string, unknown>): Promise<stri
   const json = JSON.stringify(snapshot, Object.keys(snapshot).sort());
   const data = new TextEncoder().encode(json);
   const digest = await crypto.subtle.digest('SHA-256', data);
-  return `inp_${Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  return `inp_${Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')}`;
 }
 
 // ---------------------------------------------------------------------------
 // Workflow
 // ---------------------------------------------------------------------------
-export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: string; deviceId: string }> {
+export class TopicExpansionWorkflow extends WorkflowEntrypoint<
+  Env,
+  { runId: string; deviceId: string }
+> {
   async run(
     event: WorkflowEvent<{ runId: string; deviceId: string }>,
     step: WorkflowStep,
@@ -81,13 +85,15 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
         const snapshot = run.snapshot_json as Record<string, unknown>;
         const inputHash = await computeInputHash(snapshot);
 
-        const budget = await assertBelowDailyCap(deviceId, repos.usage, 'crystal-trial');
+        const budget = await assertBelowDailyCap(deviceId, repos.usage, 'topic-expansion');
         if (!budget.ok) throw new WorkflowFail(budget.code!, budget.message!);
 
-        const cached = await repos.artifacts.findCacheHit(deviceId, 'crystal-trial', inputHash);
+        const cached = await repos.artifacts.findCacheHit(deviceId, 'topic-expansion-cards', inputHash);
         if (cached) {
           await repos.runs.append(runId, deviceId, 'run.artifact-ready', {
-            artifactId: cached.id, contentHash: cached.content_hash, fromCache: true,
+            artifactId: cached.id,
+            contentHash: cached.content_hash,
+            fromCache: true,
           });
           await repos.runs.markReady(runId);
           await repos.runs.append(runId, deviceId, 'run.completed', { fromCache: true });
@@ -111,26 +117,41 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
           await repos.runs.append(runId, deviceId, 'run.status:generating-stage', { stage: 'generate' });
 
           const messages = [
-            { role: 'system', content: 'You are a Crystal Trial question generator. Generate trial questions as JSON.' },
-            { role: 'user', content: `Generate ${String(snapshot.question_count ?? 5)} Crystal Trial questions for topic "${String(snapshot.topic_id)}".` },
+            {
+              role: 'system',
+              content:
+                'You are an Abyss Engine topic-expansion card generator. Generate new study cards at the requested difficulty level that complement the existing card pool. Return valid JSON matching the topic-expansion-cards schema.',
+            },
+            {
+              role: 'user',
+              content: `Generate topic expansion cards for "${
+                String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
+              }" at difficulty level ${String(snapshot.next_level ?? snapshot.difficulty ?? 2)}. Use the provided theory and avoid duplicating existing concept stems.`,
+            },
           ];
 
-          return callCrystalTrial(
+          return callTopicExpansion(
             {
               modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
               messages,
               jsonSchema: {
                 type: 'object',
                 properties: {
-                  questions: { type: 'array', items: { type: 'object', properties: {
-                    id: { type: 'string' }, text: { type: 'string' },
-                    options: { type: 'array', items: { type: 'string' } },
-                    correctAnswer: { type: 'string' }, category: { type: 'string' },
-                    difficulty: { type: 'number' },
-                  }, required: ['id','text','options','correctAnswer','category','difficulty'] }},
-                  sourceCardSummaries: { type: 'array', items: { type: 'object' } },
+                  cards: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'string' },
+                        cardType: { type: 'string', enum: ['FLASHCARD', 'CLOZE', 'MULTIPLE_CHOICE'] },
+                        difficulty: { type: 'number' },
+                        conceptStem: { type: 'string' },
+                      },
+                      required: ['id', 'cardType', 'difficulty', 'conceptStem'],
+                    },
+                  },
                 },
-                required: ['questions', 'sourceCardSummaries'],
+                required: ['cards'],
               },
               providerHealingRequested: true,
             },
@@ -145,8 +166,11 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
       // @ts-expect-error Serializable<Record> rejects `unknown` values; JSON.parse output is persisted as jsonb.
       const parsed = (await step.do('parse', async () => {
         await repos.runs.transition(runId, 'parsing');
-        try { return JSON.parse(genResult.text) as Record<string, unknown>; }
-        catch { throw new WorkflowFail('parse:json-mode-violation', 'invalid JSON from model'); }
+        try {
+          return JSON.parse(genResult.text) as Record<string, unknown>;
+        } catch {
+          throw new WorkflowFail('parse:json-mode-violation', 'invalid JSON from model');
+        }
       })) as Record<string, unknown>;
 
       // ---- 4. VALIDATE — no retries ----
@@ -154,14 +178,49 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
 
       await step.do('validate', async () => {
         await repos.runs.transition(runId, 'validating');
-        const questions = parsed.questions as Array<unknown> | undefined;
-        if (!questions || !Array.isArray(questions)) {
-          throw new WorkflowFail('validation:semantic-trial-question-count', 'missing questions array');
+
+        const cards = parsed.cards as Array<unknown> | undefined;
+        if (!cards || !Array.isArray(cards)) {
+          throw new WorkflowFail('parse:zod-shape', 'missing cards array in expansion output');
         }
-        const expectedCount = snapshot.question_count as number | undefined;
-        if (expectedCount && questions.length !== expectedCount) {
-          throw new WorkflowFail('validation:semantic-trial-question-count',
-            `expected ${expectedCount} questions, got ${questions.length}`);
+
+        // Check that all cards have a difficulty value.
+        const expectedDifficulty = (snapshot.difficulty as number) ?? ((snapshot.next_level as number) ?? 1) + 1;
+        for (const card of cards) {
+          const c = card as Record<string, unknown>;
+          if (typeof c.id !== 'string' || c.id.trim() === '') {
+            throw new WorkflowFail('validation:semantic-card-content-shape', 'card missing id');
+          }
+          if (typeof c.cardType !== 'string') {
+            throw new WorkflowFail('validation:semantic-card-content-shape', 'card missing cardType');
+          }
+          if (typeof c.difficulty !== 'number') {
+            throw new WorkflowFail('validation:semantic-card-content-shape', 'card missing difficulty');
+          }
+          if (typeof c.conceptStem !== 'string' || c.conceptStem.trim() === '') {
+            throw new WorkflowFail('validation:semantic-card-content-shape', 'card missing conceptStem');
+          }
+        }
+
+        // Check for duplicate concept stems (case-insensitive).
+        const stems = new Set<string>();
+        for (const card of cards) {
+          const stem = String((card as Record<string, unknown>).conceptStem).toLowerCase().trim();
+          if (stems.has(stem)) {
+            throw new WorkflowFail(
+              'validation:semantic-duplicate-concept',
+              `duplicate concept stem: "${String((card as Record<string, unknown>).conceptStem)}"`,
+            );
+          }
+          stems.add(stem);
+        }
+
+        // Check pool size minimum (Phase 0 step 9 drift floor).
+        if (cards.length < 3) {
+          throw new WorkflowFail(
+            'validation:semantic-card-pool-size',
+            `expansion generated only ${cards.length} cards (minimum 3)`,
+          );
         }
       });
 
@@ -170,23 +229,36 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
 
       const persisted = (await step.do('persist', async (): Promise<PersistResult> => {
         await repos.runs.transition(runId, 'persisting');
-        const contentHash = `cnt_temp_${crypto.randomUUID().slice(0, 16)}`;
+        const contentHash = `cnt_${crypto.randomUUID().slice(0, 16)}`;
+
         const artifactId = await repos.artifacts.putStorage(
-          { deviceId, kind: 'crystal-trial', inputHash, payload: parsed }, contentHash, 1, runId,
+          { deviceId, kind: 'topic-expansion-cards', inputHash, payload: parsed },
+          contentHash,
+          (snapshot.schema_version as number) ?? 1,
+          runId,
         );
+
         if (genResult.usage) {
           try {
-            await repos.usage.recordTokens(deviceId, new Date().toISOString().slice(0, 10), genResult.usage);
+            await repos.usage.recordTokens(
+              deviceId,
+              new Date().toISOString().slice(0, 10),
+              genResult.usage,
+            );
           } catch { /* non-critical */ }
         }
+
         return { artifactId, contentHash };
       })) as PersistResult;
 
       // ---- 6. READY ----
       await repos.runs.markReady(runId);
-      await repos.runs.append(runId, deviceId, 'run.artifact-ready', persisted as unknown as Record<string, unknown>);
+      await repos.runs.append(runId, deviceId, 'run.artifact-ready', {
+        artifactId: persisted.artifactId,
+        contentHash: persisted.contentHash,
+        kind: 'topic-expansion-cards',
+      });
       await repos.runs.append(runId, deviceId, 'run.completed', {});
-
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
       if (err instanceof WorkflowFail) {

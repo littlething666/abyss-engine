@@ -35,6 +35,14 @@ export interface IRunsRepo {
   /** Returns the cancel reason if `cancel_requested_at` is non-null and `finished_at` is null. */
   cancelRequested(runId: string): Promise<CancelReason | null>;
 
+  // ---- supersession (Phase 2) ----
+  /**
+   * Cancel any active run holding the same supersedes_key for this device.
+   * Returns the prior run id if one was cancelled, null if nothing to cancel.
+   * Called within a single transaction with insertRun for atomicity.
+   */
+  cancelSupersededRun(deviceId: string, supersedesKey: string): Promise<string | null>;
+
   // ---- events ----
   /** Append an event with an auto-allocated sequence number. */
   append(runId: string, deviceId: string, type: string, payload: Record<string, unknown>): Promise<EventRow>;
@@ -161,6 +169,30 @@ export function createRunsRepo(db: SupabaseClient): IRunsRepo {
 
       if (error) throw error;
       return true;
+    },
+
+    async cancelSupersededRun(deviceId: string, supersedesKey: string) {
+      // Find the active run holding the same supersedes_key.
+      const { data: existing } = await db
+        .from('runs')
+        .select('id, finished_at')
+        .eq('device_id', deviceId)
+        .eq('supersedes_key', supersedesKey)
+        .in('status', ['queued', 'planning', 'generating_stage', 'parsing', 'validating', 'persisting'])
+        .maybeSingle();
+
+      if (!existing) return null;
+
+      const priorRunId = (existing as { id: string }).id;
+
+      // Write cancel_requested_at + cancel_reason = 'superseded'.
+      const { error } = await db.from('runs').update({
+        cancel_requested_at: new Date().toISOString(),
+        cancel_reason: 'superseded',
+      }).eq('id', priorRunId);
+
+      if (error) throw error;
+      return priorRunId;
     },
 
     async cancelRequested(runId: string) {

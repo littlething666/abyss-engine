@@ -147,6 +147,7 @@ describe('createRunsRepo', () => {
     input_hash: 'inp_abc123',
     idempotency_key: null,
     parent_run_id: null,
+    supersedes_key: null,
     cancel_requested_at: null,
     cancel_reason: null,
     subject_id: 'subj-1',

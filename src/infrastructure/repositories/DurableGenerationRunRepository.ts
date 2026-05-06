@@ -1,16 +1,16 @@
 /**
- * Durable Generation Run Repository — Phase 1 PR-E.
+ * Durable Generation Run Repository — Phase 2.
  *
  * Implements `IGenerationRunRepository` against the Hono Worker API.
  * This adapter translates the typed repository contract into HTTP calls
  * (`POST /v1/runs`, `GET /v1/runs/:id/events` SSE, etc.) using the
  * `ApiClient` and `sseClient` infrastructure primitives.
  *
- * ## Phase 1 scope
+ * ## Phase 2 scope
  *
- * Only `crystal-trial` runs are submitted to the Worker. All other
- * pipeline kinds continue through `LocalGenerationRunRepository`
- * until Phase 2.
+ * All four pipeline kinds (`crystal-trial`, `topic-content`,
+ * `topic-expansion`, `subject-graph`) are submitted to the Worker.
+ * Topic Expansion includes `Supersedes-Key` header forwarding.
  *
  * ## Boundary rules
  *
@@ -167,21 +167,24 @@ export class DurableGenerationRunRepository implements IGenerationRunRepository 
     input: RunInput,
     idempotencyKey: string,
   ): Promise<{ runId: string }> {
-    if (input.pipelineKind !== 'crystal-trial') {
-      throw new Error(
-        `DurableGenerationRunRepository only supports crystal-trial in Phase 1, got ${input.pipelineKind}`,
-      );
-    }
-
-    const body = {
-      kind: 'crystal-trial',
+    // All four pipeline kinds are supported in Phase 2.
+    const body: Record<string, unknown> = {
+      kind: input.pipelineKind,
       snapshot: input.snapshot,
     };
 
-    const result = await this.http.post<{ runId: string }>('/v1/runs', body, {
-      headers: { 'idempotency-key': idempotencyKey },
-    });
+    const headers: Record<string, string> = {
+      'idempotency-key': idempotencyKey,
+    };
 
+    // Topic Expansion forwards Supersedes-Key for server-side supersession.
+    if (input.pipelineKind === 'topic-expansion') {
+      const teInput = input as Extract<RunInput, { pipelineKind: 'topic-expansion' }>;
+      const supersedesKey = `te-supersedes:${teInput.subjectId}:${teInput.topicId}`;
+      headers['supersedes-key'] = supersedesKey;
+    }
+
+    const result = await this.http.post<{ runId: string }>('/v1/runs', body, { headers });
     return result;
   }
 
