@@ -37,10 +37,45 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build static site for GitHub Pages root
+      # config/next-public-env.mjs owns the canonical NEXT_PUBLIC_* key list,
+      # so workflow env wiring can't drift from runtime reads in app code.
+      - name: Prepare NEXT_PUBLIC variables from workflow vars
         env:
-          NEXT_PUBLIC_BASE_PATH: ${{ vars.NEXT_PUBLIC_BASE_PATH }}
-          NEXT_PUBLIC_LLM_WORKER_URL: ${{ vars.NEXT_PUBLIC_LLM_WORKER_URL }}
+          NEXT_PUBLIC_VARS_JSON: ${{ toJson(vars) }}
+        run: |
+          node --input-type=module <<'EOF'
+          import { appendFileSync } from 'node:fs';
+          import {
+            NEXT_PUBLIC_BUILD_ENV_KEYS,
+          } from './config/next-public-env.mjs';
+
+          const vars = JSON.parse(process.env.NEXT_PUBLIC_VARS_JSON || '{}');
+          const githubEnv = process.env.GITHUB_ENV;
+          if (!githubEnv) {
+            throw new Error('GITHUB_ENV is not available.');
+          }
+
+          const missingRequired = NEXT_PUBLIC_BUILD_ENV_KEYS.filter((key) => {
+            const value = vars[key];
+            return typeof value !== 'string' || value.trim().length === 0;
+          });
+
+          if (missingRequired.length > 0) {
+            throw new Error(`Missing required GitHub workflow variables: ${missingRequired.join(', ')}`);
+          }
+
+          const lines = NEXT_PUBLIC_BUILD_ENV_KEYS.map((key) => {
+            const value = vars[key];
+            if (typeof value !== 'string') {
+              return `${key}=`;
+            }
+            return `${key}=${value}`;
+          });
+
+          appendFileSync(githubEnv, `${lines.join('\n')}\n`);
+          EOF
+
+      - name: Build static site for GitHub Pages root
         run: pnpm run build
 
       - name: Configure GitHub Pages

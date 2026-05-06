@@ -11,10 +11,10 @@ compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 
 # ---------------------------------------------------------------------------
-# Build — esbuild aliases for the contracts module.
+# Module aliasing for Wrangler's esbuild-based bundler.
 # ---------------------------------------------------------------------------
-[build]
-alias = { "@contracts" = "../src/features/generationContracts" }
+[alias]
+"@contracts" = "../src/features/generationContracts"
 
 # ---------------------------------------------------------------------------
 # Workflow bindings — one class per pipeline kind.
