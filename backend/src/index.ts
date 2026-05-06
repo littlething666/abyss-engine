@@ -16,6 +16,11 @@ import { runEvents } from './routes/runEvents';
 import { artifacts } from './routes/artifacts';
 import { settings } from './routes/settings';
 
+export { CrystalTrialWorkflow } from './workflows/crystalTrialWorkflow';
+export { TopicExpansionWorkflow } from './workflows/topicExpansionWorkflow';
+export { SubjectGraphWorkflow } from './workflows/subjectGraphWorkflow';
+export { TopicContentWorkflow } from './workflows/topicContentWorkflow';
+
 const app = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotencyKey?: string } }>();
 
 // ---------------------------------------------------------------------------
