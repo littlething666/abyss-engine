@@ -81,11 +81,12 @@ async function runStage(
     startedAt: new Date().toISOString(),
   });
 
-  const result = await step.do(
+  const result = (await step.do(
     `generate:${stage.replace(/:/g, '_')}`,
     { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
+    // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
     exec,
-  );
+  )) as GenerateResult & { parsedPayload: Record<string, unknown>; kind: string; contentHash: string };
 
   // Persist the artifact.
   const artifactId = await repos.artifacts.putStorage(

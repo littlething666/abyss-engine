@@ -71,16 +71,19 @@ async function runStage(
     startedAt: new Date().toISOString(),
   });
 
-  const result = await step.do(
+  // The exec closure's return type carries `unknown` payload which doesn't
+  // satisfy cloudflare:workers `Serializable<T>` constraint. Same pattern as
+  // crystalTrialWorkflow — cast after step.do().
+  const result = (await step.do(
     `generate:${stage.replace(/:/g, '_')}`,
     { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
+    // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
     exec,
-  );
+  )) as { kind: string; payload: unknown; usage: GenerateResult['usage'] };
 
   const contentHash = `cnt_${crypto.randomUUID().slice(0, 16)}`;
-  const storageKey = `${deviceId}/${result.kind}/${computeInputHash(snapshot)}/${stage}.json`;
+  const storageKey = `${deviceId}/${result.kind}/${await computeInputHash(snapshot)}/${stage}.json`;
 
-  // @ts-expect-error storage upload returns void in mock
   await repos.artifacts.putStorage(
     { deviceId, kind: result.kind, inputHash: `stg_${stage}`, payload: result.payload },
     contentHash,
@@ -187,8 +190,8 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
             {
               role: 'user',
               content: `Generate the topic lattice for: "${String(snapshot.subject_id ?? 'subject')}". ` +
-                `Total tiers: ${String(snapshot.strategy?.total_tiers ?? 3)}, ` +
-                `topics per tier: ${String(snapshot.strategy?.topics_per_tier ?? 5)}.`,
+                `Total tiers: ${String(((snapshot.strategy as Record<string, unknown>)?.total_tiers as number) ?? 3)}, ` +
+                `topics per tier: ${String(((snapshot.strategy as Record<string, unknown>)?.topics_per_tier as number) ?? 5)}.`,
             },
           ];
 

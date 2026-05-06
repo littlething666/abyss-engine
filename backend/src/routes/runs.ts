@@ -61,8 +61,8 @@ function assertSnapshot(body: unknown): {
 }
 
 /** Extract the supersedes key from request headers. */
-function getSupersedesKey(c: ReturnType<Hono['req']>): string | undefined {
-  const val = c.header('Supersedes-Key');
+function getSupersedesKey(req: Request): string | undefined {
+  const val = req.headers.get('Supersedes-Key');
   if (!val || val.trim() === '') return undefined;
   return val.trim();
 }
@@ -115,7 +115,7 @@ runs.post('/', async (c) => {
   }
 
   // 2. Supersedes-Key is only valid for topic-expansion.
-  const supersedesKey = getSupersedesKey(c.req);
+  const supersedesKey = getSupersedesKey(c.req.raw);
   if (supersedesKey && kind !== 'topic-expansion') {
     return c.json({ code: 'config:unexpected-supersedes-key', message: 'Supersedes-Key is only valid for kind=topic-expansion' }, 400);
   }
