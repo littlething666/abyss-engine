@@ -117,7 +117,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
 
           return callCrystalTrial(
             {
-              modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+              modelId: String(snapshot.model_id ?? 'google/gemini-2.5-flash'),
               messages,
               jsonSchema: {
                 type: 'object',

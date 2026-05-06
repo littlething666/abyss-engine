@@ -14,7 +14,50 @@ import type { Env } from '../env';
 
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const REFERRER = 'https://abyss.globesoul.com';
-const X_TITLE = 'Abyss Engine — Durable Orchestrator';
+const X_TITLE = 'Abyss Engine Durable Orchestrator';
+
+function openRouterHeaders(env: Env): HeadersInit {
+  return {
+    authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+    'content-type': 'application/json',
+    'http-referer': env.OPENROUTER_REFERRER ?? REFERRER,
+    'x-title': X_TITLE,
+  };
+}
+
+function openRouterFailureCode(status: number): string {
+  if (status === 429) return 'llm:rate-limit';
+  return 'llm:upstream-5xx';
+}
+
+function formatOpenRouterErrorBody(bodyText: string): string {
+  const trimmed = bodyText.trim();
+  if (!trimmed) return '';
+
+  try {
+    return JSON.stringify(JSON.parse(trimmed));
+  } catch {
+    return trimmed;
+  }
+}
+
+async function openRouterFailureMessage(res: Response): Promise<string> {
+  let bodyText = '';
+  try {
+    bodyText = await res.text();
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return `openrouter ${res.status}: failed to read error body: ${reason}`;
+  }
+
+  const body = formatOpenRouterErrorBody(bodyText);
+  return body ? `openrouter ${res.status}: ${body}` : `openrouter ${res.status}`;
+}
+
+async function throwIfOpenRouterFailed(res: Response): Promise<void> {
+  if (res.ok) return;
+  throw new WorkflowFail(openRouterFailureCode(res.status), await openRouterFailureMessage(res));
+}
 
 export interface OpenRouterCallResult {
   text: string;
@@ -67,12 +110,7 @@ export async function callCrystalTrial(
   try {
     res = await fetch(OPENROUTER_CHAT_URL, {
       method: 'POST',
-      headers: {
-        authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-        'content-type': 'application/json',
-        'http-referer': env.OPENROUTER_REFERRER ?? REFERRER,
-        'x-title': X_TITLE,
-      },
+      headers: openRouterHeaders(env),
       body: JSON.stringify(body),
     });
   } catch (err) {
@@ -82,15 +120,7 @@ export async function callCrystalTrial(
     );
   }
 
-  if (res.status === 429) {
-    throw new WorkflowFail('llm:rate-limit', 'openrouter 429');
-  }
-  if (res.status >= 500) {
-    throw new WorkflowFail('llm:upstream-5xx', `openrouter ${res.status}`);
-  }
-  if (!res.ok) {
-    throw new WorkflowFail('llm:upstream-5xx', `openrouter ${res.status}`);
-  }
+  await throwIfOpenRouterFailed(res);
 
   const json = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
@@ -147,12 +177,7 @@ export async function callTopicExpansion(
   try {
     res = await fetch(OPENROUTER_CHAT_URL, {
       method: 'POST',
-      headers: {
-        authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-        'content-type': 'application/json',
-        'http-referer': env.OPENROUTER_REFERRER ?? REFERRER,
-        'x-title': X_TITLE,
-      },
+      headers: openRouterHeaders(env),
       body: JSON.stringify(body),
     });
   } catch (err) {
@@ -162,15 +187,7 @@ export async function callTopicExpansion(
     );
   }
 
-  if (res.status === 429) {
-    throw new WorkflowFail('llm:rate-limit', 'openrouter 429');
-  }
-  if (res.status >= 500) {
-    throw new WorkflowFail('llm:upstream-5xx', `openrouter ${res.status}`);
-  }
-  if (!res.ok) {
-    throw new WorkflowFail('llm:upstream-5xx', `openrouter ${res.status}`);
-  }
+  await throwIfOpenRouterFailed(res);
 
   const json = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
@@ -232,12 +249,7 @@ export async function callSubjectGraph(
   try {
     res = await fetch(OPENROUTER_CHAT_URL, {
       method: 'POST',
-      headers: {
-        authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-        'content-type': 'application/json',
-        'http-referer': env.OPENROUTER_REFERRER ?? REFERRER,
-        'x-title': X_TITLE,
-      },
+      headers: openRouterHeaders(env),
       body: JSON.stringify(body),
     });
   } catch (err) {
@@ -247,15 +259,7 @@ export async function callSubjectGraph(
     );
   }
 
-  if (res.status === 429) {
-    throw new WorkflowFail('llm:rate-limit', 'openrouter 429');
-  }
-  if (res.status >= 500) {
-    throw new WorkflowFail('llm:upstream-5xx', `openrouter ${res.status}`);
-  }
-  if (!res.ok) {
-    throw new WorkflowFail('llm:upstream-5xx', `openrouter ${res.status}`);
-  }
+  await throwIfOpenRouterFailed(res);
 
   const json = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
@@ -316,12 +320,7 @@ export async function callTopicContent(
   try {
     res = await fetch(OPENROUTER_CHAT_URL, {
       method: 'POST',
-      headers: {
-        authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-        'content-type': 'application/json',
-        'http-referer': env.OPENROUTER_REFERRER ?? REFERRER,
-        'x-title': X_TITLE,
-      },
+      headers: openRouterHeaders(env),
       body: JSON.stringify(body),
     });
   } catch (err) {
@@ -331,15 +330,7 @@ export async function callTopicContent(
     );
   }
 
-  if (res.status === 429) {
-    throw new WorkflowFail('llm:rate-limit', 'openrouter 429');
-  }
-  if (res.status >= 500) {
-    throw new WorkflowFail('llm:upstream-5xx', `openrouter ${res.status}`);
-  }
-  if (!res.ok) {
-    throw new WorkflowFail('llm:upstream-5xx', `openrouter ${res.status}`);
-  }
+  await throwIfOpenRouterFailed(res);
 
   const json = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;

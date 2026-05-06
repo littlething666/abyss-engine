@@ -220,6 +220,12 @@ end $$;
 
 Supabase Storage bucket: `generation-artifacts` (private; service-role read/write only; signed URLs minted by `GET /v1/artifacts/:id`).
 
+To provision or refresh storage setup in an environment, run:
+
+```bash
+cd backend && supabase db push
+```
+
 ## 🔌 Hono Worker — HTTP surface
 
 All request/response shapes import status / event-type / failure-code literals from `@contracts/runEvents` and `@contracts/failureCodes`. No magic strings.

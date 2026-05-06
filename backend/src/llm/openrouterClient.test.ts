@@ -33,6 +33,7 @@ function mockFetch(status: number, body: unknown) {
     ok: status >= 200 && status < 300,
     status,
     json: async () => body,
+    text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
   });
 }
 
@@ -60,6 +61,20 @@ describe('callCrystalTrial', () => {
     const body = JSON.parse(fetchCall[1].body);
     expect(body.response_format.type).toBe('json_schema');
     expect(body.response_format.json_schema.strict).toBe(true);
+  });
+
+  it('sends ASCII-safe OpenRouter attribution headers', async () => {
+    mockFetch(200, {
+      choices: [{ message: { content: '{}' } }],
+      usage: null,
+    });
+
+    await callCrystalTrial(testArgs, testEnv);
+
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const headers = fetchCall[1].headers as Record<string, string>;
+    expect(headers['x-title']).toBe('Abyss Engine Durable Orchestrator');
+    expect(/^[\x00-\x7F]*$/.test(headers['x-title'])).toBe(true);
   });
 
   it('includes response-healing plugin when requested', async () => {
@@ -98,6 +113,20 @@ describe('callCrystalTrial', () => {
     mockFetch(503, {});
 
     await expect(callCrystalTrial(testArgs, testEnv)).rejects.toThrow('openrouter 503');
+  });
+
+  it('includes OpenRouter error response body on non-OK responses', async () => {
+    mockFetch(400, {
+      error: {
+        message: 'Provider rejected json_schema',
+        code: 400,
+      },
+    });
+
+    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({
+      code: 'llm:upstream-5xx',
+      message: 'openrouter 400: {"error":{"message":"Provider rejected json_schema","code":400}}',
+    });
   });
 
   it('throws WorkflowFail when model returns no content', async () => {
