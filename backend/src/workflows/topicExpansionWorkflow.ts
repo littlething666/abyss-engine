@@ -18,6 +18,7 @@ import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { callTopicExpansion } from '../llm/openrouterClient';
+import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import type { Env } from '../env';
 
 // ---------------------------------------------------------------------------
@@ -109,56 +110,80 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
       // ---- 2. GENERATE — retries: 2, 5s delay, exponential ----
       await checkCancel('before-generate');
 
-      const genResult = (await step.do(
-        'generate',
-        { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
-        async (): Promise<GenerateResult> => {
-          await repos.runs.transition(runId, 'generating_stage');
-          await repos.runs.append(runId, deviceId, 'run.status:generating-stage', { stage: 'generate' });
+      const llmTrace = traceLlmCall({
+        runId,
+        deviceId,
+        pipelineKind: 'topic-expansion',
+        stage: 'generate',
+        model: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+        promptVersion: (snapshot.prompt_template_version as number) ?? 0,
+        schemaVersion: (snapshot.schema_version as number) ?? 0,
+        inputHash,
+        providerHealingRequested: true,
+      });
 
-          const messages = [
-            {
-              role: 'system',
-              content:
-                'You are an Abyss Engine topic-expansion card generator. Generate new study cards at the requested difficulty level that complement the existing card pool. Return valid JSON matching the topic-expansion-cards schema.',
-            },
-            {
-              role: 'user',
-              content: `Generate topic expansion cards for "${
-                String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
-              }" at difficulty level ${String(snapshot.next_level ?? snapshot.difficulty ?? 2)}. Use the provided theory and avoid duplicating existing concept stems.`,
-            },
-          ];
+      let genResult: GenerateResult;
+      try {
+        genResult = (await step.do(
+          'generate',
+          { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
+          async (): Promise<GenerateResult> => {
+            await repos.runs.transition(runId, 'generating_stage');
+            await repos.runs.append(runId, deviceId, 'run.status:generating-stage', { stage: 'generate' });
 
-          return callTopicExpansion(
-            {
-              modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
-              messages,
-              jsonSchema: {
-                type: 'object',
-                properties: {
-                  cards: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        id: { type: 'string' },
-                        cardType: { type: 'string', enum: ['FLASHCARD', 'CLOZE', 'MULTIPLE_CHOICE'] },
-                        difficulty: { type: 'number' },
-                        conceptStem: { type: 'string' },
+            const messages = [
+              {
+                role: 'system',
+                content:
+                  'You are an Abyss Engine topic-expansion card generator. Generate new study cards at the requested difficulty level that complement the existing card pool. Return valid JSON matching the topic-expansion-cards schema.',
+              },
+              {
+                role: 'user',
+                content: `Generate topic expansion cards for "${
+                  String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
+                }" at difficulty level ${String(snapshot.next_level ?? snapshot.difficulty ?? 2)}. Use the provided theory and avoid duplicating existing concept stems.`,
+              },
+            ];
+
+            return callTopicExpansion(
+              {
+                modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                messages,
+                jsonSchema: {
+                  type: 'object',
+                  properties: {
+                    cards: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          id: { type: 'string' },
+                          cardType: { type: 'string', enum: ['FLASHCARD', 'CLOZE', 'MULTIPLE_CHOICE'] },
+                          difficulty: { type: 'number' },
+                          conceptStem: { type: 'string' },
+                        },
+                        required: ['id', 'cardType', 'difficulty', 'conceptStem'],
                       },
-                      required: ['id', 'cardType', 'difficulty', 'conceptStem'],
                     },
                   },
+                  required: ['cards'],
                 },
-                required: ['cards'],
+                providerHealingRequested: true,
               },
-              providerHealingRequested: true,
-            },
-            this.env,
-          );
-        },
-      )) as GenerateResult;
+              this.env,
+            );
+          },
+        )) as GenerateResult;
+        llmTrace.finalizeSuccess(genResult.usage);
+      } catch (err) {
+        if (err instanceof WorkflowFail) {
+          llmTrace.finalizeFailure(err.code, err.message);
+        } else {
+          const msg = err instanceof Error ? err.message : String(err);
+          llmTrace.finalizeFailure('llm:upstream-5xx', msg);
+        }
+        throw err;
+      }
 
       // ---- 3. PARSE — no retries ----
       await checkCancel('before-parse');
@@ -239,13 +264,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
         );
 
         if (genResult.usage) {
-          try {
-            await repos.usage.recordTokens(
-              deviceId,
-              new Date().toISOString().slice(0, 10),
-              genResult.usage,
-            );
-          } catch { /* non-critical */ }
+          await recordTokensRobust(deviceId, repos, llmTrace.trace, genResult.usage);
         }
 
         return { artifactId, contentHash };

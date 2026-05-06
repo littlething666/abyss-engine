@@ -13,6 +13,10 @@ import {
   createStageCheckpointsRepo,
   type IStageCheckpointsRepo,
 } from './stageCheckpointsRepo';
+import {
+  createDeviceSettingsRepo,
+  type IDeviceSettingsRepo,
+} from './deviceSettingsRepo';
 
 export interface Repos {
   devices: IDevicesRepo;
@@ -20,6 +24,7 @@ export interface Repos {
   artifacts: IArtifactsRepo;
   usage: IUsageCountersRepo;
   stageCheckpoints: IStageCheckpointsRepo;
+  deviceSettings: IDeviceSettingsRepo;
 }
 
 /**
@@ -34,5 +39,6 @@ export function makeRepos(env: Env): Repos {
     artifacts: createArtifactsRepo(db),
     usage: createUsageCountersRepo(db),
     stageCheckpoints: createStageCheckpointsRepo(db),
+    deviceSettings: createDeviceSettingsRepo(db),
   };
 }

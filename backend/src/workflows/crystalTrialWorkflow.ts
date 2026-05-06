@@ -23,6 +23,7 @@ import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { callCrystalTrial } from '../llm/openrouterClient';
+import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import type { Env } from '../env';
 
 // ---------------------------------------------------------------------------
@@ -103,41 +104,65 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
       // ---- 2. GENERATE — retries: 2, 5s delay, exponential ----
       await checkCancel('before-generate');
 
-      const genResult = (await step.do(
-        'generate',
-        { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
-        async (): Promise<GenerateResult> => {
-          await repos.runs.transition(runId, 'generating_stage');
-          await repos.runs.append(runId, deviceId, 'run.status:generating-stage', { stage: 'generate' });
+      const llmTrace = traceLlmCall({
+        runId,
+        deviceId,
+        pipelineKind: 'crystal-trial',
+        stage: 'generate',
+        model: String(snapshot.model_id ?? 'google/gemini-2.5-flash'),
+        promptVersion: (snapshot.prompt_template_version as number) ?? 0,
+        schemaVersion: (snapshot.schema_version as number) ?? 0,
+        inputHash,
+        providerHealingRequested: true,
+      });
 
-          const messages = [
-            { role: 'system', content: 'You are a Crystal Trial question generator. Generate trial questions as JSON.' },
-            { role: 'user', content: `Generate ${String(snapshot.question_count ?? 5)} Crystal Trial questions for topic "${String(snapshot.topic_id)}".` },
-          ];
+      let genResult: GenerateResult;
+      try {
+        genResult = (await step.do(
+          'generate',
+          { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
+          async (): Promise<GenerateResult> => {
+            await repos.runs.transition(runId, 'generating_stage');
+            await repos.runs.append(runId, deviceId, 'run.status:generating-stage', { stage: 'generate' });
 
-          return callCrystalTrial(
-            {
-              modelId: String(snapshot.model_id ?? 'google/gemini-2.5-flash'),
-              messages,
-              jsonSchema: {
-                type: 'object',
-                properties: {
-                  questions: { type: 'array', items: { type: 'object', properties: {
-                    id: { type: 'string' }, text: { type: 'string' },
-                    options: { type: 'array', items: { type: 'string' } },
-                    correctAnswer: { type: 'string' }, category: { type: 'string' },
-                    difficulty: { type: 'number' },
-                  }, required: ['id','text','options','correctAnswer','category','difficulty'] }},
-                  sourceCardSummaries: { type: 'array', items: { type: 'object' } },
+            const messages = [
+              { role: 'system', content: 'You are a Crystal Trial question generator. Generate trial questions as JSON.' },
+              { role: 'user', content: `Generate ${String(snapshot.question_count ?? 5)} Crystal Trial questions for topic "${String(snapshot.topic_id)}".` },
+            ];
+
+            return callCrystalTrial(
+              {
+                modelId: String(snapshot.model_id ?? 'google/gemini-2.5-flash'),
+                messages,
+                jsonSchema: {
+                  type: 'object',
+                  properties: {
+                    questions: { type: 'array', items: { type: 'object', properties: {
+                      id: { type: 'string' }, text: { type: 'string' },
+                      options: { type: 'array', items: { type: 'string' } },
+                      correctAnswer: { type: 'string' }, category: { type: 'string' },
+                      difficulty: { type: 'number' },
+                    }, required: ['id','text','options','correctAnswer','category','difficulty'] }},
+                    sourceCardSummaries: { type: 'array', items: { type: 'object' } },
+                  },
+                  required: ['questions', 'sourceCardSummaries'],
                 },
-                required: ['questions', 'sourceCardSummaries'],
+                providerHealingRequested: true,
               },
-              providerHealingRequested: true,
-            },
-            this.env,
-          );
-        },
-      )) as GenerateResult;
+              this.env,
+            );
+          },
+        )) as GenerateResult;
+        llmTrace.finalizeSuccess(genResult.usage);
+      } catch (err) {
+        if (err instanceof WorkflowFail) {
+          llmTrace.finalizeFailure(err.code, err.message);
+        } else {
+          const msg = err instanceof Error ? err.message : String(err);
+          llmTrace.finalizeFailure('llm:upstream-5xx', msg);
+        }
+        throw err;
+      }
 
       // ---- 3. PARSE — no retries ----
       await checkCancel('before-parse');
@@ -175,9 +200,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
           { deviceId, kind: 'crystal-trial', inputHash, payload: parsed }, contentHash, 1, runId,
         );
         if (genResult.usage) {
-          try {
-            await repos.usage.recordTokens(deviceId, new Date().toISOString().slice(0, 10), genResult.usage);
-          } catch { /* non-critical */ }
+          await recordTokensRobust(deviceId, repos, llmTrace.trace, genResult.usage);
         }
         return { artifactId, contentHash };
       })) as PersistResult;

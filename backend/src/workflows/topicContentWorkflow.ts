@@ -21,6 +21,7 @@ import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { callTopicContent } from '../llm/openrouterClient';
+import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import type { Env } from '../env';
 
 // ---------------------------------------------------------------------------
@@ -69,6 +70,7 @@ async function runStage(
   deviceId: string,
   stage: string,
   snapshot: Record<string, unknown>,
+  inputHash: string,
   exec: () => Promise<GenerateResult & { parsedPayload: Record<string, unknown>; kind: string; contentHash: string }>,
 ): Promise<string> {
   await repos.runs.append(runId, deviceId, 'run.status:generating-stage', { stage });
@@ -81,12 +83,36 @@ async function runStage(
     startedAt: new Date().toISOString(),
   });
 
-  const result = (await step.do(
-    `generate:${stage.replace(/:/g, '_')}`,
-    { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
-    // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
-    exec,
-  )) as GenerateResult & { parsedPayload: Record<string, unknown>; kind: string; contentHash: string };
+  const llmTrace = traceLlmCall({
+    runId,
+    deviceId,
+    pipelineKind: 'topic-content',
+    stage,
+    model: String((snapshot.model_id as string) ?? 'openrouter/google/gemini-2.5-flash'),
+    promptVersion: (snapshot.prompt_template_version as number) ?? 0,
+    schemaVersion: (snapshot.schema_version as number) ?? 0,
+    inputHash,
+    providerHealingRequested: true,
+  });
+
+  let result: GenerateResult & { parsedPayload: Record<string, unknown>; kind: string; contentHash: string };
+  try {
+    result = (await step.do(
+      `generate:${stage.replace(/:/g, '_')}`,
+      { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
+      // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
+      exec,
+    )) as GenerateResult & { parsedPayload: Record<string, unknown>; kind: string; contentHash: string };
+    llmTrace.finalizeSuccess(result.usage);
+  } catch (err) {
+    if (err instanceof WorkflowFail) {
+      llmTrace.finalizeFailure(err.code, err.message);
+    } else {
+      const msg = err instanceof Error ? err.message : String(err);
+      llmTrace.finalizeFailure('llm:upstream-5xx', msg);
+    }
+    throw err;
+  }
 
   // Persist the artifact.
   const artifactId = await repos.artifacts.putStorage(
@@ -104,9 +130,7 @@ async function runStage(
   await repos.stageCheckpoints.markReady(runId, stage, artifactId);
 
   if (result.usage) {
-    try {
-      await repos.usage.recordTokens(deviceId, new Date().toISOString().slice(0, 10), result.usage);
-    } catch { /* non-critical */ }
+    await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
   }
 
   await repos.runs.append(runId, deviceId, 'run.artifact-ready', {
@@ -222,14 +246,14 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
       })) as PlanOutcome;
 
       if (!planOutcome.ok) return;
-      const { snapshot, checkpoints } = planOutcome;
+      const { snapshot, inputHash, checkpoints } = planOutcome;
       const wantedStages = resolveWantedStages(snapshot, checkpoints);
 
       // ---- 2. THEORY ----
       if (wantedStages.includes('theory')) {
         await checkCancel('before-theory');
 
-        await runStage(step, repos, runId, deviceId, 'theory', snapshot, async () => {
+        await runStage(step, repos, runId, deviceId, 'theory', snapshot, inputHash, async () => {
           const messages = [
             {
               role: 'system',
@@ -295,7 +319,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
       if (wantedStages.includes('study-cards')) {
         await checkCancel('before-study-cards');
 
-        await runStage(step, repos, runId, deviceId, 'study-cards', snapshot, async () => {
+        await runStage(step, repos, runId, deviceId, 'study-cards', snapshot, inputHash, async () => {
           const messages = [
             {
               role: 'system',
@@ -372,7 +396,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         await Promise.all(
           miniStages.map((miniStage) => {
             const gameType = miniStage.replace('mini-games:', '') as MiniGameType;
-            return runStage(step, repos, runId, deviceId, miniStage, snapshot, async () => {
+            return runStage(step, repos, runId, deviceId, miniStage, snapshot, inputHash, async () => {
               const messages = [
                 {
                   role: 'system',

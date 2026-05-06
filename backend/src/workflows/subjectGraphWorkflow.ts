@@ -261,7 +261,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       } else {
         await checkCancel('before-edges');
 
-        await runStage(step, repos, runId, deviceId, 'edges', snapshot, async () => {
+        await runStage(step, repos, runId, deviceId, 'edges', snapshot, inputHash, async () => {
           const messages = [
             {
               role: 'system',

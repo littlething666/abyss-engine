@@ -7,7 +7,7 @@
 
 ## Implementation Status
 
-Last updated: 2026-05-06. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed. PRs are stacked: each step's PR targets the previous step's branch as its base.
+Last updated: 2026-05-06. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed, Phase 3 (Observability + full budgets) core steps 3a–3i landed. PRs are stacked: each step's PR targets the previous step's branch as its base.
 
 ### Phase 0 — Reliability hardening + shared contracts
 
@@ -69,13 +69,28 @@ Last updated: 2026-05-06. Backend PRs implemented in-workspace (not separate Git
 
 ### Phase 3 — Observability + full budgets
 
-- [ ]  Pending.
+Last updated: 2026-05-06.
+
+- [x] **Step 3a. Migration.** `backend/migrations/0005_device_settings.sql` — adds `device_settings` table (`device_id` UUID, `key` text, `value_json` jsonb, `updated_at` timestamptz) with `PRIMARY KEY (device_id, key)` and index on `device_id`. Settings persistence foundation for Plan v3 §Observability.
+- [x] **Step 3b. Settings repository.** `backend/src/repositories/deviceSettingsRepo.ts` — `IDeviceSettingsRepo` with `getAll(deviceId)`, `upsert(deviceId, key, value)`, `upsertMany(deviceId, entries[])`. Upserts one row per key with `onConflict: 'device_id, key'`. Wired into `src/repositories/index.ts` via `Repos.deviceSettings` and `makeRepos` factory.
+- [x] **Step 3c. Settings endpoint persistence.** `backend/src/routes/settings.ts` — full GET/PUT implementation replacing the Phase 1 stub. PUT accepts `model-bindings`, `response-healing`, `durable-kinds` keys (well-known allowlist); unknown keys silently ignored. GET merges all rows into a single `{ settings: { [key]: value } }` response. 5 integration tests green (upsert, unknown-key rejection, no-keys 400, invalid-JSON 400, GET round-trip).
+- [x] **Step 3d. Observability tracer.** `backend/src/observability/tracer.ts` — `createTracer()` factory returning `{ startTrace(start), finalizeTrace(trace, success, opts?) }`. Every trace captures: `traceId`, `runId`, `deviceId`, `pipelineKind`, `stage`, `model`, `promptVersion`, `schemaVersion`, `inputHash`, `providerHealingRequested`, `startedAt`, `finishedAt`, `success`, `errorCode`, `errorMessage`, `usage` (promptTokens, completionTokens, totalTokens), `durationMs`. Traces emitted as structured JSON via `console.log('[llm-trace] ...')` (Cloudflare logpush / tail workers target). 6 unit tests green (success trace shape, failure trace shape, default version numbers, unique traceId per call, failure without usage, all required fields).
+- [x] **Step 3e. Workflow observability helpers.** `backend/src/workflows/shared/workflowObservability.ts` — `traceLlmCall(start)` returns `{ trace, finalizeSuccess(usage), finalizeFailure(code, msg) }` wrapper for the tracer, and `recordTokensRobust(deviceId, repos, trace, usage)` that logs failures via `console.error` instead of silently swallowing them (Phase 3 robust token accounting).
+- [x] **Step 3f. Wire tracer into all four Workflow classes.** Updated `crystalTrialWorkflow.ts`, `topicContentWorkflow.ts`, `subjectGraphWorkflow.ts`, and `topicExpansionWorkflow.ts` to: (1) import `traceLlmCall` + `recordTokensRobust`; (2) create a trace before every LLM call with pipeline-kind, stage, model, and version metadata from the snapshot; (3) finalize the trace on success (with usage) or failure (with error code/message); (4) replace silent `try/catch /* non-critical */` token recording with `recordTokensRobust` that surfaces failures. Subject Graph and Topic Content workflows updated their `runStage` helper signatures to accept `inputHash` for tracing.
+- [x] **Step 3g. Failure dashboard endpoint.** `backend/src/routes/runs.stats.ts` — `GET /v1/runs/stats?days=N&pipelineKind=&model=&failureCode=` aggregating runs by pipeline kind, failure code, model, and schema version. Returns `{ windowDays, windowStart, windowEnd, pipelines: [{ pipelineKind, totalRuns, failedRuns, failureRate, byFailureCode, byModel, bySchemaVersion }] }`. Days clamped 1–90. Requires `X-Abyss-Device` header. Wired into `src/index.ts` via `v1.route('/runs', stats)`.
+- [x] **Step 3h. Runs repo extension.** Extended `IRunsRepo` with `listInWindow(days: number): Promise<RunRow[]>` method (queries `runs` table with `created_at >= since` and 1000-row limit). Implemented in `createRunsRepo`.
+- [x] **Step 3i. Tests.** 8 new test files / describe blocks: `tracer.test.ts` (6 tests), `settings.test.ts` (5 integration tests), `runs.stats.test.ts` (8 aggregation logic tests — empty, per-kind, per-model, per-schema-version, filtering, missing-field graceful, day clamping, sort order, lastSeenAt tracking). All 118 backend tests green + 254 eval tests unchanged.
+
+**Deferred to later Phase 3 sub-steps:**
+- Full Langfuse integration adapter (tracer currently emits to console, ready for forwarding).
+- Budget enforcement from actual provider tokens (currently estimate-based `assertBelowDailyCap`).
+- Per-device usage dashboard querying `usage_counters` table.
 
 ### Phase 4 — Productionization + cleanup
 
 - [ ]  Pending.
 
-### MCP-write-blocked files (require manual user patches in later phases)
+### [Completed] MCP-write-blocked files (require manual user patches in later phases)
 
 The agent's GitHub MCP write surface refuses any file containing `{{}}` template strings. The seven `.prompt` template files under `src/prompts/` consumed by `interpolatePromptTemplate()` carry every `var` placeholder in the durable pipeline path — edits require a local editor or agent outside that MCP constraint (Phase 0 step 12 landed in [PR #52](https://github.com/littlething666/abyss-engine/pull/52)):
 

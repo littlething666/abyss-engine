@@ -35,6 +35,10 @@ export interface IRunsRepo {
   /** Returns the cancel reason if `cancel_requested_at` is non-null and `finished_at` is null. */
   cancelRequested(runId: string): Promise<CancelReason | null>;
 
+  // ---- observability (Phase 3) ----
+  /** List all runs created in the last N days (across all devices). Used by failure dashboard. */
+  listInWindow(days: number): Promise<RunRow[]>;
+
   // ---- supersession (Phase 2) ----
   /**
    * Cancel any active run holding the same supersedes_key for this device.
@@ -244,6 +248,19 @@ export function createRunsRepo(db: SupabaseClient): IRunsRepo {
 
       if (error) throw error;
       return (data ?? []) as EventRow[];
+    },
+
+    async listInWindow(days: number) {
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const { data, error } = await db
+        .from('runs')
+        .select('*')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(1000);
+
+      if (error) throw error;
+      return (data ?? []) as RunRow[];
     },
 
     async insertJob(job) {

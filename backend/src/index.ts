@@ -15,6 +15,7 @@ import { runs } from './routes/runs';
 import { runEvents } from './routes/runEvents';
 import { artifacts } from './routes/artifacts';
 import { settings } from './routes/settings';
+import { stats } from './routes/runs.stats';
 
 export { CrystalTrialWorkflow } from './workflows/crystalTrialWorkflow';
 export { TopicExpansionWorkflow } from './workflows/topicExpansionWorkflow';
@@ -48,6 +49,7 @@ v1.post('/runs', idempotencyMiddleware);
 
 v1.route('/runs', runs);
 v1.route('/runs', runEvents);
+v1.route('/runs', stats);
 v1.route('/artifacts', artifacts);
 v1.route('/settings', settings);
 
