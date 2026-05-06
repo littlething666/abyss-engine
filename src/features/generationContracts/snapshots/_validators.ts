@@ -7,6 +7,17 @@
  * schema-validation errors.
  */
 
+export function assertString(
+  field: string,
+  value: unknown,
+): asserts value is string {
+  if (typeof value !== 'string') {
+    throw new Error(
+      `Snapshot field "${field}" must be a string, received ${describe(value)}`,
+    );
+  }
+}
+
 export function assertNonEmptyString(
   field: string,
   value: unknown,
