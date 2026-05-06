@@ -278,7 +278,7 @@ export function AttunementRitualModal({
                 Ritual cooldown: {cooldownLabel} left.
               </p>
             )}
-            <FieldSet className="space-y-2 mb-5">
+            <FieldSet className="gap-2 mb-5">
               <FieldLegend>🧬 1. Biological Foundation</FieldLegend>
               <FieldDescription className="text-xs">Section unlocks</FieldDescription>
               <ul className="mb-3 flex flex-wrap gap-2 text-muted-foreground text-sm">
@@ -295,7 +295,7 @@ export function AttunementRitualModal({
                   </li>
                 ))}
               </ul>
-              <FieldGroup className="space-y-1">
+              <FieldGroup className="gap-1">
                 <Field>
                   <FieldLabel>😴 Sleep (Biological Readiness)</FieldLabel>
                   <ToggleGroup
@@ -355,7 +355,7 @@ export function AttunementRitualModal({
               </FieldGroup>
             </FieldSet>
 
-            <FieldSet className="space-y-2 mb-5">
+            <FieldSet className="gap-2 mb-5">
               <FieldLegend>🧠 2. Cognitive Environment</FieldLegend>
               <FieldDescription className="text-xs">Section unlocks</FieldDescription>
               <ul className="mb-3 flex flex-wrap gap-2 text-muted-foreground text-sm">
@@ -372,7 +372,7 @@ export function AttunementRitualModal({
                   </li>
                 ))}
               </ul>
-              <FieldGroup className="space-y-1">
+              <FieldGroup className="gap-1">
                 <Field orientation="horizontal">
                   <Switch
                     id="cognitive-digital-silence"
@@ -400,7 +400,7 @@ export function AttunementRitualModal({
               </FieldGroup>
             </FieldSet>
 
-            <FieldSet className="space-y-2 mb-5">
+            <FieldSet className="gap-2 mb-5">
               <FieldLegend>🎯 3. Quest Intent</FieldLegend>
               <FieldDescription className="text-xs">Section unlocks</FieldDescription>
               <ul className="mb-3 flex flex-wrap gap-2 text-muted-foreground text-sm">
@@ -417,7 +417,7 @@ export function AttunementRitualModal({
                   </li>
                 ))}
               </ul>
-              <FieldGroup className="space-y-1">
+              <FieldGroup className="gap-1">
                 <Field>
                   <FieldLabel>💎 Target Crystal</FieldLabel>
                   <Select

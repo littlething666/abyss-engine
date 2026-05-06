@@ -47,7 +47,7 @@ export function InfoPopover({
       title={label}
       className={cn('shrink-0', className)}
     >
-      <Info className="h-3.5 w-3.5" aria-hidden />
+      <Info data-icon="inline-start" aria-hidden />
     </Button>
   );
 

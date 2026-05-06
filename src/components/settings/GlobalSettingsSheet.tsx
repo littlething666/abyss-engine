@@ -178,7 +178,7 @@ function OpenRouterConfigList() {
   };
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       {configs.map((c) => (
         <div key={c.id} className="flex items-center gap-2 border rounded-md p-2">
           <Input
@@ -216,7 +216,7 @@ function OpenRouterConfigList() {
             onClick={() => deleteConfig(c.id)}
             aria-label={`Delete ${c.label}`}
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 data-icon="inline-start" aria-hidden />
           </Button>
         </div>
       ))}
@@ -253,7 +253,7 @@ function OpenRouterConfigList() {
           />
         </div>
         <Button type="button" variant="outline" size="icon-sm" onClick={handleAdd} aria-label="Add config">
-          <Plus className="h-3.5 w-3.5" />
+          <Plus data-icon="inline-start" aria-hidden />
         </Button>
       </div>
     </div>
@@ -278,7 +278,7 @@ function PreferencesSection() {
   return (
     <section className={SECTION_SPACING}>
       <Badge variant="outline">⚙️ Preferences</Badge>
-      <div className="pt-3 space-y-3">
+      <div className="pt-3 flex flex-col gap-3">
         <div className={ROW_CLASSNAME}>
           <div className="min-w-0">
             <span className="text-sm text-foreground">Study narrator</span>
@@ -385,7 +385,7 @@ function StudyDefaultsSection() {
   return (
     <section className={SECTION_SPACING}>
       <Badge variant="outline">🎓 Study defaults</Badge>
-      <div className="pt-3 space-y-3">
+      <div className="pt-3 flex flex-col gap-3">
         <div className={ROW_CLASSNAME}>
           <div className="min-w-0">
             <span className="text-sm text-foreground">Target audience</span>
@@ -474,7 +474,7 @@ function DangerZoneSection({ onPrune }: { onPrune: () => void }) {
   return (
     <section className={SECTION_SPACING}>
       <Badge variant="destructive">⚠️ Danger zone</Badge>
-      <div className="pt-3 space-y-2">
+      <div className="pt-3 flex flex-col gap-2">
         <Button
           type="button"
           variant="destructive"

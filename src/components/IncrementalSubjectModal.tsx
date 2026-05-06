@@ -159,7 +159,7 @@ export function IncrementalSubjectModal({ isOpen, onClose }: IncrementalSubjectM
                 </Button>
               }
             />
-            <CollapsibleContent className="space-y-4 pt-2">
+            <CollapsibleContent className="flex flex-col gap-4 pt-2">
               <Field>
                 <FieldLabel>Goal</FieldLabel>
                 <FieldContent>

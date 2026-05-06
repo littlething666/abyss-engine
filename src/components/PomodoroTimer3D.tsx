@@ -58,7 +58,7 @@ export const PomodoroTimerOverlay: React.FC = () => {
         onClick={reset}
         aria-label="Reset timer"
       >
-        <RotateCcw />
+        <RotateCcw data-icon="inline-start" aria-hidden />
       </Button>
       <Button
         type="button"
@@ -73,7 +73,7 @@ export const PomodoroTimerOverlay: React.FC = () => {
         }}
         aria-label={isRunning ? 'Pause timer' : 'Resume timer'}
       >
-        {isRunning ? <Pause /> : <Play />}
+        {isRunning ? <Pause data-icon="inline-start" aria-hidden /> : <Play data-icon="inline-start" aria-hidden />}
       </Button>
       <span className="mr-0.5 h-4 w-px bg-border/60" aria-hidden="true" />
       <span className="font-mono tabular-nums text-xs">{timerText}</span>
