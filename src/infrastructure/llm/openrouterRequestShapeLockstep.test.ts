@@ -145,10 +145,10 @@ describe('OpenRouter Crystal Trial request-shape lockstep', () => {
   it('both clients must NOT include stream (non-streaming for pipelines)', () => {
     // Pipeline generation uses completeChat (not streaming). The Worker
     // never sets `stream`, and the browser sets `stream: false`.
-    expect(WORKER_CRYSTAL_TRIAL_REQUEST_SHAPE.bodyKeys.has('stream')).toBe(
-      false,
+    expect(
+      WORKER_CRYSTAL_TRIAL_REQUEST_SHAPE.bodyKeys.has('stream'),
       'Worker must not set stream (pipelines are non-streaming)',
-    );
+    ).toBe(false);
 
     // The browser sets `stream: false` which is fine — it's an explicit
     // opt-out. But it must not be `true`.

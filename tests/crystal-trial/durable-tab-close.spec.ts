@@ -20,7 +20,8 @@
  * Without these, the tests skip with a clear message.
  */
 
-import { test, expect, type Page } from '../fixtures/app';
+import { test, expect } from '../fixtures/app';
+import type { Page } from '@playwright/test';
 import { waitForAbyssDev, waitForDeckReady } from '../utils/test-helpers';
 import { waitForSceneProbe } from '../utils/three-probe';
 import {
@@ -74,10 +75,7 @@ async function isDurableRunsEnabled(page: Page): Promise<boolean> {
 /** Check if the Worker backend is reachable. */
 async function isWorkerReachable(page: Page): Promise<boolean> {
   try {
-    const url = await page.evaluate(() => {
-      // @ts-expect-error env var access
-      return process?.env?.NEXT_PUBLIC_DURABLE_GENERATION_URL ?? null;
-    });
+    const url = process.env.NEXT_PUBLIC_DURABLE_GENERATION_URL ?? null;
     if (!url) return false;
 
     const reachable = await page.evaluate(async (workerUrl: string) => {

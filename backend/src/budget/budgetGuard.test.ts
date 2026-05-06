@@ -4,7 +4,8 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { assertBelowDailyCap, CRYSTAL_TRIAL_DAILY_RUN_CAP, CRYSTAL_TRIAL_DAILY_TOKEN_CAP } from '../budget/budgetGuard';
-import type { IUsageCountersRepo, UsageCounterRow } from '../repositories/usageCountersRepo';
+import type { IUsageCountersRepo } from '../repositories/usageCountersRepo';
+import type { UsageCounterRow } from '../repositories/types';
 
 function createFakeUsageRepo(
   runsStarted: number,

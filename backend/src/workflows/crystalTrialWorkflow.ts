@@ -12,10 +12,10 @@
  * every step boundary.  On cancel, the workflow emits `run.cancelled` and
  * throws `WorkflowAbort`.
  *
- * @ts-expect-error directives on `step.do()` calls work around the overly
- * restrictive `Serializable<T>` constraint in `cloudflare:workers`.  All
- * returned values are plain JSON-serializable objects at runtime (the DB
- * stores `jsonb`).  The casts are safe.
+ * `step.do()` result casts and the parse-step @ts-expect-error work around
+ * the overly restrictive `Serializable<T>` constraint in `cloudflare:workers`.
+ * All returned values are plain JSON-serializable objects at runtime (the DB
+ * stores `jsonb`).
  */
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
@@ -142,7 +142,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
       // ---- 3. PARSE — no retries ----
       await checkCancel('before-parse');
 
-      // @ts-expect-error Serializable<Record> doesn't accept `unknown` values — safe at runtime.
+      // @ts-expect-error Serializable<Record> rejects `unknown` values; JSON.parse output is persisted as jsonb.
       const parsed = (await step.do('parse', async () => {
         await repos.runs.transition(runId, 'parsing');
         try { return JSON.parse(genResult.text) as Record<string, unknown>; }
