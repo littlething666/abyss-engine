@@ -153,6 +153,48 @@ function crystalTrialSetFromRow(row: CrystalTrialSetRow): CrystalTrialSetContent
   };
 }
 
+const SUBJECT_GEOMETRY_TYPES = new Set(['box', 'cylinder', 'sphere', 'octahedron', 'plane']);
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireNonEmptyString(value: unknown, path: string): void {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${path} must be a non-empty string`);
+  }
+}
+
+function requireOptionalTopicIds(value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.trim().length === 0)) {
+    throw new Error(`${path} must be an array of non-empty strings when present`);
+  }
+}
+
+function requireSubjectManifestEnvelope(metadata: JsonObject): void {
+  if (!isJsonObject(metadata.subject)) {
+    throw new Error('subjects.metadata_json.subject must be a JSON object');
+  }
+
+  const subject = metadata.subject;
+  requireNonEmptyString(subject.description, 'subjects.metadata_json.subject.description');
+  requireNonEmptyString(subject.color, 'subjects.metadata_json.subject.color');
+
+  if (!isJsonObject(subject.geometry)) {
+    throw new Error('subjects.metadata_json.subject.geometry must be a JSON object');
+  }
+  requireNonEmptyString(subject.geometry.gridTile, 'subjects.metadata_json.subject.geometry.gridTile');
+  if (!SUBJECT_GEOMETRY_TYPES.has(subject.geometry.gridTile as string)) {
+    throw new Error(`subjects.metadata_json.subject.geometry.gridTile must be one of ${[...SUBJECT_GEOMETRY_TYPES].join(', ')}`);
+  }
+
+  requireOptionalTopicIds(subject.topicIds, 'subjects.metadata_json.subject.topicIds');
+  if (subject.metadata !== undefined && !isJsonObject(subject.metadata)) {
+    throw new Error('subjects.metadata_json.subject.metadata must be a JSON object when present');
+  }
+}
+
 function requireNonEmptyRows(rows: readonly unknown[], operation: string): void {
   if (rows.length === 0) throw new Error(`${operation} requires at least one row`);
 }
@@ -167,6 +209,9 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
     },
 
     async upsertSubject(input) {
+      const metadata = input.metadata ?? {};
+      requireSubjectManifestEnvelope(metadata);
+
       const now = nowIso();
       await db.prepare(`
         insert into subjects (
@@ -183,7 +228,7 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
         input.deviceId,
         input.subjectId,
         input.title,
-        stringifyJson(input.metadata ?? {}, 'subjects.metadata_json'),
+        stringifyJson(metadata, 'subjects.metadata_json'),
         input.contentSource,
         input.createdByRunId ?? null,
         now,

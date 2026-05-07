@@ -15,8 +15,31 @@ describe('createLearningContentRepo', () => {
 
   it('upserts subjects with JSON stringification at the D1 boundary', async () => {
     const { db, calls } = createFakeD1([q(null)]);
-    await createLearningContentRepo(db).upsertSubject({ deviceId: 'dev-1', subjectId: 'physics', title: 'Physics', metadata: { icon: 'Atom' }, contentSource: 'manual', createdByRunId: null });
-    expect(calls[0].args).toEqual(expect.arrayContaining(['dev-1', 'physics', 'Physics', JSON.stringify({ icon: 'Atom' }), 'manual', null]));
+    const metadata = {
+      subject: {
+        description: 'Physics fundamentals',
+        color: '#38bdf8',
+        geometry: { gridTile: 'sphere' },
+        topicIds: ['motion'],
+        metadata: { icon: 'Atom' },
+      },
+    };
+    await createLearningContentRepo(db).upsertSubject({ deviceId: 'dev-1', subjectId: 'physics', title: 'Physics', metadata, contentSource: 'manual', createdByRunId: null });
+    expect(calls[0].args).toEqual(expect.arrayContaining(['dev-1', 'physics', 'Physics', JSON.stringify(metadata), 'manual', null]));
+  });
+
+  it('rejects subject writes without the frontend manifest envelope', async () => {
+    const { db } = createFakeD1();
+    await expect(
+      createLearningContentRepo(db).upsertSubject({
+        deviceId: 'dev-1',
+        subjectId: 'physics',
+        title: 'Physics',
+        metadata: { icon: 'Atom' },
+        contentSource: 'manual',
+        createdByRunId: null,
+      }),
+    ).rejects.toThrow('subjects.metadata_json.subject must be a JSON object');
   });
 
   it('reads and writes subject graphs scoped by device and subject', async () => {

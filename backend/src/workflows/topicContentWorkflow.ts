@@ -14,6 +14,11 @@ import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { callTopicContent } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import {
+  resolveGenerationJobPolicy,
+  type BackendGenerationJobKind,
+  type ResolvedGenerationJobPolicy,
+} from '../generationPolicy';
+import {
   inputHash,
   contentHash,
   strictParseArtifact,
@@ -89,7 +94,7 @@ async function runStage(
   snapshot: Record<string, unknown>,
   _inputHash: string,
   schemaVersion: number,
-  exec: () => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
+  exec: (generationPolicy: ResolvedGenerationJobPolicy) => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
 ): Promise<StageRunResult> {
   await repos.runs.appendTyped(runId, deviceId,
     buildRunStatusEvent('generating_stage'),
@@ -103,16 +108,19 @@ async function runStage(
     startedAt: new Date().toISOString(),
   });
 
+  const generationPolicy = await resolveGenerationJobPolicy(deviceId, kind as BackendGenerationJobKind);
+
   const llmTrace = traceLlmCall({
     runId,
     deviceId,
     pipelineKind: 'topic-content',
     stage,
-    model: String((snapshot.model_id as string) ?? 'openrouter/google/gemini-2.5-flash'),
+    model: generationPolicy.modelId,
+    generationPolicyHash: generationPolicy.generationPolicyHash,
     promptVersion: (snapshot.prompt_template_version as number) ?? 0,
     schemaVersion,
     inputHash: _inputHash,
-    providerHealingRequested: true,
+    providerHealingRequested: generationPolicy.providerHealingRequested,
   });
 
   let result: GenerateResult & { parsedPayload: Record<string, unknown> };
@@ -121,7 +129,7 @@ async function runStage(
       `generate:${stage.replace(/:/g, '_')}`,
       { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
       // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
-      exec,
+      () => exec(generationPolicy),
     )) as GenerateResult & { parsedPayload: Record<string, unknown> };
     llmTrace.finalizeSuccess(result.usage);
   } catch (err) {
@@ -281,7 +289,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         await runStage(
           step, repos, runId, deviceId, 'theory', 'topic-theory',
           snapshot, _inputHash, theorySchemaVersion,
-          async () => {
+          async (generationPolicy) => {
             const messages = [
               {
                 role: 'system',
@@ -297,10 +305,10 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
 
             const raw = await callTopicContent(
               {
-                modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                modelId: generationPolicy.modelId,
                 messages,
                 responseFormat: theoryResponseFormat,
-                providerHealingRequested: true,
+                providerHealingRequested: generationPolicy.providerHealingRequested,
                 stage: 'theory',
               },
               this.env,
@@ -331,7 +339,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         await runStage(
           step, repos, runId, deviceId, 'study-cards', 'topic-study-cards',
           snapshot, _inputHash, cardsSchemaVersion,
-          async () => {
+          async (generationPolicy) => {
             const messages = [
               {
                 role: 'system',
@@ -347,10 +355,10 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
 
             const raw = await callTopicContent(
               {
-                modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                modelId: generationPolicy.modelId,
                 messages,
                 responseFormat: cardsResponseFormat,
-                providerHealingRequested: true,
+                providerHealingRequested: generationPolicy.providerHealingRequested,
                 stage: 'study-cards',
               },
               this.env,
@@ -390,7 +398,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
             return runStage(
               step, repos, runId, deviceId, miniStage, kind,
               snapshot, _inputHash, schemaVersion,
-              async () => {
+              async (generationPolicy) => {
                 const messages = [
                   {
                     role: 'system',
@@ -412,10 +420,10 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
 
                 const raw = await callTopicContent(
                   {
-                    modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                    modelId: generationPolicy.modelId,
                     messages,
                     responseFormat,
-                    providerHealingRequested: true,
+                    providerHealingRequested: generationPolicy.providerHealingRequested,
                     stage: miniStage,
                   },
                   this.env,

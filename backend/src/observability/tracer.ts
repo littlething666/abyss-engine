@@ -2,8 +2,9 @@
  * Structured observability tracer for the durable orchestrator Worker.
  *
  * Phase 3: Worker-only tracing for every LLM call. Captures device_id,
- * run_id, model, prompt version, schema version, input hash, output hash,
- * provider-healing requested flag, token usage, duration, and status.
+ * run_id, model, generation policy hash, prompt version, schema version,
+ * input hash, output hash, provider-healing requested flag, token usage,
+ * duration, and status.
  *
  * Traces are emitted as structured JSON to the Worker's `console` (which
  * Cloudflare ships to tail workers / logpush / dashboards). A future
@@ -30,6 +31,8 @@ export interface LlmCallTrace {
   stage: string;
   /** Model identifier sent to OpenRouter. */
   model: string;
+  /** Backend generation policy hash resolved for this LLM call. */
+  generationPolicyHash: string | null;
   /** Prompt template version from the snapshot (0 if unavailable). */
   promptVersion: number;
   /** Schema version from the snapshot (0 if unavailable). */
@@ -61,6 +64,7 @@ export interface LlmCallStart {
   pipelineKind: PipelineKind;
   stage: string;
   model: string;
+  generationPolicyHash?: string;
   promptVersion?: number;
   schemaVersion?: number;
   inputHash: string;
@@ -81,6 +85,7 @@ export function createTracer() {
       pipelineKind: start.pipelineKind,
       stage: start.stage,
       model: start.model,
+      generationPolicyHash: start.generationPolicyHash ?? null,
       promptVersion: start.promptVersion ?? 0,
       schemaVersion: start.schemaVersion ?? 0,
       inputHash: start.inputHash,

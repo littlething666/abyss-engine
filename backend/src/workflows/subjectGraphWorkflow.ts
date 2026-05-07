@@ -14,6 +14,11 @@ import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { callSubjectGraph } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import {
+  resolveGenerationJobPolicy,
+  type BackendGenerationJobKind,
+  type ResolvedGenerationJobPolicy,
+} from '../generationPolicy';
+import {
   inputHash,
   contentHash,
   strictParseArtifact,
@@ -69,7 +74,7 @@ async function runStage(
   snapshot: Record<string, unknown>,
   _inputHash: string,
   schemaVersion: number,
-  exec: () => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
+  exec: (generationPolicy: ResolvedGenerationJobPolicy) => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
 ): Promise<StageRunResult> {
   await repos.runs.appendTyped(runId, deviceId,
     buildRunStatusEvent('generating_stage'),
@@ -83,16 +88,19 @@ async function runStage(
     startedAt: new Date().toISOString(),
   });
 
+  const generationPolicy = await resolveGenerationJobPolicy(deviceId, kind as BackendGenerationJobKind);
+
   const llmTrace = traceLlmCall({
     runId,
     deviceId,
     pipelineKind: 'subject-graph',
     stage,
-    model: String((snapshot.model_id as string) ?? 'openrouter/google/gemini-2.5-flash'),
+    model: generationPolicy.modelId,
+    generationPolicyHash: generationPolicy.generationPolicyHash,
     promptVersion: (snapshot.prompt_template_version as number) ?? 0,
     schemaVersion,
     inputHash: _inputHash,
-    providerHealingRequested: true,
+    providerHealingRequested: generationPolicy.providerHealingRequested,
   });
 
   let result: GenerateResult & { parsedPayload: Record<string, unknown> };
@@ -101,7 +109,7 @@ async function runStage(
       `generate:${stage.replace(/:/g, '_')}`,
       { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
       // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
-      exec,
+      () => exec(generationPolicy),
     )) as GenerateResult & { parsedPayload: Record<string, unknown> };
     llmTrace.finalizeSuccess(result.usage);
   } catch (err) {
@@ -278,7 +286,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
         await runStage(
           step, repos, runId, deviceId, 'topics', 'subject-graph-topics',
           snapshot, _inputHash, topicsSchemaVersion,
-          async () => {
+          async (generationPolicy) => {
             const messages = [
               {
                 role: 'system',
@@ -294,10 +302,11 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
             const raw = await callSubjectGraph(
               {
-                modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                modelId: generationPolicy.modelId,
                 messages,
                 responseFormat: topicsResponseFormat,
-                providerHealingRequested: true,
+                providerHealingRequested: generationPolicy.providerHealingRequested,
+                temperature: generationPolicy.temperature,
               },
               this.env,
             );
@@ -346,7 +355,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
         await runStage(
           step, repos, runId, deviceId, 'edges', 'subject-graph-edges',
           snapshot, _inputHash, edgesSchemaVersion,
-          async () => {
+          async (generationPolicy) => {
             const messages = [
               {
                 role: 'system',
@@ -362,11 +371,11 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
             const raw = await callSubjectGraph(
               {
-                modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                modelId: generationPolicy.modelId,
                 messages,
                 responseFormat: edgesResponseFormat,
-                providerHealingRequested: true,
-                temperature: 0.1,
+                providerHealingRequested: generationPolicy.providerHealingRequested,
+                temperature: generationPolicy.temperature,
               },
               this.env,
             );

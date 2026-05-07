@@ -14,6 +14,7 @@ import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { callTopicExpansion } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
+import { resolveGenerationJobPolicy } from '../generationPolicy';
 import {
   inputHash,
   contentHash,
@@ -106,6 +107,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
       if (!planOutcome.ok) return;
       const { snapshot, inputHash: _inputHash } = planOutcome;
+      const generationPolicy = await resolveGenerationJobPolicy(deviceId, 'topic-expansion-cards');
 
       // ---- 2. GENERATE ----
       await checkCancel('before-generate');
@@ -115,11 +117,12 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
         deviceId,
         pipelineKind: 'topic-expansion',
         stage: 'generate',
-        model: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+        model: generationPolicy.modelId,
+        generationPolicyHash: generationPolicy.generationPolicyHash,
         promptVersion: (snapshot.prompt_template_version as number) ?? 0,
         schemaVersion: (snapshot.schema_version as number) ?? topicExpansionCardsSchemaVersion,
         inputHash: _inputHash,
-        providerHealingRequested: true,
+        providerHealingRequested: generationPolicy.providerHealingRequested,
       });
 
       const responseFormat = jsonSchemaResponseFormat('topic-expansion-cards');
@@ -150,10 +153,10 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
             return callTopicExpansion(
               {
-                modelId: String(snapshot.model_id ?? 'openrouter/google/gemini-2.5-flash'),
+                modelId: generationPolicy.modelId,
                 messages,
                 responseFormat,
-                providerHealingRequested: true,
+                providerHealingRequested: generationPolicy.providerHealingRequested,
               },
               this.env,
             );

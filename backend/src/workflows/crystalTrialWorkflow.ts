@@ -18,6 +18,7 @@ import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { callCrystalTrial } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
+import { resolveGenerationJobPolicy } from '../generationPolicy';
 import {
   inputHash,
   contentHash,
@@ -108,6 +109,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
 
       if (!planOutcome.ok) return;
       const { snapshot, inputHash: _inputHash } = planOutcome;
+      const generationPolicy = await resolveGenerationJobPolicy(deviceId, 'crystal-trial');
 
       // ---- 2. GENERATE — retries: 2, 5s delay, exponential ----
       await checkCancel('before-generate');
@@ -117,11 +119,12 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
         deviceId,
         pipelineKind: 'crystal-trial',
         stage: 'generate',
-        model: String(snapshot.model_id ?? 'google/gemini-2.5-flash'),
+        model: generationPolicy.modelId,
+        generationPolicyHash: generationPolicy.generationPolicyHash,
         promptVersion: (snapshot.prompt_template_version as number) ?? 0,
         schemaVersion: (snapshot.schema_version as number) ?? crystalTrialSchemaVersion,
         inputHash: _inputHash,
-        providerHealingRequested: true,
+        providerHealingRequested: generationPolicy.providerHealingRequested,
       });
 
       const responseFormat = jsonSchemaResponseFormat('crystal-trial');
@@ -144,10 +147,10 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
 
             return callCrystalTrial(
               {
-                modelId: String(snapshot.model_id ?? 'google/gemini-2.5-flash'),
+                modelId: generationPolicy.modelId,
                 messages,
                 responseFormat,
-                providerHealingRequested: true,
+                providerHealingRequested: generationPolicy.providerHealingRequested,
               },
               this.env,
             );

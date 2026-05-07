@@ -27,6 +27,7 @@ describe('tracer', () => {
       pipelineKind: 'crystal-trial',
       stage: 'generate',
       model: 'google/gemini-2.5-flash',
+      generationPolicyHash: 'gpol_abc123',
       promptVersion: 2,
       schemaVersion: 1,
       inputHash: 'inp_abc123',
@@ -45,6 +46,7 @@ describe('tracer', () => {
     expect(t.pipelineKind).toBe('crystal-trial');
     expect(t.stage).toBe('generate');
     expect(t.model).toBe('google/gemini-2.5-flash');
+    expect(t.generationPolicyHash).toBe('gpol_abc123');
     expect(t.promptVersion).toBe(2);
     expect(t.schemaVersion).toBe(1);
     expect(t.inputHash).toBe('inp_abc123');
@@ -99,6 +101,7 @@ describe('tracer', () => {
     tracer.finalizeTrace(trace, true);
 
     expect(traces).toHaveLength(1);
+    expect(traces[0].generationPolicyHash).toBeNull();
     expect(traces[0].promptVersion).toBe(0);
     expect(traces[0].schemaVersion).toBe(0);
   });

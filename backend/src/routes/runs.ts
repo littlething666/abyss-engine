@@ -11,6 +11,7 @@ import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
 import { assertBelowDailyCap, PIPELINE_BUDGET_CAPS } from '../budget/budgetGuard';
 import { inputHash } from '../contracts/generationContracts';
+import { bindBackendGenerationPolicyToSnapshot } from '../generationPolicy';
 import { buildRetryRunSnapshot } from './retryPlanning';
 import {
   buildRunQueuedEvent,
@@ -155,25 +156,38 @@ runs.post('/', async (c) => {
     return c.json({ code: 'config:unexpected-supersedes-key', message: 'Supersedes-Key is only valid for kind=topic-expansion' }, 400);
   }
 
-  // 3. Compute contract-owned input hash.
-  const hash = await inputHash(snapshot);
+  // 3. Bind backend-owned generation policy before hashing/storing the
+  //    snapshot. Client-supplied model/healing fields are never trusted.
+  let policyBoundSnapshot: Record<string, unknown>;
+  try {
+    policyBoundSnapshot = await bindBackendGenerationPolicyToSnapshot(
+      deviceId,
+      snapshot as Record<string, unknown>,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ code: 'config:invalid', message }, 400);
+  }
 
-  // 4. Check artifact cache BEFORE D1 run creation (so we know whether to mark
+  // 4. Compute contract-owned input hash.
+  const hash = await inputHash(policyBoundSnapshot);
+
+  // 5. Check artifact cache BEFORE D1 run creation (so we know whether to mark
   //    the run `ready` or `queued`).
   const artifactKind = cacheArtifactKind(kind);
   const cached = await repos.artifacts.findCacheHit(deviceId, artifactKind, hash);
 
-  // 5. Handle supersession BEFORE D1 run creation (best-effort — if it
+  // 6. Handle supersession BEFORE D1 run creation (best-effort — if it
   //    fails the new run still gets created).
   let supersededRunId: string | null = null;
   if (!cached && supersedesKey && kind === 'topic-expansion') {
     supersededRunId = await repos.runs.cancelSupersededRun(deviceId, supersedesKey);
   }
 
-  // 6. Atomic submit — idempotency + budget + run creation at the D1 boundary.
+  // 7. Atomic submit — idempotency + budget + run creation at the D1 boundary.
   const caps = PIPELINE_BUDGET_CAPS[kind];
   const now = new Date().toISOString();
-  const snapshotRecord = snapshot as Record<string, unknown>;
+  const snapshotRecord = policyBoundSnapshot;
 
   const submit = await repos.runs.atomicSubmitRun({
     deviceId,
@@ -206,7 +220,7 @@ runs.post('/', async (c) => {
     return c.json({ code: 'config:invalid', message: 'D1 run submission did not return a run id' }, 500);
   }
 
-  // 7. Emit events.
+  // 8. Emit events.
   if (cached) {
     await repos.runs.appendTyped(newRunId, deviceId,
       buildArtifactReadyEvent({
@@ -233,7 +247,7 @@ runs.post('/', async (c) => {
       );
     }
 
-    // 8. Durable enqueue — dispatch failure is terminal.
+    // 9. Durable enqueue — dispatch failure is terminal.
     const dispatch = await dispatchWorkflow(kind, newRunId, deviceId, c.env);
     if (!dispatch.ok) {
       await repos.runs.markFailed(newRunId, 'config:invalid', `Workflow dispatch failed: ${dispatch.error}`);

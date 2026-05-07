@@ -252,10 +252,10 @@ Rules:
 ### Current implementation status (2026-05-07)
 
 - [x] **PR-A** — Plan/status and destructive-reset declaration, including `CHANGELOG.md` skeleton.
-- [x] **PR-B** — Backend Generation Policy module (`backend/src/generationPolicy/*`) with strict parser/resolver/hash tests. Workflow snapshot expansion/wiring remains in PR-E/PR-F before the global no-fallback exit criterion can close.
+- [x] **PR-B** — Backend Generation Policy module (`backend/src/generationPolicy/*`) with strict parser/resolver/hash tests. `POST /v1/runs` now binds backend policy fields into accepted snapshots before hashing/storage, and workflows resolve per-job policy through this module. Full RunIntent-only expansion remains in PR-E.
 - [x] **PR-C** — Active backend repository adapters are now D1-backed (`backend/src/repositories/*`, `backend/src/learningContent/*`, `Repos.learningContent`) with canonical D1 schema in `backend/d1/init.sql`.
 - [~] **PR-D** — Backend Learning Content routes landed in workspace 2026-05-07 (`backend/src/routes/learningContent.ts`) with route-level per-device/not-found tests. Frontend `BackendDeckRepository` and durable-mode read-path wiring are now implemented; production bootstrap failure for missing Worker URL remains open until the legacy local-runner path is deleted.
-- [ ] **PR-E+** — Not started.
+- [~] **PR-E+** — PR-E RunIntent-only routing is not started; PR-F policy wiring is partially complete (prompt modules and snapshot assertions remain).
 
 ### PR-A — Plan/status and destructive-reset declaration ✅
 
@@ -320,7 +320,7 @@ Backend manifest contract now required by the frontend adapter:
 - optional `subjects.metadata_json.subject.topicIds: string[]`
 - optional `subjects.metadata_json.subject.metadata: SubjectMetadata`
 
-The frontend adapter intentionally throws if this envelope is missing; backend subject bootstrap / artifact appliers must materialize it instead of relying on frontend defaults.
+The frontend adapter intentionally throws if this envelope is missing. The backend Learning Content repository now enforces the same envelope at `upsertSubject`, so backend subject bootstrap / artifact appliers must materialize it instead of relying on frontend defaults.
 
 Exit:
 
@@ -333,7 +333,7 @@ Files: `backend/src/runIntents/*`, `backend/src/routes/runs.ts`, `backend/src/ty
 - Change `POST /v1/runs` to accept `{ kind, intent }`.
 - Add intent validators with forbidden policy-field rejection.
 - Expand intents to snapshots in backend using Learning Content Store and Generation Policy.
-- Add `generation_policy_hash` and `provider_healing_requested` to snapshots.
+- Keep backend-owned `model_id`, `generation_policy_hash`, and `provider_healing_requested` on snapshots during intent expansion. The current snapshot-accepting transition route already overwrites these fields before hashing/storage; PR-E must remove snapshot submission entirely and reject policy fields at any depth.
 - Update frontend `GenerationClient` to submit intents only.
 
 Exit:
@@ -347,8 +347,9 @@ Files: `backend/src/prompts/*`, `backend/src/workflows/*Workflow.ts`, `backend/s
 
 - Move pipeline prompt construction into backend prompt modules.
 - Replace inline workflow prompts with prompt-module calls.
-- Replace every `snapshot.model_id ?? ...` and `providerHealingRequested: true` with resolved snapshot/policy fields.
-- Assert snapshots contain `model_id`, `generation_policy_hash`, and `provider_healing_requested` after backend expansion.
+- ✅ Replace every `snapshot.model_id ?? ...` and `providerHealingRequested: true` with resolved backend policy fields.
+- ✅ Include `generationPolicyHash` in LLM traces.
+- ⏳ Assert snapshots contain `model_id`, `generation_policy_hash`, and `provider_healing_requested` after backend RunIntent expansion.
 
 Exit:
 

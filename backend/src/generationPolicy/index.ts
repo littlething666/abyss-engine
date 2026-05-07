@@ -6,6 +6,12 @@ export {
   resolveGenerationJobPolicy,
 } from './resolveGenerationPolicy';
 export {
+  bindBackendGenerationPolicyToSnapshot,
+  resolveSnapshotGenerationPolicy,
+  type BackendGenerationPolicySnapshotFields,
+  type BackendPolicyBoundSnapshot,
+} from './snapshotBinding';
+export {
   BACKEND_GENERATION_JOB_KINDS,
   type BackendGenerationJobKind,
   type GenerationJobPolicy,
