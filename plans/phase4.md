@@ -253,8 +253,9 @@ Rules:
 
 - [x] **PR-A** — Plan/status and destructive-reset declaration, including `CHANGELOG.md` skeleton.
 - [x] **PR-B** — Backend Generation Policy module (`backend/src/generationPolicy/*`) with strict parser/resolver/hash tests. Workflow snapshot expansion/wiring remains in PR-E/PR-F before the global no-fallback exit criterion can close.
-- [~] **PR-C** — Active backend repository adapters are now D1-backed (`backend/src/repositories/*`, `backend/src/learningContent/*`, `Repos.learningContent`) with canonical D1 schema in `backend/d1/init.sql`. Route-level per-device/not-found tests move with the learning-content routes in PR-D.
-- [ ] **PR-D+** — Not started.
+- [x] **PR-C** — Active backend repository adapters are now D1-backed (`backend/src/repositories/*`, `backend/src/learningContent/*`, `Repos.learningContent`) with canonical D1 schema in `backend/d1/init.sql`.
+- [~] **PR-D** — Backend Learning Content routes landed in workspace 2026-05-07 (`backend/src/routes/learningContent.ts`) with route-level per-device/not-found tests. Frontend `BackendDeckRepository` adapter and read-path wiring are not started.
+- [ ] **PR-E+** — Not started.
 
 ### PR-A — Plan/status and destructive-reset declaration ✅
 
@@ -282,7 +283,7 @@ Exit:
 
 - `resolveGenerationJobPolicy()` is the only backend source for pipeline model/healing decisions.
 
-### PR-C — Learning Content Store schema and repositories ◐
+### PR-C — Learning Content Store schema and repositories ✅
 
 Files: D1 schema/init path, `backend/src/learningContent/*`, `backend/src/repositories/index.ts`.
 
@@ -294,10 +295,17 @@ Exit:
 
 - Backend can read/write generated learning content without browser IndexedDB.
 
-### PR-D — Backend learning-content routes and frontend repository adapter
+### PR-D — Backend learning-content routes and frontend repository adapter ◐
 
 Files: backend content routes, `src/infrastructure/repositories/BackendDeckRepository.ts`, `src/infrastructure/di.ts`, repository tests.
 
+- ✅ Implement backend Learning Content routes:
+  - `GET /v1/library/manifest`
+  - `GET /v1/subjects/:subjectId/graph`
+  - `GET /v1/subjects/:subjectId/topics/:topicId/details`
+  - `GET /v1/subjects/:subjectId/topics/:topicId/cards`
+  - `GET /v1/subjects/:subjectId/topics/:topicId/trials/:targetLevel?cardPoolHash=...`
+- ✅ Add route-level per-device scoping and not-found tests.
 - Implement `IDeckRepository` reads through backend routes using `ApiClient`.
 - Keep all direct HTTP inside infrastructure adapters.
 - Fail loudly at app bootstrap in production when `NEXT_PUBLIC_DURABLE_GENERATION_URL` is missing.
