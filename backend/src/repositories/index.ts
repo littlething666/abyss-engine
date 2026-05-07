@@ -14,14 +14,6 @@ import {
   type IStageCheckpointsRepo,
 } from './stageCheckpointsRepo';
 import {
-  createDeviceSettingsRepo,
-  type IDeviceSettingsRepo,
-} from './deviceSettingsRepo';
-import {
-  createIdempotencyRecordsRepo,
-  type IIdempotencyRecordsRepo,
-} from './idempotencyRecordsRepo';
-import {
   createLearningContentRepo,
   type ILearningContentRepo,
 } from '../learningContent';
@@ -32,9 +24,6 @@ export interface Repos {
   artifacts: IArtifactsRepo;
   usage: IUsageCountersRepo;
   stageCheckpoints: IStageCheckpointsRepo;
-  deviceSettings: IDeviceSettingsRepo;
-  /** Phase 3.6: idempotency records with 24h TTL. */
-  idempotency: IIdempotencyRecordsRepo;
   /** Backend-authoritative generated learning-content read model. */
   learningContent: ILearningContentRepo;
   /** Supabase client — consumed by `assertBelowDailyCap` for atomic RPC calls. */
@@ -50,11 +39,9 @@ export function makeRepos(env: Env): Repos {
   return {
     devices: createDevicesRepo(db),
     runs: createRunsRepo(db),
-    artifacts: createArtifactsRepo(db),
+    artifacts: createArtifactsRepo(db, env.GENERATION_ARTIFACTS_BUCKET),
     usage: createUsageCountersRepo(db),
     stageCheckpoints: createStageCheckpointsRepo(db),
-    deviceSettings: createDeviceSettingsRepo(db),
-    idempotency: createIdempotencyRecordsRepo(db),
     learningContent: createLearningContentRepo(db),
     db,
   };

@@ -1,7 +1,8 @@
 /**
  * Artifact routes — GET /v1/artifacts/:id.
  *
- * Returns the artifact envelope or a signed Supabase Storage download URL.
+ * Returns the artifact envelope by reading the R2 object referenced from the
+ * Postgres artifacts metadata row.
  */
 
 import { Hono } from 'hono';

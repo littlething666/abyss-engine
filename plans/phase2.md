@@ -7,6 +7,12 @@
 
 </aside>
 
+> **Current DB note (2026-05-07):** This phase is historical. The unreleased
+> database workflow has been squashed into `backend/db/reset.sql` and
+> `backend/db/init.sql` for hosted Supabase SQL-editor execution. Numbered
+> migration references below document landed design history, not current setup
+> instructions.
+
 ## 🔍 Compliance, Risk & Drift Assessment
 
 *(mandated by repo-root [AGENTS.md](http://AGENTS.md) § "Mandatory Collaboration Output". Every Phase 2 PR description must reproduce this assessment.)*

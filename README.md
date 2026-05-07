@@ -39,23 +39,36 @@ Goal is to make process of studying difficult topics easygoing and rewarding by 
 ### Installation
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### Development
 
 ```bash
-npm run dev
+pnpm dev
 ```
+
+### Durable Backend Infrastructure
+
+Phase 4 targets a Cloudflare-native durable backend:
+
+- **Workflows** own durable generation execution.
+- **D1** owns queryable run/job/event/artifact metadata, usage counters, and Learning Content Store rows.
+- **R2** owns generated artifact JSON, stage checkpoints, raw model outputs, and replay/debug bundles.
+- **Durable Objects** are optional coordination infrastructure only, used later if strict per-device locking or live fanout becomes necessary.
+
+The app is unreleased, so development data can be reset destructively. Reset D1
+from the canonical schema/init path and clear the R2 bucket when you need a
+fully cache-free generation run.
 
 ### Build
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ### Production
 
 ```bash
-npm run start
+pnpm serve
 ```

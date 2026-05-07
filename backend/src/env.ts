@@ -20,6 +20,10 @@ export interface Env {
   /** OpenRouter API key for server-side LLM calls. */
   OPENROUTER_API_KEY: string;
 
+  // ---- storage bindings ----
+  /** Cloudflare R2 bucket for durable generation artifact JSON envelopes. */
+  GENERATION_ARTIFACTS_BUCKET?: R2Bucket;
+
   // ---- non-secret vars ----
   /** Comma-separated CORS allowlist (from wrangler.toml `[vars]`). */
   ALLOWED_ORIGINS: string;

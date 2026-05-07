@@ -1,12 +1,12 @@
 # Threat Model — Abyss Engine Durable Generation (v1)
 
-**Last updated:** 2026-05-06
+**Last updated:** 2026-05-07
 **Status:** Phase 4 — productionization
-**Scope:** Cloudflare Workers orchestrator, Supabase Postgres state, browser client
+**Scope:** Cloudflare Workers orchestrator, D1 state, R2 artifacts, browser client
 
 ## Summary
 
-Abyss Engine v1 deploys a server-side durable generation orchestrator that persists per-device generation run state, artifacts, and usage counters. This document identifies the trust boundaries, assets, threats, and mitigations for the pre-auth (device-ID-based) v1 deployment and outlines the path to Supabase Auth in Phase 4+.
+Abyss Engine v1 deploys a server-side durable generation orchestrator that persists per-device generation run state, artifacts, and usage counters. This document identifies the trust boundaries, assets, threats, and mitigations for the pre-auth (device-ID-based) v1 deployment and outlines the path to account auth after Phase 4.
 
 ## Trust boundaries
 
@@ -16,24 +16,21 @@ Abyss Engine v1 deploys a server-side durable generation orchestrator that persi
 │  IndexedDB: applied_artifacts, abyss-deck, content-generation-logs     │
 │  Env: NEXT_PUBLIC_DURABLE_RUNS, NEXT_PUBLIC_DURABLE_GENERATION_URL     │
 └─────────────────────────────────── HTTP ───────────────────────────────┘
-                    │                              ▲
-                    ▼                              │
+                    │
+                    ▼
 ┌─ Cloudflare Workers (Hono) ────────────────────────────────────────────┐
 │  CORS: ALLOWED_ORIGINS env var                                         │
-│  Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE, OPENROUTER_API_KEY      │
-└─────────────────────────────────── Postgres ───────────────────────────┘
-                    │                              ▲
-                    ▼                              │
-┌─ Supabase ─────────────────────────────────────────────────────────────┐
-│  Postgres: devices, runs, jobs, events, artifacts, usage_counters,     │
-│            device_settings, stage_checkpoints                          │
-│  Storage: generation-artifacts bucket (JSON blobs)                     │
-└────────────────────────────────────────────────────────────────────────┘
-                    │                              ▲
-                    ▼                              │
-┌─ OpenRouter ───────────────────────────────────────────────────────────┐
-│  Strict json_schema requests + response-healing plugin                   │
-└────────────────────────────────────────────────────────────────────────┘
+│  Secrets: OPENROUTER_API_KEY                                           │
+│  Bindings: D1 database, R2 artifact bucket, Workflow classes            │
+└───────┬───────────────────────┬───────────────────────────┬────────────┘
+        │                       │                           │
+        ▼                       ▼                           ▼
+┌─ Cloudflare D1 ─────┐  ┌─ Cloudflare R2 ───────┐  ┌─ OpenRouter ────────┐
+│ run/job/event state │  │ JSON artifacts,       │  │ Strict json_schema  │
+│ metadata, usage,    │  │ checkpoints, raw      │  │ requests + response │
+│ Learning Content    │  │ outputs, debug blobs  │  │ healing plugin      │
+│ Store tables        │  └───────────────────────┘  └─────────────────────┘
+└─────────────────────┘
 ```
 
 ## Assets
@@ -41,16 +38,14 @@ Abyss Engine v1 deploys a server-side durable generation orchestrator that persi
 | Asset | Location | Sensitivity |
 |---|---|---|
 | Device run history | `runs`, `jobs`, `events` rows | Low — reveals topic/study timing |
-| Generation artifacts | `artifacts` rows + Supabase Storage | Low — educational content |
+| Generation artifacts | D1 `artifacts` metadata + Cloudflare R2 blobs | Low — educational content |
 | Usage counters | `usage_counters` rows | Low — aggregate token counts |
-| Device identity | `devices` + `device_settings` rows | Medium — links activity to device |
-| Device settings | `device_settings` rows | Medium — model binding preferences |
-| Supabase service-role key | Cloudflare Worker secret | **High** — full database access |
+| Device identity | `devices` rows | Medium — links activity to device |
 | OpenRouter API key | Cloudflare Worker secret | **High** — billable LLM access |
 
 ## Threat: Unauthorized device access (pre-auth v1)
 
-**Description:** An attacker with a known device UUID can query that device's generation runs, artifacts, and settings via the Hono Worker API.
+**Description:** An attacker with a known device UUID can query that device's generation runs and artifacts via the Hono Worker API.
 
 **Severity:** Low (v1). No PII, no payment data, no user accounts.
 
@@ -60,44 +55,45 @@ Abyss Engine v1 deploys a server-side durable generation orchestrator that persi
 - No endpoint exposes cross-device data or device enumeration.
 
 **Planned mitigation (Phase 4+):**
-- Migrate to Supabase Auth (see [auth-migration.md](./auth-migration.md)).
-- After auth, replace `device_id` scoping with `user_id` scoping + Row-Level Security (RLS).
+- Migrate to account auth (see [auth-migration.md](./auth-migration.md)).
+- After auth, replace `device_id` scoping with `user_id` scoping in Worker-mediated D1 queries.
 - `deviceId` becomes an anonymous session identifier, not an account.
 
 **Residual risk (v1):**
 - UUID leakage (e.g., shared screenshot, browser extension, compromised localStorage) allows read access to that device's generation history.
 - Acceptable for v1 educational tool with no PII.
 
-## Threat: Supabase service-role key compromise
+## Threat: Worker secret or binding misuse
 
-**Description:** The `SUPABASE_SERVICE_ROLE` secret held by the Cloudflare Worker grants unrestricted Postgres access (bypasses RLS).
+**Description:** A Worker code injection vulnerability could misuse D1/R2 bindings or exfiltrate the OpenRouter API key.
 
-**Severity:** **High**. Full database read/write, including all devices' data.
+**Severity:** **High**. Full backend read/write and billable LLM access.
 
 **Current mitigation:**
-- Secret stored as Cloudflare Worker encrypted secret (`wrangler secret put`).
-- Never exposed to browser — Worker uses it server-side only.
+- Secrets are stored as Cloudflare Worker encrypted secrets.
+- D1/R2 are only reachable through Worker bindings.
+- Secrets and bindings are never exposed to the browser.
 - CORS restricts API access to configured origins.
 
 **Planned mitigation (Phase 4+):**
-- After Supabase Auth migration, add RLS policies on all tables keyed by `auth.uid()`.
-- Worker uses a limited Postgres role (not service-role) through Supabase Auth JWTs.
+- Add account-auth validation at the Worker boundary.
+- Scope every D1 query by authenticated `user_id` where present.
 - Audit logging on Worker secret access.
 
 **Residual risk (v1):**
-- A Worker code injection vulnerability (e.g., dependency supply-chain attack) could exfiltrate the service-role key.
+- A Worker code injection vulnerability could misuse bindings or exfiltrate secrets.
 - Acceptable for v1 with dependency lockfile and regular audit.
 
-## Threat: Artifact URL exposure
+## Threat: Artifact exposure
 
-**Description:** Supabase Storage artifacts are served via signed URLs or through the Worker proxy (`GET /v1/artifacts/:id`).
+**Description:** R2 artifacts are read through the Worker proxy (`GET /v1/artifacts/:id`).
 
 **Severity:** Low. Artifacts are educational content (flashcards, theory, trial questions).
 
 **Mitigation:**
-- Artifacts are never exposed as public Supabase Storage URLs.
-- The Worker resolves artifacts via service-role credentials and returns JSON envelope directly.
-- No direct browser-to-Supabase artifact access path.
+- Artifacts are never exposed through a public bucket.
+- The Worker resolves artifact metadata in D1, reads the R2 object through its binding, and returns the JSON envelope directly.
+- No direct browser-to-R2 or browser-to-D1 artifact access path exists.
 
 **Residual risk:** None for v1 while Worker is the sole artifact access path.
 
@@ -153,14 +149,15 @@ Abyss Engine v1 deploys a server-side durable generation orchestrator that persi
 | Dependency | Risk | Mitigation |
 |---|---|---|
 | `hono` | API framework — low blast radius | Pinned in `package.json`; semver-range audit |
-| `@supabase/supabase-js` | Database client — high blast radius | Pinned; service-role key never exposed to browser |
+| Cloudflare D1 binding | Queryable state access — high blast radius | Worker-only binding; all queries scoped by device or user |
+| Cloudflare R2 binding | Artifact blob access — medium blast radius | Worker-only binding; no public bucket access |
 | `zod` | Schema validation — low blast radius | Pinned; version-locked schema exports |
 | `@cloudflare/workers-types` | Dev-only types — no runtime risk | Dev dependency only |
 | `wrangler` | Deployment tool — CI-only risk | Dev dependency; CI secrets scoped |
 
 ## Future threat model additions (Phase 4+)
 
-1. **Supabase Auth RLS policies** — table-level security rules per authenticated user.
+1. **Account auth** — Worker-level user validation and D1 query scoping.
 2. **Worker audit logging** — structured access logs to Cloudflare Logpush or equivalent.
 3. **Artifact content scanning** — prevent abuse through generated content.
 4. **Rate limiting by IP** — defense-in-depth beyond per-device budgets.

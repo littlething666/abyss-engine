@@ -4,6 +4,11 @@
 **Scope reviewed:** Staged Phase 3.6 diff against `plans/durable-workflow-orchestration.md`.
 **Verdict:** **Phase 3.6 is complete.** All P0 and P1 blockers resolved.
 
+> **Current DB note (2026-05-07):** This review is historical. Current
+> development databases are rebuilt from `backend/db/reset.sql` and
+> `backend/db/init.sql`; numbered migration references below are not current
+> setup instructions.
+
 ## Resolved Blockers
 
 ### P0 — Retry planning is now consumed by workflows (resolved 2026-05-07)

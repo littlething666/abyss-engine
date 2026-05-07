@@ -125,7 +125,7 @@ const runs = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotenc
  * POST /v1/runs — submit a new run.
  *
  * Phase 3.6 P0 #2: All idempotency + budget + run creation logic is
- * consolidated into the `atomic_submit_run` RPC (migration 0008). The
+ * consolidated into the `atomic_submit_run` RPC from `backend/db/init.sql`. The
  * RPC serialises on (device_id, idempotency_key) via advisory lock so
  * two concurrent callers converge on exactly one run and one budget
  * reservation. The workflow is dispatched separately (after the RPC)

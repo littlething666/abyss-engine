@@ -1,7 +1,7 @@
 /**
  * abyss-durable-orchestrator — Hono Worker entry point.
  *
- * Phase 1 PR-C: full HTTP surface (runs, events, artifacts, settings).
+ * Phase 1 PR-C: full HTTP surface (runs, events, artifacts).
  * Middleware chain: cors → deviceId → idempotency (POST /v1/runs only).
  * Workflow creation is stubbed; live SSE tail is stubbed.
  */
@@ -14,7 +14,6 @@ import { idempotencyMiddleware } from './middleware/idempotency';
 import { runs } from './routes/runs';
 import { runEvents } from './routes/runEvents';
 import { artifacts } from './routes/artifacts';
-import { settings } from './routes/settings';
 import { stats } from './routes/runs.stats';
 
 export { CrystalTrialWorkflow } from './workflows/crystalTrialWorkflow';
@@ -51,7 +50,6 @@ v1.route('/runs', runs);
 v1.route('/runs', runEvents);
 v1.route('/runs', stats);
 v1.route('/artifacts', artifacts);
-v1.route('/settings', settings);
 
 app.route('/v1', v1);
 

@@ -27,6 +27,9 @@ After Phase 4:
 3. **Full backend learning-content persistence lands now.** The browser no longer owns generated deck persistence. Durable workflows write validated artifacts into backend learning-content tables before `run.completed` is emitted.
 4. **Destructive reset is allowed.** Do not preserve old IndexedDB/localStorage generation data. Do not write compatibility adapters for old snapshots/settings.
 5. **Strict failure at seams.** Invalid backend generation policy, invalid intents, missing backend learning content, unsupported model capabilities, and malformed model output fail loudly with structured errors. Do not add frontend fallbacks or downstream repair branches.
+6. **Cloudflare infrastructure split is locked.** Workflows own durable execution, D1 owns queryable run/job/event/usage/artifact metadata state, R2 owns artifact/checkpoint blobs, and Durable Objects are optional coordination infrastructure only. See `docs/infrastructure-decisions.md`.
+7. **R2 stores artifact bodies and checkpoints.** Supabase Storage is not part of the Phase 4 target. D1 keeps the `artifacts` metadata/cache index; JSON artifact envelopes and stage checkpoints live in R2.
+8. **Backend generation settings are removed.** Pipeline model policy and response healing are backend-owned policy, not persisted device settings. If future product settings need backend persistence, D1 is their queryable store; generation-pipeline policy stays backend configuration.
 
 ## Compliance, Risk & Drift Assessment
 
@@ -45,6 +48,7 @@ After Phase 4:
 | Artifact cache hits may skip content-table writes. | High | Backend cache-hit path must materialize the cached artifact into the Learning Content Store, or prove it is already materialized, before marking run completed. |
 | Backend prompt drift from frontend prompt templates can degrade output quality. | Medium | Move pipeline prompt templates into backend modules and run `pnpm run test:eval` / backend prompt tests on every prompt/schema/model-policy touch. |
 | Study explanation settings get accidentally deleted with pipeline settings. | Medium | Split `studyInference` settings from backend generation policy. Delete only pipeline surfaces from frontend settings. |
+| Treating R2 or Durable Objects as the database would blur ownership of run state. | High | D1 is the system of record for indexed run/job/event/usage/artifact metadata; R2 stores blobs only; Durable Objects coordinate only after a proven need. |
 
 ### Prompt Drift Prevention
 
@@ -57,7 +61,23 @@ Phase 4 must not normalize:
 - permissive parser or markdown-fence extraction in pipeline/backend paths;
 - response-healing as permission for parser fallback;
 - backend model fallback strings (`snapshot.model_id ?? '...'`) instead of policy resolution;
-- direct `fetch` outside infrastructure adapters.
+- direct `fetch` outside infrastructure adapters;
+- numbered DB migrations before release;
+- Supabase Storage buckets for generation artifacts;
+- backend device settings as a place to store generation-pipeline policy;
+- R2 JSON objects as the run ledger or queryable database;
+- Durable Objects as a homemade workflow engine or global source-of-truth database.
+
+## Current Infrastructure Posture
+
+Phase 4 targets a Cloudflare-native backend:
+
+- **Workflows** own durable execution and retries.
+- **D1** owns queryable state: `devices`, `runs`, `jobs`, `events`, `artifacts` metadata, `usage_counters`, and the Learning Content Store.
+- **R2** owns generated artifact JSON, stage checkpoints, raw model outputs, eval snapshots, and replay/debug bundles.
+- **Durable Objects** are optional v1.5 infrastructure for per-device locking, per-run live fanout, or low-latency sequence allocation after a concrete contention/fanout problem appears.
+
+Do not add numbered DB migrations before release. The next schema artifact should be a canonical D1 schema/init path, not hosted Supabase migration history.
 
 ## Target Architecture
 
@@ -91,7 +111,7 @@ Add these backend modules and keep their interfaces deep and narrow:
 
 ## Data Model: Learning Content Store
 
-Add a destructive migration, e.g. `backend/migrations/0009_learning_content_store.sql`. Because no data migration is required, it may drop/recreate obsolete generated-content tables if introduced during earlier branches.
+The Learning Content Store lives in D1 as queryable read-model state. Because no released database exists, obsolete generated-content tables should be replaced in the canonical D1 schema/init path rather than migrated forward.
 
 Recommended tables:
 
@@ -132,7 +152,7 @@ Recommended tables:
   - `created_by_run_id uuid not null references runs(id)`
   - `primary key (device_id, subject_id, topic_id, target_level, card_pool_hash)`
 
-Keep `artifacts` as the immutable audit/cache layer. The Learning Content Store is the application read model.
+Keep `artifacts` as the immutable audit/cache metadata layer in D1. R2 stores artifact JSON blobs and checkpoints. The Learning Content Store is the application read model.
 
 ## Backend API Shape
 
@@ -233,7 +253,7 @@ Rules:
 
 - [x] **PR-A** — Plan/status and destructive-reset declaration, including `CHANGELOG.md` skeleton.
 - [x] **PR-B** — Backend Generation Policy module (`backend/src/generationPolicy/*`) with strict parser/resolver/hash tests. Workflow snapshot expansion/wiring remains in PR-E/PR-F before the global no-fallback exit criterion can close.
-- [~] **PR-C** — Learning Content Store destructive migration and backend repository are landed (`backend/migrations/0009_learning_content_store.sql`, `backend/src/learningContent/*`, `Repos.learningContent`). Route-level per-device/not-found tests move with the learning-content routes in PR-D.
+- [~] **PR-C** — Learning Content Store schema/repository core is being re-targeted from hosted Supabase SQL to D1 (`backend/src/learningContent/*`, `Repos.learningContent`). Route-level per-device/not-found tests move with the learning-content routes in PR-D.
 - [ ] **PR-D+** — Not started.
 
 ### PR-A — Plan/status and destructive-reset declaration ✅
@@ -264,9 +284,9 @@ Exit:
 
 ### PR-C — Learning Content Store schema and repositories ◐
 
-Files: `backend/migrations/0009_learning_content_store.sql`, `backend/src/learningContent/*`, `backend/src/repositories/index.ts`.
+Files: D1 schema/init path, `backend/src/learningContent/*`, `backend/src/repositories/index.ts`.
 
-- Add tables listed above.
+- Add tables listed above to the canonical D1 schema/init path.
 - Add repository methods for manifest, subject graph, topic details, cards, and trial sets.
 - Add backend route tests around per-device scoping and not-found behavior.
 
@@ -416,7 +436,8 @@ Files: `README.md`, `docs/security/*`, `CHANGELOG.md`, boundary tests.
 
 - Document durable-only backend generation.
 - Document Learning Content Store as the source of truth.
-- Document no migration / destructive reset.
+- Document no migration / destructive reset via the canonical D1 schema/init path.
+- Document Workflows + D1 + R2 default infrastructure and Durable Objects as optional coordination only.
 - Clarify `deviceId` remains an identifier, not a credential, until auth migration.
 
 Exit:
@@ -441,6 +462,7 @@ Add repository-wide tests that fail if any of these regressions appear:
 - No `kind: 'navigation'` content-generation abort reason can be constructed.
 - No pipeline/backend path imports `extractJsonString()` or deprecated permissive parsers.
 - No component/hook imports `ApiClient`, `DurableGenerationRunRepository`, or SSE primitives directly.
+- No `backend/migrations/*.sql`, Supabase Storage bucket setup, backend generation-settings route/table, R2-as-database pattern, or Durable-Objects-as-workflow-engine pattern returns.
 
 ## Exit Criteria
 
@@ -457,11 +479,11 @@ Add repository-wide tests that fail if any of these regressions appear:
 - [ ] Navigation abort is deleted.
 - [ ] Permissive pipeline parsers are deleted or unreachable from pipeline/backend paths.
 - [ ] Close-tab/reopen verification passes for Subject Graph Generation, Topic Content Pipeline, Topic Expansion, and Crystal Trial generation using backend content reads.
-- [ ] Docs/changelog clearly state the destructive reset and backend-authoritative architecture.
+- [ ] Docs/changelog clearly state the destructive reset, Workflows + D1 + R2 infrastructure split, optional Durable Objects posture, and backend-authoritative architecture.
 
 ## Manual Verification Before Program Close
 
-1. Reset local browser storage and backend test-device data.
+1. Reset local browser storage, reset the D1 development database from the canonical schema/init path, and clear the R2 artifact bucket if testing cache-free generation.
 2. Create a Subject; confirm the backend Learning Content Store has a `subjects` row.
 3. Run Subject Graph Generation; close the tab before completion; reopen and confirm graph renders from backend rows exactly once.
 4. Run Topic Content Pipeline; close the tab before completion; reopen and confirm theory/cards/mini-games render from backend rows exactly once.
@@ -471,4 +493,4 @@ Add repository-wide tests that fail if any of these regressions appear:
 8. Confirm OpenRouter request bodies include `response-healing` from backend policy and that no frontend setting controls it.
 9. Run boundary searches for local runners, durable flags, navigation abort, frontend pipeline model resolution, frontend response-healing settings, and permissive parser imports.
 
-When these checks pass, the Durable Workflow Orchestration program is complete and the browser is no longer responsible for content-generation pipelines. Supabase Auth, multi-device account sync, richer observability, and new generation surfaces proceed as follow-on initiatives.
+When these checks pass, the Durable Workflow Orchestration program is complete and the browser is no longer responsible for content-generation pipelines. Auth, multi-device account sync, richer observability, and new generation surfaces proceed as follow-on initiatives.

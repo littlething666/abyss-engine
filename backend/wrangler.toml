@@ -4,6 +4,8 @@
 #   SUPABASE_URL            — Supabase project URL (e.g. https://<ref>.supabase.co)
 #   SUPABASE_SERVICE_ROLE   — Supabase service-role key (server-side only)
 #   OPENROUTER_API_KEY      — OpenRouter API key for LLM calls
+# R2:
+#   Create/bind the bucket named below before deployment.
 
 name = "abyss-durable-orchestrator"
 main = "src/index.ts"
@@ -41,6 +43,13 @@ class_name = "SubjectGraphWorkflow"
 name = "topic-content-workflow"
 binding = "TOPIC_CONTENT_WORKFLOW"
 class_name = "TopicContentWorkflow"
+
+# ---------------------------------------------------------------------------
+# R2 artifact storage.
+# ---------------------------------------------------------------------------
+[[r2_buckets]]
+binding = "GENERATION_ARTIFACTS_BUCKET"
+bucket_name = "abyss-generation-artifacts"
 
 # ---------------------------------------------------------------------------
 # Durable Object binding for per-run event-bus pub/sub (SSE tailing).

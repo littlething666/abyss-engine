@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createDevicesRepo, type IDevicesRepo } from './devicesRepo';
 import { createRunsRepo, type IRunsRepo } from './runsRepo';
-import { createArtifactsRepo, type IArtifactsRepo } from './artifactsRepo';
+import { createArtifactsRepo, type ArtifactObjectStore, type IArtifactsRepo } from './artifactsRepo';
 import { createUsageCountersRepo, utcDay, type IUsageCountersRepo } from './usageCountersRepo';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RunRow, EventRow, DeviceRow, ArtifactRow } from './types';
@@ -64,22 +64,20 @@ function createFakeSupabaseClient(
       createFakeQueryBuilder(() => fromQueue.shift() ?? { data: null, error: null }),
     rpc: () =>
       createFakeQueryBuilder(() => rpcQueue.shift() ?? { data: null, error: null }),
-    storage: {
-      from: () => ({
-        upload: () => Promise.resolve({ error: null }),
-        download: () =>
-          Promise.resolve({
-            data: { text: async () => JSON.stringify({ mocked: true }) },
-            error: null,
-          }),
-        createSignedUrl: (key: string) =>
-          Promise.resolve({
-            data: { signedUrl: `https://supabase.co/storage/signed/${key}` },
-            error: null,
-          }),
-      }),
-    },
   } as unknown as SupabaseClient;
+}
+
+function createFakeObjectStore(): ArtifactObjectStore {
+  const objects = new Map<string, string>();
+  return {
+    async put(key, value) {
+      objects.set(key, value);
+    },
+    async get(key) {
+      const value = objects.get(key);
+      return value === undefined ? null : { text: async () => value };
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +258,7 @@ describe('createArtifactsRepo', () => {
 
   it('finds a cache hit', async () => {
     const db = createFakeSupabaseClient([q(baseArtifact)], []);
-    const repo = createArtifactsRepo(db);
+    const repo = createArtifactsRepo(db, createFakeObjectStore());
 
     const result = await repo.findCacheHit('dev-1', 'crystal-trial', 'inp_abc123');
     expect(result).not.toBeNull();
@@ -270,16 +268,15 @@ describe('createArtifactsRepo', () => {
 
   it('returns null on cache miss', async () => {
     const db = createFakeSupabaseClient([q(null)], []);
-    const repo = createArtifactsRepo(db);
+    const repo = createArtifactsRepo(db, createFakeObjectStore());
 
     const result = await repo.findCacheHit('dev-1', 'crystal-trial', 'inp_missing');
     expect(result).toBeNull();
   });
 
-  it('stores artifact in storage and upserts metadata row', async () => {
-    // putStorage calls: storage.upload (not from queue), then db.from('artifacts').upsert...
+  it('stores artifact in R2 and upserts metadata row', async () => {
     const db = createFakeSupabaseClient([q({ id: 'art-2' })], []);
-    const repo = createArtifactsRepo(db);
+    const repo = createArtifactsRepo(db, createFakeObjectStore());
 
     const artifactId = await repo.putStorage(
       { deviceId: 'dev-1', kind: 'crystal-trial', inputHash: 'inp_xyz', payload: { questions: [] } },
@@ -289,6 +286,15 @@ describe('createArtifactsRepo', () => {
     );
 
     expect(artifactId).toBe('art-2');
+  });
+
+  it('reads artifact payloads from R2', async () => {
+    const objectStore = createFakeObjectStore();
+    await objectStore.put('dev-1/crystal-trial/inp_abc123.json', JSON.stringify({ mocked: true }));
+    const db = createFakeSupabaseClient([], []);
+    const repo = createArtifactsRepo(db, objectStore);
+
+    await expect(repo.getStorage('dev-1/crystal-trial/inp_abc123.json')).resolves.toEqual({ mocked: true });
   });
 });
 
@@ -303,15 +309,6 @@ describe('createUsageCountersRepo', () => {
   it('utcDay handles midnight rollover (Plan v3 Q15)', () => {
     expect(utcDay(new Date('2026-05-05T23:59:59Z'))).toBe('2026-05-05');
     expect(utcDay(new Date('2026-05-06T00:00:01Z'))).toBe('2026-05-06');
-  });
-
-  it('increments runs started via RPC', async () => {
-    const db = createFakeSupabaseClient([], [q(undefined)]);
-    const repo = createUsageCountersRepo(db);
-
-    await expect(
-      repo.incrementRunsStarted('dev-1', '2026-05-05'),
-    ).resolves.toBeUndefined();
   });
 
   it('records tokens via RPC', async () => {

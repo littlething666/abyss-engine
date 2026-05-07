@@ -6,7 +6,7 @@
  *   2. generate  — OpenRouter call with strict json_schema (retries: 2)
  *   3. parse     — strictParseArtifact('crystal-trial', raw) via contracts
  *   4. validate  — semanticValidateArtifact('crystal-trial', payload, ctx)
- *   5. persist   — contentHash(payload), Supabase Storage put + artifacts upsert
+ *   5. persist   — contentHash(payload), R2 put + artifacts upsert
  *   6. ready     — typed artifact.ready event + token accounting
  *
  * Phase 3.6: Budget is reserved at the route level (single owner).

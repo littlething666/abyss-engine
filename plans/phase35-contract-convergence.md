@@ -8,6 +8,11 @@
 
 </aside>
 
+> **Current DB note (2026-05-07):** This phase is historical. Current
+> development databases are rebuilt from `backend/db/reset.sql` and
+> `backend/db/init.sql`; any numbered migration references below are design
+> history only.
+
 ## Overview
 
 Phase 3.5 is a contract-convergence and correctness phase.

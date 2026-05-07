@@ -13,8 +13,6 @@ export function utcDay(date: Date = new Date()): string {
 export interface IUsageCountersRepo {
   /** Read the counter row for (deviceId, day). Returns null if no row yet. */
   get(deviceId: string, day: string): Promise<UsageCounterRow | null>;
-  /** Increment `runs_started` by 1. Creates the row if it doesn't exist. */
-  incrementRunsStarted(deviceId: string, day: string): Promise<void>;
   /** Add token usage to the daily counter. Creates the row if it doesn't exist. */
   recordTokens(deviceId: string, day: string, usage: OpenRouterUsage): Promise<void>;
 }
@@ -31,15 +29,6 @@ export function createUsageCountersRepo(db: SupabaseClient): IUsageCountersRepo 
 
       if (error) throw error;
       return (data as UsageCounterRow) ?? null;
-    },
-
-    async incrementRunsStarted(deviceId: string, day: string) {
-      const { error } = await db.rpc('increment_runs_started', {
-        p_device_id: deviceId,
-        p_day: day,
-      });
-
-      if (error) throw error;
     },
 
     async recordTokens(deviceId: string, day: string, usage: OpenRouterUsage) {

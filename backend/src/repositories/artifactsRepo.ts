@@ -1,9 +1,10 @@
 /**
- * Artifacts repository — Supabase Storage + Postgres metadata.
+ * Artifacts repository — Cloudflare R2 blob storage + Postgres metadata.
  *
- * JSON artifact envelopes are stored in the `generation-artifacts` bucket
- * under `{deviceId}/{kind}/{input_hash}.json`. The `artifacts` table records
- * the storage key, content hash, and schema version for lookup and dedupe.
+ * JSON artifact envelopes are stored in the `GENERATION_ARTIFACTS_BUCKET`
+ * R2 bucket under `{deviceId}/{kind}/{input_hash}.json`. The `artifacts`
+ * table records the object key, content hash, and schema version for lookup
+ * and dedupe.
  *
  * Cache-hit short-circuit (Plan v3 Q7): before creating a Workflow, the
  * POST /v1/runs handler checks `findCacheHit(deviceId, kind, inputHash)`.
@@ -14,7 +15,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ArtifactRow } from './types';
 
-const BUCKET_NAME = 'generation-artifacts';
+export interface ArtifactObjectStore {
+  put(
+    key: string,
+    value: string,
+    options?: { httpMetadata?: { contentType?: string } },
+  ): Promise<unknown>;
+  get(key: string): Promise<{ text(): Promise<string> } | null>;
+}
 
 /**
  * Payload shape expected by `putStorage`. The caller builds this from the
@@ -36,29 +44,30 @@ export interface IArtifactsRepo {
   findCacheHit(deviceId: string, kind: string, inputHash: string): Promise<ArtifactRow | null>;
 
   /**
-   * Store the JSON artifact in Supabase Storage and insert/update the
+   * Store the JSON artifact in R2 and insert/update the
    * `artifacts` metadata row. Returns the artifact id.
    */
   putStorage(input: ArtifactStoragePayload, contentHash: string, schemaVersion: number, runId: string): Promise<string>;
 
   /**
-   * Retrieve the stored JSON artifact from Supabase Storage.
+   * Retrieve the stored JSON artifact from R2.
    */
   getStorage(storageKey: string): Promise<unknown>;
-
-  /**
-   * Generate a signed download URL for the given storage key.
-   * Used by GET /v1/artifacts/:id to return redirect-able URLs.
-   */
-  getSignedUrl(storageKey: string): Promise<string>;
 
   /** Read a single artifact row by id. */
   get(artifactId: string): Promise<ArtifactRow | null>;
 }
 
-export function createArtifactsRepo(db: SupabaseClient): IArtifactsRepo {
+export function createArtifactsRepo(db: SupabaseClient, objectStore?: ArtifactObjectStore): IArtifactsRepo {
   function storageKey(deviceId: string, kind: string, inputHash: string): string {
     return `${deviceId}/${kind}/${inputHash}.json`;
+  }
+
+  function requireObjectStore(): ArtifactObjectStore {
+    if (!objectStore) {
+      throw new Error('GENERATION_ARTIFACTS_BUCKET binding is required for artifact storage');
+    }
+    return objectStore;
   }
 
   return {
@@ -79,15 +88,11 @@ export function createArtifactsRepo(db: SupabaseClient): IArtifactsRepo {
       const key = storageKey(input.deviceId, input.kind, input.inputHash);
       const body = JSON.stringify(input.payload);
 
-      // 1. Upload to Supabase Storage.
-      const { error: uploadError } = await db.storage
-        .from(BUCKET_NAME)
-        .upload(key, new Blob([body], { type: 'application/json' }), {
-          contentType: 'application/json',
-          upsert: true,
-        });
-
-      if (uploadError) throw uploadError;
+      // 1. Upload to R2. `put` replaces an existing object at the same key,
+      // matching the metadata table's upsert semantics.
+      await requireObjectStore().put(key, body, {
+        httpMetadata: { contentType: 'application/json' },
+      });
 
       // 2. Upsert the artifacts metadata row.
       const { data, error } = await db
@@ -109,25 +114,10 @@ export function createArtifactsRepo(db: SupabaseClient): IArtifactsRepo {
     },
 
     async getStorage(key: string) {
-      const { data, error } = await db.storage
-        .from(BUCKET_NAME)
-        .download(key);
+      const object = await requireObjectStore().get(key);
+      if (!object) throw new Error(`artifact not found: ${key}`);
 
-      if (error) throw error;
-      if (!data) throw new Error(`artifact not found: ${key}`);
-
-      const text = await data.text();
-      return JSON.parse(text);
-    },
-
-    async getSignedUrl(key: string) {
-      const { data, error } = await db.storage
-        .from(BUCKET_NAME)
-        .createSignedUrl(key, 3600); // 1-hour expiry
-
-      if (error) throw error;
-      if (!data?.signedUrl) throw new Error(`failed to create signed URL for ${key}`);
-      return data.signedUrl;
+      return JSON.parse(await object.text());
     },
 
     async get(artifactId: string) {
