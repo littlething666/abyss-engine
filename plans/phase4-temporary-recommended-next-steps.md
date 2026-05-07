@@ -12,6 +12,7 @@ The previous ordering is still broadly correct, with these updates from the late
 4. **Backend subject manifest envelope is enforced at write time.** `backend/src/learningContent/learningContentRepo.ts` now rejects `upsertSubject` calls unless `subjects.metadata_json.subject` contains the frontend manifest envelope (`description`, `color`, `geometry.gridTile`, optional `topicIds`, optional domain `metadata`). This keeps missing presentation fields as explicit backend materialization errors rather than frontend defaults.
 5. **Backend generation policy is bound before durable run hashing/storage and used by workflows.** `POST /v1/runs` now overwrites snapshot policy fields with backend-resolved `model_id`, `generation_policy_hash`, and `provider_healing_requested` before `input_hash` calculation and D1 persistence. Workflow LLM calls resolve their job policy through `backend/src/generationPolicy/*`, trace `generationPolicyHash`, and no longer use workflow-local model fallbacks or hard-coded provider-healing booleans.
 6. **Durable run submission has moved to intents at the Worker boundary.** `POST /v1/runs` now accepts `{ kind, intent }`, rejects `snapshot`, and rejects generation-policy fields (`model`, `modelId`, `model_id`, provider/healing/plugin/response-format fields) at any depth before expansion. `backend/src/runIntents/runIntentExpansion.ts` expands intents into backend-owned snapshots using the Learning Content Store and backend Generation Policy before `input_hash` calculation and D1 persistence. The frontend durable repository now posts compact intents instead of client-built snapshots.
+7. **Backend prompt construction now has a dedicated seam.** `backend/src/prompts/generationPrompts.ts` owns prompt message construction for Subject Graph Generation, Topic Content, Topic Expansion, and Crystal Trial workflows. Workflows no longer inline prompt messages. Stage B Subject Graph prompts use the authoritative Stage A Topic Lattice artifact, and Topic Content card/mini-game prompts materialize theory prompt context from the ready theory artifact when the run snapshot is a full-pipeline snapshot.
 
 ## Completed to date
 
@@ -29,6 +30,7 @@ The previous ordering is still broadly correct, with these updates from the late
 - Workflow policy wiring for Crystal Trial, Topic Expansion, Subject Graph, and Topic Content; LLM traces now include `generationPolicyHash`.
 - Intent-based durable submission seam (`backend/src/runIntents/runIntentExpansion.ts`) with tests for deep policy-field rejection and Learning Content Store-backed expansion for Topic Expansion and Crystal Trial.
 - `DurableGenerationRunRepository` posts `{ kind, intent }` to `/v1/runs`; tests lock that durable submit bodies omit snapshots and client-side policy fields.
+- Backend prompt modules in `backend/src/prompts/generationPrompts.ts` replace workflow-local prompt arrays for all four durable workflows, with unit tests covering prompt inputs and explicit failure when Subject Graph Stage B lacks a Stage A lattice.
 
 ## Recommended next steps
 
@@ -43,8 +45,9 @@ The previous ordering is still broadly correct, with these updates from the late
    - Remaining follow-up: remove frontend snapshot construction/model settings once durable-only routing is ready; current local-runner compatibility still builds snapshots before the durable adapter converts them to intents.
 
 3. **Add backend prompt modules**
-   - Move prompt construction behind backend seams.
-   - Keep strict schema + semantic validation path unchanged.
+   - [COMPLETED] Move prompt construction behind backend seams.
+   - [COMPLETED] Keep strict schema + semantic validation path unchanged.
+   - Follow-up: make Topic Content per-stage `input_hash` values include parent artifact content hashes instead of sharing the original full-pipeline snapshot hash across theory, study-card, and mini-game artifacts.
 
 4. **Artifact appliers on backend**
    - After validated artifacts are written to R2/D1 metadata, apply them to the D1 Learning Content Store before `run.completed`.

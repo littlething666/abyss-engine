@@ -10,3 +10,4 @@
 - Recorded the Cloudflare durable-generation infrastructure split: Workflows for execution, D1 for queryable state, R2 for artifacts/checkpoints, and Durable Objects only for optional coordination.
 - Removed Supabase Storage from the artifact path in favor of Cloudflare R2 and documented backend generation settings as backend-owned policy, not persisted device settings.
 - Added backend Learning Content read routes and a frontend `BackendDeckRepository` adapter, wired for durable backend mode through infrastructure-only HTTP seams.
+- Added backend-owned durable prompt modules and moved workflow prompt construction out of inline workflow code.

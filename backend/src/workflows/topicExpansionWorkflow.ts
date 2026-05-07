@@ -15,6 +15,7 @@ import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { callTopicExpansion } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import { resolveGenerationJobPolicy } from '../generationPolicy';
+import { buildTopicExpansionMessages } from '../prompts/generationPrompts';
 import {
   inputHash,
   contentHash,
@@ -138,23 +139,10 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
               buildRunStatusEvent('generating_stage'),
             );
 
-            const messages = [
-              {
-                role: 'system',
-                content: 'You are an Abyss Engine topic-expansion card generator. Generate new study cards at the requested difficulty level that complement the existing card pool. Return valid JSON matching the schema.',
-              },
-              {
-                role: 'user',
-                content: `Generate topic expansion cards for "${
-                  String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
-                }" at difficulty level ${String(snapshot.next_level ?? snapshot.difficulty ?? 2)}. Use the provided theory and avoid duplicating existing concept stems.`,
-              },
-            ];
-
             return callTopicExpansion(
               {
                 modelId: generationPolicy.modelId,
-                messages,
+                messages: buildTopicExpansionMessages(snapshot),
                 responseFormat,
                 providerHealingRequested: generationPolicy.providerHealingRequested,
               },

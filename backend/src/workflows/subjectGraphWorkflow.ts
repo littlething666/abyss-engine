@@ -19,6 +19,11 @@ import {
   type ResolvedGenerationJobPolicy,
 } from '../generationPolicy';
 import {
+  buildSubjectGraphEdgesMessages,
+  buildSubjectGraphTopicsMessages,
+  type SubjectGraphTopicPromptTopic,
+} from '../prompts/generationPrompts';
+import {
   inputHash,
   contentHash,
   strictParseArtifact,
@@ -226,6 +231,10 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       // lattice topic IDs for Stage B semantic validation and fail loudly
       // when required context cannot be loaded.
       let latticeTopicIds: string[] | undefined;
+      let latticeTopics: SubjectGraphTopicPromptTopic[] | undefined;
+      let latticeArtifactContentHash = typeof snapshot.lattice_artifact_content_hash === 'string'
+        ? snapshot.lattice_artifact_content_hash
+        : undefined;
 
       const retryStage = snapshot.retry_stage as string | undefined;
       const skipStageA = retryStage === 'edges';
@@ -257,15 +266,15 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
             if (!stageARow) {
               throw new Error(`artifact row not found for ${artifactId}`);
             }
+            latticeArtifactContentHash = stageARow.content_hash;
             const stageAPayload = await repos.artifacts.getStorage(stageARow.storage_key);
             if (
               stageAPayload &&
               typeof stageAPayload === 'object' &&
               Array.isArray((stageAPayload as Record<string, unknown>).topics)
             ) {
-              latticeTopicIds = (
-                (stageAPayload as Record<string, unknown>).topics as Array<{ topicId: string }>
-              ).map((t) => t.topicId);
+              latticeTopics = (stageAPayload as Record<string, unknown>).topics as SubjectGraphTopicPromptTopic[];
+              latticeTopicIds = latticeTopics.map((t) => t.topicId);
             }
           } catch (err) {
             // Phase 3.6 P1 #1: Fail loudly — Stage B requires the Stage A
@@ -283,27 +292,14 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
         const topicsResponseFormat = jsonSchemaResponseFormat('subject-graph-topics');
 
-        await runStage(
+        const topicsResult = await runStage(
           step, repos, runId, deviceId, 'topics', 'subject-graph-topics',
           snapshot, _inputHash, topicsSchemaVersion,
           async (generationPolicy) => {
-            const messages = [
-              {
-                role: 'system',
-                content: 'You are an Abyss Engine subject graph generator. Create a learning lattice for the given subject. Return valid JSON matching the schema.',
-              },
-              {
-                role: 'user',
-                content: `Generate the topic lattice for: "${String(snapshot.subject_id ?? 'subject')}". ` +
-                  `Total tiers: ${String(((snapshot.strategy as Record<string, unknown>)?.total_tiers as number) ?? 3)}, ` +
-                  `topics per tier: ${String(((snapshot.strategy as Record<string, unknown>)?.topics_per_tier as number) ?? 5)}.`,
-              },
-            ];
-
             const raw = await callSubjectGraph(
               {
                 modelId: generationPolicy.modelId,
-                messages,
+                messages: buildSubjectGraphTopicsMessages(snapshot),
                 responseFormat: topicsResponseFormat,
                 providerHealingRequested: generationPolicy.providerHealingRequested,
                 temperature: generationPolicy.temperature,
@@ -322,14 +318,16 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
             }
 
             // Capture lattice topic IDs for Stage B semantic validation.
-            const topicsPayload = parseResult.payload as { topics?: Array<{ topicId: string }> };
+            const topicsPayload = parseResult.payload as { topics?: SubjectGraphTopicPromptTopic[] };
             if (topicsPayload.topics && Array.isArray(topicsPayload.topics)) {
+              latticeTopics = topicsPayload.topics;
               latticeTopicIds = topicsPayload.topics.map((t) => t.topicId);
             }
 
             return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
           },
         );
+        latticeArtifactContentHash = topicsResult.contentHash;
       }
 
       // ---- 3. STAGE B: PREREQUISITE EDGES ----
@@ -356,23 +354,13 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
           step, repos, runId, deviceId, 'edges', 'subject-graph-edges',
           snapshot, _inputHash, edgesSchemaVersion,
           async (generationPolicy) => {
-            const messages = [
-              {
-                role: 'system',
-                content: 'You are an Abyss Engine prerequisite edge generator. Create prerequisite relationships between topics in the given lattice. Return valid JSON matching the schema.',
-              },
-              {
-                role: 'user',
-                content: `Generate prerequisite edges for the subject: "${
-                  String(snapshot.subject_id ?? 'subject')
-                }". Tier constraint: prerequisites can only go from lower tiers to higher tiers. No self-loops. No duplicate (source, target) pairs.`,
-              },
-            ];
-
             const raw = await callSubjectGraph(
               {
                 modelId: generationPolicy.modelId,
-                messages,
+                messages: buildSubjectGraphEdgesMessages({
+                  ...snapshot,
+                  lattice_artifact_content_hash: latticeArtifactContentHash,
+                }, latticeTopics ?? []),
                 responseFormat: edgesResponseFormat,
                 providerHealingRequested: generationPolicy.providerHealingRequested,
                 temperature: generationPolicy.temperature,

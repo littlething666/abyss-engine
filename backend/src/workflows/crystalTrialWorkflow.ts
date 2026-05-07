@@ -19,6 +19,7 @@ import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { callCrystalTrial } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import { resolveGenerationJobPolicy } from '../generationPolicy';
+import { buildCrystalTrialMessages } from '../prompts/generationPrompts';
 import {
   inputHash,
   contentHash,
@@ -140,15 +141,10 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
               buildRunStatusEvent('generating_stage'),
             );
 
-            const messages = [
-              { role: 'system', content: 'You are a Crystal Trial question generator. Generate trial questions as JSON.' },
-              { role: 'user', content: `Generate ${String(snapshot.question_count ?? 5)} Crystal Trial questions for topic "${String(snapshot.topic_id)}".` },
-            ];
-
             return callCrystalTrial(
               {
                 modelId: generationPolicy.modelId,
-                messages,
+                messages: buildCrystalTrialMessages(snapshot),
                 responseFormat,
                 providerHealingRequested: generationPolicy.providerHealingRequested,
               },

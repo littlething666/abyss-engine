@@ -19,6 +19,11 @@ import {
   type ResolvedGenerationJobPolicy,
 } from '../generationPolicy';
 import {
+  buildTopicMiniGameMessages,
+  buildTopicStudyCardsMessages,
+  buildTopicTheoryMessages,
+} from '../prompts/generationPrompts';
+import {
   inputHash,
   contentHash,
   strictParseArtifact,
@@ -169,6 +174,66 @@ async function runStage(
   return { artifactId, contentHash: _contentHash, kind };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new WorkflowFail('precondition:missing-topic', `${label} must be a JSON object`);
+  return value;
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new WorkflowFail('precondition:missing-topic', `${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function requireStringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.trim().length === 0)) {
+    throw new WorkflowFail('precondition:missing-topic', `${label} must be an array of non-empty strings`);
+  }
+  return [...value] as string[];
+}
+
+function hasStagePromptContext(snapshot: Record<string, unknown>): boolean {
+  return typeof snapshot.theory_excerpt === 'string' && Array.isArray(snapshot.syllabus_questions);
+}
+
+async function buildTopicCardPromptSnapshot(
+  repos: ReturnType<typeof makeRepos>,
+  snapshot: Record<string, unknown>,
+  theoryArtifactId: string | null,
+): Promise<Record<string, unknown>> {
+  if (hasStagePromptContext(snapshot)) return snapshot;
+  if (!theoryArtifactId) {
+    throw new WorkflowFail(
+      'precondition:missing-topic',
+      'topic-content card prompt construction requires either stage prompt context or a ready theory artifact',
+    );
+  }
+
+  const artifact = await repos.artifacts.get(theoryArtifactId);
+  if (!artifact) {
+    throw new WorkflowFail('precondition:missing-topic', `topic-content theory artifact row not found: ${theoryArtifactId}`);
+  }
+
+  const payload = requireRecord(await repos.artifacts.getStorage(artifact.storage_key), `topic-content theory artifact ${theoryArtifactId}`);
+  const questionsByDifficulty = requireRecord(payload.coreQuestionsByDifficulty, 'topic-content theory artifact.coreQuestionsByDifficulty');
+  const targetDifficulty = typeof snapshot.target_difficulty === 'number' ? snapshot.target_difficulty : 1;
+  const syllabusQuestions = requireStringArray(questionsByDifficulty[String(targetDifficulty)], `topic-content theory artifact.coreQuestionsByDifficulty.${targetDifficulty}`);
+
+  return {
+    ...snapshot,
+    theory_excerpt: requireString(payload.theory, 'topic-content theory artifact.theory'),
+    syllabus_questions: syllabusQuestions,
+    target_difficulty: targetDifficulty,
+    grounding_source_count: 0,
+    has_authoritative_primary_source: false,
+  };
+}
+
 function resolveWantedStages(
   snapshot: Record<string, unknown>,
   checkpoints: Array<{ stage: string; artifact_id: string | null }>,
@@ -278,6 +343,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
       if (!planOutcome.ok) return;
       const { snapshot, inputHash: _inputHash, checkpoints } = planOutcome;
       const wantedStages = resolveWantedStages(snapshot, checkpoints);
+      let theoryArtifactId = checkpoints.find((c) => c.stage === 'theory')?.artifact_id ?? null;
 
       // ---- 2. THEORY ----
       if (wantedStages.includes('theory')) {
@@ -286,27 +352,14 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         const theoryResponseFormat = jsonSchemaResponseFormat('topic-theory');
         const theorySchemaVersion = (snapshot.schema_version as number) ?? topicTheorySchemaVersion;
 
-        await runStage(
+        const theoryResult = await runStage(
           step, repos, runId, deviceId, 'theory', 'topic-theory',
           snapshot, _inputHash, theorySchemaVersion,
           async (generationPolicy) => {
-            const messages = [
-              {
-                role: 'system',
-                content: 'You are an Abyss Engine topic content generator. Create comprehensive theory content for the given topic. Return valid JSON matching the schema.',
-              },
-              {
-                role: 'user',
-                content: `Generate theory for topic: "${
-                  String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
-                }". Learning objective: ${String(snapshot.learning_objective ?? 'master the concepts')}.`,
-              },
-            ];
-
             const raw = await callTopicContent(
               {
                 modelId: generationPolicy.modelId,
-                messages,
+                messages: buildTopicTheoryMessages(snapshot),
                 responseFormat: theoryResponseFormat,
                 providerHealingRequested: generationPolicy.providerHealingRequested,
                 stage: 'theory',
@@ -327,6 +380,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
             return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
           },
         );
+        theoryArtifactId = theoryResult.artifactId;
       }
 
       // ---- 3. STUDY CARDS ----
@@ -340,23 +394,12 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
           step, repos, runId, deviceId, 'study-cards', 'topic-study-cards',
           snapshot, _inputHash, cardsSchemaVersion,
           async (generationPolicy) => {
-            const messages = [
-              {
-                role: 'system',
-                content: 'You are an Abyss Engine study card generator. Create study cards based on the provided theory. Return valid JSON matching the schema. Include a mix of FLASHCARD, CLOZE, and MULTIPLE_CHOICE cards at various difficulty levels.',
-              },
-              {
-                role: 'user',
-                content: `Generate study cards for topic: "${
-                  String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
-                }" using the theory content already generated.`,
-              },
-            ];
+            const promptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId);
 
             const raw = await callTopicContent(
               {
                 modelId: generationPolicy.modelId,
-                messages,
+                messages: buildTopicStudyCardsMessages(promptSnapshot),
                 responseFormat: cardsResponseFormat,
                 providerHealingRequested: generationPolicy.providerHealingRequested,
                 stage: 'study-cards',
@@ -399,29 +442,15 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
               step, repos, runId, deviceId, miniStage, kind,
               snapshot, _inputHash, schemaVersion,
               async (generationPolicy) => {
-                const messages = [
-                  {
-                    role: 'system',
-                    content: `You are an Abyss Engine mini-game generator for ${gameType}. Create playable mini-game content based on the theory. Return valid JSON matching the schema.`,
-                  },
-                  {
-                    role: 'user',
-                    content: `Generate ${gameType} mini-game cards for topic: "${
-                      String(snapshot.topic_title ?? snapshot.topic_id ?? 'topic')
-                    }". Use the theory content already generated. ${
-                      gameType === 'CATEGORY_SORT'
-                        ? 'Create items with categories where every category has ≥1 item.'
-                        : gameType === 'SEQUENCE_BUILD'
-                        ? 'Create ordered steps from 1 to N with no gaps or duplicates.'
-                        : 'Create matching pairs with unique pair ids, unique left values, and unique right values.'
-                    }`,
-                  },
-                ];
+                const promptSnapshot = await buildTopicCardPromptSnapshot(repos, {
+                  ...snapshot,
+                  pipeline_kind: kind,
+                }, theoryArtifactId);
 
                 const raw = await callTopicContent(
                   {
                     modelId: generationPolicy.modelId,
-                    messages,
+                    messages: buildTopicMiniGameMessages(promptSnapshot),
                     responseFormat,
                     providerHealingRequested: generationPolicy.providerHealingRequested,
                     stage: miniStage,
