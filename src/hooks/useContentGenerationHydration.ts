@@ -144,9 +144,11 @@ export function useContentGenerationHydration(): void {
         return;
       }
 
-      // Phase 3.6 Step 2: also hydrate recently completed `ready` runs
-      // that may have unapplied artifacts. The handlers' dedupe store
-      // and lastSeq tracking prevent double-application.
+      // Phase 3.6 Step 2: hydrate recently completed `ready` / `applied-local`
+      // runs that may have unapplied artifacts. Failed and cancelled runs
+      // are excluded — they have no artifacts to apply and re-emitting
+      // their terminal events on every reload would be noise.
+      // The handlers' dedupe store and durable cursor prevent double-application.
       let recent: RunSnapshot[] = [];
       try {
         recent = await client.listRecent(20);
@@ -158,7 +160,19 @@ export function useContentGenerationHydration(): void {
         // Non-fatal — proceed with active runs only.
       }
 
-      const runsToObserve = [...active, ...recent];
+      // Only hydrate terminal runs that might have unapplied artifacts.
+      const terminalKinds = new Set(['ready', 'applied-local']);
+      const recentReady = recent.filter((r) => terminalKinds.has(r.status));
+
+      // Dedupe by runId: active ∪ recent → unique set.
+      const seen = new Set<string>(active.map((r) => r.runId));
+      const runsToObserve = [...active];
+      for (const r of recentReady) {
+        if (!seen.has(r.runId)) {
+          seen.add(r.runId);
+          runsToObserve.push(r);
+        }
+      }
 
       if (cancelled) return;
 

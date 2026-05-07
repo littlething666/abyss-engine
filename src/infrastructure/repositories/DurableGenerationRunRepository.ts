@@ -19,6 +19,7 @@
  * `durableGenerationBoundary.test.ts`).
  */
 
+import { parseRunStatus } from '@/features/generationContracts';
 import type { ArtifactEnvelope, RunEvent, RunStatus } from '@/features/generationContracts';
 import type {
   CancelReason,
@@ -134,24 +135,13 @@ function workerRunToSnapshot(row: WorkerRunRow): RunSnapshot {
 /**
  * Map a Worker-side run status to a canonical transport status.
  *
- * The backend now returns transport (hyphen-separated) statuses from
- * `GET /v1/runs`. This function handles both transport and legacy DB
- * (underscore) forms so the client is resilient to any format drift.
+ * The backend returns transport (hyphen-separated) statuses from
+ * `GET /v1/runs`. This function validates against the shared
+ * `RunStatus` literals and throws on any unrecognised values —
+ * DB underscore statuses must never reach the browser.
  */
 function mapWorkerRunStatus(status: string): RunStatus {
-  const DB_TO_TRANSPORT: Record<string, string> = {
-    queued: 'queued',
-    planning: 'planning',
-    generating_stage: 'generating-stage',
-    parsing: 'parsing',
-    validating: 'validating',
-    persisting: 'persisting',
-    ready: 'ready',
-    applied_local: 'applied-local',
-    failed_final: 'failed-final',
-    cancelled: 'cancelled',
-  };
-  return (DB_TO_TRANSPORT[status] ?? status) as RunStatus;
+  return parseRunStatus(status);
 }
 
 function mapWorkerJobStatus(

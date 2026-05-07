@@ -22,6 +22,37 @@ export type RunStatus =
   | 'failed-final'
   | 'cancelled';
 
+/** All canonical transport status literals (hyphen-separated only). */
+const RUN_STATUS_LITERALS: ReadonlySet<string> = new Set<RunStatus>([
+  'queued',
+  'planning',
+  'generating-stage',
+  'parsing',
+  'validating',
+  'persisting',
+  'ready',
+  'applied-local',
+  'failed-final',
+  'cancelled',
+]);
+
+/**
+ * Validate and narrow a string to a `RunStatus` transport literal.
+ *
+ * @throws {Error} when the value is not a known transport status.
+ * This is a hard boundary — DB underscore statuses must never reach
+ * the browser. Invalid statuses indicate transport/drift defects.
+ */
+export function parseRunStatus(raw: string): RunStatus {
+  if (RUN_STATUS_LITERALS.has(raw)) {
+    return raw as RunStatus;
+  }
+  throw new Error(
+    `parseRunStatus: invalid transport status "${raw}". ` +
+    `Expected one of: ${[...RUN_STATUS_LITERALS].join(', ')}`,
+  );
+}
+
 export type ArtifactReadyEventBody = {
   /** Stable artifact id (uuid v4). */
   artifactId: string;

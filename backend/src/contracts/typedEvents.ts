@@ -14,7 +14,7 @@
  * - Backend status payloads carry transport (hyphen-separated) statuses.
  */
 
-import { dbStatusToTransport, type TransportRunStatus } from '../routes/statusMapper';
+import { dbStatusToTransport, type TransportRunStatus } from './statusMapper';
 
 // ---------------------------------------------------------------------------
 // Event payload types (typed subsets of the full contract)
@@ -26,7 +26,6 @@ export interface RunQueuedPayload {
 
 export interface RunStatusPayload {
   status: TransportRunStatus;
-  stage?: string;
 }
 
 export interface StageProgressPayload {
@@ -116,10 +115,9 @@ export function buildRunQueuedEvent(payload: RunQueuedPayload = {}) {
   return buildTypedEvent('run.queued', payload);
 }
 
-export function buildRunStatusEvent(status: string, stage?: string) {
+export function buildRunStatusEvent(status: string) {
   return buildTypedEvent('run.status', {
     status: dbStatusToTransport(status),
-    stage,
   });
 }
 

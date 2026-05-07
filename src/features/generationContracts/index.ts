@@ -30,6 +30,7 @@ export {
   type RunEventBase,
   type RunStatus,
   type StageProgressEventBody,
+  parseRunStatus,
 } from './runEvents';
 
 export type { Artifact, ArtifactEnvelope, ArtifactKind } from './artifacts/types';

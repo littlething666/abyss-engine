@@ -132,7 +132,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
           async (): Promise<GenerateResult> => {
             await repos.runs.transition(runId, 'generating_stage');
             await repos.runs.appendTyped(runId, deviceId,
-              buildRunStatusEvent('generating_stage', 'generate'),
+              buildRunStatusEvent('generating_stage'),
             );
 
             const messages = [

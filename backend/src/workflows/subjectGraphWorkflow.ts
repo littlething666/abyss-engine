@@ -72,7 +72,7 @@ async function runStage(
   exec: () => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
 ): Promise<StageRunResult> {
   await repos.runs.appendTyped(runId, deviceId,
-    buildRunStatusEvent('generating_stage', stage),
+    buildRunStatusEvent('generating_stage'),
   );
   await repos.stageCheckpoints.upsert({
     runId,
@@ -213,11 +213,30 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       const edgesSchemaVersion = (snapshot.schema_version as number) ?? subjectGraphEdgesSchemaVersion;
 
       // ---- 2. STAGE A: TOPIC LATTICE ----
+      // Phase 3.6: capture lattice topic IDs for Stage B semantic validation.
+      let latticeTopicIds: string[] | undefined;
+
       const topicsCkp = checkpoints.find((c) => c.stage === 'topics');
       if (topicsCkp?.artifact_id) {
         await repos.runs.appendTyped(runId, deviceId,
           buildStageProgressEvent('topics', undefined, 'resumed from checkpoint'),
         );
+        // When resuming from checkpoint, load the Stage A artifact to
+        // extract lattice topic IDs for Stage B validation.
+        try {
+          const stageARow = await repos.artifacts.get(topicsCkp.artifact_id);
+          if (stageARow) {
+            const stageAPayload = await repos.artifacts.getStorage(stageARow.storage_key);
+            if (stageAPayload && typeof stageAPayload === 'object' && Array.isArray((stageAPayload as Record<string, unknown>).topics)) {
+              latticeTopicIds = ((stageAPayload as Record<string, unknown>).topics as Array<{ topicId: string }>).map((t) => t.topicId);
+            }
+          }
+        } catch (err) {
+          console.warn(
+            `[subjectGraphWorkflow] failed to load Stage A payload for lattice IDs (runId=${runId}):`,
+            err,
+          );
+        }
       } else {
         await checkCancel('before-topics');
 
@@ -258,6 +277,12 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
             const semResult = semanticValidateArtifact('subject-graph-topics', parseResult.payload);
             if (!semResult.ok) {
               throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
+            }
+
+            // Capture lattice topic IDs for Stage B semantic validation.
+            const topicsPayload = parseResult.payload as { topics?: Array<{ topicId: string }> };
+            if (topicsPayload.topics && Array.isArray(topicsPayload.topics)) {
+              latticeTopicIds = topicsPayload.topics.map((t) => t.topicId);
             }
 
             return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
@@ -309,7 +334,9 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
               throw new WorkflowFail(parseResult.failureCode, parseResult.message);
             }
 
-            const semResult = semanticValidateArtifact('subject-graph-edges', parseResult.payload);
+            const semResult = semanticValidateArtifact('subject-graph-edges', parseResult.payload, {
+              latticeTopicIds: latticeTopicIds ?? [],
+            });
             if (!semResult.ok) {
               throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
             }

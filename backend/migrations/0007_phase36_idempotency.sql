@@ -30,8 +30,7 @@ create table idempotency_records (
 );
 
 create index idx_idempotency_records_expires
-  on idempotency_records (expires_at)
-  where expires_at < now();
+  on idempotency_records (expires_at);
 
 -- ---------------------------------------------------------------------------
 -- 2. Drop the old unique partial index on runs.

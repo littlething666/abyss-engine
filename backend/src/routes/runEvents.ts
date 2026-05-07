@@ -3,23 +3,22 @@
  *
  * Phase 3.6 Step 1: Full live tail implementation.
  * - Replays persisted events with seq > lastSeq.
- * - Keeps the SSE connection open, polling for new events on a bounded cadence.
- * - Emits keepalive comments every 15s for active runs.
+ * - Keeps the SSE connection open, polling for new events every 2s.
+ * - Emits keepalive comments every poll cycle for active runs.
  * - Closes only after terminal run events have been flushed.
+ * - Safety valve: closes after 120 cycles (~4 min) if run never terminates.
  */
 
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
-import { dbStatusToTransport, ACTIVE_TRANSPORT_STATUSES } from './statusMapper';
+import { dbStatusToTransport, ACTIVE_TRANSPORT_STATUSES } from '../contracts/statusMapper';
 import type { Env } from '../env';
 
-/** Polling interval for active runs (ms). */
+/** Poll + keepalive interval for active runs (ms). */
 const POLL_INTERVAL_MS = 2000;
-/** Keepalive comment interval (ms). */
-const KEEPALIVE_INTERVAL_MS = 15000;
-/** Maximum number of keepalive cycles before forcing close for runs
- *  that never become terminal (safety valve, ~5 min). */
-const MAX_KEEPALIVE_CYCLES = 20;
+/** Maximum number of poll cycles before forcing close for runs
+ *  that never become terminal (safety valve, ~4 min at 2s intervals). */
+const MAX_POLL_CYCLES = 120;
 
 const runEvents = new Hono<{ Bindings: Env; Variables: { deviceId: string } }>();
 
@@ -60,11 +59,12 @@ runEvents.get('/:id/events', async (c) => {
   const lastSeq = parseResumeSeq(c);
   const encoder = new TextEncoder();
 
+  // Phase 3.6: scoped to the route handler so cancel() can clean up.
+  let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+  let closed = false;
+
   const stream = new ReadableStream({
     async start(controller) {
-      let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
-      let closed = false;
-
       const enqueue = (data: string) => {
         if (!closed) {
           try {
@@ -128,7 +128,7 @@ runEvents.get('/:id/events', async (c) => {
         }
 
         // ── 3. Live tail: poll for new events until terminal ──
-        let keepaliveCycles = 0;
+        let pollCycles = 0;
 
         const poll = async () => {
           if (closed) return;
@@ -169,8 +169,8 @@ runEvents.get('/:id/events', async (c) => {
         keepaliveTimer = setInterval(() => {
           if (closed) return;
 
-          keepaliveCycles++;
-          if (keepaliveCycles > MAX_KEEPALIVE_CYCLES) {
+          pollCycles++;
+          if (pollCycles > MAX_POLL_CYCLES) {
             enqueue(': keepalive timeout — closing stream\n\n');
             close();
             return;
@@ -197,6 +197,15 @@ runEvents.get('/:id/events', async (c) => {
           clearInterval(keepaliveTimer);
         }
       }
+    },
+    cancel() {
+      // Phase 3.6: clean up the poll interval when the browser disconnects.
+      // Without this, abandoned SSE clients keep polling until timeout.
+      if (keepaliveTimer) {
+        clearInterval(keepaliveTimer);
+        keepaliveTimer = null;
+      }
+      closed = true;
     },
   });
 

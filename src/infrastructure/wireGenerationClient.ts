@@ -20,7 +20,7 @@ import {
   createLegacyLocalRunnerDispatchers,
   LocalGenerationRunRepository,
 } from '@/infrastructure/repositories/LocalGenerationRunRepository';
-import { appliedArtifactsStore } from '@/infrastructure/repositories/appliedArtifactsStore';
+import { appliedArtifactsStore, runEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
 import {
   createGenerationRunEventHandlers,
   type GenerationRunEventHandlers,
@@ -185,6 +185,7 @@ export function ensureGenerationClientRegistered(): GenerationClient {
     },
     eventBus: appEventBus,
     dedupeStore: appliedArtifactsStore,
+    cursorStore: runEventCursorStore,
     deckRepository,
   });
 

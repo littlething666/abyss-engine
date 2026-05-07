@@ -108,7 +108,7 @@ export function createRunsRepo(db: SupabaseClient): IRunsRepo {
       let query = db.from('runs').select('*').eq('device_id', deviceId);
 
       if (opts.status === 'active') {
-        query = query.in('status', ['queued', 'planning', 'generating_stage', 'parsing', 'validating', 'persisting', 'ready']);
+        query = query.in('status', ['queued', 'planning', 'generating_stage', 'parsing', 'validating', 'persisting']);
       } else if (opts.status === 'recent') {
         query = query.in('status', ['ready', 'failed_final', 'cancelled']).order('finished_at', { ascending: false });
       } else {

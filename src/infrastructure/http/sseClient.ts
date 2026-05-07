@@ -15,6 +15,7 @@
  * (enforced by `durableGenerationBoundary.test.ts`).
  */
 
+import { parseRunStatus } from '@/features/generationContracts';
 import type {
   RunEvent,
   RunStatus,
@@ -70,7 +71,7 @@ function rowToRunEvent(row: WorkerEventRow): RunEvent {
     case 'run.queued':
       return { ...base, type: 'run.queued' };
     case 'run.status':
-      return { ...base, type: 'run.status', status: (p.status ?? 'queued') as RunStatus };
+      return { ...base, type: 'run.status', status: parseRunStatus(String(p.status ?? 'queued')) };
     case 'stage.progress':
       return {
         ...base,
@@ -135,7 +136,7 @@ function rowToRunEvent(row: WorkerEventRow): RunEvent {
       return {
         ...base,
         type: 'run.status',
-        status: (p.status ?? 'queued') as RunStatus,
+        status: parseRunStatus(String(p.status ?? 'queued')),
       };
     }
   }

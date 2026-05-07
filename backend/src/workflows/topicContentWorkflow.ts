@@ -92,7 +92,7 @@ async function runStage(
   exec: () => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
 ): Promise<StageRunResult> {
   await repos.runs.appendTyped(runId, deviceId,
-    buildRunStatusEvent('generating_stage', stage),
+    buildRunStatusEvent('generating_stage'),
   );
   await repos.stageCheckpoints.upsert({
     runId,

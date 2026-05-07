@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
 import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { inputHash } from '../contracts/generationContracts';
+import { buildRetryRunSnapshot } from './retryPlanning';
 import {
   buildRunQueuedEvent,
   buildRunStatusEvent,
@@ -19,7 +20,7 @@ import {
   buildRunCancelledEvent,
   buildRunCancelAcknowledgedEvent,
 } from '../contracts/typedEvents';
-import { dbStatusToTransport } from './statusMapper';
+import { dbStatusToTransport } from '../contracts/statusMapper';
 import type { Env } from '../env';
 import type { PipelineKind } from '../repositories/types';
 import type { RunInputSnapshot, SubmitRunBody } from '../types/api';
@@ -151,7 +152,18 @@ runs.post('/', async (c) => {
     return c.json({ code: 'config:unexpected-supersedes-key', message: 'Supersedes-Key is only valid for kind=topic-expansion' }, 400);
   }
 
-  // 3. Atomic budget reservation — SINGLE OWNER (Phase 3.6 Step 4).
+  // 3. Idempotency check — must happen BEFORE budget reservation so duplicate
+  // submissions consume exactly one run-budget slot (Phase 3.6 Step 5).
+  if (idempotencyKey) {
+    const idem = await repos.idempotency.check(deviceId, idempotencyKey);
+    if (idem.status === 'hit') {
+      // Return the existing runId; the caller converges on the winner.
+      return c.json({ runId: idem.runId }, 200);
+    }
+    // miss or expired: proceed to create a fresh run.
+  }
+
+  // 4. Atomic budget reservation — SINGLE OWNER (Phase 3.6 Step 4).
   const budget = await assertBelowDailyCap(deviceId, repos.db, kind);
   if (!budget.ok) {
     return c.json({ code: budget.code, message: budget.message }, 429);
@@ -390,13 +402,26 @@ runs.post('/:id/retry', async (c) => {
     return c.json({ code: budget.code, message: budget.message }, 429);
   }
 
+  // Phase 3.6 Step 3: Build the retry snapshot from retryOpts instead of
+  // blindly copying the parent snapshot.
+  let retryPlan;
+  try {
+    retryPlan = buildRetryRunSnapshot(run, retryOpts);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ code: 'config:invalid-retry-opts', message }, 400);
+  }
+
+  const retrySnapshot = retryPlan.snapshot;
+  const retryInputHash = await inputHash(retrySnapshot);
+
   const newRunId = crypto.randomUUID();
   await repos.runs.insertRun({
     id: newRunId,
     device_id: deviceId,
     kind: run.kind,
     status: 'queued',
-    input_hash: run.input_hash,
+    input_hash: retryInputHash,
     idempotency_key: null,
     parent_run_id: runId,
     supersedes_key: null,
@@ -408,7 +433,7 @@ runs.post('/:id/retry', async (c) => {
     finished_at: null,
     error_code: null,
     error_message: null,
-    snapshot_json: run.snapshot_json,
+    snapshot_json: retrySnapshot,
   });
 
   await repos.runs.appendTyped(newRunId, deviceId,

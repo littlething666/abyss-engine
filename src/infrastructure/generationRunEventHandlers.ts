@@ -41,6 +41,7 @@ import type {
   ArtifactKind,
   RunEvent,
 } from '@/features/generationContracts';
+import type { RunEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
 import type { TopicLattice, TopicLatticeNode } from '@/types/topicLattice';
 import type { GenerationClient } from '@/features/contentGeneration';
 import type { TopicContentApplier } from '@/features/contentGeneration/appliers/topicContentApplier';
@@ -62,6 +63,8 @@ export interface GenerationRunEventHandlersDeps {
   };
   eventBus: AppEventBus;
   dedupeStore: AppliedArtifactsStore;
+  /** Phase 3.6 Step 2: Durable per-run event cursor so rehydration survives browser reloads. */
+  cursorStore: RunEventCursorStore;
   deckRepository: IDeckRepository;
 }
 
@@ -86,11 +89,12 @@ export interface GenerationRunEventHandlers {
   observeRun(runId: string, runInput: RunInput): Promise<void>;
 
   /**
-   * Returns the highest event `seq` applied for a run.
-   * Returns `0` if the run has never been observed (so SSE replay
-   * starts from the first event).
+   * Returns `0` (backwards compat only). For the authoritative seq, use
+   * `runEventCursorStore.get(runId)` from `appliedArtifactsStore`.
+   *
+   * Phase 3.6 Step 2: seq tracking is now durable via cursorStore.
    */
-  getLastAppliedSeq(runId: string): number;
+  getLastAppliedSeq(): number;
 
   /** Stop all active observations. */
   stop(): void;
@@ -447,20 +451,17 @@ function isSubjectGraphValidationCode(code: string): boolean {
 export function createGenerationRunEventHandlers(
   deps: GenerationRunEventHandlersDeps,
 ): GenerationRunEventHandlers {
-  const { client, appliers, eventBus, dedupeStore, deckRepository } = deps;
+  const { client, appliers, eventBus, dedupeStore, cursorStore, deckRepository } = deps;
   const activeRuns = new Set<string>();
-  /** Monotonic per-run event seq tracking; seed from rehydrated runs. */
-  const lastAppliedSeqs = new Map<string, number>();
   let stopped = false;
 
   /**
    * Record the highest seq we've seen for a run.
-   * Callers (hydration) can seed this before opening an event stream
-   * to avoid replaying already-processed events.
+   * Persisted durably so rehydration survives browser reloads.
    */
-  function trackSeq(runId: string, seq: number): void {
-    const prev = lastAppliedSeqs.get(runId) ?? 0;
-    if (seq > prev) lastAppliedSeqs.set(runId, seq);
+  async function trackSeq(runId: string, seq: number): Promise<void> {
+    const prev = await cursorStore.get(runId);
+    if (seq > prev) await cursorStore.set(runId, seq);
   }
 
   /**
@@ -486,13 +487,13 @@ export function createGenerationRunEventHandlers(
         dedupeStore,
       );
 
-      // Phase 3.6 Step 2: pass lastSeq so SSE replays only unprocessed events.
-      const startSeq = lastAppliedSeqs.get(runId) ?? 0;
+      // Phase 3.6 Step 2: seed startSeq from the durable cursor so SSE
+      // replays only unprocessed events after a browser reload.
+      const startSeq = await cursorStore.get(runId);
       let newArtifactsApplied = false;
 
       for await (const event of client.observe(runId, startSeq)) {
         if (stopped) break;
-        trackSeq(runId, event.seq);
 
         switch (event.type) {
           // ── artifact.ready: apply via applier ──────────────────
@@ -500,22 +501,12 @@ export function createGenerationRunEventHandlers(
             const { artifactId, kind } = event.body;
             const applier = pickApplier(kind, appliers);
             if (!applier) {
-              console.error(
+              throw new Error(
                 `[generationRunEventHandlers] unknown artifact kind: ${kind} (runId=${runId})`,
               );
-              break;
             }
 
-            let artifact: ArtifactEnvelope;
-            try {
-              artifact = await client.getArtifact(artifactId);
-            } catch (err) {
-              console.error(
-                `[generationRunEventHandlers] failed to fetch artifact ${artifactId}:`,
-                err,
-              );
-              break;
-            }
+            const artifact: ArtifactEnvelope = await client.getArtifact(artifactId);
 
             const result = await applier.apply(
               artifact as ArtifactEnvelope<ArtifactKind>,
@@ -536,10 +527,10 @@ export function createGenerationRunEventHandlers(
 
           // ── run.completed: fire legacy completion event ────────
           case 'run.completed': {
-            // Phase 3.6 Step 2: on rehydration (startSeq > 0), only fire
-            // completion events when new artifacts were applied. On fresh
-            // observation (startSeq === 0), always fire.
-            if (startSeq > 0 && !newArtifactsApplied) {
+            // Phase 3.6 Step 2: legacy completion events are product-facing
+            // artifact-application events. Replays that apply nothing must not
+            // refire them, even when no durable cursor existed at startup.
+            if (!newArtifactsApplied) {
               break;
             }
             switch (runInput.pipelineKind) {
@@ -672,12 +663,13 @@ export function createGenerationRunEventHandlers(
 
           default: {
             const _exhaustive: never = event;
-            console.warn(
+            throw new Error(
               `[generationRunEventHandlers] unhandled event type: ${(_exhaustive as RunEvent).type}`,
             );
-            break;
           }
         }
+
+        await trackSeq(runId, event.seq);
       }
     } finally {
       activeRuns.delete(runId);
@@ -686,8 +678,10 @@ export function createGenerationRunEventHandlers(
 
   return {
     observeRun,
-    getLastAppliedSeq(runId: string): number {
-      return lastAppliedSeqs.get(runId) ?? 0;
+    getLastAppliedSeq(): number {
+      // Phase 3.6 Step 2: seq tracking moved to durable cursorStore.
+      // Callers needing the authoritative value should use cursorStore.get(runId).
+      return 0;
     },
     stop() {
       stopped = true;
