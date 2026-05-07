@@ -86,7 +86,7 @@ describe('IndexedDB deck', () => {
     expect(cards).toEqual([]);
   });
 
-  it('hides bundled subjects by default and shows generated first when enabled', async () => {
+  it('hides bundled subjects by default and shows user-owned subjects first when enabled', async () => {
     await primeDeckDbForTests({
       subjects: [
         {
@@ -106,10 +106,18 @@ describe('IndexedDB deck', () => {
           contentSource: 'generated',
         },
         {
+          id: 'manual-a',
+          name: 'Manual A',
+          description: '',
+          color: '#333',
+          geometry: { gridTile: 'octahedron' },
+          contentSource: 'manual',
+        },
+        {
           id: 'bundled-b',
           name: 'Bundled B',
           description: '',
-          color: '#333',
+          color: '#444',
           geometry: { gridTile: 'plane' },
           contentSource: 'bundled',
         },
@@ -117,7 +125,7 @@ describe('IndexedDB deck', () => {
           id: 'generated-b',
           name: 'Generated B',
           description: '',
-          color: '#444',
+          color: '#555',
           geometry: { gridTile: 'cylinder' },
           contentSource: 'generated',
         },
@@ -128,11 +136,12 @@ describe('IndexedDB deck', () => {
     });
 
     const hiddenManifest = await repo.getManifest();
-    expect(hiddenManifest.subjects.map((subject) => subject.id)).toEqual(['generated-a', 'generated-b']);
+    expect(hiddenManifest.subjects.map((subject) => subject.id)).toEqual(['generated-a', 'manual-a', 'generated-b']);
 
     const visibleManifest = await repo.getManifest({ includePregeneratedCurriculums: true });
     expect(visibleManifest.subjects.map((subject) => subject.id)).toEqual([
       'generated-a',
+      'manual-a',
       'generated-b',
       'bundled-a',
       'bundled-b',

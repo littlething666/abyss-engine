@@ -111,13 +111,15 @@ async function writeSeedToDb(data: Awaited<ReturnType<typeof loadAllSeedData>>):
       const existingBundledIds = existingSubjects
         .filter((subject) => subject.contentSource === 'bundled')
         .map((subject) => subject.id);
-      const existingGeneratedRows = existingSubjects.filter((subject) => subject.contentSource === 'generated');
-      const generatedIdsOrdered = partitionOrderedSubjectIds(existingGeneratedRows, existingOrder);
+      const existingUserOwnedRows = existingSubjects.filter(
+        (subject) => subject.contentSource === 'generated' || subject.contentSource === 'manual',
+      );
+      const userOwnedIdsOrdered = partitionOrderedSubjectIds(existingUserOwnedRows, existingOrder);
 
       logDeckIndexedDb('writeSeedToDb:transaction', {
         op: 'replace-bundled-only',
         bundledSubjectCount: existingBundledIds.length,
-        generatedSubjectCount: existingGeneratedRows.length,
+        userOwnedSubjectCount: existingUserOwnedRows.length,
       });
 
       for (const subjectId of existingBundledIds) {
@@ -143,7 +145,7 @@ async function writeSeedToDb(data: Awaited<ReturnType<typeof loadAllSeedData>>):
       await deckDb.meta.put({ key: 'bundledContentVersion', value: BUNDLED_DECK_CONTENT_VERSION });
       await deckDb.meta.put({
         key: 'subjectIdsOrdered',
-        value: [...generatedIdsOrdered, ...data.subjectIdsOrdered],
+        value: [...userOwnedIdsOrdered, ...data.subjectIdsOrdered],
       });
       await deckDb.meta.put({ key: 'seededAt', value: Date.now() });
     },

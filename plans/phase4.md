@@ -254,7 +254,7 @@ Rules:
 - [x] **PR-A** — Plan/status and destructive-reset declaration, including `CHANGELOG.md` skeleton.
 - [x] **PR-B** — Backend Generation Policy module (`backend/src/generationPolicy/*`) with strict parser/resolver/hash tests. Workflow snapshot expansion/wiring remains in PR-E/PR-F before the global no-fallback exit criterion can close.
 - [x] **PR-C** — Active backend repository adapters are now D1-backed (`backend/src/repositories/*`, `backend/src/learningContent/*`, `Repos.learningContent`) with canonical D1 schema in `backend/d1/init.sql`.
-- [~] **PR-D** — Backend Learning Content routes landed in workspace 2026-05-07 (`backend/src/routes/learningContent.ts`) with route-level per-device/not-found tests. Frontend `BackendDeckRepository` adapter and read-path wiring are not started.
+- [~] **PR-D** — Backend Learning Content routes landed in workspace 2026-05-07 (`backend/src/routes/learningContent.ts`) with route-level per-device/not-found tests. Frontend `BackendDeckRepository` and durable-mode read-path wiring are now implemented; production bootstrap failure for missing Worker URL remains open until the legacy local-runner path is deleted.
 - [ ] **PR-E+** — Not started.
 
 ### PR-A — Plan/status and destructive-reset declaration ✅
@@ -295,7 +295,7 @@ Exit:
 
 - Backend can read/write generated learning content without browser IndexedDB.
 
-### PR-D — Backend learning-content routes and frontend repository adapter ◐
+### PR-D — Backend learning-content routes and frontend repository adapter ◑
 
 Files: backend content routes, `src/infrastructure/repositories/BackendDeckRepository.ts`, `src/infrastructure/di.ts`, repository tests.
 
@@ -306,13 +306,25 @@ Files: backend content routes, `src/infrastructure/repositories/BackendDeckRepos
   - `GET /v1/subjects/:subjectId/topics/:topicId/cards`
   - `GET /v1/subjects/:subjectId/topics/:topicId/trials/:targetLevel?cardPoolHash=...`
 - ✅ Add route-level per-device scoping and not-found tests.
-- Implement `IDeckRepository` reads through backend routes using `ApiClient`.
-- Keep all direct HTTP inside infrastructure adapters.
-- Fail loudly at app bootstrap in production when `NEXT_PUBLIC_DURABLE_GENERATION_URL` is missing.
+- ✅ Implement `IDeckRepository` reads through backend routes using `ApiClient` (`BackendDeckRepository`).
+- ✅ Keep all direct HTTP inside infrastructure adapters; hooks/features continue through `IDeckRepository`.
+- ✅ Wire `deckRepository` to backend Learning Content reads when `NEXT_PUBLIC_DURABLE_RUNS=true` and `NEXT_PUBLIC_DURABLE_GENERATION_URL` is configured; legacy local-runner builds still use IndexedDB until PR-J.
+- ✅ Share the anonymous device id between durable generation and backend deck reads via `src/infrastructure/deviceIdentity.ts`.
+- ⏳ Fail loudly at app bootstrap in production when `NEXT_PUBLIC_DURABLE_GENERATION_URL` is missing. Current wiring keeps the legacy IndexedDB path when durable runs are not enabled so the pre-PR-J local runner path remains operational.
+
+Backend manifest contract now required by the frontend adapter:
+
+- `subjects.metadata_json.subject.description: string`
+- `subjects.metadata_json.subject.color: string`
+- `subjects.metadata_json.subject.geometry.gridTile: GeometryType`
+- optional `subjects.metadata_json.subject.topicIds: string[]`
+- optional `subjects.metadata_json.subject.metadata: SubjectMetadata`
+
+The frontend adapter intentionally throws if this envelope is missing; backend subject bootstrap / artifact appliers must materialize it instead of relying on frontend defaults.
 
 Exit:
 
-- Frontend read paths can load Subject manifest, Subject Graph, Topic Content, and cards from backend.
+- Frontend read paths can load Subject manifest, Subject Graph, Topic Content, and cards from backend when durable backend mode is configured.
 
 ### PR-E — RunIntent submission and backend snapshot expansion
 

@@ -30,7 +30,7 @@ export interface Manifest {
   subjects: Subject[];
 }
 
-export type DeckContentSource = 'bundled' | 'generated';
+export type DeckContentSource = 'bundled' | 'generated' | 'manual';
 
 export interface ManifestOptions {
   includePregeneratedCurriculums?: boolean;

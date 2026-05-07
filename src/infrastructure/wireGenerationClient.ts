@@ -30,26 +30,8 @@ import { deckRepository, deckWriter } from '@/infrastructure/di';
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
 import { DurableGenerationRunRepository } from '@/infrastructure/repositories/DurableGenerationRunRepository';
 import { createApiClient } from '@/infrastructure/http/apiClient';
+import { readOrMintDeviceId } from '@/infrastructure/deviceIdentity';
 import type { IGenerationRunRepository, PipelineKind, RunInput } from '@/types/repository';
-
-const DEVICE_STORAGE_KEY = 'abyss.deviceId';
-
-function readOrMintDeviceId(): string {
-  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
-    return 'ssr-anonymous-device';
-  }
-  try {
-    const existing = window.localStorage.getItem(DEVICE_STORAGE_KEY);
-    if (existing && existing.trim().length > 0) {
-      return existing.trim();
-    }
-    const id = crypto.randomUUID();
-    window.localStorage.setItem(DEVICE_STORAGE_KEY, id);
-    return id;
-  } catch {
-    return crypto.randomUUID();
-  }
-}
 
 /**
  * Stub that returns synthetic failures when the Worker is unreachable.

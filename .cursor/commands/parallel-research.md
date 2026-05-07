@@ -1,4 +1,4 @@
-Run exactly 2 parallel Subagent tasks for web research on: [TOPIC](#TOPIC).
+Run exactly 3 parallel Subagent tasks for web research on: [TOPIC](#TOPIC).
 
 Decide the best distinct research angle for each subagent and write each subagent prompt accordingly.
 
