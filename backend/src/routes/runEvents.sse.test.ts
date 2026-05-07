@@ -350,34 +350,38 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
   it('emits keepalive comment for still-active runs', async () => {
     const runId = 'run-sse-005';
 
-    const mockClient = createMockSupabaseClient([
-      // 1. devices upsert
+    // Phase 3.6: live SSE polls every 2s. Provide enough results for
+    // the initial replay + terminal check + at least one poll cycle.
+    const activeRunRow = {
+      id: runId,
+      device_id: DEVICE_ID,
+      kind: 'crystal-trial',
+      status: 'generating_stage',
+      finished_at: null,
+      created_at: '2026-05-05T00:00:00Z',
+      snapshot_json: {},
+      next_event_seq: 0,
+    };
+
+    const mockResults = [
+      // 1. devices upsert (middleware)
       q({ id: DEVICE_ID }),
-      // 2. load run (ownership)
-      q({
-        id: runId,
-        device_id: DEVICE_ID,
-        kind: 'crystal-trial',
-        status: 'generating_stage',
-        finished_at: null,  // still active!
-        created_at: '2026-05-05T00:00:00Z',
-        snapshot_json: {},
-        next_event_seq: 0,
-      }),
-      // 3. eventsAfter — no new events
+      // 2. load run (ownership check)
+      q(activeRunRow),
+      // 3. eventsAfter — no new events to replay
       q([]),
-      // 4. load run (keepalive check — still active)
-      q({
-        id: runId,
-        device_id: DEVICE_ID,
-        kind: 'crystal-trial',
-        status: 'generating_stage',
-        finished_at: null,
-        created_at: '2026-05-05T00:00:00Z',
-        snapshot_json: {},
-        next_event_seq: 0,
-      }),
-    ]);
+      // 4. load run (terminal check — still active)
+      q(activeRunRow),
+      // 5–10. poll cycle: eventsAfter + load, repeated
+      q([]), // eventsAfter (poll)
+      q(activeRunRow), // load (poll, still active)
+      q([]), // eventsAfter (poll)
+      q(activeRunRow), // load (poll, still active)
+      q([]), // eventsAfter (poll)
+      q(activeRunRow), // load (poll, still active)
+    ];
+
+    const mockClient = createMockSupabaseClient(mockResults);
 
     vi.doMock('@supabase/supabase-js', () => ({
       createClient: () => mockClient,
@@ -397,10 +401,24 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
     );
 
     expect(response.status).toBe(200);
-    const text = await response.text();
+
+    // Phase 3.6: live SSE stream stays open — use a reader to consume
+    // the first few chunks rather than waiting for stream close.
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    const deadline = Date.now() + 5000;
+
+    while (Date.now() < deadline) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      if (text.includes(': keepalive') || text.includes('keepalive')) break;
+    }
+    reader.cancel(); // abort the stream
+
     // Should contain the keepalive comment for active runs
     expect(text).toContain(': keepalive');
-    expect(text).toContain('run still active');
   });
 });
 

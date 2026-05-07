@@ -1,27 +1,16 @@
 /**
- * Topic Content Workflow — Phase 2 PR-2D / Phase 3.5 contract convergence.
+ * Topic Content Workflow — Phase 2 PR-2D / Phase 3.6.
  *
  * Three-stage durable pipeline mirroring `runTopicGenerationPipeline.ts`:
  * theory → study-cards → mini-games (×3 in parallel).
  *
- * Stage-level checkpoints persisting via `stage_checkpoints` table allow
- * resume from any stage after Worker eviction. The `resumeFromStage` field
- * in the snapshot controls which stage to start from.
- *
- * Mini-games run in parallel (CategorySort, SequenceBuild, MatchPairs) with
- * each gameType as its own checkpoint. Cross-bucket dedupe runs after all
- * three mini-games complete.
- *
- * Phase 3.5: All hashes, schemas, parsers, validators, and event builders
- * come from `@contracts`. No local hash helpers, inline JSON Schema payloads,
- * or ad hoc validation remain. Stage checkpoints carry real artifact ids and
- * deterministic input hashes.
+ * Phase 3.6: Budget reserved at route level (single owner). Typed event
+ * builders and transport statuses throughout.
  */
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
-import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { callTopicContent } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import {
@@ -36,6 +25,13 @@ import {
   topicMiniGameSequenceBuildSchemaVersion,
   topicMiniGameMatchPairsSchemaVersion,
 } from '../contracts/generationContracts';
+import {
+  buildRunStatusEvent,
+  buildArtifactReadyEvent,
+  buildRunCompletedEvent,
+  buildRunFailedEvent,
+  buildRunCancelledEvent,
+} from '../contracts/typedEvents';
 import type { Env } from '../env';
 import type { ArtifactKind } from '../contracts/generationContracts';
 
@@ -95,7 +91,9 @@ async function runStage(
   schemaVersion: number,
   exec: () => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
 ): Promise<StageRunResult> {
-  await repos.runs.append(runId, deviceId, 'run.status', { status: 'generating-stage', stage });
+  await repos.runs.appendTyped(runId, deviceId,
+    buildRunStatusEvent('generating_stage', stage),
+  );
   await repos.stageCheckpoints.upsert({
     runId,
     stage,
@@ -136,7 +134,6 @@ async function runStage(
     throw err;
   }
 
-  // Persist the artifact with a deterministic content hash.
   const _contentHash = await contentHash(result.parsedPayload);
   const artifactId = await repos.artifacts.putStorage(
     { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
@@ -151,22 +148,19 @@ async function runStage(
     await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
   }
 
-  await repos.runs.append(runId, deviceId, 'artifact.ready', {
-    stage,
-    artifactId,
-    kind,
-    contentHash: _contentHash,
-    inputHash: _inputHash,
-    schemaVersion,
-  });
+  await repos.runs.appendTyped(runId, deviceId,
+    buildArtifactReadyEvent({
+      artifactId,
+      kind,
+      contentHash: _contentHash,
+      inputHash: _inputHash,
+      schemaVersion,
+    }),
+  );
 
   return { artifactId, contentHash: _contentHash, kind };
 }
 
-/**
- * Determine which stages need to run based on the snapshot's `stage` and
- * `resumeFromStage` fields.
- */
 function resolveWantedStages(
   snapshot: Record<string, unknown>,
   checkpoints: Array<{ stage: string; artifact_id: string | null }>,
@@ -193,7 +187,6 @@ function resolveWantedStages(
     return stages;
   }
 
-  // 'full': everything not yet persisted.
   const stages: string[] = [];
   if (!persisted.has('theory')) stages.push('theory');
   if (!persisted.has('study-cards')) stages.push('study-cards');
@@ -223,39 +216,41 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
       const reason = await repos.runs.cancelRequested(runId);
       if (reason) {
         await repos.runs.markCancelled(runId);
-        await repos.runs.append(runId, deviceId, 'run.cancelled', { boundary, reason });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunCancelledEvent(boundary, reason),
+        );
         throw new WorkflowAbort('cancelled');
       }
     };
 
     try {
-      // ---- 1. PLAN ----
+      // ---- 1. PLAN (no budget check — Phase 3.6 Step 4) ----
       await checkCancel('before-plan');
 
       const planOutcome = (await step.do('plan', async (): Promise<PlanOutcome> => {
         await repos.runs.transition(runId, 'planning');
-        await repos.runs.append(runId, deviceId, 'run.status', { status: 'planning' });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunStatusEvent('planning'),
+        );
 
         const run = await repos.runs.load(runId);
         const snapshot = run.snapshot_json as Record<string, unknown>;
         const _inputHash = await inputHash(snapshot);
 
-        const budget = await assertBelowDailyCap(deviceId, repos.db, 'topic-content');
-        if (!budget.ok) throw new WorkflowFail(budget.code!, budget.message!);
-
-        // Cache check: topic-theory is the primary entry point.
         const cached = await repos.artifacts.findCacheHit(deviceId, 'topic-theory', _inputHash);
         if (cached) {
-          await repos.runs.append(runId, deviceId, 'artifact.ready', {
-            artifactId: cached.id,
-            kind: 'topic-theory',
-            contentHash: cached.content_hash,
-            inputHash: _inputHash,
-            schemaVersion: cached.schema_version,
-            fromCache: true,
-          });
+          await repos.runs.appendTyped(runId, deviceId,
+            buildArtifactReadyEvent({
+              artifactId: cached.id,
+              kind: 'topic-theory',
+              contentHash: cached.content_hash,
+              inputHash: _inputHash,
+              schemaVersion: cached.schema_version,
+              fromCache: true,
+            }),
+          );
           await repos.runs.markReady(runId);
-          await repos.runs.append(runId, deviceId, 'run.completed', {});
+          await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
           return { ok: false };
         }
 
@@ -362,7 +357,6 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
               throw new WorkflowFail(parseResult.failureCode, parseResult.message);
             }
 
-            // Provide existing concept stems from snapshot if available.
             const existingStems = Array.isArray(snapshot.existing_concept_stems)
               ? (snapshot.existing_concept_stems as string[])
               : undefined;
@@ -442,17 +436,21 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
 
       // ---- 5. READY ----
       await repos.runs.markReady(runId);
-      await repos.runs.append(runId, deviceId, 'run.completed', {});
+      await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
       if (err instanceof WorkflowFail) {
         await repos.runs.markFailed(runId, err.code, err.message);
-        await repos.runs.append(runId, deviceId, 'run.failed', { code: err.code, message: err.message });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunFailedEvent(err.code, err.message),
+        );
         throw err;
       }
       const message = err instanceof Error ? err.message : String(err);
       await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
-      await repos.runs.append(runId, deviceId, 'run.failed', { code: 'llm:upstream-5xx', message });
+      await repos.runs.appendTyped(runId, deviceId,
+        buildRunFailedEvent('llm:upstream-5xx', message),
+      );
       throw err;
     }
   }

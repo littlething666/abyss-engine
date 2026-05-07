@@ -97,14 +97,17 @@ function runInputFromSnapshot(run: RunSnapshot): RunInput {
  * Phase 0.5 (default): loads persisted terminal job logs from IndexedDB
  * (the `contentGenerationLogRepository` read-cache) into the Zustand store.
  *
- * Phase 1 (NEXT_PUBLIC_DURABLE_RUNS=true):
+ * Phase 1+ (NEXT_PUBLIC_DURABLE_RUNS=true):
  * 1. Merges the local read-cache as above.
- * 2. Fetches active durable runs from the Worker.
- * 3. For each active run, reconstructs `RunInput` from the snapshot and
- *    calls `handlers.observeRun()` to open SSE, apply artifacts, and fire
- *    legacy AppEventBus events.
- * 4. The `AppliedArtifactsStore` (dedupe by `contentHash`) and per-run
+ * 2. Fetches active durable runs from the Worker (excludes terminal `ready`).
+ * 3. Fetches recently completed `ready` runs and replays them ONLY when
+ *    local artifact application is still missing (Phase 3.6 Step 2).
+ * 4. For each run, calls `handlers.observeRun()` to open SSE (with lastSeq
+ *    for resumption), apply artifacts, and fire legacy AppEventBus events.
+ * 5. The `AppliedArtifactsStore` (dedupe by `contentHash`) and per-run
  *    seq tracking prevent double-application of already-applied artifacts.
+ * 6. Completion events fire only when new artifacts were applied during
+ *    this observation (Phase 3.6 Step 2 cursor semantics).
  */
 export function useContentGenerationHydration(): void {
   const ran = useRef(false);
@@ -131,6 +134,7 @@ export function useContentGenerationHydration(): void {
 
       let active: RunSnapshot[] = [];
       try {
+        // Phase 3.6 Step 2: active runs exclude terminal `ready`.
         active = await client.listActive();
       } catch (err) {
         console.error(
@@ -140,9 +144,25 @@ export function useContentGenerationHydration(): void {
         return;
       }
 
+      // Phase 3.6 Step 2: also hydrate recently completed `ready` runs
+      // that may have unapplied artifacts. The handlers' dedupe store
+      // and lastSeq tracking prevent double-application.
+      let recent: RunSnapshot[] = [];
+      try {
+        recent = await client.listRecent(20);
+      } catch (err) {
+        console.error(
+          '[useContentGenerationHydration] failed to fetch recent durable runs:',
+          err,
+        );
+        // Non-fatal — proceed with active runs only.
+      }
+
+      const runsToObserve = [...active, ...recent];
+
       if (cancelled) return;
 
-      for (const run of active) {
+      for (const run of runsToObserve) {
         if (cancelled) break;
 
         const runInput = runInputFromSnapshot(run);

@@ -17,6 +17,10 @@ import {
   createDeviceSettingsRepo,
   type IDeviceSettingsRepo,
 } from './deviceSettingsRepo';
+import {
+  createIdempotencyRecordsRepo,
+  type IIdempotencyRecordsRepo,
+} from './idempotencyRecordsRepo';
 
 export interface Repos {
   devices: IDevicesRepo;
@@ -25,6 +29,8 @@ export interface Repos {
   usage: IUsageCountersRepo;
   stageCheckpoints: IStageCheckpointsRepo;
   deviceSettings: IDeviceSettingsRepo;
+  /** Phase 3.6: idempotency records with 24h TTL. */
+  idempotency: IIdempotencyRecordsRepo;
   /** Supabase client — consumed by `assertBelowDailyCap` for atomic RPC calls. */
   db: ReturnType<typeof getSupabaseClient>;
 }
@@ -42,6 +48,7 @@ export function makeRepos(env: Env): Repos {
     usage: createUsageCountersRepo(db),
     stageCheckpoints: createStageCheckpointsRepo(db),
     deviceSettings: createDeviceSettingsRepo(db),
+    idempotency: createIdempotencyRecordsRepo(db),
     db,
   };
 }

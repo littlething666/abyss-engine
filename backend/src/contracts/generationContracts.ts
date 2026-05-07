@@ -122,6 +122,30 @@ export type {
   RunInputSnapshotEnvelope,
 } from '@contracts';
 
+// ── typed event builders (Phase 3.6 Step 6) ────────────────────────────────
+export {
+  buildTypedEvent,
+  buildRunQueuedEvent,
+  buildRunStatusEvent,
+  buildStageProgressEvent,
+  buildArtifactReadyEvent,
+  buildRunCompletedEvent,
+  buildRunFailedEvent,
+  buildRunCancelledEvent,
+  buildRunCancelAcknowledgedEvent,
+  type TypedEventType,
+  type TypedEventPayload,
+  type TypedEventPayloadMap,
+  type RunQueuedPayload,
+  type RunStatusPayload,
+  type StageProgressPayload,
+  type ArtifactReadyPayload,
+  type RunCompletedPayload,
+  type RunFailedPayload,
+  type RunCancelledPayload,
+  type RunCancelAcknowledgedPayload,
+} from './typedEvents';
+
 // ── eval fixtures (for backend-side eval runner) ───────────────────────────
 export {
   EVAL_FIXTURES_BY_KIND,

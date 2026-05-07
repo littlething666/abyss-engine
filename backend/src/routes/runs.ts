@@ -2,17 +2,26 @@
  * Run routes — POST /v1/runs, GET /v1/runs, GET /v1/runs/:id,
  * POST /v1/runs/:id/cancel, POST /v1/runs/:id/retry.
  *
- * Phase 3.5: Uses contracts-owned `inputHash` and artifact-kind-aware
- * cache lookup instead of local helpers.
+ * Phase 3.6: Single budget reservation owner, typed events, transport
+ * statuses, idempotency-records-based 24h TTL, and proper retry contract.
  */
 
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
 import { assertBelowDailyCap } from '../budget/budgetGuard';
-import { utcDay } from '../repositories/usageCountersRepo';
 import { inputHash } from '../contracts/generationContracts';
+import {
+  buildRunQueuedEvent,
+  buildRunStatusEvent,
+  buildArtifactReadyEvent,
+  buildRunCompletedEvent,
+  buildRunFailedEvent,
+  buildRunCancelledEvent,
+  buildRunCancelAcknowledgedEvent,
+} from '../contracts/typedEvents';
+import { dbStatusToTransport } from './statusMapper';
 import type { Env } from '../env';
-import type { PipelineKind, CancelReason } from '../repositories/types';
+import type { PipelineKind } from '../repositories/types';
 import type { RunInputSnapshot, SubmitRunBody } from '../types/api';
 
 // ---------------------------------------------------------------------------
@@ -20,8 +29,8 @@ import type { RunInputSnapshot, SubmitRunBody } from '../types/api';
 // ---------------------------------------------------------------------------
 
 /**
- * Lightweight snapshot assertion. Full Zod validation lands in PR-D when
- * @contracts is wired. Accepts any of the four pipeline kinds.
+ * Lightweight snapshot assertion. Full Zod validation is deferred — the
+ * contracts module's strict parsers validate inside Workflows.
  */
 function assertSnapshot(body: unknown): {
   kind: PipelineKind;
@@ -51,7 +60,6 @@ function assertSnapshot(body: unknown): {
   }
 
   const s = snapshot as Record<string, unknown>;
-  // subject_id is always required; topic_id is required except for subject-graph
   if (!s.pipeline_kind || !s.schema_version || !s.subject_id) {
     return { kind: b.kind, snapshot: {} as RunInputSnapshot, error: 'snapshot missing required fields (pipeline_kind, schema_version, subject_id)' };
   }
@@ -59,14 +67,12 @@ function assertSnapshot(body: unknown): {
   return { kind: b.kind, snapshot: s as unknown as RunInputSnapshot };
 }
 
-/** Extract the supersedes key from request headers. */
 function getSupersedesKey(req: Request): string | undefined {
   const val = req.headers.get('Supersedes-Key');
   if (!val || val.trim() === '') return undefined;
   return val.trim();
 }
 
-/** Resolve the primary artifact kind for cache-hit lookup per pipeline kind. */
 function cacheArtifactKind(kind: PipelineKind): string {
   switch (kind) {
     case 'crystal-trial': return 'crystal-trial';
@@ -76,8 +82,37 @@ function cacheArtifactKind(kind: PipelineKind): string {
   }
 }
 
-function today(): string {
-  return utcDay(new Date());
+/**
+ * Dispatch a run to the correct Cloudflare Workflow.
+ * Returns `{ ok: true }` on success, `{ ok: false, error }` on failure.
+ */
+async function dispatchWorkflow(
+  kind: PipelineKind,
+  runId: string,
+  deviceId: string,
+  env: Env,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    switch (kind) {
+      case 'crystal-trial':
+        await env.CRYSTAL_TRIAL_WORKFLOW.create({ id: runId, params: { runId, deviceId } });
+        break;
+      case 'topic-expansion':
+        await env.TOPIC_EXPANSION_WORKFLOW.create({ id: runId, params: { runId, deviceId } });
+        break;
+      case 'subject-graph':
+        await env.SUBJECT_GRAPH_WORKFLOW.create({ id: runId, params: { runId, deviceId } });
+        break;
+      case 'topic-content':
+        await env.TOPIC_CONTENT_WORKFLOW.create({ id: runId, params: { runId, deviceId } });
+        break;
+    }
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[runs] failed to create workflow for run ${runId} (kind=${kind}):`, err);
+    return { ok: false, error: message };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -88,9 +123,9 @@ const runs = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotenc
 /**
  * POST /v1/runs — submit a new run.
  *
- * Headers: X-Abyss-Device, Idempotency-Key, [Supersedes-Key],
- *          Content-Type: application/json
- * Body: { kind: PipelineKind, snapshot: { ... } }
+ * Budget is reserved exactly once here (Phase 3.6 Step 4). Workflows
+ * do NOT call `assertBelowDailyCap` — they only check cancellation,
+ * cache, and tokens.
  */
 runs.post('/', async (c) => {
   const deviceId = c.get('deviceId');
@@ -116,22 +151,23 @@ runs.post('/', async (c) => {
     return c.json({ code: 'config:unexpected-supersedes-key', message: 'Supersedes-Key is only valid for kind=topic-expansion' }, 400);
   }
 
-  // 3. Per-kind budget guard.
+  // 3. Atomic budget reservation — SINGLE OWNER (Phase 3.6 Step 4).
   const budget = await assertBelowDailyCap(deviceId, repos.db, kind);
   if (!budget.ok) {
     return c.json({ code: budget.code, message: budget.message }, 429);
   }
 
-  // 4. Compute contract-owned input hash.
+  // 5. Compute contract-owned input hash.
   const hash = await inputHash(snapshot);
 
-  // 5. Cache-hit short-circuit (artifact-kind-aware).
+  // 6. Cache-hit short-circuit.
   const artifactKind = cacheArtifactKind(kind);
   const cached = await repos.artifacts.findCacheHit(deviceId, artifactKind, hash);
 
   if (cached) {
+    const runId = crypto.randomUUID();
     const run = await repos.runs.insertRun({
-      id: crypto.randomUUID(),
+      id: runId,
       device_id: deviceId,
       kind,
       status: 'ready',
@@ -150,30 +186,34 @@ runs.post('/', async (c) => {
       snapshot_json: snapshot as Record<string, unknown>,
     });
 
-    await repos.runs.append(run.id, deviceId, 'artifact.ready', {
-      artifactId: cached.id,
-      kind: cached.kind,
-      contentHash: cached.content_hash,
-      inputHash: hash,
-      schemaVersion: cached.schema_version,
-      fromCache: true,
-    });
-    await repos.runs.append(run.id, deviceId, 'run.completed', {});
+    // Update idempotency record to point to the actual run (Phase 3.6 Step 5).
+    if (idempotencyKey) {
+      await repos.idempotency.record(deviceId, idempotencyKey, runId);
+    }
 
-    try {
-      await repos.usage.incrementRunsStarted(deviceId, today());
-    } catch { /* non-critical */ }
+    // Emit typed events (Phase 3.6 Step 6).
+    await repos.runs.appendTyped(runId, deviceId,
+      buildArtifactReadyEvent({
+        artifactId: cached.id,
+        kind: cached.kind,
+        contentHash: cached.content_hash,
+        inputHash: hash,
+        schemaVersion: cached.schema_version,
+        fromCache: true,
+      }),
+    );
+    await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
 
     return c.json({ runId: run.id }, 201);
   }
 
-  // 6. Cache miss — handle supersession for topic-expansion.
+  // 7. Cache miss — handle supersession for topic-expansion.
   let supersededRunId: string | null = null;
   if (supersedesKey && kind === 'topic-expansion') {
     supersededRunId = await repos.runs.cancelSupersededRun(deviceId, supersedesKey);
   }
 
-  // 7. Create a queued run.
+  // 8. Create a queued run.
   const run = await repos.runs.insertRun({
     id: crypto.randomUUID(),
     device_id: deviceId,
@@ -194,62 +234,36 @@ runs.post('/', async (c) => {
     snapshot_json: snapshot as Record<string, unknown>,
   });
 
-  await repos.runs.append(run.id, deviceId, 'run.queued', {});
+  // Update idempotency record to point to the actual run (Phase 3.6 Step 5).
+  if (idempotencyKey) {
+    await repos.idempotency.record(deviceId, idempotencyKey, run.id);
+  }
+
+  // Emit typed events (Phase 3.6 Step 6).
+  await repos.runs.appendTyped(run.id, deviceId, buildRunQueuedEvent());
 
   // Emit cancel-acknowledged + cancelled for the superseded run.
   if (supersededRunId) {
-    await repos.runs.append(supersededRunId, deviceId, 'run.cancel-acknowledged', { reason: 'superseded' });
+    await repos.runs.appendTyped(supersededRunId, deviceId,
+      buildRunCancelAcknowledgedEvent('superseded'),
+    );
     await repos.runs.markCancelled(supersededRunId);
-    await repos.runs.append(supersededRunId, deviceId, 'run.cancelled', { boundary: 'supersession', reason: 'superseded' });
+    await repos.runs.appendTyped(supersededRunId, deviceId,
+      buildRunCancelledEvent('supersession', 'superseded'),
+    );
   }
 
-  try {
-    await repos.usage.incrementRunsStarted(deviceId, today());
-  } catch { /* non-critical */ }
-
-  // Phase 3.5 Step 5A: Durable enqueue. Workflow dispatch failure is terminal
-  // — the run must not remain `queued` without an owner.
-  try {
-    switch (kind) {
-      case 'crystal-trial':
-        await c.env.CRYSTAL_TRIAL_WORKFLOW.create({
-          id: run.id,
-          params: { runId: run.id, deviceId },
-        });
-        break;
-      case 'topic-expansion':
-        await c.env.TOPIC_EXPANSION_WORKFLOW.create({
-          id: run.id,
-          params: { runId: run.id, deviceId },
-        });
-        break;
-      case 'subject-graph':
-        await c.env.SUBJECT_GRAPH_WORKFLOW.create({
-          id: run.id,
-          params: { runId: run.id, deviceId },
-        });
-        break;
-      case 'topic-content':
-        await c.env.TOPIC_CONTENT_WORKFLOW.create({
-          id: run.id,
-          params: { runId: run.id, deviceId },
-        });
-        break;
-    }
-  } catch (err) {
-    // Workflow dispatch failed — mark the run terminated so no
-    // unowned `queued` run remains.
-    console.error(`[runs] failed to create workflow for run ${run.id}:`, err);
-    const enqueueMsg = err instanceof Error ? err.message : String(err);
-    await repos.runs.markFailed(run.id, 'config:invalid', `Workflow dispatch failed: ${enqueueMsg}`);
-    await repos.runs.append(run.id, deviceId, 'run.failed', {
-      code: 'config:invalid',
-      message: `Workflow dispatch failed: ${enqueueMsg}`,
-    });
+  // 9. Durable enqueue — dispatch failure is terminal (Phase 3.6 Step 3 contract).
+  const dispatch = await dispatchWorkflow(kind, run.id, deviceId, c.env);
+  if (!dispatch.ok) {
+    await repos.runs.markFailed(run.id, 'config:invalid', `Workflow dispatch failed: ${dispatch.error}`);
+    await repos.runs.appendTyped(run.id, deviceId,
+      buildRunFailedEvent('config:invalid', `Workflow dispatch failed: ${dispatch.error}`),
+    );
     return c.json({
       runId: run.id,
       error: 'workflow_dispatch_failed',
-      message: enqueueMsg,
+      message: dispatch.error,
     }, 502);
   }
 
@@ -258,7 +272,9 @@ runs.post('/', async (c) => {
 
 /**
  * GET /v1/runs — list runs for the authenticated device.
- * Query: ?status=active|recent|all&kind=&subjectId=&topicId=&limit=
+ *
+ * Phase 3.6 Step 2: `?status=active` excludes terminal `ready` runs.
+ * Only truly in-flight runs (queued → persisting) are returned.
  */
 runs.get('/', async (c) => {
   const deviceId = c.get('deviceId');
@@ -271,7 +287,14 @@ runs.get('/', async (c) => {
   const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!, 10) : undefined;
 
   const rows = await repos.runs.listByDevice(deviceId, { status, kind, subjectId, topicId, limit });
-  return c.json({ runs: rows });
+
+  // Map DB statuses to transport statuses in the response (Phase 3.6 Step 7).
+  const mapped = rows.map((r) => ({
+    ...r,
+    status: dbStatusToTransport(r.status),
+  }));
+
+  return c.json({ runs: mapped });
 });
 
 /**
@@ -289,7 +312,11 @@ runs.get('/:id', async (c) => {
 
   const events = await repos.runs.eventsAfter(runId, deviceId, -1);
 
-  return c.json({ ...run, events });
+  return c.json({
+    ...run,
+    status: dbStatusToTransport(run.status),
+    events,
+  });
 });
 
 /**
@@ -306,31 +333,61 @@ runs.post('/:id/cancel', async (c) => {
   }
 
   if (run.finished_at) {
-    return c.json({ error: 'run_already_terminal', status: run.status }, 409);
+    return c.json({ error: 'run_already_terminal', status: dbStatusToTransport(run.status) }, 409);
   }
 
   const written = await repos.runs.requestCancel(runId, 'user');
 
   if (!written) {
-    return c.json({ status: run.status, message: 'run already terminal' });
+    return c.json({ status: dbStatusToTransport(run.status), message: 'run already terminal' });
   }
 
-  await repos.runs.append(runId, deviceId, 'run.cancel-acknowledged', { reason: 'user' });
+  await repos.runs.appendTyped(runId, deviceId,
+    buildRunCancelAcknowledgedEvent('user'),
+  );
 
   return c.json({ status: 'cancel_acknowledged' });
 });
 
 /**
  * POST /v1/runs/:id/retry — retry a terminal run.
+ *
+ * Phase 3.6 Step 3: Follows the same budget reservation, workflow dispatch,
+ * enqueue-failure, and event contract as initial submission.
+ * Returns `{ runId }` on success. Dispatch failure marks the retry run
+ * `failed_final` and returns 502 (no stranded queued runs).
  */
 runs.post('/:id/retry', async (c) => {
   const deviceId = c.get('deviceId');
   const runId = c.req.param('id');
   const repos = makeRepos(c.env);
 
+  // Parse optional { stage?, jobId? } body.
+  let retryOpts: { stage?: string; jobId?: string } = {};
+  try {
+    const body = await c.req.json();
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      const b = body as Record<string, unknown>;
+      if (typeof b.stage === 'string') retryOpts.stage = b.stage;
+      if (typeof b.jobId === 'string') retryOpts.jobId = b.jobId;
+    }
+  } catch {
+    // No body or invalid JSON — proceed with empty opts.
+  }
+
   const run = await repos.runs.load(runId);
   if (run.device_id !== deviceId) {
     return c.json({ error: 'not_found' }, 404);
+  }
+
+  // Phase 3.6 Step 4: Budget reservation for retry (single owner).
+  const budget = await assertBelowDailyCap(
+    deviceId,
+    repos.db,
+    run.kind as PipelineKind,
+  );
+  if (!budget.ok) {
+    return c.json({ code: budget.code, message: budget.message }, 429);
   }
 
   const newRunId = crypto.randomUUID();
@@ -354,31 +411,31 @@ runs.post('/:id/retry', async (c) => {
     snapshot_json: run.snapshot_json,
   });
 
-  await repos.runs.append(newRunId, deviceId, 'run.queued', { retry_of: runId });
+  await repos.runs.appendTyped(newRunId, deviceId,
+    buildRunQueuedEvent({ retry_of: runId }),
+  );
 
-  try {
-    await repos.usage.incrementRunsStarted(deviceId, today());
-  } catch { /* non-critical */ }
+  // Phase 3.6 Step 3: Dispatch with enqueue-failure handling.
+  const dispatch = await dispatchWorkflow(
+    run.kind as PipelineKind,
+    newRunId,
+    deviceId,
+    c.env,
+  );
 
-  // Dispatch to the appropriate Workflow.
-  try {
-    switch (run.kind) {
-      case 'crystal-trial':
-        await c.env.CRYSTAL_TRIAL_WORKFLOW.create({ id: newRunId, params: { runId: newRunId, deviceId } });
-        break;
-      case 'topic-expansion':
-        await c.env.TOPIC_EXPANSION_WORKFLOW.create({ id: newRunId, params: { runId: newRunId, deviceId } });
-        break;
-      case 'subject-graph':
-        await c.env.SUBJECT_GRAPH_WORKFLOW.create({ id: newRunId, params: { runId: newRunId, deviceId } });
-        break;
-      case 'topic-content':
-        await c.env.TOPIC_CONTENT_WORKFLOW.create({ id: newRunId, params: { runId: newRunId, deviceId } });
-        break;
-    }
-  } catch (err) {
-    console.error(`[runs] failed to create workflow for retry run ${newRunId}:`, err);
+  if (!dispatch.ok) {
+    await repos.runs.markFailed(newRunId, 'config:invalid', `Workflow dispatch failed: ${dispatch.error}`);
+    await repos.runs.appendTyped(newRunId, deviceId,
+      buildRunFailedEvent('config:invalid', `Workflow dispatch failed: ${dispatch.error}`),
+    );
+    return c.json({
+      runId: newRunId,
+      error: 'workflow_dispatch_failed',
+      message: dispatch.error,
+    }, 502);
   }
+
+  return c.json({ runId: newRunId }, 201);
 });
 
 export { runs };

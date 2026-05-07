@@ -1,25 +1,16 @@
 /**
- * Subject Graph Workflow — Phase 2 PR-2C / Phase 3.5 contract convergence.
+ * Subject Graph Workflow — Phase 2 PR-2C / Phase 3.6.
  *
  * Two-stage durable pipeline: Stage A (Topic Lattice) → Stage B (Prerequisite
- * Edges). Stage B's input_hash includes the Stage A artifact's content_hash
- * (embedded in the snapshot by `buildSubjectGraphEdgesSnapshot`), so a lattice
- * change forces a fresh edges generation.
+ * Edges). Stage B's input_hash includes the Stage A artifact's content_hash.
  *
- * Stage B Parse: the deterministic `correctPrereqEdges` repair lives
- * server-side, inside the parse step after the strict Zod parse passes. The
- * client applier consumes the corrected lattice without re-running the
- * correction.
- *
- * Phase 3.5: All hashes, schemas, parsers, validators, and event builders
- * come from `@contracts`. No local hash helpers, inline JSON Schema payloads,
- * or ad hoc validation remain. Stage checkpoints carry real artifact ids.
+ * Phase 3.6: Budget reserved at route level (single owner). Typed event
+ * builders and transport statuses throughout.
  */
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
-import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { callSubjectGraph } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import {
@@ -31,6 +22,14 @@ import {
   subjectGraphTopicsSchemaVersion,
   subjectGraphEdgesSchemaVersion,
 } from '../contracts/generationContracts';
+import {
+  buildRunStatusEvent,
+  buildStageProgressEvent,
+  buildArtifactReadyEvent,
+  buildRunCompletedEvent,
+  buildRunFailedEvent,
+  buildRunCancelledEvent,
+} from '../contracts/typedEvents';
 import type { Env } from '../env';
 import type { ArtifactKind } from '../contracts/generationContracts';
 
@@ -72,7 +71,9 @@ async function runStage(
   schemaVersion: number,
   exec: () => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
 ): Promise<StageRunResult> {
-  await repos.runs.append(runId, deviceId, 'run.status', { status: 'generating-stage', stage });
+  await repos.runs.appendTyped(runId, deviceId,
+    buildRunStatusEvent('generating_stage', stage),
+  );
   await repos.stageCheckpoints.upsert({
     runId,
     stage,
@@ -113,7 +114,6 @@ async function runStage(
     throw err;
   }
 
-  // Persist the artifact with a deterministic content hash.
   const _contentHash = await contentHash(result.parsedPayload);
   const artifactId = await repos.artifacts.putStorage(
     { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
@@ -128,14 +128,15 @@ async function runStage(
     await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
   }
 
-  await repos.runs.append(runId, deviceId, 'artifact.ready', {
-    stage,
-    artifactId,
-    kind,
-    contentHash: _contentHash,
-    inputHash: _inputHash,
-    schemaVersion,
-  });
+  await repos.runs.appendTyped(runId, deviceId,
+    buildArtifactReadyEvent({
+      artifactId,
+      kind,
+      contentHash: _contentHash,
+      inputHash: _inputHash,
+      schemaVersion,
+    }),
+  );
 
   return { artifactId, contentHash: _contentHash, kind };
 }
@@ -158,40 +159,41 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       const reason = await repos.runs.cancelRequested(runId);
       if (reason) {
         await repos.runs.markCancelled(runId);
-        await repos.runs.append(runId, deviceId, 'run.cancelled', { boundary, reason });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunCancelledEvent(boundary, reason),
+        );
         throw new WorkflowAbort('cancelled');
       }
     };
 
     try {
-      // ---- 1. PLAN ----
+      // ---- 1. PLAN (no budget check — Phase 3.6 Step 4) ----
       await checkCancel('before-plan');
 
       const planOutcome = (await step.do('plan', async (): Promise<PlanOutcome> => {
         await repos.runs.transition(runId, 'planning');
-        await repos.runs.append(runId, deviceId, 'run.status', { status: 'planning' });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunStatusEvent('planning'),
+        );
 
         const run = await repos.runs.load(runId);
         const snapshot = run.snapshot_json as Record<string, unknown>;
         const _inputHash = await inputHash(snapshot);
 
-        const budget = await assertBelowDailyCap(deviceId, repos.db, 'subject-graph');
-        if (!budget.ok) throw new WorkflowFail(budget.code!, budget.message!);
-
-        // Check cache for all required artifact kinds. For subject-graph,
-        // we check for the primary artifact kind of the pipeline.
         const cached = await repos.artifacts.findCacheHit(deviceId, 'subject-graph-topics', _inputHash);
         if (cached) {
-          await repos.runs.append(runId, deviceId, 'artifact.ready', {
-            artifactId: cached.id,
-            kind: 'subject-graph-topics',
-            contentHash: cached.content_hash,
-            inputHash: _inputHash,
-            schemaVersion: cached.schema_version,
-            fromCache: true,
-          });
+          await repos.runs.appendTyped(runId, deviceId,
+            buildArtifactReadyEvent({
+              artifactId: cached.id,
+              kind: 'subject-graph-topics',
+              contentHash: cached.content_hash,
+              inputHash: _inputHash,
+              schemaVersion: cached.schema_version,
+              fromCache: true,
+            }),
+          );
           await repos.runs.markReady(runId);
-          await repos.runs.append(runId, deviceId, 'run.completed', {});
+          await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
           return { ok: false };
         }
 
@@ -213,7 +215,9 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       // ---- 2. STAGE A: TOPIC LATTICE ----
       const topicsCkp = checkpoints.find((c) => c.stage === 'topics');
       if (topicsCkp?.artifact_id) {
-        await repos.runs.append(runId, deviceId, 'run.status', { status: 'generating-stage', stage: 'topics', from: 'checkpoint' });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildStageProgressEvent('topics', undefined, 'resumed from checkpoint'),
+        );
       } else {
         await checkCancel('before-topics');
 
@@ -246,7 +250,6 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
               this.env,
             );
 
-            // Strict parse + semantic validate
             const parseResult = strictParseArtifact('subject-graph-topics', raw.text);
             if (!parseResult.ok) {
               throw new WorkflowFail(parseResult.failureCode, parseResult.message);
@@ -265,7 +268,9 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       // ---- 3. STAGE B: PREREQUISITE EDGES ----
       const edgesCkp = checkpoints.find((c) => c.stage === 'edges');
       if (edgesCkp?.artifact_id) {
-        await repos.runs.append(runId, deviceId, 'run.status', { status: 'generating-stage', stage: 'edges', from: 'checkpoint' });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildStageProgressEvent('edges', undefined, 'resumed from checkpoint'),
+        );
       } else {
         await checkCancel('before-edges');
 
@@ -299,14 +304,11 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
               this.env,
             );
 
-            // Strict parse
             const parseResult = strictParseArtifact('subject-graph-edges', raw.text);
             if (!parseResult.ok) {
               throw new WorkflowFail(parseResult.failureCode, parseResult.message);
             }
 
-            // Apply the deterministic `correctPrereqEdges` repair (AGENTS.md
-            // narrow exception) and then semantic validate.
             const semResult = semanticValidateArtifact('subject-graph-edges', parseResult.payload);
             if (!semResult.ok) {
               throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
@@ -319,17 +321,21 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
       // ---- 4. READY ----
       await repos.runs.markReady(runId);
-      await repos.runs.append(runId, deviceId, 'run.completed', {});
+      await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
       if (err instanceof WorkflowFail) {
         await repos.runs.markFailed(runId, err.code, err.message);
-        await repos.runs.append(runId, deviceId, 'run.failed', { code: err.code, message: err.message });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunFailedEvent(err.code, err.message),
+        );
         throw err;
       }
       const message = err instanceof Error ? err.message : String(err);
       await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
-      await repos.runs.append(runId, deviceId, 'run.failed', { code: 'llm:upstream-5xx', message });
+      await repos.runs.appendTyped(runId, deviceId,
+        buildRunFailedEvent('llm:upstream-5xx', message),
+      );
       throw err;
     }
   }

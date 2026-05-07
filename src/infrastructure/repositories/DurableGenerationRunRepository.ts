@@ -19,7 +19,7 @@
  * `durableGenerationBoundary.test.ts`).
  */
 
-import type { ArtifactEnvelope, RunEvent } from '@/features/generationContracts';
+import type { ArtifactEnvelope, RunEvent, RunStatus } from '@/features/generationContracts';
 import type {
   CancelReason,
   IGenerationRunRepository,
@@ -118,7 +118,7 @@ function workerRunToSnapshot(row: WorkerRunRow): RunSnapshot {
     runId: row.id,
     deviceId: row.device_id,
     kind: row.kind as RunSnapshot['kind'],
-    status: row.status as RunSnapshot['status'],
+    status: mapWorkerRunStatus(row.status),
     inputHash: row.input_hash,
     parentRunId: row.parent_run_id ?? undefined,
     createdAt: isoToEpoch(row.created_at) ?? 0,
@@ -129,6 +129,29 @@ function workerRunToSnapshot(row: WorkerRunRow): RunSnapshot {
     snapshotJson: row.snapshot_json as RunSnapshot['snapshotJson'],
     jobs,
   };
+}
+
+/**
+ * Map a Worker-side run status to a canonical transport status.
+ *
+ * The backend now returns transport (hyphen-separated) statuses from
+ * `GET /v1/runs`. This function handles both transport and legacy DB
+ * (underscore) forms so the client is resilient to any format drift.
+ */
+function mapWorkerRunStatus(status: string): RunStatus {
+  const DB_TO_TRANSPORT: Record<string, string> = {
+    queued: 'queued',
+    planning: 'planning',
+    generating_stage: 'generating-stage',
+    parsing: 'parsing',
+    validating: 'validating',
+    persisting: 'persisting',
+    ready: 'ready',
+    applied_local: 'applied-local',
+    failed_final: 'failed-final',
+    cancelled: 'cancelled',
+  };
+  return (DB_TO_TRANSPORT[status] ?? status) as RunStatus;
 }
 
 function mapWorkerJobStatus(

@@ -1,19 +1,17 @@
 /**
- * Topic Expansion Workflow — Phase 2 PR-2B / Phase 3.5 contract convergence.
+ * Topic Expansion Workflow — Phase 2 PR-2B / Phase 3.6.
  *
  * Single-stage durable pipeline: generate → parse → validate → persist.
  * Mirrors `runExpansionJob.ts` but runs server-side on Cloudflare Workflows
  * with strict json_schema from the contracts module and cooperative cancel.
  *
- * Phase 3.5: All hashes, schemas, parsers, validators, and event builders
- * come from `@contracts`. No local hash helpers, inline JSON Schema payloads,
- * or ad hoc validation remain.
+ * Phase 3.6: Budget reserved at route level (single owner). Typed event
+ * builders and transport statuses throughout.
  */
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
-import { assertBelowDailyCap } from '../budget/budgetGuard';
 import { callTopicExpansion } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import {
@@ -24,6 +22,13 @@ import {
   jsonSchemaResponseFormat,
   topicExpansionCardsSchemaVersion,
 } from '../contracts/generationContracts';
+import {
+  buildRunStatusEvent,
+  buildArtifactReadyEvent,
+  buildRunCompletedEvent,
+  buildRunFailedEvent,
+  buildRunCancelledEvent,
+} from '../contracts/typedEvents';
 import type { Env } from '../env';
 
 // ---------------------------------------------------------------------------
@@ -58,38 +63,41 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
       const reason = await repos.runs.cancelRequested(runId);
       if (reason) {
         await repos.runs.markCancelled(runId);
-        await repos.runs.append(runId, deviceId, 'run.cancelled', { boundary, reason });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunCancelledEvent(boundary, reason),
+        );
         throw new WorkflowAbort('cancelled');
       }
     };
 
     try {
-      // ---- 1. PLAN ----
+      // ---- 1. PLAN (no budget check — Phase 3.6 Step 4) ----
       await checkCancel('before-plan');
 
       const planOutcome = (await step.do('plan', async (): Promise<PlanOutcome> => {
         await repos.runs.transition(runId, 'planning');
-        await repos.runs.append(runId, deviceId, 'run.status', { status: 'planning' });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunStatusEvent('planning'),
+        );
 
         const run = await repos.runs.load(runId);
         const snapshot = run.snapshot_json as Record<string, unknown>;
         const _inputHash = await inputHash(snapshot);
 
-        const budget = await assertBelowDailyCap(deviceId, repos.db, 'topic-expansion');
-        if (!budget.ok) throw new WorkflowFail(budget.code!, budget.message!);
-
         const cached = await repos.artifacts.findCacheHit(deviceId, 'topic-expansion-cards', _inputHash);
         if (cached) {
-          await repos.runs.append(runId, deviceId, 'artifact.ready', {
-            artifactId: cached.id,
-            kind: 'topic-expansion-cards',
-            contentHash: cached.content_hash,
-            inputHash: _inputHash,
-            schemaVersion: cached.schema_version,
-            fromCache: true,
-          });
+          await repos.runs.appendTyped(runId, deviceId,
+            buildArtifactReadyEvent({
+              artifactId: cached.id,
+              kind: 'topic-expansion-cards',
+              contentHash: cached.content_hash,
+              inputHash: _inputHash,
+              schemaVersion: cached.schema_version,
+              fromCache: true,
+            }),
+          );
           await repos.runs.markReady(runId);
-          await repos.runs.append(runId, deviceId, 'run.completed', {});
+          await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
           return { ok: false };
         }
 
@@ -123,7 +131,9 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
           { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
           async (): Promise<GenerateResult> => {
             await repos.runs.transition(runId, 'generating_stage');
-            await repos.runs.append(runId, deviceId, 'run.status', { status: 'generating-stage', stage: 'generate' });
+            await repos.runs.appendTyped(runId, deviceId,
+              buildRunStatusEvent('generating_stage', 'generate'),
+            );
 
             const messages = [
               {
@@ -166,6 +176,9 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
       // @ts-expect-error Serializable<Record> rejects `unknown` values.
       const parsed = (await step.do('parse', async () => {
         await repos.runs.transition(runId, 'parsing');
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunStatusEvent('parsing'),
+        );
         const result = strictParseArtifact('topic-expansion-cards', genResult.text);
         if (!result.ok) {
           throw new WorkflowFail(result.failureCode, result.message);
@@ -178,7 +191,9 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
       await step.do('validate', async () => {
         await repos.runs.transition(runId, 'validating');
-        // Provide existing concept stems from snapshot if available.
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunStatusEvent('validating'),
+        );
         const existingStems = Array.isArray(snapshot.existing_concept_stems)
           ? (snapshot.existing_concept_stems as string[])
           : undefined;
@@ -194,6 +209,9 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
       const persisted = (await step.do('persist', async (): Promise<PersistResult> => {
         await repos.runs.transition(runId, 'persisting');
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunStatusEvent('persisting'),
+        );
         const _contentHash = await contentHash(parsed);
 
         const artifactId = await repos.artifacts.putStorage(
@@ -210,26 +228,32 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
         return { artifactId, contentHash: _contentHash };
       })) as PersistResult;
 
-      // ---- 6. READY — typed artifact.ready event ----
+      // ---- 6. READY ----
       await repos.runs.markReady(runId);
-      await repos.runs.append(runId, deviceId, 'artifact.ready', {
-        artifactId: persisted.artifactId,
-        kind: 'topic-expansion-cards',
-        contentHash: persisted.contentHash,
-        inputHash: _inputHash,
-        schemaVersion: (snapshot.schema_version as number) ?? topicExpansionCardsSchemaVersion,
-      });
-      await repos.runs.append(runId, deviceId, 'run.completed', {});
+      await repos.runs.appendTyped(runId, deviceId,
+        buildArtifactReadyEvent({
+          artifactId: persisted.artifactId,
+          kind: 'topic-expansion-cards',
+          contentHash: persisted.contentHash,
+          inputHash: _inputHash,
+          schemaVersion: (snapshot.schema_version as number) ?? topicExpansionCardsSchemaVersion,
+        }),
+      );
+      await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
       if (err instanceof WorkflowFail) {
         await repos.runs.markFailed(runId, err.code, err.message);
-        await repos.runs.append(runId, deviceId, 'run.failed', { code: err.code, message: err.message });
+        await repos.runs.appendTyped(runId, deviceId,
+          buildRunFailedEvent(err.code, err.message),
+        );
         throw err;
       }
       const message = err instanceof Error ? err.message : String(err);
       await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
-      await repos.runs.append(runId, deviceId, 'run.failed', { code: 'llm:upstream-5xx', message });
+      await repos.runs.appendTyped(runId, deviceId,
+        buildRunFailedEvent('llm:upstream-5xx', message),
+      );
       throw err;
     }
   }

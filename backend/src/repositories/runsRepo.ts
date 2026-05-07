@@ -8,6 +8,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RunRow, JobRow, EventRow, CancelReason } from './types';
+import type { TypedEventType, TypedEventPayloadMap } from '../contracts/typedEvents';
 
 export interface IRunsRepo {
   // ---- runs ----
@@ -50,6 +51,16 @@ export interface IRunsRepo {
   // ---- events ----
   /** Append an event with an auto-allocated sequence number. */
   append(runId: string, deviceId: string, type: string, payload: Record<string, unknown>): Promise<EventRow>;
+  /**
+   * Append a typed event (Phase 3.6 Step 6).
+   * The builder already returns { type, payload } — this overload
+   * forwards them to the loose `append` for backward compatibility.
+   */
+  appendTyped<T extends TypedEventType>(
+    runId: string,
+    deviceId: string,
+    event: { type: T; payload: Record<string, unknown> },
+  ): Promise<EventRow>;
   /** Return events for a run with seq > lastSeq, ordered by seq ascending. */
   eventsAfter(runId: string, deviceId: string, lastSeq: number): Promise<EventRow[]>;
 
@@ -235,6 +246,10 @@ export function createRunsRepo(db: SupabaseClient): IRunsRepo {
 
       if (error) throw error;
       return data as EventRow;
+    },
+
+    async appendTyped(runId, deviceId, event) {
+      return this.append(runId, deviceId, event.type, event.payload);
     },
 
     async eventsAfter(runId: string, deviceId: string, lastSeq: number) {

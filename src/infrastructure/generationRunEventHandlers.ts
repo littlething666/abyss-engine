@@ -486,7 +486,11 @@ export function createGenerationRunEventHandlers(
         dedupeStore,
       );
 
-      for await (const event of client.observe(runId)) {
+      // Phase 3.6 Step 2: pass lastSeq so SSE replays only unprocessed events.
+      const startSeq = lastAppliedSeqs.get(runId) ?? 0;
+      let newArtifactsApplied = false;
+
+      for await (const event of client.observe(runId, startSeq)) {
         if (stopped) break;
         trackSeq(runId, event.seq);
 
@@ -519,17 +523,25 @@ export function createGenerationRunEventHandlers(
             );
 
             if (!result.applied) {
-              // supressed: duplicate, superseded, missing-stage-a, or invalid
+              // suppressed: duplicate, superseded, missing-stage-a, or invalid
               if (result.reason === 'superseded') {
                 // Superseded expansion — silence, per Plan v3 policy.
                 // The winning run will emit the completion event.
               }
+            } else {
+              newArtifactsApplied = true;
             }
             break;
           }
 
           // ── run.completed: fire legacy completion event ────────
           case 'run.completed': {
+            // Phase 3.6 Step 2: on rehydration (startSeq > 0), only fire
+            // completion events when new artifacts were applied. On fresh
+            // observation (startSeq === 0), always fire.
+            if (startSeq > 0 && !newArtifactsApplied) {
+              break;
+            }
             switch (runInput.pipelineKind) {
               case 'topic-content':
                 await emitTopicContentCompleted(
