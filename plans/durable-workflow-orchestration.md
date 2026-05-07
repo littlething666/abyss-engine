@@ -1,7 +1,7 @@
 <aside>
 📌
 
-**Status:** Plan v3, 2026-05-04. Rewritten after architecture review and user decisions: feature-owned generation contracts, Supabase Postgres v1 state, `RunInputSnapshot`, strict pipeline parsers with legacy parser deprecation, OpenRouter response-healing retained for v1, [AGENTS.md](http://AGENTS.md) durable-run composition exception, corrected Crystal Trial event semantics, Phase 1 budget guard, and complete Generation Client routing coverage.
+**Status:** Plan v3, 2026-05-06. Phases 0–3.5 complete. Phase 4 productionization in progress: CORS production hardening, threat-model doc, storage retention policy, auth migration plan, and `legacyRunnerBoundary.test.ts` landed. Destructive cleanup (items 4–7) blocked pending operator routing of all four pipelines to durable backend.
 
 </aside>
 
@@ -81,9 +81,9 @@ Last updated: 2026-05-06.
 - [x] **Step 3h. Runs repo extension.** Extended `IRunsRepo` with `listInWindow(days: number): Promise<RunRow[]>` method (queries `runs` table with `created_at >= since` and 1000-row limit). Implemented in `createRunsRepo`.
 - [x] **Step 3i. Tests.** 8 new test files / describe blocks: `tracer.test.ts` (6 tests), `settings.test.ts` (5 integration tests), `runs.stats.test.ts` (8 aggregation logic tests — empty, per-kind, per-model, per-schema-version, filtering, missing-field graceful, day clamping, sort order, lastSeenAt tracking). All 118 backend tests green + 254 eval tests unchanged.
 
-**Deferred to later Phase 3 sub-steps:**
+**Deferred to later Phase 3 / Phase 4 sub-steps:**
 - Full Langfuse integration adapter (tracer currently emits to console, ready for forwarding).
-- Per-device usage dashboard querying `usage_counters` table.
+- Per-device usage dashboard querying `usage_counters` table (the `GET /v1/runs/stats` endpoint exists; a UI dashboard component is deferred).
 
 ### Phase 3.5 — Contract Convergence + Backend Correctness
 
@@ -714,14 +714,17 @@ Exit criteria:
 
 ### Phase 4 — Productionization + cleanup.
 
-1. CORS allowlist for production domains.
-2. Threat-model doc covering pre-auth `deviceId`, Supabase service role, artifact URLs, and auth migration.
-3. Supabase Storage retention/lifecycle policy.
-4. Remove `'navigation'` from `ContentGenerationAbortReason` after all four pipelines are backend-routed.
-5. Delete `LocalGenerationRunRepository` and legacy in-tab runners.
-6. Remove deprecated permissive parsers from generation pipeline code paths.
-7. Remove client-side `openRouterResponseHealing` ownership after server-side settings are authoritative.
-8. Plan Supabase Auth migration from `deviceId` to `user_id`.
+Last updated: 2026-05-06.
+
+- [x]  **Item 1 (CORS production hardening).** Landed in workspace 2026-05-06. Tightened `backend/src/middleware/cors.ts`: production default origins (`https://abyss.globesoul.com`, `https://www.abyss.globesoul.com`) applied when `ALLOWED_ORIGINS` env var is unset. `localhost:3000` always included for local dev. Origin set re-resolved per request when env var is set (supports live config changes without redeploy). Phase 3.5 step 6 already added `supersedes-key`, `last-event-id`, `cache-control` to `Access-Control-Allow-Headers`.
+- [x]  **Item 2 (Threat-model doc).** Landed in workspace 2026-05-06. `docs/security/threat-model.md` covers: trust boundaries (browser → Worker → Supabase → OpenRouter), asset inventory, per-threat analysis (unauthorized device access, service-role key compromise, artifact URL exposure, budget bypass, SSE stream abuse, idempotency-key replay), dependency risks, and future auth-driven additions. Referenced from CORS middleware JSDoc.
+- [x]  **Item 3 (Supabase Storage retention).** Landed in workspace 2026-05-06. `docs/security/storage-retention.md` defines: three-tier retention (active → archived at 90d inactivity → deleted at 270d), deduplication by `(device_id, kind, input_hash)`, per-tier cleanup SQL (pg_cron compatible), artifact versioning interaction with `input_hash`, and cost estimates.
+- [x]  **Item 8 (Auth migration plan).** Landed in workspace 2026-05-06. `docs/security/auth-migration.md` covers: current pre-auth v1 model, target Supabase Auth model, five migration phases (schema prep → auth UI + enrollment → Worker JWT validation → RLS enforcement → legacy device-ID deprecation), cross-device experience post-migration, risk assessment, and open decisions (auth providers, anonymous grace period, data export/deletion, collaborative features).
+- [x]  **Deferred boundary test.** `src/infrastructure/repositories/legacyRunnerBoundary.test.ts` (deferred from Phase 0.5 step 4) landed in workspace 2026-05-06. Enforces that no file outside the allowlist (adapter, legacy runners themselves, feature barrels, wireGenerationClient bootstrap) imports the four legacy runner entry points (`runTopicGenerationPipeline`, `runExpansionJob`, `generateTrialQuestions`, Subject Graph orchestrator). Includes specific invariant assertion that `eventBusHandlers.ts` routes through `GenerationClient`. 6 tests pass.
+- [ ]  **Item 4 (Remove `'navigation'` abort).** Blocked — requires all four pipelines to be backend-routed (operator sets `NEXT_PUBLIC_DURABLE_RUNS_KINDS=crystal-trial,topic-expansion,subject-graph,topic-content`). Currently only `crystal-trial` is durable by default. The `'navigation'` abort reason and `beforeunload` listener in `useContentGenerationLifecycle` remain needed for local runners.
+- [ ]  **Item 5 (Delete LocalGenerationRunRepository).** Blocked — depends on item 4 cutover. Currently `LocalGenerationRunRepository` is the runtime adapter for non-durable pipelines.
+- [ ]  **Item 6 (Remove deprecated permissive parsers).** Blocked — local runners still use them. The `@deprecated` JSDoc added in Phase 0 step 4 documents the migration path; `legacyParserBoundary.test.ts` enforces strict paths don't call them.
+- [ ]  **Item 7 (Remove client-side openRouterResponseHealing).** Blocked — local runners still own model config. Server-side settings persistence landed in Phase 3 step 3c (`PUT /v1/settings`); client-side ownership removal waits on full backend routing.
 
 ## What changes in the existing codebase
 
@@ -729,6 +732,10 @@ Exit criteria:
 - **New:** `src/infrastructure/generationRunEventHandlers.ts` — sanctioned durable-run composition root.
 - **New:** `src/infrastructure/repositories/LocalGenerationRunRepository.ts`.
 - **New:** `src/infrastructure/repositories/DurableGenerationRunRepository.ts`.
+- **New:** `src/infrastructure/repositories/legacyRunnerBoundary.test.ts` — enforcement that only the sanctioned adapter imports legacy runners (Phase 4).
+- **New:** `docs/security/threat-model.md` — pre-auth v1 threat model (Phase 4).
+- **New:** `docs/security/storage-retention.md` — Supabase Storage lifecycle policy (Phase 4).
+- **New:** `docs/security/auth-migration.md` — Supabase Auth migration plan (Phase 4).
 - **Updated:** `src/types/repository.ts` — `IGenerationRunRepository` and generation run data contracts.
 - **Updated:** `src/infrastructure/llmInferenceSurfaceProviders.ts` — `requireJsonSchema`, `allowProviderHealing`, strict config failure.
 - **Updated:** existing parsers — marked `@deprecated` for pipeline paths; strict replacements introduced.
@@ -737,6 +744,8 @@ Exit criteria:
 - **Updated:** `src/hooks/useContentGenerationLifecycle.ts` — no-op for backend-routed runs until deleted.
 - **Updated:** `src/hooks/useContentGenerationHydration.ts` — backend active/recent run hydration.
 - **Updated:** `src/infrastructure/repositories/contentGenerationLogRepository.ts` — UI read-cache only.
+- **Updated:** `backend/src/middleware/cors.ts` — production default origins, per-request origin re-evaluation (Phase 4).
+- **Updated:** `vitest.config.ts` — `@contracts` alias for root-level backend test resolution (Phase 4).
 - **Phase 4 delete:** local runners and deprecated generation parsers no longer needed by generation pipelines.
 
 ## Acceptance criteria
