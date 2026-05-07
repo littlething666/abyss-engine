@@ -14,7 +14,8 @@ compatibility_flags = ["nodejs_compat"]
 # Module aliasing for Wrangler's esbuild-based bundler.
 # ---------------------------------------------------------------------------
 [alias]
-"@contracts" = "../src/features/generationContracts"
+# Esbuild alias substitution does not resolve a directory to index.ts; point at the entry file.
+"@contracts" = "../src/features/generationContracts/index.ts"
 
 # ---------------------------------------------------------------------------
 # Workflow bindings — one class per pipeline kind.

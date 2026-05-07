@@ -11,6 +11,20 @@ import type { Env } from '../env';
 
 const runEvents = new Hono<{ Bindings: Env; Variables: { deviceId: string } }>();
 
+/** Parse SSE resume cursor from Last-Event-ID or ?lastSeq= (must never produce NaN). */
+function parseResumeSeq(c: {
+  req: {
+    header: (name: string) => string | undefined;
+    query: (name: string) => string | undefined;
+  };
+}): number {
+  const headerVal = c.req.header('last-event-id')?.trim();
+  const queryVal = c.req.query('lastSeq')?.trim();
+  const raw = headerVal || queryVal || '0';
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
 runEvents.get('/:id/events', async (c) => {
   const deviceId = c.get('deviceId');
   const runId = c.req.param('id');
@@ -22,11 +36,7 @@ runEvents.get('/:id/events', async (c) => {
     return c.json({ error: 'not_found' }, 404);
   }
 
-  // Parse Last-Event-ID or ?lastSeq= query param.
-  const lastSeq = parseInt(
-    c.req.header('last-event-id') ?? c.req.query('lastSeq') ?? '0',
-    10,
-  );
+  const lastSeq = parseResumeSeq(c);
 
   const encoder = new TextEncoder();
 
@@ -55,13 +65,13 @@ runEvents.get('/:id/events', async (c) => {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      'content-type': 'text/event-stream',
-      'cache-control': 'no-cache, no-transform',
-      'x-accel-buffering': 'no',
-      'connection': 'keep-alive',
-    },
+  // Use Hono `c.body` so `#newResponse` merges CORS and other middleware headers
+  // from `c.res` (raw `new Response()` bypasses that merge for streamed bodies).
+  return c.body(stream, 200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'X-Accel-Buffering': 'no',
+    Connection: 'keep-alive',
   });
 });
 
