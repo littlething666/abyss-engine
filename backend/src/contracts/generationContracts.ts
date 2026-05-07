@@ -117,9 +117,24 @@ export {
 } from '@contracts';
 
 // ── snapshots ──────────────────────────────────────────────────────────────
-export type {
-  RunInputSnapshot,
-  RunInputSnapshotEnvelope,
+export {
+  buildSubjectGraphTopicsSnapshot,
+  buildSubjectGraphEdgesSnapshot,
+  buildTopicTheorySnapshot,
+  buildTopicStudyCardsSnapshot,
+  buildTopicMiniGameCardsSnapshot,
+  buildTopicExpansionSnapshot,
+  buildCrystalTrialSnapshot,
+  type BuildSubjectGraphTopicsSnapshotParams,
+  type BuildSubjectGraphEdgesSnapshotParams,
+  type BuildTopicTheorySnapshotParams,
+  type BuildTopicStudyCardsSnapshotParams,
+  type BuildTopicMiniGameCardsSnapshotParams,
+  type BuildTopicExpansionSnapshotParams,
+  type BuildCrystalTrialSnapshotParams,
+  type MiniGamePipelineKind,
+  type RunInputSnapshot,
+  type RunInputSnapshotEnvelope,
 } from '@contracts';
 
 // ── typed event builders (Phase 3.6 Step 6) ────────────────────────────────

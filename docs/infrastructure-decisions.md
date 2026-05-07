@@ -25,7 +25,7 @@ Worker / Hono API
   └─ Workflows: durable pipeline execution
 ```
 
-Pipeline model policy and response healing are **not** device settings. If account or product settings later need backend persistence, D1 is the queryable store for those settings; generation-pipeline policy stays backend-owned configuration.
+Pipeline model policy and response healing are **not** device settings. `POST /v1/runs` accepts compact `{ kind, intent }` requests only; the Worker rejects client-supplied snapshots and generation-policy fields, then expands the intent against the Learning Content Store plus backend Generation Policy before hashing and persistence. If account or product settings later need backend persistence, D1 is the queryable store for those settings; generation-pipeline policy stays backend-owned configuration.
 
 ## Durable Objects
 

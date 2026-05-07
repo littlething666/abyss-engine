@@ -185,6 +185,94 @@ export function mapWorkerJobStatus(
   }
 }
 
+function topicContentIntentStage(
+  input: Extract<RunInput, { pipelineKind: 'topic-content' }>,
+): 'theory' | 'study-cards' | 'mini-games' | 'full' {
+  const legacyStage = input.topicContentLegacyOptions?.legacyStage;
+  if (legacyStage) return legacyStage;
+
+  switch (input.snapshot.pipeline_kind) {
+    case 'topic-theory':
+      return 'theory';
+    case 'topic-study-cards':
+      return 'study-cards';
+    case 'topic-mini-game-category-sort':
+    case 'topic-mini-game-sequence-build':
+    case 'topic-mini-game-match-pairs':
+      return 'mini-games';
+    default: {
+      const _exhaustive: never = input.snapshot;
+      return _exhaustive;
+    }
+  }
+}
+
+function miniGameTypeFromSnapshot(
+  pipelineKind: Extract<RunInput, { pipelineKind: 'topic-content' }>['snapshot']['pipeline_kind'],
+): 'CATEGORY_SORT' | 'SEQUENCE_BUILD' | 'MATCH_PAIRS' | undefined {
+  switch (pipelineKind) {
+    case 'topic-mini-game-category-sort':
+      return 'CATEGORY_SORT';
+    case 'topic-mini-game-sequence-build':
+      return 'SEQUENCE_BUILD';
+    case 'topic-mini-game-match-pairs':
+      return 'MATCH_PAIRS';
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Build the Worker POST /v1/runs intent. The durable boundary must never send
+ * client-built snapshots or generation-policy fields; the Worker expands this
+ * compact intent against its Learning Content Store and backend policy.
+ */
+export function runInputToSubmitIntent(input: RunInput): Record<string, unknown> {
+  switch (input.pipelineKind) {
+    case 'topic-content': {
+      const stage = topicContentIntentStage(input);
+      const miniGameType = miniGameTypeFromSnapshot(input.snapshot.pipeline_kind);
+      return {
+        subjectId: input.subjectId,
+        topicId: input.topicId,
+        stage,
+        ...(miniGameType ? { miniGameType } : {}),
+      };
+    }
+    case 'topic-expansion':
+      return {
+        subjectId: input.subjectId,
+        topicId: input.topicId,
+        nextLevel: input.nextLevel,
+      };
+    case 'subject-graph':
+      if (input.snapshot.pipeline_kind === 'subject-graph-edges') {
+        return {
+          subjectId: input.subjectId,
+          stage: 'edges',
+          latticeArtifactContentHash: input.snapshot.lattice_artifact_content_hash,
+        };
+      }
+      return {
+        subjectId: input.subjectId,
+        stage: 'topics',
+        checklist: input.snapshot.checklist,
+        strategyBrief: input.snapshot.strategy_brief,
+      };
+    case 'crystal-trial':
+      return {
+        subjectId: input.subjectId,
+        topicId: input.topicId,
+        currentLevel: input.currentLevel,
+        targetLevel: input.snapshot.target_level,
+      };
+    default: {
+      const _exhaustive: never = input;
+      return _exhaustive;
+    }
+  }
+}
+
 export class DurableGenerationRunRepository implements IGenerationRunRepository {
   private readonly http: ApiClient;
   private readonly deviceId: string;
@@ -201,7 +289,7 @@ export class DurableGenerationRunRepository implements IGenerationRunRepository 
     // All four pipeline kinds are supported in Phase 2.
     const body: Record<string, unknown> = {
       kind: input.pipelineKind,
-      snapshot: input.snapshot,
+      intent: runInputToSubmitIntent(input),
     };
 
     const headers: Record<string, string> = {

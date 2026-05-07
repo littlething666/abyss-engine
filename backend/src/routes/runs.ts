@@ -3,15 +3,16 @@
  * POST /v1/runs/:id/cancel, POST /v1/runs/:id/retry.
  *
  * Phase 4: Cloudflare D1 owns idempotency, budget, and run metadata.
- * Typed events, transport statuses, and retry checkpoint lineage remain
- * repository-mediated.
+ * Initial submission accepts backend-expanded intents, not client-built
+ * snapshots. Typed events, transport statuses, and retry checkpoint lineage
+ * remain repository-mediated.
  */
 
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
 import { assertBelowDailyCap, PIPELINE_BUDGET_CAPS } from '../budget/budgetGuard';
 import { inputHash } from '../contracts/generationContracts';
-import { bindBackendGenerationPolicyToSnapshot } from '../generationPolicy';
+import { expandRunIntent, assertNoForbiddenPolicyFields } from '../runIntents/runIntentExpansion';
 import { buildRetryRunSnapshot } from './retryPlanning';
 import {
   buildRunQueuedEvent,
@@ -24,26 +25,27 @@ import {
 import { dbStatusToTransport } from '../contracts/statusMapper';
 import type { Env } from '../env';
 import type { PipelineKind } from '../repositories/types';
-import type { RunInputSnapshot, SubmitRunBody } from '../types/api';
+import type { SubmitRunBody } from '../types/api';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Lightweight snapshot assertion. Full Zod validation is deferred — the
- * contracts module's strict parsers validate inside Workflows.
+ * Lightweight intent assertion. Snapshot construction is backend-owned: the
+ * route accepts only `{ kind, intent }`, then expands the intent through the
+ * Learning Content Store and backend Generation Policy.
  */
-function assertSnapshot(body: unknown): {
+function assertIntentBody(body: unknown): {
   kind: PipelineKind;
-  snapshot: RunInputSnapshot;
+  intent: Record<string, unknown>;
   error?: string;
 } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return { kind: 'crystal-trial', snapshot: {} as RunInputSnapshot, error: 'invalid_body' };
+    return { kind: 'crystal-trial', intent: {}, error: 'invalid_body' };
   }
 
-  const b = body as SubmitRunBody & { supersedesKey?: string };
+  const b = body as SubmitRunBody & { snapshot?: unknown };
 
   const VALID_KINDS: PipelineKind[] = [
     'crystal-trial',
@@ -53,20 +55,18 @@ function assertSnapshot(body: unknown): {
   ];
 
   if (!VALID_KINDS.includes(b.kind)) {
-    return { kind: 'crystal-trial', snapshot: {} as RunInputSnapshot, error: `unsupported kind: ${String(b.kind)}` };
+    return { kind: 'crystal-trial', intent: {}, error: `unsupported kind: ${String(b.kind)}` };
   }
 
-  const snapshot = b.snapshot;
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
-    return { kind: b.kind, snapshot: {} as RunInputSnapshot, error: 'missing or invalid snapshot' };
+  if ('snapshot' in b) {
+    return { kind: b.kind, intent: {}, error: 'snapshot is not accepted; POST /v1/runs requires { kind, intent }' };
   }
 
-  const s = snapshot as Record<string, unknown>;
-  if (!s.pipeline_kind || !s.schema_version || !s.subject_id) {
-    return { kind: b.kind, snapshot: {} as RunInputSnapshot, error: 'snapshot missing required fields (pipeline_kind, schema_version, subject_id)' };
+  if (!b.intent || typeof b.intent !== 'object' || Array.isArray(b.intent)) {
+    return { kind: b.kind, intent: {}, error: 'missing or invalid intent' };
   }
 
-  return { kind: b.kind, snapshot: s as unknown as RunInputSnapshot };
+  return { kind: b.kind, intent: b.intent };
 }
 
 function getSupersedesKey(req: Request): string | undefined {
@@ -125,7 +125,8 @@ const runs = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotenc
 /**
  * POST /v1/runs — submit a new run.
  *
- * Phase 4: D1 owns idempotency + budget + run creation through the
+ * Phase 4: the Worker expands `{ kind, intent }` into a backend-owned
+ * snapshot before D1 owns idempotency + budget + run creation through the
  * `runs.atomicSubmitRun` adapter method. Workflow dispatch remains separate
  * because Cloudflare Workflows need the D1 run row to exist first.
  */
@@ -144,10 +145,18 @@ runs.post('/', async (c) => {
     return c.json({ error: 'invalid_json_body' }, 400);
   }
 
-  // 1. Validate snapshot + extract kind.
-  const { kind, snapshot, error: snapErr } = assertSnapshot(body);
-  if (snapErr) {
-    return c.json({ code: 'parse:json-mode-violation', message: snapErr }, 400);
+  // 1. Validate intent + extract kind. Reject client-owned model/provider
+  //    policy at this HTTP boundary before expansion or hashing.
+  try {
+    assertNoForbiddenPolicyFields(body);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ code: 'config:forbidden-generation-policy-field', message }, 400);
+  }
+
+  const { kind, intent, error: intentErr } = assertIntentBody(body);
+  if (intentErr) {
+    return c.json({ code: 'parse:json-mode-violation', message: intentErr }, 400);
   }
 
   // 2. Supersedes-Key is only valid for topic-expansion.
@@ -156,21 +165,24 @@ runs.post('/', async (c) => {
     return c.json({ code: 'config:unexpected-supersedes-key', message: 'Supersedes-Key is only valid for kind=topic-expansion' }, 400);
   }
 
-  // 3. Bind backend-owned generation policy before hashing/storing the
-  //    snapshot. Client-supplied model/healing fields are never trusted.
-  let policyBoundSnapshot: Record<string, unknown>;
+  // 3. Expand backend-owned snapshot from intent using Learning Content Store
+  //    and backend Generation Policy before hashing/storage.
+  let expanded;
   try {
-    policyBoundSnapshot = await bindBackendGenerationPolicyToSnapshot(
+    expanded = await expandRunIntent({
       deviceId,
-      snapshot as Record<string, unknown>,
-    );
+      kind,
+      intent,
+      learningContent: repos.learningContent,
+      now: () => new Date(),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return c.json({ code: 'config:invalid', message }, 400);
+    return c.json({ code: 'config:invalid-intent', message }, 400);
   }
 
   // 4. Compute contract-owned input hash.
-  const hash = await inputHash(policyBoundSnapshot);
+  const hash = await inputHash(expanded.snapshot);
 
   // 5. Check artifact cache BEFORE D1 run creation (so we know whether to mark
   //    the run `ready` or `queued`).
@@ -187,7 +199,7 @@ runs.post('/', async (c) => {
   // 7. Atomic submit — idempotency + budget + run creation at the D1 boundary.
   const caps = PIPELINE_BUDGET_CAPS[kind];
   const now = new Date().toISOString();
-  const snapshotRecord = policyBoundSnapshot;
+  const snapshotRecord = expanded.snapshot;
 
   const submit = await repos.runs.atomicSubmitRun({
     deviceId,
@@ -196,8 +208,8 @@ runs.post('/', async (c) => {
     inputHash: hash,
     status: cached ? 'ready' : 'queued',
     supersedesKey: supersedesKey ?? null,
-    subjectId: (snapshotRecord.subject_id as string) ?? null,
-    topicId: (snapshotRecord.topic_id as string) ?? null,
+    subjectId: expanded.subjectId,
+    topicId: expanded.topicId,
     snapshotJson: snapshotRecord,
     parentRunId: null,
     runCap: caps.runsPerDay,

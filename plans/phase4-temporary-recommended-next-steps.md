@@ -11,6 +11,7 @@ The previous ordering is still broadly correct, with these updates from the late
 3. **Frontend backend deck reads are wired for durable mode.** `src/infrastructure/repositories/BackendDeckRepository.ts` implements `IDeckRepository` against the Learning Content routes via `ApiClient`, and `src/infrastructure/deckRepositoryFactory.ts` switches `deckRepository` to backend reads when `NEXT_PUBLIC_DURABLE_RUNS=true` and `NEXT_PUBLIC_DURABLE_GENERATION_URL` is configured. Legacy local-runner builds still use IndexedDB until Phase 4 deletes local runners.
 4. **Backend subject manifest envelope is enforced at write time.** `backend/src/learningContent/learningContentRepo.ts` now rejects `upsertSubject` calls unless `subjects.metadata_json.subject` contains the frontend manifest envelope (`description`, `color`, `geometry.gridTile`, optional `topicIds`, optional domain `metadata`). This keeps missing presentation fields as explicit backend materialization errors rather than frontend defaults.
 5. **Backend generation policy is bound before durable run hashing/storage and used by workflows.** `POST /v1/runs` now overwrites snapshot policy fields with backend-resolved `model_id`, `generation_policy_hash`, and `provider_healing_requested` before `input_hash` calculation and D1 persistence. Workflow LLM calls resolve their job policy through `backend/src/generationPolicy/*`, trace `generationPolicyHash`, and no longer use workflow-local model fallbacks or hard-coded provider-healing booleans.
+6. **Durable run submission has moved to intents at the Worker boundary.** `POST /v1/runs` now accepts `{ kind, intent }`, rejects `snapshot`, and rejects generation-policy fields (`model`, `modelId`, `model_id`, provider/healing/plugin/response-format fields) at any depth before expansion. `backend/src/runIntents/runIntentExpansion.ts` expands intents into backend-owned snapshots using the Learning Content Store and backend Generation Policy before `input_hash` calculation and D1 persistence. The frontend durable repository now posts compact intents instead of client-built snapshots.
 
 ## Completed to date
 
@@ -26,6 +27,8 @@ The previous ordering is still broadly correct, with these updates from the late
 - Backend `upsertSubject` manifest-envelope validation plus tests for strict failure when `metadata.subject` is missing.
 - Backend generation-policy snapshot binding seam (`backend/src/generationPolicy/snapshotBinding.ts`) and tests proving backend policy overwrites client snapshot policy fields before hashing/storage.
 - Workflow policy wiring for Crystal Trial, Topic Expansion, Subject Graph, and Topic Content; LLM traces now include `generationPolicyHash`.
+- Intent-based durable submission seam (`backend/src/runIntents/runIntentExpansion.ts`) with tests for deep policy-field rejection and Learning Content Store-backed expansion for Topic Expansion and Crystal Trial.
+- `DurableGenerationRunRepository` posts `{ kind, intent }` to `/v1/runs`; tests lock that durable submit bodies omit snapshots and client-side policy fields.
 
 ## Recommended next steps
 
@@ -34,9 +37,10 @@ The previous ordering is still broadly correct, with these updates from the late
    - Keep `backend/d1/init.sql` as the only canonical schema path.
 
 2. **Move `POST /v1/runs` from snapshots to intents**
-   - Accept `{ kind, intent }`, not client-built snapshots.
-   - Reject policy fields at any depth: `model`, `modelId`, `model_id`, `provider`, `providerHealingRequested`, `responseHealing`, `openRouterResponseHealing`, `plugins`, `response_format`.
-   - Expand intents server-side using Learning Content Store + backend Generation Policy.
+   - [COMPLETED] Accept `{ kind, intent }`, not client-built snapshots.
+   - [COMPLETED] Reject policy fields at any depth: `model`, `modelId`, `model_id`, `provider`, `providerHealingRequested`, `responseHealing`, `openRouterResponseHealing`, `plugins`, `response_format`.
+   - [COMPLETED] Expand intents server-side using Learning Content Store + backend Generation Policy.
+   - Remaining follow-up: remove frontend snapshot construction/model settings once durable-only routing is ready; current local-runner compatibility still builds snapshots before the durable adapter converts them to intents.
 
 3. **Add backend prompt modules**
    - Move prompt construction behind backend seams.
