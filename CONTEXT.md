@@ -112,6 +112,10 @@ _Avoid_: Graph generation, curriculum generation, subject pipeline
 The generation of additional cards triggered by crystal progression.
 _Avoid_: Expansion, level content, follow-up cards
 
+**Learning Content Store**:
+The backend-authoritative persistence surface for Subjects, Subject Graphs, Topic Content, study cards, and generated Crystal Trial question sets. The browser reads learning content from this store and no longer owns generation-pipeline persistence.
+_Avoid_: Local deck, browser cache, generated content cache
+
 ### Guidance And Signals
 
 **Mentor**:
@@ -147,6 +151,7 @@ _Avoid_: User profile, analytics profile, account
 - **Subject Graph Generation** produces a **Topic Lattice** before prerequisite wiring.
 - **Topic Expansion** adds study cards when crystal progression calls for more material.
 - A **Crystal Trial** gates progression toward a target **Crystal Level**.
+- The **Learning Content Store** persists generated Subjects, Subject Graphs, Topic Content, study cards, and Crystal Trial question sets after durable backend workflows validate artifacts.
 - The **Mentor** reacts to events carried by the **App Event Bus**.
 - **Telemetry** records product-domain signals without owning analytics deployment details.
 

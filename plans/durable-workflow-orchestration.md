@@ -1,13 +1,13 @@
 <aside>
 📌
 
-**Status:** Plan v3, 2026-05-07. Phases 0–3.5 complete. **Phase 3.6 is now complete (2026-05-07).** All four blockers resolved: atomic idempotency RPC, retry checkpoint lineage, Subject Graph Stage B loud-fail semantics, and strict SSE/client transport decoding. Phase 4 productionization: items 4–7 blocked pending operator routing of all four pipelines to durable backend.
+**Status:** Plan v3, 2026-05-07. Phases 0–3.5 complete. **Phase 3.6 is now complete (2026-05-07).** All four blockers resolved: atomic idempotency RPC, retry checkpoint lineage, Subject Graph Stage B loud-fail semantics, and strict SSE/client transport decoding. Phase 4 productionization has started: PR-A and PR-B are landed, and the Learning Content Store schema/repository core of PR-C is landed. Items 4–7 remain blocked pending operator routing of all four pipelines to the durable backend and backend content reads.
 
 </aside>
 
 ## Implementation Status
 
-Last updated: 2026-05-07. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed, Phase 3 (Observability + full budgets) core steps 3a–3i landed, Phase 3.5 landed, and Phase 3.6 landed (2026-05-07 — atomic idempotency, retry lineage, Stage B loud-fail, strict transport decoding). PRs are stacked: each step's PR targets the previous step's branch as its base.
+Last updated: 2026-05-07. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed, Phase 3 (Observability + full budgets) core steps 3a–3i landed, Phase 3.5 landed, Phase 3.6 landed (2026-05-07 — atomic idempotency, retry lineage, Stage B loud-fail, strict transport decoding), and Phase 4 started with backend generation policy plus Learning Content Store foundations. PRs are stacked: each step's PR targets the previous step's branch as its base.
 
 ### Phase 0 — Reliability hardening + shared contracts
 
@@ -765,21 +765,26 @@ Exit criteria:
 
 ### Phase 4 — Productionization + cleanup.
 
-Last updated: 2026-05-06.
+Last updated: 2026-05-07.
 
+- [x]  **Phase 4 PR-A (destructive reset plan/status).** Landed in workspace 2026-05-07. `plans/phase4.md` now governs the destructive backend-authoritative generation reset, and `CHANGELOG.md` records the no-migration posture.
+- [x]  **Phase 4 PR-B (Backend Generation Policy module).** Landed in workspace 2026-05-07. Adds `backend/src/generationPolicy/*` with strict policy parsing, backend default policy, all nine job kinds, deterministic `gpol_` policy hashes, backend-owned response-healing=true, and tests for loud invalid-policy failure plus all-kind resolution.
+- [~]  **Phase 4 PR-C (Learning Content Store schema/repository core).** Schema/repository core landed in workspace 2026-05-07: `backend/migrations/0009_learning_content_store.sql`, `backend/src/learningContent/*`, and `Repos.learningContent`. Learning-content HTTP routes and route-level per-device/not-found tests remain with PR-D.
 - [x]  **Item 1 (CORS production hardening).** Landed in workspace 2026-05-06. Tightened `backend/src/middleware/cors.ts`: production default origins (`https://abyss.globesoul.com`, `https://www.abyss.globesoul.com`) applied when `ALLOWED_ORIGINS` env var is unset. `localhost:3000` always included for local dev. Origin set re-resolved per request when env var is set (supports live config changes without redeploy). Phase 3.5 step 6 already added `supersedes-key`, `last-event-id`, `cache-control` to `Access-Control-Allow-Headers`.
 - [x]  **Item 2 (Threat-model doc).** Landed in workspace 2026-05-06. `docs/security/threat-model.md` covers: trust boundaries (browser → Worker → Supabase → OpenRouter), asset inventory, per-threat analysis (unauthorized device access, service-role key compromise, artifact URL exposure, budget bypass, SSE stream abuse, idempotency-key replay), dependency risks, and future auth-driven additions. Referenced from CORS middleware JSDoc.
 - [x]  **Item 3 (Supabase Storage retention).** Landed in workspace 2026-05-06. `docs/security/storage-retention.md` defines: three-tier retention (active → archived at 90d inactivity → deleted at 270d), deduplication by `(device_id, kind, input_hash)`, per-tier cleanup SQL (pg_cron compatible), artifact versioning interaction with `input_hash`, and cost estimates.
 - [x]  **Item 8 (Auth migration plan).** Landed in workspace 2026-05-06. `docs/security/auth-migration.md` covers: current pre-auth v1 model, target Supabase Auth model, five migration phases (schema prep → auth UI + enrollment → Worker JWT validation → RLS enforcement → legacy device-ID deprecation), cross-device experience post-migration, risk assessment, and open decisions (auth providers, anonymous grace period, data export/deletion, collaborative features).
 - [x]  **Deferred boundary test.** `src/infrastructure/repositories/legacyRunnerBoundary.test.ts` (deferred from Phase 0.5 step 4) landed in workspace 2026-05-06. Enforces that no file outside the allowlist (adapter, legacy runners themselves, feature barrels, wireGenerationClient bootstrap) imports the four legacy runner entry points (`runTopicGenerationPipeline`, `runExpansionJob`, `generateTrialQuestions`, Subject Graph orchestrator). Includes specific invariant assertion that `eventBusHandlers.ts` routes through `GenerationClient`. 6 tests pass.
-- [ ]  **Item 4 (Remove `'navigation'` abort).** Blocked — requires all four pipelines to be backend-routed (operator sets `NEXT_PUBLIC_DURABLE_RUNS_KINDS=crystal-trial,topic-expansion,subject-graph,topic-content`). Currently only `crystal-trial` is durable by default. The `'navigation'` abort reason and `beforeunload` listener in `useContentGenerationLifecycle` remain needed for local runners.
-- [ ]  **Item 5 (Delete LocalGenerationRunRepository).** Blocked — depends on item 4 cutover. Currently `LocalGenerationRunRepository` is the runtime adapter for non-durable pipelines.
+- [ ]  **Item 4 (Remove `'navigation'` abort).** Blocked — Phase 4 intentionally replaces environment-flag routing with durable-only intent submission. The `'navigation'` abort reason and `beforeunload` listener in `useContentGenerationLifecycle` remain until PR-J/PR-K delete local runners and navigation abort together.
+- [ ]  **Item 5 (Delete LocalGenerationRunRepository).** Blocked — depends on PR-E through PR-J cutover. Currently `LocalGenerationRunRepository` is still the runtime adapter for non-durable pipelines.
 - [ ]  **Item 6 (Remove deprecated permissive parsers).** Blocked — local runners still use them. The `@deprecated` JSDoc added in Phase 0 step 4 documents the migration path; `legacyParserBoundary.test.ts` enforces strict paths don't call them.
-- [ ]  **Item 7 (Remove client-side openRouterResponseHealing).** Blocked — local runners still own model config. Server-side settings persistence landed in Phase 3 step 3c (`PUT /v1/settings`); client-side ownership removal waits on full backend routing.
+- [ ]  **Item 7 (Remove client-side openRouterResponseHealing).** Blocked — local runners and frontend pipeline settings still own model/healing config. Phase 4 PR-B introduced backend generation policy; client-side ownership removal waits on PR-I/J.
 
 ## What changes in the existing codebase
 
 - **New:** `src/features/generationContracts/` — strict schemas, parsers, validators, prompt builders, snapshots, hashes, failure codes, run events, eval fixtures.
+- **New:** `backend/src/generationPolicy/` — backend-owned Phase 4 model/provider-healing policy resolver and policy hash.
+- **New:** `backend/src/learningContent/` + `backend/migrations/0009_learning_content_store.sql` — backend Learning Content Store schema/repository foundation.
 - **New:** `src/infrastructure/generationRunEventHandlers.ts` — sanctioned durable-run composition root.
 - **New:** `src/infrastructure/repositories/LocalGenerationRunRepository.ts`.
 - **New:** `src/infrastructure/repositories/DurableGenerationRunRepository.ts`.

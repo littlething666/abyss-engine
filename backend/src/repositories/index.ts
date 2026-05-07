@@ -21,6 +21,10 @@ import {
   createIdempotencyRecordsRepo,
   type IIdempotencyRecordsRepo,
 } from './idempotencyRecordsRepo';
+import {
+  createLearningContentRepo,
+  type ILearningContentRepo,
+} from '../learningContent';
 
 export interface Repos {
   devices: IDevicesRepo;
@@ -31,6 +35,8 @@ export interface Repos {
   deviceSettings: IDeviceSettingsRepo;
   /** Phase 3.6: idempotency records with 24h TTL. */
   idempotency: IIdempotencyRecordsRepo;
+  /** Backend-authoritative generated learning-content read model. */
+  learningContent: ILearningContentRepo;
   /** Supabase client — consumed by `assertBelowDailyCap` for atomic RPC calls. */
   db: ReturnType<typeof getSupabaseClient>;
 }
@@ -49,6 +55,7 @@ export function makeRepos(env: Env): Repos {
     stageCheckpoints: createStageCheckpointsRepo(db),
     deviceSettings: createDeviceSettingsRepo(db),
     idempotency: createIdempotencyRecordsRepo(db),
+    learningContent: createLearningContentRepo(db),
     db,
   };
 }
