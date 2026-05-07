@@ -1,11 +1,12 @@
 /**
  * Route-level cancel tests — Phase 1 PR-G.
  *
- * Tests the cancel lifecycle at the HTTP surface with mocked Supabase client.
+ * Tests the cancel lifecycle at the HTTP surface with mocked D1 client.
  * Uses fake query builders along the full middleware → route → repo chain.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createFakeD1 } from '../testStubs/fakeD1';
 
 // ---------------------------------------------------------------------------
 // Fake query builder (mirrors repos.test.ts pattern)
@@ -84,44 +85,9 @@ function headers(deviceId = DEVICE_ID, extra?: Record<string, string>): Record<s
  *   append event  → rpc allocate_event_seq(runId) → insert into events
  */
 
-/** Build a mock Supabase client that responds in the correct call order. */
-function createMockSupabaseClient(results: QueuedResult[]) {
-  let idx = 0;
-
-  const from = () => {
-    return createFakeQueryBuilder(() => {
-      if (idx >= results.length) {
-        console.warn(`[mock supabase] ran out of results at idx=${idx}, returning null`);
-        return q(null);
-      }
-      return results[idx++];
-    });
-  };
-
-  // rpc is used for allocate_event_seq — returns a simple value, not a row.
-  // The repos.append calls it first (rpc), then uses the result for insert.
-  // In our mock, rpc is called via .rpc('allocate_event_seq', { p_run_id }).
-  const rpc = () => {
-    return createFakeQueryBuilder(() => {
-      if (idx >= results.length) {
-        console.warn(`[mock supabase] rpc ran out of results at idx=${idx}, returning 1`);
-        return q(1);
-      }
-      return results[idx++];
-    });
-  };
-
-  const storage = {
-    from: () => ({
-      upload: () => Promise.resolve({ error: null }),
-      download: () =>
-        Promise.resolve({ data: { text: async () => '{}' }, error: null }),
-      createSignedUrl: () =>
-        Promise.resolve({ data: { signedUrl: 'https://x' }, error: null }),
-    }),
-  };
-
-  return { from, rpc, storage };
+/** Build a mock D1 client that responds in the correct call order. */
+function createMockD1(results: QueuedResult[]) {
+  return createFakeD1(results.map((result) => ({ data: result.data, error: result.error, changes: 1 }))).db;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +98,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
 
   beforeEach(() => {
     vi.resetModules();
-    // Reset the cached Supabase client between tests.
+    // Reset the cached D1 client between tests.
     process.env = { ...OLD_ENV };
   });
 
@@ -151,7 +117,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
     // 4. Route requestCancel update: runs update cancel_requested_at
     // 5. Route append rpc: allocate_event_seq → returns 1
     // 6. Route append insert: events insert → returns event row
-    const mockClient = createMockSupabaseClient([
+    const mockClient = createMockD1([
       // 1. devices upsert: returns device row
       q({ id: DEVICE_ID, user_id: null, created_at: '2026-01-01T00:00:00Z', last_seen_at: '2026-05-05T00:00:00Z' }),
       // 2. runs select: returns queued run owned by DEVICE_ID
@@ -193,10 +159,6 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
       }),
     ]);
 
-    vi.doMock('@supabase/supabase-js', () => ({
-      createClient: () => mockClient,
-    }));
-
     // Dynamic import to get the app with our mock in place.
     const { default: mockedApp } = await import('../index');
 
@@ -206,8 +168,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
         headers: headers(),
       }),
       {
-        SUPABASE_URL: 'https://test.supabase.co',
-        SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+        GENERATION_DB: mockClient,
         OPENROUTER_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
@@ -221,7 +182,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
   it('cancel-after-completion: returns 409 when run is already terminal', async () => {
     const runId = 'run-cancel-002';
 
-    const mockClient = createMockSupabaseClient([
+    const mockClient = createMockD1([
       // 1. devices upsert
       q({ id: DEVICE_ID, user_id: null, created_at: '2026-01-01T00:00:00Z', last_seen_at: '2026-05-05T00:00:00Z' }),
       // 2. runs select: returns terminal (finished) run
@@ -247,10 +208,6 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
       }),
     ]);
 
-    vi.doMock('@supabase/supabase-js', () => ({
-      createClient: () => mockClient,
-    }));
-
     const { default: mockedApp } = await import('../index');
     const response = await mockedApp.fetch(
       new Request(`https://fakehost/v1/runs/${runId}/cancel`, {
@@ -258,8 +215,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
         headers: headers(),
       }),
       {
-        SUPABASE_URL: 'https://test.supabase.co',
-        SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+        GENERATION_DB: mockClient,
         OPENROUTER_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
@@ -274,7 +230,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
     const runId = 'run-cancel-003';
     const otherDevice = '00000000-0000-0000-0000-000000000099';
 
-    const mockClient = createMockSupabaseClient([
+    const mockClient = createMockD1([
       // 1. devices upsert for otherDevice
       q({ id: otherDevice, user_id: null, created_at: '2026-01-01T00:00:00Z', last_seen_at: '2026-05-05T00:00:00Z' }),
       // 2. runs select: returns run owned by DIFFERENT device
@@ -300,10 +256,6 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
       }),
     ]);
 
-    vi.doMock('@supabase/supabase-js', () => ({
-      createClient: () => mockClient,
-    }));
-
     const { default: mockedApp } = await import('../index');
     const response = await mockedApp.fetch(
       new Request(`https://fakehost/v1/runs/${runId}/cancel`, {
@@ -311,8 +263,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
         headers: headers(otherDevice),
       }),
       {
-        SUPABASE_URL: 'https://test.supabase.co',
-        SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+        GENERATION_DB: mockClient,
         OPENROUTER_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
@@ -328,7 +279,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
     // (generating_stage) run — the route only writes cancel_requested_at
     // and emits cancel_acknowledged. The actual terminal cancelled event
     // is emitted by the workflow when it polls and aborts.
-    const mockClient = createMockSupabaseClient([
+    const mockClient = createMockD1([
       // 1. devices upsert
       q({ id: DEVICE_ID, user_id: null, created_at: '2026-01-01T00:00:00Z', last_seen_at: '2026-05-05T00:00:00Z' }),
       // 2. runs select: returns generating_stage run (not finished)
@@ -370,10 +321,6 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
       }),
     ]);
 
-    vi.doMock('@supabase/supabase-js', () => ({
-      createClient: () => mockClient,
-    }));
-
     const { default: mockedApp } = await import('../index');
     const response = await mockedApp.fetch(
       new Request(`https://fakehost/v1/runs/${runId}/cancel`, {
@@ -381,8 +328,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
         headers: headers(),
       }),
       {
-        SUPABASE_URL: 'https://test.supabase.co',
-        SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+        GENERATION_DB: mockClient,
         OPENROUTER_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
@@ -415,7 +361,7 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
       it(`accepts cancel on queued ${kind} run and returns cancel_acknowledged`, async () => {
         const runId = `run-cancel-${kind}-001`;
 
-        const mockClient = createMockSupabaseClient([
+        const mockClient = createMockD1([
           q({ id: DEVICE_ID, user_id: null, created_at: '2026-01-01T00:00:00Z', last_seen_at: '2026-05-05T00:00:00Z' }),
           q({
             id: runId,
@@ -451,10 +397,6 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
           }),
         ]);
 
-        vi.doMock('@supabase/supabase-js', () => ({
-          createClient: () => mockClient,
-        }));
-
         const { default: mockedApp } = await import('../index');
         const response = await mockedApp.fetch(
           new Request(`https://fakehost/v1/runs/${runId}/cancel`, {
@@ -462,8 +404,7 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
             headers: headers(),
           }),
           {
-            SUPABASE_URL: 'https://test.supabase.co',
-            SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+            GENERATION_DB: mockClient,
             OPENROUTER_API_KEY: 'sk-or-test',
             ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
           },
@@ -477,7 +418,7 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
       it(`returns 409 when ${kind} run is already terminal`, async () => {
         const runId = `run-cancel-${kind}-002`;
 
-        const mockClient = createMockSupabaseClient([
+        const mockClient = createMockD1([
           q({ id: DEVICE_ID }),
           q({
             id: runId,
@@ -501,10 +442,6 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
           }),
         ]);
 
-        vi.doMock('@supabase/supabase-js', () => ({
-          createClient: () => mockClient,
-        }));
-
         const { default: mockedApp } = await import('../index');
         const response = await mockedApp.fetch(
           new Request(`https://fakehost/v1/runs/${runId}/cancel`, {
@@ -512,8 +449,7 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
             headers: headers(),
           }),
           {
-            SUPABASE_URL: 'https://test.supabase.co',
-            SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+            GENERATION_DB: mockClient,
             OPENROUTER_API_KEY: 'sk-or-test',
             ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
           },
@@ -525,7 +461,7 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
       it(`cancel-mid-stage for ${kind} returns cancel_acknowledged`, async () => {
         const runId = `run-cancel-${kind}-003`;
 
-        const mockClient = createMockSupabaseClient([
+        const mockClient = createMockD1([
           q({ id: DEVICE_ID }),
           q({
             id: runId,
@@ -561,10 +497,6 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
           }),
         ]);
 
-        vi.doMock('@supabase/supabase-js', () => ({
-          createClient: () => mockClient,
-        }));
-
         const { default: mockedApp } = await import('../index');
         const response = await mockedApp.fetch(
           new Request(`https://fakehost/v1/runs/${runId}/cancel`, {
@@ -572,8 +504,7 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
             headers: headers(),
           }),
           {
-            SUPABASE_URL: 'https://test.supabase.co',
-            SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+            GENERATION_DB: mockClient,
             OPENROUTER_API_KEY: 'sk-or-test',
             ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
           },

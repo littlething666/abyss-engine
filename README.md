@@ -58,8 +58,8 @@ Phase 4 targets a Cloudflare-native durable backend:
 - **Durable Objects** are optional coordination infrastructure only, used later if strict per-device locking or live fanout becomes necessary.
 
 The app is unreleased, so development data can be reset destructively. Reset D1
-from the canonical schema/init path and clear the R2 bucket when you need a
-fully cache-free generation run.
+from `backend/d1/reset.sql`, re-apply `backend/d1/init.sql`, and clear the R2
+bucket when you need a fully cache-free generation run.
 
 ### Build
 

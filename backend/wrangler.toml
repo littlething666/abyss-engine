@@ -1,11 +1,9 @@
-# abyss-durable-orchestrator — Phase 1 Crystal Trial pilot
+# abyss-durable-orchestrator — Phase 4 Cloudflare-native durable backend
 #
 # Secrets (set via `wrangler secret put`):
-#   SUPABASE_URL            — Supabase project URL (e.g. https://<ref>.supabase.co)
-#   SUPABASE_SERVICE_ROLE   — Supabase service-role key (server-side only)
 #   OPENROUTER_API_KEY      — OpenRouter API key for LLM calls
-# R2:
-#   Create/bind the bucket named below before deployment.
+# D1/R2:
+#   Create/bind the database and bucket named below before deployment.
 
 name = "abyss-durable-orchestrator"
 main = "src/index.ts"
@@ -20,9 +18,7 @@ compatibility_flags = ["nodejs_compat"]
 "@contracts" = "../src/features/generationContracts/index.ts"
 
 # ---------------------------------------------------------------------------
-# Workflow bindings — one class per pipeline kind.
-# Only Crystal Trial is wired in Phase 1; Topic Content, Topic Expansion,
-# and Subject Graph land in Phase 2.
+# Workflow bindings — one Cloudflare Workflow class per pipeline kind.
 # ---------------------------------------------------------------------------
 [[workflows]]
 name = "crystal-trial-workflow"
@@ -45,6 +41,14 @@ binding = "TOPIC_CONTENT_WORKFLOW"
 class_name = "TopicContentWorkflow"
 
 # ---------------------------------------------------------------------------
+# D1 queryable durable state.
+# ---------------------------------------------------------------------------
+[[d1_databases]]
+binding = "GENERATION_DB"
+database_name = "abyss-generation-state"
+database_id = "00000000-0000-0000-0000-000000000000" # replace with production D1 database id
+
+# ---------------------------------------------------------------------------
 # R2 artifact storage.
 # ---------------------------------------------------------------------------
 [[r2_buckets]]
@@ -52,11 +56,9 @@ binding = "GENERATION_ARTIFACTS_BUCKET"
 bucket_name = "abyss-generation-artifacts"
 
 # ---------------------------------------------------------------------------
-# Durable Object binding for per-run event-bus pub/sub (SSE tailing).
+# Durable Objects are intentionally not bound for v1. Add a narrow binding only
+# after a proven D1 contention or live-fanout coordination need.
 # ---------------------------------------------------------------------------
-# [[durable_objects.bindings]]
-# name = "RUN_EVENT_BUS"
-# class_name = "RunEventBus"
 
 # ---------------------------------------------------------------------------
 # Environment variables (non-secret — safe for version control).
@@ -66,9 +68,3 @@ bucket_name = "abyss-generation-artifacts"
 # Production origin(s) go first; localhost is always included for dev.
 ALLOWED_ORIGINS = "https://abyss.globesoul.com,https://littlething666.github.io,http://localhost:3000"
 
-# ---------------------------------------------------------------------------
-# Placement — keep the Worker close to Supabase (us-east).
-# ---------------------------------------------------------------------------
-[placement]
-mode = "targeted"
-region = "gcp:us-east4"

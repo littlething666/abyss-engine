@@ -104,7 +104,7 @@ Abyss Engine v1 deploys a server-side durable generation orchestrator that persi
 **Severity:** Medium. Could cause unexpected OpenRouter billing.
 
 **Current mitigation:**
-- Budget enforcement is atomic via `reserve_run_budget` RPC (locks `usage_counters` row).
+- Budget enforcement uses D1 conditional writes against `usage_counters` before Workflow creation.
 - Enforcement runs BEFORE Workflow creation — over-cap requests receive `429` without consuming resources.
 - Per-device scoping prevents one device from exhausting global quota.
 

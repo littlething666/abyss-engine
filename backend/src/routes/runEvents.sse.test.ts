@@ -1,7 +1,7 @@
 /**
  * SSE resume tests — Phase 1 PR-G.
  *
- * Tests the `GET /v1/runs/:id/events` SSE endpoint with mocked Supabase:
+ * Tests the `GET /v1/runs/:id/events` SSE endpoint with mocked D1:
  * - Replays persisted events with seq > lastSeq
  * - Honors Last-Event-ID header
  * - Honors ?lastSeq= query parameter
@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createFakeD1 } from '../testStubs/fakeD1';
 
 type QueuedResult = { data: unknown; error: Error | null };
 
@@ -51,34 +52,8 @@ function q(data: unknown): QueuedResult {
 
 const DEVICE_ID = '00000000-0000-0000-0000-000000000001';
 
-function createMockSupabaseClient(results: QueuedResult[]) {
-  let idx = 0;
-
-  const from = () => {
-    return createFakeQueryBuilder(() => {
-      if (idx >= results.length) return q(null);
-      return results[idx++];
-    });
-  };
-
-  const rpc = () => {
-    return createFakeQueryBuilder(() => {
-      if (idx >= results.length) return q(1);
-      return results[idx++];
-    });
-  };
-
-  const storage = {
-    from: () => ({
-      upload: () => Promise.resolve({ error: null }),
-      download: () =>
-        Promise.resolve({ data: { text: async () => '{}' }, error: null }),
-      createSignedUrl: () =>
-        Promise.resolve({ data: { signedUrl: 'https://x' }, error: null }),
-    }),
-  };
-
-  return { from, rpc, storage };
+function createMockD1(results: QueuedResult[]) {
+  return createFakeD1(results.map((result) => ({ data: result.data, error: result.error, changes: 1 }))).db;
 }
 
 describe('GET /v1/runs/:id/events — SSE resume tests', () => {
@@ -93,7 +68,7 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
   it('returns correct SSE Content-Type and cache headers', async () => {
     const runId = 'run-sse-001';
 
-    const mockClient = createMockSupabaseClient([
+    const mockClient = createMockD1([
       // 1. devices upsert (middleware)
       q({ id: DEVICE_ID, user_id: null, created_at: '2026-01-01T00:00:00Z', last_seen_at: '2026-05-05T00:00:00Z' }),
       // 2. load run (ownership check)
@@ -121,18 +96,13 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
       }),
     ]);
 
-    vi.doMock('@supabase/supabase-js', () => ({
-      createClient: () => mockClient,
-    }));
-
     const { default: mockedApp } = await import('../index');
     const response = await mockedApp.fetch(
       new Request(`https://fakehost/v1/runs/${runId}/events`, {
         headers: { 'x-abyss-device': DEVICE_ID },
       }),
       {
-        SUPABASE_URL: 'https://test.supabase.co',
-        SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+        GENERATION_DB: mockClient,
         OPENROUTER_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
@@ -148,7 +118,7 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
     const runId = 'run-sse-002';
     const lastSeq = 2;
 
-    const mockClient = createMockSupabaseClient([
+    const mockClient = createMockD1([
       // 1. devices upsert
       q({ id: DEVICE_ID }),
       // 2. load run (ownership check)
@@ -205,10 +175,6 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
       }),
     ]);
 
-    vi.doMock('@supabase/supabase-js', () => ({
-      createClient: () => mockClient,
-    }));
-
     const { default: mockedApp } = await import('../index');
     const response = await mockedApp.fetch(
       new Request(`https://fakehost/v1/runs/${runId}/events`, {
@@ -218,8 +184,7 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
         },
       }),
       {
-        SUPABASE_URL: 'https://test.supabase.co',
-        SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+        GENERATION_DB: mockClient,
         OPENROUTER_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
@@ -245,7 +210,7 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
     const runId = 'run-sse-003';
     const lastSeq = 0;
 
-    const mockClient = createMockSupabaseClient([
+    const mockClient = createMockD1([
       // 1. devices upsert
       q({ id: DEVICE_ID }),
       // 2. load run
@@ -284,18 +249,13 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
       }),
     ]);
 
-    vi.doMock('@supabase/supabase-js', () => ({
-      createClient: () => mockClient,
-    }));
-
     const { default: mockedApp } = await import('../index');
     const response = await mockedApp.fetch(
       new Request(`https://fakehost/v1/runs/${runId}/events?lastSeq=${lastSeq}`, {
         headers: { 'x-abyss-device': DEVICE_ID },
       }),
       {
-        SUPABASE_URL: 'https://test.supabase.co',
-        SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+        GENERATION_DB: mockClient,
         OPENROUTER_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
@@ -311,7 +271,7 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
     const runId = 'run-sse-004';
     const otherDevice = '00000000-0000-0000-0000-000000000099';
 
-    const mockClient = createMockSupabaseClient([
+    const mockClient = createMockD1([
       // 1. devices upsert for otherDevice
       q({ id: otherDevice }),
       // 2. load run — returns run owned by different device
@@ -327,18 +287,13 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
       }),
     ]);
 
-    vi.doMock('@supabase/supabase-js', () => ({
-      createClient: () => mockClient,
-    }));
-
     const { default: mockedApp } = await import('../index');
     const response = await mockedApp.fetch(
       new Request(`https://fakehost/v1/runs/${runId}/events`, {
         headers: { 'x-abyss-device': otherDevice },
       }),
       {
-        SUPABASE_URL: 'https://test.supabase.co',
-        SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+        GENERATION_DB: mockClient,
         OPENROUTER_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
@@ -381,11 +336,7 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
       q(activeRunRow), // load (poll, still active)
     ];
 
-    const mockClient = createMockSupabaseClient(mockResults);
-
-    vi.doMock('@supabase/supabase-js', () => ({
-      createClient: () => mockClient,
-    }));
+    const mockClient = createMockD1(mockResults);
 
     const { default: mockedApp } = await import('../index');
     const response = await mockedApp.fetch(
@@ -393,8 +344,7 @@ describe('GET /v1/runs/:id/events — SSE resume tests', () => {
         headers: { 'x-abyss-device': DEVICE_ID },
       }),
       {
-        SUPABASE_URL: 'https://test.supabase.co',
-        SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+        GENERATION_DB: mockClient,
         OPENROUTER_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
@@ -448,7 +398,7 @@ describe('Cross-pipeline SSE resume tests (all 4 pipeline kinds)', () => {
       it(`returns correct SSE headers for ${kind} run`, async () => {
         const runId = `run-sse-${kind}-001`;
 
-        const mockClient = createMockSupabaseClient([
+        const mockClient = createMockD1([
           q({ id: DEVICE_ID }),
           q({
             id: runId,
@@ -472,18 +422,13 @@ describe('Cross-pipeline SSE resume tests (all 4 pipeline kinds)', () => {
           }),
         ]);
 
-        vi.doMock('@supabase/supabase-js', () => ({
-          createClient: () => mockClient,
-        }));
-
         const { default: mockedApp } = await import('../index');
         const response = await mockedApp.fetch(
           new Request(`https://fakehost/v1/runs/${runId}/events`, {
             headers: { 'x-abyss-device': DEVICE_ID },
           }),
           {
-            SUPABASE_URL: 'https://test.supabase.co',
-            SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+            GENERATION_DB: mockClient,
             OPENROUTER_API_KEY: 'sk-or-test',
             ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
           },
@@ -499,7 +444,7 @@ describe('Cross-pipeline SSE resume tests (all 4 pipeline kinds)', () => {
         const runId = `run-sse-${kind}-002`;
         const lastSeq = 2;
 
-        const mockClient = createMockSupabaseClient([
+        const mockClient = createMockD1([
           q({ id: DEVICE_ID }),
           q({
             id: runId,
@@ -552,10 +497,6 @@ describe('Cross-pipeline SSE resume tests (all 4 pipeline kinds)', () => {
           }),
         ]);
 
-        vi.doMock('@supabase/supabase-js', () => ({
-          createClient: () => mockClient,
-        }));
-
         const { default: mockedApp } = await import('../index');
         const response = await mockedApp.fetch(
           new Request(`https://fakehost/v1/runs/${runId}/events`, {
@@ -565,8 +506,7 @@ describe('Cross-pipeline SSE resume tests (all 4 pipeline kinds)', () => {
             },
           }),
           {
-            SUPABASE_URL: 'https://test.supabase.co',
-            SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+            GENERATION_DB: mockClient,
             OPENROUTER_API_KEY: 'sk-or-test',
             ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
           },
@@ -585,7 +525,7 @@ describe('Cross-pipeline SSE resume tests (all 4 pipeline kinds)', () => {
         const runId = `run-sse-${kind}-003`;
         const otherDevice = '00000000-0000-0000-0000-000000000099';
 
-        const mockClient = createMockSupabaseClient([
+        const mockClient = createMockD1([
           q({ id: otherDevice }),
           q({
             id: runId,
@@ -599,18 +539,13 @@ describe('Cross-pipeline SSE resume tests (all 4 pipeline kinds)', () => {
           }),
         ]);
 
-        vi.doMock('@supabase/supabase-js', () => ({
-          createClient: () => mockClient,
-        }));
-
         const { default: mockedApp } = await import('../index');
         const response = await mockedApp.fetch(
           new Request(`https://fakehost/v1/runs/${runId}/events`, {
             headers: { 'x-abyss-device': otherDevice },
           }),
           {
-            SUPABASE_URL: 'https://test.supabase.co',
-            SUPABASE_SERVICE_ROLE: 'sb-sr-test',
+            GENERATION_DB: mockClient,
             OPENROUTER_API_KEY: 'sk-or-test',
             ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
           },

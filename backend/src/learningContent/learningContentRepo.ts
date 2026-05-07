@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { nowIso, parseJsonObject, stringifyJson } from '../repositories/d1';
 import type {
   CrystalTrialSetContent,
   JsonObject,
@@ -18,7 +18,7 @@ interface SubjectRow {
   device_id: string;
   subject_id: string;
   title: string;
-  metadata_json: JsonObject;
+  metadata_json: string;
   content_source: LearningContentSubject['contentSource'];
   created_by_run_id: string | null;
   created_at: string;
@@ -28,7 +28,7 @@ interface SubjectRow {
 interface SubjectGraphRow {
   device_id: string;
   subject_id: string;
-  graph_json: JsonObject;
+  graph_json: string;
   content_hash: string;
   updated_by_run_id: string;
   updated_at: string;
@@ -38,7 +38,7 @@ interface TopicContentRow {
   device_id: string;
   subject_id: string;
   topic_id: string;
-  details_json: JsonObject;
+  details_json: string;
   content_hash: string;
   status: TopicDetailsContent['status'];
   updated_by_run_id: string;
@@ -50,7 +50,7 @@ interface TopicCardRow {
   subject_id: string;
   topic_id: string;
   card_id: string;
-  card_json: JsonObject;
+  card_json: string;
   difficulty: number;
   source_artifact_kind: string;
   created_by_run_id: string;
@@ -63,7 +63,7 @@ interface CrystalTrialSetRow {
   topic_id: string;
   target_level: number;
   card_pool_hash: string;
-  questions_json: JsonObject;
+  questions_json: string;
   content_hash: string;
   created_by_run_id: string;
   created_at: string;
@@ -72,16 +72,12 @@ interface CrystalTrialSetRow {
 export interface ILearningContentRepo {
   getManifest(deviceId: string): Promise<LearningContentManifest>;
   upsertSubject(input: UpsertSubjectInput): Promise<void>;
-
   getSubjectGraph(deviceId: string, subjectId: string): Promise<SubjectGraphContent | null>;
   putSubjectGraph(input: PutSubjectGraphInput): Promise<void>;
-
   getTopicDetails(deviceId: string, subjectId: string, topicId: string): Promise<TopicDetailsContent | null>;
   putTopicDetails(input: PutTopicDetailsInput): Promise<void>;
-
   getTopicCards(deviceId: string, subjectId: string, topicId: string): Promise<TopicCardContent[]>;
   upsertTopicCards(input: PutTopicCardsInput): Promise<void>;
-
   getCrystalTrialSet(
     deviceId: string,
     subjectId: string,
@@ -97,7 +93,7 @@ function subjectFromRow(row: SubjectRow): LearningContentSubject {
     deviceId: row.device_id,
     subjectId: row.subject_id,
     title: row.title,
-    metadata: row.metadata_json,
+    metadata: parseJsonObject(row.metadata_json, 'subjects.metadata_json') as JsonObject,
     contentSource: row.content_source,
     createdByRunId: row.created_by_run_id,
     createdAt: row.created_at,
@@ -109,7 +105,7 @@ function subjectGraphFromRow(row: SubjectGraphRow): SubjectGraphContent {
   return {
     deviceId: row.device_id,
     subjectId: row.subject_id,
-    graph: row.graph_json,
+    graph: parseJsonObject(row.graph_json, 'subject_graphs.graph_json'),
     contentHash: row.content_hash,
     updatedByRunId: row.updated_by_run_id,
     updatedAt: row.updated_at,
@@ -121,7 +117,7 @@ function topicDetailsFromRow(row: TopicContentRow): TopicDetailsContent {
     deviceId: row.device_id,
     subjectId: row.subject_id,
     topicId: row.topic_id,
-    details: row.details_json,
+    details: parseJsonObject(row.details_json, 'topic_contents.details_json'),
     contentHash: row.content_hash,
     status: row.status,
     updatedByRunId: row.updated_by_run_id,
@@ -135,7 +131,7 @@ function topicCardFromRow(row: TopicCardRow): TopicCardContent {
     subjectId: row.subject_id,
     topicId: row.topic_id,
     cardId: row.card_id,
-    card: row.card_json,
+    card: parseJsonObject(row.card_json, 'topic_cards.card_json'),
     difficulty: row.difficulty,
     sourceArtifactKind: row.source_artifact_kind,
     createdByRunId: row.created_by_run_id,
@@ -150,7 +146,7 @@ function crystalTrialSetFromRow(row: CrystalTrialSetRow): CrystalTrialSetContent
     topicId: row.topic_id,
     targetLevel: row.target_level,
     cardPoolHash: row.card_pool_hash,
-    questions: row.questions_json,
+    questions: parseJsonObject(row.questions_json, 'crystal_trial_sets.questions_json'),
     contentHash: row.content_hash,
     createdByRunId: row.created_by_run_id,
     createdAt: row.created_at,
@@ -158,142 +154,172 @@ function crystalTrialSetFromRow(row: CrystalTrialSetRow): CrystalTrialSetContent
 }
 
 function requireNonEmptyRows(rows: readonly unknown[], operation: string): void {
-  if (rows.length === 0) {
-    throw new Error(`${operation} requires at least one row`);
-  }
+  if (rows.length === 0) throw new Error(`${operation} requires at least one row`);
 }
 
-export function createLearningContentRepo(db: SupabaseClient): ILearningContentRepo {
+export function createLearningContentRepo(db: D1Database): ILearningContentRepo {
   return {
     async getManifest(deviceId) {
-      const { data, error } = await db
-        .from('subjects')
-        .select('*')
-        .eq('device_id', deviceId)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      return { subjects: ((data as SubjectRow[] | null) ?? []).map(subjectFromRow) };
+      const { results } = await db.prepare(`
+        select * from subjects where device_id = ? order by created_at asc
+      `).bind(deviceId).all<SubjectRow>();
+      return { subjects: (results ?? []).map(subjectFromRow) };
     },
 
     async upsertSubject(input) {
-      const { error } = await db.from('subjects').upsert({
-        device_id: input.deviceId,
-        subject_id: input.subjectId,
-        title: input.title,
-        metadata_json: input.metadata ?? {},
-        content_source: input.contentSource,
-        created_by_run_id: input.createdByRunId ?? null,
-      });
-      if (error) throw error;
+      const now = nowIso();
+      await db.prepare(`
+        insert into subjects (
+          device_id, subject_id, title, metadata_json, content_source,
+          created_by_run_id, created_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(device_id, subject_id) do update set
+          title = excluded.title,
+          metadata_json = excluded.metadata_json,
+          content_source = excluded.content_source,
+          created_by_run_id = excluded.created_by_run_id,
+          updated_at = excluded.updated_at
+      `).bind(
+        input.deviceId,
+        input.subjectId,
+        input.title,
+        stringifyJson(input.metadata ?? {}, 'subjects.metadata_json'),
+        input.contentSource,
+        input.createdByRunId ?? null,
+        now,
+        now,
+      ).run();
     },
 
     async getSubjectGraph(deviceId, subjectId) {
-      const { data, error } = await db
-        .from('subject_graphs')
-        .select('*')
-        .eq('device_id', deviceId)
-        .eq('subject_id', subjectId)
-        .maybeSingle();
-
-      if (error) throw error;
-      return data ? subjectGraphFromRow(data as SubjectGraphRow) : null;
+      const row = await db.prepare(`
+        select * from subject_graphs where device_id = ? and subject_id = ?
+      `).bind(deviceId, subjectId).first<SubjectGraphRow>();
+      return row ? subjectGraphFromRow(row) : null;
     },
 
     async putSubjectGraph(input) {
-      const { error } = await db.from('subject_graphs').upsert({
-        device_id: input.deviceId,
-        subject_id: input.subjectId,
-        graph_json: input.graph,
-        content_hash: input.contentHash,
-        updated_by_run_id: input.updatedByRunId,
-      });
-      if (error) throw error;
+      const now = nowIso();
+      await db.prepare(`
+        insert into subject_graphs (
+          device_id, subject_id, graph_json, content_hash, updated_by_run_id, created_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?)
+        on conflict(device_id, subject_id) do update set
+          graph_json = excluded.graph_json,
+          content_hash = excluded.content_hash,
+          updated_by_run_id = excluded.updated_by_run_id,
+          updated_at = excluded.updated_at
+      `).bind(
+        input.deviceId,
+        input.subjectId,
+        stringifyJson(input.graph, 'subject_graphs.graph_json'),
+        input.contentHash,
+        input.updatedByRunId,
+        now,
+        now,
+      ).run();
     },
 
     async getTopicDetails(deviceId, subjectId, topicId) {
-      const { data, error } = await db
-        .from('topic_contents')
-        .select('*')
-        .eq('device_id', deviceId)
-        .eq('subject_id', subjectId)
-        .eq('topic_id', topicId)
-        .maybeSingle();
-
-      if (error) throw error;
-      return data ? topicDetailsFromRow(data as TopicContentRow) : null;
+      const row = await db.prepare(`
+        select * from topic_contents
+        where device_id = ? and subject_id = ? and topic_id = ?
+      `).bind(deviceId, subjectId, topicId).first<TopicContentRow>();
+      return row ? topicDetailsFromRow(row) : null;
     },
 
     async putTopicDetails(input) {
-      const { error } = await db.from('topic_contents').upsert({
-        device_id: input.deviceId,
-        subject_id: input.subjectId,
-        topic_id: input.topicId,
-        details_json: input.details,
-        content_hash: input.contentHash,
-        status: input.status,
-        updated_by_run_id: input.updatedByRunId,
-      });
-      if (error) throw error;
+      const now = nowIso();
+      await db.prepare(`
+        insert into topic_contents (
+          device_id, subject_id, topic_id, details_json, content_hash,
+          status, updated_by_run_id, created_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(device_id, subject_id, topic_id) do update set
+          details_json = excluded.details_json,
+          content_hash = excluded.content_hash,
+          status = excluded.status,
+          updated_by_run_id = excluded.updated_by_run_id,
+          updated_at = excluded.updated_at
+      `).bind(
+        input.deviceId,
+        input.subjectId,
+        input.topicId,
+        stringifyJson(input.details, 'topic_contents.details_json'),
+        input.contentHash,
+        input.status,
+        input.updatedByRunId,
+        now,
+        now,
+      ).run();
     },
 
     async getTopicCards(deviceId, subjectId, topicId) {
-      const { data, error } = await db
-        .from('topic_cards')
-        .select('*')
-        .eq('device_id', deviceId)
-        .eq('subject_id', subjectId)
-        .eq('topic_id', topicId)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      return ((data as TopicCardRow[] | null) ?? []).map(topicCardFromRow);
+      const { results } = await db.prepare(`
+        select * from topic_cards
+        where device_id = ? and subject_id = ? and topic_id = ?
+        order by created_at asc
+      `).bind(deviceId, subjectId, topicId).all<TopicCardRow>();
+      return (results ?? []).map(topicCardFromRow);
     },
 
     async upsertTopicCards(input) {
       requireNonEmptyRows(input.cards, 'upsertTopicCards');
-      const rows = input.cards.map((card) => ({
-        device_id: input.deviceId,
-        subject_id: input.subjectId,
-        topic_id: input.topicId,
-        card_id: card.cardId,
-        card_json: card.card,
-        difficulty: card.difficulty,
-        source_artifact_kind: card.sourceArtifactKind,
-        created_by_run_id: input.createdByRunId,
-      }));
-
-      const { error } = await db.from('topic_cards').upsert(rows);
-      if (error) throw error;
+      const now = nowIso();
+      await db.batch(input.cards.map((card) => db.prepare(`
+        insert into topic_cards (
+          device_id, subject_id, topic_id, card_id, card_json, difficulty,
+          source_artifact_kind, created_by_run_id, created_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(device_id, subject_id, topic_id, card_id) do update set
+          card_json = excluded.card_json,
+          difficulty = excluded.difficulty,
+          source_artifact_kind = excluded.source_artifact_kind,
+          created_by_run_id = excluded.created_by_run_id
+      `).bind(
+        input.deviceId,
+        input.subjectId,
+        input.topicId,
+        card.cardId,
+        stringifyJson(card.card, 'topic_cards.card_json'),
+        card.difficulty,
+        card.sourceArtifactKind,
+        input.createdByRunId,
+        now,
+      )));
     },
 
     async getCrystalTrialSet(deviceId, subjectId, topicId, targetLevel, cardPoolHash) {
-      const { data, error } = await db
-        .from('crystal_trial_sets')
-        .select('*')
-        .eq('device_id', deviceId)
-        .eq('subject_id', subjectId)
-        .eq('topic_id', topicId)
-        .eq('target_level', targetLevel)
-        .eq('card_pool_hash', cardPoolHash)
-        .maybeSingle();
-
-      if (error) throw error;
-      return data ? crystalTrialSetFromRow(data as CrystalTrialSetRow) : null;
+      const row = await db.prepare(`
+        select * from crystal_trial_sets
+        where device_id = ? and subject_id = ? and topic_id = ?
+          and target_level = ? and card_pool_hash = ?
+      `).bind(deviceId, subjectId, topicId, targetLevel, cardPoolHash).first<CrystalTrialSetRow>();
+      return row ? crystalTrialSetFromRow(row) : null;
     },
 
     async putCrystalTrialSet(input) {
-      const { error } = await db.from('crystal_trial_sets').upsert({
-        device_id: input.deviceId,
-        subject_id: input.subjectId,
-        topic_id: input.topicId,
-        target_level: input.targetLevel,
-        card_pool_hash: input.cardPoolHash,
-        questions_json: input.questions,
-        content_hash: input.contentHash,
-        created_by_run_id: input.createdByRunId,
-      });
-      if (error) throw error;
+      const now = nowIso();
+      await db.prepare(`
+        insert into crystal_trial_sets (
+          device_id, subject_id, topic_id, target_level, card_pool_hash,
+          questions_json, content_hash, created_by_run_id, created_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(device_id, subject_id, topic_id, target_level, card_pool_hash) do update set
+          questions_json = excluded.questions_json,
+          content_hash = excluded.content_hash,
+          created_by_run_id = excluded.created_by_run_id
+      `).bind(
+        input.deviceId,
+        input.subjectId,
+        input.topicId,
+        input.targetLevel,
+        input.cardPoolHash,
+        stringifyJson(input.questions, 'crystal_trial_sets.questions_json'),
+        input.contentHash,
+        input.createdByRunId,
+        now,
+      ).run();
     },
   };
 }

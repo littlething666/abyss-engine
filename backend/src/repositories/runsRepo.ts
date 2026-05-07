@@ -1,292 +1,377 @@
 /**
- * Runs + jobs + events repository.
+ * Runs + jobs + events repository backed by Cloudflare D1.
  *
- * All write paths go through this module. Every insert into the `events` table
- * is preceded by a call to `allocate_event_seq(run_id)` to guarantee monotonic
- * per-run sequence numbers.
+ * All JSON columns are serialized/deserialized at this adapter boundary.
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { RunRow, JobRow, EventRow, CancelReason } from './types';
-import type { TypedEventType, TypedEventPayloadMap } from '../contracts/typedEvents';
+import type { RunRow, JobRow, EventRow, CancelReason, PipelineKind } from './types';
+import type { TypedEventType } from '../contracts/typedEvents';
+import { nowIso, parseJsonObject, stringifyJson } from './d1';
+
+interface RawRunRow extends Omit<RunRow, 'snapshot_json'> { snapshot_json: string; }
+interface RawEventRow extends Omit<EventRow, 'id' | 'payload_json'> { id: number | string; payload_json: string; }
+interface RawJobRow extends Omit<JobRow, 'metadata_json'> { metadata_json: string | null; }
+
+export interface AtomicSubmitRunInput {
+  deviceId: string;
+  idempotencyKey: string;
+  kind: PipelineKind;
+  inputHash: string;
+  status: RunRow['status'];
+  supersedesKey: string | null;
+  subjectId: string | null;
+  topicId: string | null;
+  snapshotJson: Record<string, unknown>;
+  parentRunId: string | null;
+  runCap: number;
+  tokenCap: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface AtomicSubmitRunResult {
+  runId?: string;
+  status: 'created' | 'hit' | 'budget_exceeded';
+  existing: boolean;
+  code?: string;
+  message?: string;
+}
 
 export interface IRunsRepo {
-  // ---- runs ----
   insertRun(run: Omit<RunRow, 'created_at' | 'next_event_seq'>): Promise<RunRow>;
+  atomicSubmitRun(input: AtomicSubmitRunInput): Promise<AtomicSubmitRunResult>;
   load(runId: string): Promise<RunRow>;
-  /** List runs for a device, optionally filtered by status / kind / subject / topic. */
   listByDevice(
     deviceId: string,
     opts?: { status?: string; kind?: string; subjectId?: string; topicId?: string; limit?: number },
   ): Promise<RunRow[]>;
-  /**
-   * Look up a run by (device_id, idempotency_key).
-   * Returns the run id on hit, null on miss.
-   */
   findByIdempotencyKey(deviceId: string, key: string): Promise<string | null>;
-  /** Transition run status (sets started_at on first non-queued, finished_at on terminal). */
   transition(runId: string, status: RunRow['status']): Promise<void>;
   markReady(runId: string): Promise<void>;
   markFailed(runId: string, errorCode: string, errorMessage: string): Promise<void>;
   markCancelled(runId: string): Promise<void>;
-
-  // ---- cooperative cancel ----
-  /** Write cancel_requested_at + cancel_reason. Returns false if the run is already terminal. */
   requestCancel(runId: string, reason: CancelReason): Promise<boolean>;
-  /** Returns the cancel reason if `cancel_requested_at` is non-null and `finished_at` is null. */
   cancelRequested(runId: string): Promise<CancelReason | null>;
-
-  // ---- observability (Phase 3) ----
-  /** List all runs created in the last N days (across all devices). Used by failure dashboard. */
   listInWindow(days: number): Promise<RunRow[]>;
-
-  // ---- supersession (Phase 2) ----
-  /**
-   * Cancel any active run holding the same supersedes_key for this device.
-   * Returns the prior run id if one was cancelled, null if nothing to cancel.
-   * Called within a single transaction with insertRun for atomicity.
-   */
   cancelSupersededRun(deviceId: string, supersedesKey: string): Promise<string | null>;
-
-  // ---- events ----
-  /** Append an event with an auto-allocated sequence number. */
   append(runId: string, deviceId: string, type: string, payload: Record<string, unknown>): Promise<EventRow>;
-  /**
-   * Append a typed event (Phase 3.6 Step 6).
-   * The builder already returns { type, payload } — this overload
-   * forwards them to the loose `append` for backward compatibility.
-   */
   appendTyped<T extends TypedEventType>(
     runId: string,
     deviceId: string,
     event: { type: T; payload: Record<string, unknown> },
   ): Promise<EventRow>;
-  /** Return events for a run with seq > lastSeq, ordered by seq ascending. */
   eventsAfter(runId: string, deviceId: string, lastSeq: number): Promise<EventRow[]>;
-
-  // ---- jobs ----
   insertJob(job: Omit<JobRow, 'id'>): Promise<JobRow>;
 }
 
-export function createRunsRepo(db: SupabaseClient): IRunsRepo {
+function runFromRow(row: RawRunRow): RunRow {
+  return { ...row, snapshot_json: parseJsonObject(row.snapshot_json, 'runs.snapshot_json') };
+}
+
+function eventFromRow(row: RawEventRow): EventRow {
+  return {
+    ...row,
+    id: String(row.id),
+    payload_json: parseJsonObject(row.payload_json, 'events.payload_json'),
+  };
+}
+
+function jobFromRow(row: RawJobRow): JobRow {
+  return {
+    ...row,
+    metadata_json: row.metadata_json === null ? null : parseJsonObject(row.metadata_json, 'jobs.metadata_json'),
+  };
+}
+
+function changes(result: unknown): number {
+  return (result as { meta?: { changes?: number } }).meta?.changes ?? 0;
+}
+
+function expiryFrom(now: string): string {
+  return new Date(new Date(now).getTime() + 24 * 60 * 60 * 1000).toISOString();
+}
+
+export function createRunsRepo(db: D1Database): IRunsRepo {
   return {
     async insertRun(run) {
-      const { data, error } = await db
-        .from('runs')
-        .insert(run)
-        .select('*')
-        .single();
+      const createdAt = nowIso();
+      const row = await db.prepare(`
+        insert into runs (
+          id, device_id, kind, status, input_hash, idempotency_key,
+          parent_run_id, supersedes_key, cancel_requested_at, cancel_reason,
+          subject_id, topic_id, created_at, started_at, finished_at,
+          error_code, error_message, snapshot_json, next_event_seq
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        returning *
+      `).bind(
+        run.id,
+        run.device_id,
+        run.kind,
+        run.status,
+        run.input_hash,
+        run.idempotency_key,
+        run.parent_run_id,
+        run.supersedes_key,
+        run.cancel_requested_at,
+        run.cancel_reason,
+        run.subject_id,
+        run.topic_id,
+        createdAt,
+        run.started_at,
+        run.finished_at,
+        run.error_code,
+        run.error_message,
+        stringifyJson(run.snapshot_json, 'runs.snapshot_json'),
+      ).first<RawRunRow>();
 
-      if (error) throw error;
-      return data as RunRow;
+      if (!row) throw new Error('D1 runs.insertRun: failed to return run row');
+      return runFromRow(row);
     },
 
-    async load(runId: string) {
-      const { data, error } = await db
-        .from('runs')
-        .select('*')
-        .eq('id', runId)
-        .single();
+    async atomicSubmitRun(input) {
+      const now = nowIso();
+      const runId = crypto.randomUUID();
+      const expiresAt = expiryFrom(now);
+      const snapshot = stringifyJson(input.snapshotJson, 'runs.snapshot_json');
 
-      if (error) throw error;
-      return data as RunRow;
+      const results = await db.batch([
+        db.prepare('delete from idempotency_records where device_id = ? and key = ? and expires_at <= ?')
+          .bind(input.deviceId, input.idempotencyKey, now),
+        db.prepare(`
+          insert or ignore into usage_counters (device_id, day, tokens_in, tokens_out, runs_started)
+          values (?, ?, 0, 0, 0)
+        `).bind(input.deviceId, now.slice(0, 10)),
+        db.prepare(`
+          insert or ignore into idempotency_records (device_id, key, run_id, created_at, expires_at)
+          values (?, ?, ?, ?, ?)
+        `).bind(input.deviceId, input.idempotencyKey, runId, now, expiresAt),
+        db.prepare(`
+          update usage_counters
+          set runs_started = runs_started + 1
+          where device_id = ? and day = ?
+            and runs_started < ?
+            and (tokens_in + tokens_out) < ?
+            and changes() = 1
+        `).bind(input.deviceId, now.slice(0, 10), input.runCap, input.tokenCap),
+        db.prepare(`
+          insert into runs (
+            id, device_id, kind, status, input_hash, idempotency_key,
+            parent_run_id, supersedes_key, subject_id, topic_id,
+            created_at, started_at, finished_at, error_code, error_message,
+            snapshot_json, next_event_seq
+          )
+          select ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0
+          where changes() = 1
+        `).bind(
+          runId,
+          input.deviceId,
+          input.kind,
+          input.status,
+          input.inputHash,
+          input.idempotencyKey,
+          input.parentRunId,
+          input.supersedesKey,
+          input.subjectId,
+          input.topicId,
+          now,
+          input.startedAt,
+          input.finishedAt,
+          input.errorCode ?? null,
+          input.errorMessage ?? null,
+          snapshot,
+        ),
+      ]);
+
+      const idempotencyInserted = changes(results[2]);
+      const runInserted = changes(results[4]);
+
+      if (idempotencyInserted === 0) {
+        const existing = await db.prepare(`
+          select run_id from idempotency_records
+          where device_id = ? and key = ? and expires_at > ?
+        `).bind(input.deviceId, input.idempotencyKey, now).first<{ run_id: string }>();
+        if (!existing) {
+          throw new Error('D1 runs.atomicSubmitRun: idempotency insert ignored but no live record exists');
+        }
+        return { runId: existing.run_id, status: 'hit', existing: true };
+      }
+
+      if (runInserted === 0) {
+        await db.prepare('delete from idempotency_records where device_id = ? and key = ? and run_id = ?')
+          .bind(input.deviceId, input.idempotencyKey, runId)
+          .run();
+        return {
+          status: 'budget_exceeded',
+          existing: false,
+          code: 'budget:over-cap',
+          message: 'daily run or token cap exceeded',
+        };
+      }
+
+      return { runId, status: 'created', existing: false };
     },
 
-    async findByIdempotencyKey(deviceId: string, key: string) {
-      const { data, error } = await db
-        .from('runs')
-        .select('id')
-        .eq('device_id', deviceId)
-        .eq('idempotency_key', key)
-        .maybeSingle();
-
-      if (error) throw error;
-      return data ? (data as { id: string }).id : null;
+    async load(runId) {
+      const row = await db.prepare('select * from runs where id = ?').bind(runId).first<RawRunRow>();
+      if (!row) throw new Error(`D1 runs.load: run not found: ${runId}`);
+      return runFromRow(row);
     },
 
-    async listByDevice(deviceId: string, opts = {}) {
-      let query = db.from('runs').select('*').eq('device_id', deviceId);
+    async findByIdempotencyKey(deviceId, key) {
+      const row = await db.prepare(`
+        select run_id from idempotency_records
+        where device_id = ? and key = ? and expires_at > ?
+      `).bind(deviceId, key, nowIso()).first<{ run_id: string }>();
+      return row?.run_id ?? null;
+    },
+
+    async listByDevice(deviceId, opts = {}) {
+      const clauses = ['device_id = ?'];
+      const binds: unknown[] = [deviceId];
+      let order = 'created_at desc';
 
       if (opts.status === 'active') {
-        query = query.in('status', ['queued', 'planning', 'generating_stage', 'parsing', 'validating', 'persisting']);
+        clauses.push("status in ('queued','planning','generating_stage','parsing','validating','persisting')");
       } else if (opts.status === 'recent') {
-        query = query.in('status', ['ready', 'failed_final', 'cancelled']).order('finished_at', { ascending: false });
-      } else {
-        query = query.order('created_at', { ascending: false });
+        clauses.push("status in ('ready','failed_final','cancelled')");
+        order = 'finished_at desc';
       }
+      if (opts.kind) { clauses.push('kind = ?'); binds.push(opts.kind); }
+      if (opts.subjectId) { clauses.push('subject_id = ?'); binds.push(opts.subjectId); }
+      if (opts.topicId) { clauses.push('topic_id = ?'); binds.push(opts.topicId); }
+      const limit = Math.max(1, Math.min(opts.limit ?? 100, 500));
 
-      if (opts.kind) query = query.eq('kind', opts.kind);
-      if (opts.subjectId) query = query.eq('subject_id', opts.subjectId);
-      if (opts.topicId) query = query.eq('topic_id', opts.topicId);
-      if (opts.limit) query = query.limit(opts.limit);
-
-      const { data, error } = await query;
-      if (error) throw error;
-      return (data ?? []) as RunRow[];
+      const { results } = await db.prepare(`
+        select * from runs where ${clauses.join(' and ')} order by ${order} limit ?
+      `).bind(...binds, limit).all<RawRunRow>();
+      return (results ?? []).map(runFromRow);
     },
 
-    async transition(runId: string, status: RunRow['status']) {
+    async transition(runId, status) {
+      const current = await this.load(runId);
       const update: Record<string, unknown> = { status };
+      if (current.status === 'queued' && !current.started_at) update.started_at = nowIso();
+      if (['ready', 'failed_final', 'cancelled'].includes(status)) update.finished_at = nowIso();
 
-      // Set started_at on the first transition out of queued.
-      const { data: current } = await db.from('runs').select('status, started_at').eq('id', runId).single();
-      if (current && current.status === 'queued' && !current.started_at) {
-        update.started_at = new Date().toISOString();
-      }
-
-      // Set finished_at on terminal statuses.
-      if (['ready', 'failed_final', 'cancelled'].includes(status)) {
-        update.finished_at = new Date().toISOString();
-      }
-
-      const { error } = await db.from('runs').update(update).eq('id', runId);
-      if (error) throw error;
+      const assignments = Object.keys(update).map((key) => `${key} = ?`).join(', ');
+      await db.prepare(`update runs set ${assignments} where id = ?`)
+        .bind(...Object.values(update), runId)
+        .run();
     },
 
-    async markReady(runId: string) {
-      await this.transition(runId, 'ready');
+    async markReady(runId) { await this.transition(runId, 'ready'); },
+
+    async markFailed(runId, errorCode, errorMessage) {
+      await db.prepare(`
+        update runs set status = 'failed_final', error_code = ?, error_message = ?, finished_at = ?
+        where id = ?
+      `).bind(errorCode, errorMessage, nowIso(), runId).run();
     },
 
-    async markFailed(runId: string, errorCode: string, errorMessage: string) {
-      const { error } = await db.from('runs').update({
-        status: 'failed_final',
-        error_code: errorCode,
-        error_message: errorMessage,
-        finished_at: new Date().toISOString(),
-      }).eq('id', runId);
-      if (error) throw error;
+    async markCancelled(runId) {
+      await db.prepare("update runs set status = 'cancelled', finished_at = ? where id = ?")
+        .bind(nowIso(), runId)
+        .run();
     },
 
-    async markCancelled(runId: string) {
-      const { error } = await db.from('runs').update({
-        status: 'cancelled',
-        finished_at: new Date().toISOString(),
-      }).eq('id', runId);
-      if (error) throw error;
+    async requestCancel(runId, reason) {
+      const result = await db.prepare(`
+        update runs set cancel_requested_at = ?, cancel_reason = ?
+        where id = ? and finished_at is null
+      `).bind(nowIso(), reason, runId).run();
+      return changes(result) > 0;
     },
 
-    async requestCancel(runId: string, reason: CancelReason) {
-      // Only write if the run hasn't finished yet.
-      const { data: current } = await db
-        .from('runs')
-        .select('finished_at')
-        .eq('id', runId)
-        .maybeSingle();
-
-      if (!current || (current as { finished_at: string | null }).finished_at) {
-        return false;
-      }
-
-      const { error } = await db.from('runs').update({
-        cancel_requested_at: new Date().toISOString(),
-        cancel_reason: reason,
-      }).eq('id', runId);
-
-      if (error) throw error;
-      return true;
-    },
-
-    async cancelSupersededRun(deviceId: string, supersedesKey: string) {
-      // Find the active run holding the same supersedes_key.
-      const { data: existing } = await db
-        .from('runs')
-        .select('id, finished_at')
-        .eq('device_id', deviceId)
-        .eq('supersedes_key', supersedesKey)
-        .in('status', ['queued', 'planning', 'generating_stage', 'parsing', 'validating', 'persisting'])
-        .maybeSingle();
-
+    async cancelSupersededRun(deviceId, supersedesKey) {
+      const existing = await db.prepare(`
+        select id from runs
+        where device_id = ? and supersedes_key = ?
+          and status in ('queued','planning','generating_stage','parsing','validating','persisting')
+        order by created_at desc
+        limit 1
+      `).bind(deviceId, supersedesKey).first<{ id: string }>();
       if (!existing) return null;
 
-      const priorRunId = (existing as { id: string }).id;
-
-      // Write cancel_requested_at + cancel_reason = 'superseded'.
-      const { error } = await db.from('runs').update({
-        cancel_requested_at: new Date().toISOString(),
-        cancel_reason: 'superseded',
-      }).eq('id', priorRunId);
-
-      if (error) throw error;
-      return priorRunId;
+      await db.prepare(`
+        update runs set cancel_requested_at = ?, cancel_reason = 'superseded'
+        where id = ?
+      `).bind(nowIso(), existing.id).run();
+      return existing.id;
     },
 
-    async cancelRequested(runId: string) {
-      const { data, error } = await db
-        .from('runs')
-        .select('cancel_requested_at, cancel_reason, finished_at')
-        .eq('id', runId)
-        .single();
-
-      if (error) throw error;
-      if (data && data.cancel_requested_at && !data.finished_at) {
-        return data.cancel_reason as CancelReason;
-      }
+    async cancelRequested(runId) {
+      const row = await db.prepare(`
+        select cancel_requested_at, cancel_reason, finished_at from runs where id = ?
+      `).bind(runId).first<{ cancel_requested_at: string | null; cancel_reason: CancelReason | null; finished_at: string | null }>();
+      if (row?.cancel_requested_at && !row.finished_at) return row.cancel_reason;
       return null;
     },
 
-    async append(runId: string, deviceId: string, type: string, payload: Record<string, unknown>) {
-      // Allocate the next sequence number atomically.
-      const { data: seqData, error: seqError } = await db
-        .rpc('allocate_event_seq', { p_run_id: runId });
+    async append(runId, deviceId, type, payload) {
+      const seqRow = await db.prepare(`
+        update runs set next_event_seq = next_event_seq + 1
+        where id = ?
+        returning next_event_seq
+      `).bind(runId).first<{ next_event_seq: number }>();
+      if (!seqRow) throw new Error(`D1 runs.append: cannot allocate event seq for run ${runId}`);
 
-      if (seqError) throw seqError;
-      const seq: number = seqData as unknown as number;
-
-      const { data, error } = await db
-        .from('events')
-        .insert({
-          run_id: runId,
-          device_id: deviceId,
-          seq,
-          type,
-          payload_json: payload,
-        })
-        .select('*')
-        .single();
-
-      if (error) throw error;
-      return data as EventRow;
+      const row = await db.prepare(`
+        insert into events (run_id, device_id, seq, ts, type, payload_json)
+        values (?, ?, ?, ?, ?, ?)
+        returning *
+      `).bind(runId, deviceId, seqRow.next_event_seq, nowIso(), type, stringifyJson(payload, 'events.payload_json'))
+        .first<RawEventRow>();
+      if (!row) throw new Error('D1 runs.append: failed to return event row');
+      return eventFromRow(row);
     },
 
     async appendTyped(runId, deviceId, event) {
       return this.append(runId, deviceId, event.type, event.payload);
     },
 
-    async eventsAfter(runId: string, deviceId: string, lastSeq: number) {
-      const { data, error } = await db
-        .from('events')
-        .select('*')
-        .eq('run_id', runId)
-        .eq('device_id', deviceId)
-        .gt('seq', lastSeq)
-        .order('seq', { ascending: true });
-
-      if (error) throw error;
-      return (data ?? []) as EventRow[];
+    async eventsAfter(runId, deviceId, lastSeq) {
+      const { results } = await db.prepare(`
+        select * from events
+        where run_id = ? and device_id = ? and seq > ?
+        order by seq asc
+      `).bind(runId, deviceId, lastSeq).all<RawEventRow>();
+      return (results ?? []).map(eventFromRow);
     },
 
-    async listInWindow(days: number) {
+    async listInWindow(days) {
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      const { data, error } = await db
-        .from('runs')
-        .select('*')
-        .gte('created_at', since)
-        .order('created_at', { ascending: false })
-        .limit(1000);
-
-      if (error) throw error;
-      return (data ?? []) as RunRow[];
+      const { results } = await db.prepare(`
+        select * from runs where created_at >= ? order by created_at desc limit 1000
+      `).bind(since).all<RawRunRow>();
+      return (results ?? []).map(runFromRow);
     },
 
     async insertJob(job) {
-      const { data, error } = await db
-        .from('jobs')
-        .insert(job)
-        .select('*')
-        .single();
-
-      if (error) throw error;
-      return data as JobRow;
+      const row = await db.prepare(`
+        insert into jobs (
+          id, run_id, kind, stage, status, retry_of, input_hash, model,
+          metadata_json, started_at, finished_at, error_code, error_message
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        returning *
+      `).bind(
+        crypto.randomUUID(),
+        job.run_id,
+        job.kind,
+        job.stage,
+        job.status,
+        job.retry_of,
+        job.input_hash,
+        job.model,
+        job.metadata_json === null ? null : stringifyJson(job.metadata_json, 'jobs.metadata_json'),
+        job.started_at,
+        job.finished_at,
+        job.error_code,
+        job.error_message,
+      ).first<RawJobRow>();
+      if (!row) throw new Error('D1 runs.insertJob: failed to return job row');
+      return jobFromRow(row);
     },
   };
 }

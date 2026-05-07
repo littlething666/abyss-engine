@@ -4,9 +4,8 @@
  * Flow:
  * 1. If no Idempotency-Key header → 400.
  * 2. Store the trimmed key on context.
- * 3. `POST /v1/runs` passes the key to `atomic_submit_run`, the single
- *    Postgres function that owns idempotency, budget reservation, and run
- *    creation in one transaction.
+ * 3. `POST /v1/runs` passes the key to the D1 repository method that owns
+ *    idempotency, budget reservation, and run creation.
  */
 
 import type { Context, Next } from 'hono';

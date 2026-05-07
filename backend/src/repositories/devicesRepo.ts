@@ -1,39 +1,34 @@
 /**
- * Device repository — upserts device fingerprints on every API call.
+ * Device repository — upserts device identifiers on every API call.
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DeviceRow } from './types';
+import { nowIso } from './d1';
 
 export interface IDevicesRepo {
-  /** Upsert a device row by id. Sets `last_seen_at` to now() on conflict. */
+  /** Upsert a device row by id. Sets `last_seen_at` to now on conflict. */
   upsert(deviceId: string): Promise<DeviceRow>;
   /** Read a single device by id. Returns null if unknown. */
   get(deviceId: string): Promise<DeviceRow | null>;
 }
 
-export function createDevicesRepo(db: SupabaseClient): IDevicesRepo {
+export function createDevicesRepo(db: D1Database): IDevicesRepo {
   return {
     async upsert(deviceId: string) {
-      const { data, error } = await db
-        .from('devices')
-        .upsert({ id: deviceId, last_seen_at: new Date().toISOString() })
-        .select('*')
-        .single();
+      const now = nowIso();
+      const row = await db.prepare(`
+        insert into devices (id, created_at, last_seen_at)
+        values (?, ?, ?)
+        on conflict(id) do update set last_seen_at = excluded.last_seen_at
+        returning *
+      `).bind(deviceId, now, now).first<DeviceRow>();
 
-      if (error) throw error;
-      return data as DeviceRow;
+      if (!row) throw new Error('D1 devices.upsert: failed to return device row');
+      return row;
     },
 
     async get(deviceId: string) {
-      const { data, error } = await db
-        .from('devices')
-        .select('*')
-        .eq('id', deviceId)
-        .maybeSingle();
-
-      if (error) throw error;
-      return (data as DeviceRow) ?? null;
+      return await db.prepare('select * from devices where id = ?').bind(deviceId).first<DeviceRow>();
     },
   };
 }

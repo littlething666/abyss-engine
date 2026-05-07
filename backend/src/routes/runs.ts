@@ -2,9 +2,9 @@
  * Run routes — POST /v1/runs, GET /v1/runs, GET /v1/runs/:id,
  * POST /v1/runs/:id/cancel, POST /v1/runs/:id/retry.
  *
- * Phase 3.6: Atomic idempotency + budget + run creation via
- * `atomic_submit_run` RPC. Typed events, transport statuses, and proper
- * retry contract with checkpoint lineage copy.
+ * Phase 4: Cloudflare D1 owns idempotency, budget, and run metadata.
+ * Typed events, transport statuses, and retry checkpoint lineage remain
+ * repository-mediated.
  */
 
 import { Hono } from 'hono';
@@ -124,16 +124,16 @@ const runs = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotenc
 /**
  * POST /v1/runs — submit a new run.
  *
- * Phase 3.6 P0 #2: All idempotency + budget + run creation logic is
- * consolidated into the `atomic_submit_run` RPC from `backend/db/init.sql`. The
- * RPC serialises on (device_id, idempotency_key) via advisory lock so
- * two concurrent callers converge on exactly one run and one budget
- * reservation. The workflow is dispatched separately (after the RPC)
- * because it needs the Supabase run row to exist first.
+ * Phase 4: D1 owns idempotency + budget + run creation through the
+ * `runs.atomicSubmitRun` adapter method. Workflow dispatch remains separate
+ * because Cloudflare Workflows need the D1 run row to exist first.
  */
 runs.post('/', async (c) => {
   const deviceId = c.get('deviceId');
   const idempotencyKey = c.get('idempotencyKey');
+  if (!idempotencyKey) {
+    return c.json({ error: 'missing_header', message: 'Idempotency-Key header is required' }, 400);
+  }
   const repos = makeRepos(c.env);
 
   let body: unknown;
@@ -158,55 +158,39 @@ runs.post('/', async (c) => {
   // 3. Compute contract-owned input hash.
   const hash = await inputHash(snapshot);
 
-  // 4. Check artifact cache BEFORE calling the atomic RPC (so we know
-  //    whether to mark the run `ready` or `queued`).
+  // 4. Check artifact cache BEFORE D1 run creation (so we know whether to mark
+  //    the run `ready` or `queued`).
   const artifactKind = cacheArtifactKind(kind);
   const cached = await repos.artifacts.findCacheHit(deviceId, artifactKind, hash);
 
-  // 5. Handle supersession BEFORE the atomic RPC (best-effort — if it
+  // 5. Handle supersession BEFORE D1 run creation (best-effort — if it
   //    fails the new run still gets created).
   let supersededRunId: string | null = null;
   if (!cached && supersedesKey && kind === 'topic-expansion') {
     supersededRunId = await repos.runs.cancelSupersededRun(deviceId, supersedesKey);
   }
 
-  // 6. Atomic submit — idempotency + budget + run creation in one RPC.
+  // 6. Atomic submit — idempotency + budget + run creation at the D1 boundary.
   const caps = PIPELINE_BUDGET_CAPS[kind];
   const now = new Date().toISOString();
   const snapshotRecord = snapshot as Record<string, unknown>;
 
-  const submitResult = await repos.db.rpc('atomic_submit_run', {
-    p_device_id: deviceId,
-    p_idempotency_key: idempotencyKey,
-    p_kind: kind,
-    p_input_hash: hash,
-    p_status: cached ? 'ready' : 'queued',
-    p_supersedes_key: supersedesKey ?? null,
-    p_subject_id: (snapshotRecord.subject_id as string) ?? null,
-    p_topic_id: (snapshotRecord.topic_id as string) ?? null,
-    p_snapshot_json: snapshotRecord,
-    p_parent_run_id: null,
-    p_run_cap: caps.runsPerDay,
-    p_token_cap: caps.tokensPerDay,
-    p_started_at: cached ? now : null,
-    p_finished_at: cached ? now : null,
+  const submit = await repos.runs.atomicSubmitRun({
+    deviceId,
+    idempotencyKey,
+    kind,
+    inputHash: hash,
+    status: cached ? 'ready' : 'queued',
+    supersedesKey: supersedesKey ?? null,
+    subjectId: (snapshotRecord.subject_id as string) ?? null,
+    topicId: (snapshotRecord.topic_id as string) ?? null,
+    snapshotJson: snapshotRecord,
+    parentRunId: null,
+    runCap: caps.runsPerDay,
+    tokenCap: caps.tokensPerDay,
+    startedAt: cached ? now : null,
+    finishedAt: cached ? now : null,
   });
-
-  const submit = submitResult.data as {
-    runId: string;
-    status: string;
-    existing: boolean;
-    code?: string;
-    message?: string;
-  };
-
-  if (submitResult.error) {
-    console.error('[runs] atomic_submit_run RPC failed:', submitResult.error);
-    return c.json({
-      code: 'budget:over-cap',
-      message: 'Budget check unavailable; failing closed.',
-    }, 429);
-  }
 
   if (submit.status === 'budget_exceeded') {
     return c.json({ code: submit.code, message: submit.message }, 429);
@@ -218,6 +202,9 @@ runs.post('/', async (c) => {
   }
 
   const newRunId = submit.runId;
+  if (!newRunId) {
+    return c.json({ code: 'config:invalid', message: 'D1 run submission did not return a run id' }, 500);
+  }
 
   // 7. Emit events.
   if (cached) {

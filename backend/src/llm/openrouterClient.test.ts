@@ -15,8 +15,6 @@ afterEach(() => {
 });
 
 const testEnv: Env = {
-  SUPABASE_URL: 'https://test.supabase.co',
-  SUPABASE_SERVICE_ROLE: 'sb-test',
   OPENROUTER_API_KEY: 'sk-or-test',
   ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
 };

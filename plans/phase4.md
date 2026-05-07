@@ -253,7 +253,7 @@ Rules:
 
 - [x] **PR-A** — Plan/status and destructive-reset declaration, including `CHANGELOG.md` skeleton.
 - [x] **PR-B** — Backend Generation Policy module (`backend/src/generationPolicy/*`) with strict parser/resolver/hash tests. Workflow snapshot expansion/wiring remains in PR-E/PR-F before the global no-fallback exit criterion can close.
-- [~] **PR-C** — Learning Content Store schema/repository core is being re-targeted from hosted Supabase SQL to D1 (`backend/src/learningContent/*`, `Repos.learningContent`). Route-level per-device/not-found tests move with the learning-content routes in PR-D.
+- [~] **PR-C** — Active backend repository adapters are now D1-backed (`backend/src/repositories/*`, `backend/src/learningContent/*`, `Repos.learningContent`) with canonical D1 schema in `backend/d1/init.sql`. Route-level per-device/not-found tests move with the learning-content routes in PR-D.
 - [ ] **PR-D+** — Not started.
 
 ### PR-A — Plan/status and destructive-reset declaration ✅

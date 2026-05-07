@@ -1,65 +1,41 @@
-/**
- * Budget guard tests — Phase 3.5 atomic RPC-based reservation.
- */
-
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { assertBelowDailyCap, PIPELINE_BUDGET_CAPS } from '../budget/budgetGuard';
 import type { PipelineKind } from '../repositories/types';
+import { createFakeD1, q, qErr } from '../testStubs/fakeD1';
 
-// Minimal Supabase client mock — only needs `rpc`.
-function createFakeDb(rpcResult: { ok: boolean; code?: string; message?: string } | null) {
-  return {
-    rpc: vi.fn().mockResolvedValue(rpcResult ? { data: rpcResult, error: null } : { data: null, error: new Error('RPC not deployed') }),
-  } as unknown as Parameters<typeof assertBelowDailyCap>[1];
-}
-
-describe('budgetGuard (Phase 3.5 atomic)', () => {
-  it('allows when RPC returns ok: true', async () => {
-    const db = createFakeDb({ ok: true });
+describe('budgetGuard (D1 conditional reservation)', () => {
+  it('allows when the D1 conditional update changes one row', async () => {
+    const { db } = createFakeD1([q(null, 1), q(null, 1)]);
     const result = await assertBelowDailyCap('dev-1', db);
     expect(result.ok).toBe(true);
-    expect(db.rpc).toHaveBeenCalledWith('reserve_run_budget', expect.objectContaining({
-      p_device_id: 'dev-1',
-      p_run_cap: PIPELINE_BUDGET_CAPS['crystal-trial'].runsPerDay,
-      p_token_cap: PIPELINE_BUDGET_CAPS['crystal-trial'].tokensPerDay,
-    }));
   });
 
-  it('blocks when RPC returns ok: false', async () => {
-    const db = createFakeDb({ ok: false, code: 'budget:over-cap', message: 'daily run cap (10) exceeded' });
+  it('blocks when the D1 conditional update changes no rows', async () => {
+    const { db } = createFakeD1([q(null, 1), q(null, 0)]);
     const result = await assertBelowDailyCap('dev-1', db);
     expect(result.ok).toBe(false);
     expect(result.code).toBe('budget:over-cap');
   });
 
-  it('fails closed when RPC is not deployed (error)', async () => {
-    const db = createFakeDb(null);
+  it('fails closed when D1 throws', async () => {
+    const { db } = createFakeD1([qErr('D1 unavailable')]);
     const result = await assertBelowDailyCap('dev-1', db);
     expect(result.ok).toBe(false);
     expect(result.code).toBe('budget:over-cap');
-    expect(result.message).toContain('unavailable');
   });
 
-  // ── Per-kind cap RPC parameters ──────────────────────
   for (const [kind, caps] of Object.entries(PIPELINE_BUDGET_CAPS)) {
-    it(`passes ${kind} caps to RPC`, async () => {
-      const db = createFakeDb({ ok: true });
+    it(`passes ${kind} caps to the D1 reservation statement`, async () => {
+      const { db, calls } = createFakeD1([q(null, 1), q(null, 1)]);
       await assertBelowDailyCap('dev-1', db, kind as PipelineKind);
-      expect(db.rpc).toHaveBeenCalledWith('reserve_run_budget', expect.objectContaining({
-        p_run_cap: caps.runsPerDay,
-        p_token_cap: caps.tokensPerDay,
-      }));
+      expect(calls[1].args).toEqual(expect.arrayContaining([caps.runsPerDay, caps.tokensPerDay]));
     });
   }
 
-  it('uses UTC day in RPC call', async () => {
-    const db = createFakeDb({ ok: true });
+  it('uses UTC day in D1 usage counter keys', async () => {
+    const { db, calls } = createFakeD1([q(null, 1), q(null, 1)]);
     await assertBelowDailyCap('dev-1', db);
-    const calls = (db.rpc as ReturnType<typeof vi.fn>).mock.calls;
-    const p_day: string = calls[0][1].p_day;
-    expect(p_day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    // Must match today's UTC date.
-    const today = new Date().toISOString().slice(0, 10);
-    expect(p_day).toBe(today);
+    expect(calls[0].args[1]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(calls[0].args[1]).toBe(new Date().toISOString().slice(0, 10));
   });
 });

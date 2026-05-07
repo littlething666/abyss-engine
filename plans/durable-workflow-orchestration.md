@@ -778,7 +778,7 @@ Last updated: 2026-05-07.
 
 - [x]  **Phase 4 PR-A (destructive reset plan/status).** Landed in workspace 2026-05-07. `plans/phase4.md` now governs the destructive backend-authoritative generation reset, and `CHANGELOG.md` records the no-migration posture.
 - [x]  **Phase 4 PR-B (Backend Generation Policy module).** Landed in workspace 2026-05-07. Adds `backend/src/generationPolicy/*` with strict policy parsing, backend default policy, all nine job kinds, deterministic `gpol_` policy hashes, backend-owned response-healing=true, and tests for loud invalid-policy failure plus all-kind resolution.
-- [~]  **Phase 4 PR-C (Learning Content Store schema/repository core).** Schema/repository core landed in workspace 2026-05-07: `backend/db/init.sql`, `backend/src/learningContent/*`, and `Repos.learningContent`. Learning-content HTTP routes and route-level per-device/not-found tests remain with PR-D.
+- [~]  **Phase 4 PR-C (D1 repository and Learning Content Store core).** Active backend Supabase repository usage was replaced by D1-backed adapters in workspace 2026-05-07: `backend/d1/init.sql`, `backend/src/repositories/*`, `backend/src/learningContent/*`, and `Repos.learningContent`. Learning-content HTTP routes and route-level per-device/not-found tests remain with PR-D.
 - [x]  **Item 1 (CORS production hardening).** Landed in workspace 2026-05-06. Tightened `backend/src/middleware/cors.ts`: production default origins (`https://abyss.globesoul.com`, `https://www.abyss.globesoul.com`) applied when `ALLOWED_ORIGINS` env var is unset. `localhost:3000` always included for local dev. Origin set re-resolved per request when env var is set (supports live config changes without redeploy). Phase 3.5 step 6 already added `supersedes-key`, `last-event-id`, `cache-control` to `Access-Control-Allow-Headers`.
 - [x]  **Item 2 (Threat-model doc).** Updated in workspace 2026-05-07. `docs/security/threat-model.md` covers: trust boundaries (browser → Worker → D1/R2 → OpenRouter), asset inventory, per-threat analysis (unauthorized device access, Worker secret compromise, artifact exposure, budget bypass, SSE stream abuse, idempotency-key replay), dependency risks, and future auth-driven additions. Referenced from CORS middleware JSDoc.
 - [x]  **Item 3 (R2 artifact retention).** Updated in workspace 2026-05-07. `docs/security/storage-retention.md` defines: three-tier retention (active → archived at 90d inactivity → deleted at 270d), deduplication by `(device_id, kind, input_hash)`, R2 object cleanup, artifact versioning interaction with `input_hash`, and cost estimates.
@@ -793,7 +793,7 @@ Last updated: 2026-05-07.
 
 - **New:** `src/features/generationContracts/` — strict schemas, parsers, validators, prompt builders, snapshots, hashes, failure codes, run events, eval fixtures.
 - **New:** `backend/src/generationPolicy/` — backend-owned Phase 4 model/provider-healing policy resolver and policy hash.
-- **New:** `backend/src/learningContent/` + `backend/db/init.sql` — backend Learning Content Store schema/repository foundation.
+- **New:** `backend/src/learningContent/` + `backend/d1/init.sql` — D1-backed Learning Content Store schema/repository foundation.
 - **New:** `src/infrastructure/generationRunEventHandlers.ts` — sanctioned durable-run composition root.
 - **New:** `src/infrastructure/repositories/LocalGenerationRunRepository.ts`.
 - **New:** `src/infrastructure/repositories/DurableGenerationRunRepository.ts`.

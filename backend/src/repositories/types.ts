@@ -1,7 +1,7 @@
 /**
- * Shared repository types for the backend Supabase adapter.
+ * Shared repository types for the backend D1 adapter.
  *
- * Row shapes mirror the `0001_init.sql` schema exactly. Every function
+ * Row shapes mirror `backend/d1/init.sql`. Every function
  * that touches a table uses these types as its return / parameter contract.
  */
 
