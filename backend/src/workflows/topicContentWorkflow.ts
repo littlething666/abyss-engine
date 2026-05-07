@@ -23,6 +23,7 @@ import {
   buildTopicStudyCardsMessages,
   buildTopicTheoryMessages,
 } from '../prompts/generationPrompts';
+import { topicContentStageInputHash } from './topicContentStageInputHash';
 import {
   inputHash,
   contentHash,
@@ -174,6 +175,54 @@ async function runStage(
   return { artifactId, contentHash: _contentHash, kind };
 }
 
+async function loadStageArtifactContentHash(
+  repos: ReturnType<typeof makeRepos>,
+  artifactId: string,
+  stage: string,
+): Promise<string> {
+  const artifact = await repos.artifacts.get(artifactId);
+  if (!artifact) {
+    throw new WorkflowFail('precondition:missing-topic', `topic-content ${stage} checkpoint artifact row not found: ${artifactId}`);
+  }
+  return artifact.content_hash;
+}
+
+async function useCachedStage(
+  repos: ReturnType<typeof makeRepos>,
+  runId: string,
+  deviceId: string,
+  stage: string,
+  kind: ArtifactKind,
+  stageInputHash: string,
+): Promise<StageRunResult | null> {
+  const cached = await repos.artifacts.findCacheHit(deviceId, kind, stageInputHash);
+  if (!cached) return null;
+
+  const now = new Date().toISOString();
+  await repos.stageCheckpoints.upsert({
+    runId,
+    stage,
+    status: 'ready',
+    inputHash: stageInputHash,
+    attempt: 0,
+    artifactId: cached.id,
+    startedAt: now,
+    finishedAt: now,
+  });
+  await repos.runs.appendTyped(runId, deviceId,
+    buildArtifactReadyEvent({
+      artifactId: cached.id,
+      kind,
+      contentHash: cached.content_hash,
+      inputHash: stageInputHash,
+      schemaVersion: cached.schema_version,
+      fromCache: true,
+    }),
+  );
+
+  return { artifactId: cached.id, contentHash: cached.content_hash, kind };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -314,23 +363,6 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         const snapshot = run.snapshot_json as Record<string, unknown>;
         const _inputHash = await inputHash(snapshot);
 
-        const cached = await repos.artifacts.findCacheHit(deviceId, 'topic-theory', _inputHash);
-        if (cached) {
-          await repos.runs.appendTyped(runId, deviceId,
-            buildArtifactReadyEvent({
-              artifactId: cached.id,
-              kind: 'topic-theory',
-              contentHash: cached.content_hash,
-              inputHash: _inputHash,
-              schemaVersion: cached.schema_version,
-              fromCache: true,
-            }),
-          );
-          await repos.runs.markReady(runId);
-          await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
-          return { ok: false };
-        }
-
         const ckps = await repos.stageCheckpoints.byRun(runId);
         return {
           ok: true,
@@ -343,7 +375,11 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
       if (!planOutcome.ok) return;
       const { snapshot, inputHash: _inputHash, checkpoints } = planOutcome;
       const wantedStages = resolveWantedStages(snapshot, checkpoints);
+      const bindParentArtifactHashes = snapshot.stage === 'full';
       let theoryArtifactId = checkpoints.find((c) => c.stage === 'theory')?.artifact_id ?? null;
+      let theoryContentHash: string | undefined;
+      let studyCardsContentHash: string | undefined;
+      const studyCardsCheckpointArtifactId = checkpoints.find((c) => c.stage === 'study-cards')?.artifact_id ?? null;
 
       // ---- 2. THEORY ----
       if (wantedStages.includes('theory')) {
@@ -351,10 +387,17 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
 
         const theoryResponseFormat = jsonSchemaResponseFormat('topic-theory');
         const theorySchemaVersion = (snapshot.schema_version as number) ?? topicTheorySchemaVersion;
+        const theoryInputHash = await topicContentStageInputHash({
+          snapshot,
+          baseInputHash: _inputHash,
+          stage: 'theory',
+        });
 
-        const theoryResult = await runStage(
+        const theoryResult = (await useCachedStage(
+          repos, runId, deviceId, 'theory', 'topic-theory', theoryInputHash,
+        )) ?? await runStage(
           step, repos, runId, deviceId, 'theory', 'topic-theory',
-          snapshot, _inputHash, theorySchemaVersion,
+          snapshot, theoryInputHash, theorySchemaVersion,
           async (generationPolicy) => {
             const raw = await callTopicContent(
               {
@@ -381,6 +424,9 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
           },
         );
         theoryArtifactId = theoryResult.artifactId;
+        theoryContentHash = theoryResult.contentHash;
+      } else if (theoryArtifactId) {
+        theoryContentHash = await loadStageArtifactContentHash(repos, theoryArtifactId, 'theory');
       }
 
       // ---- 3. STUDY CARDS ----
@@ -389,10 +435,18 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
 
         const cardsResponseFormat = jsonSchemaResponseFormat('topic-study-cards');
         const cardsSchemaVersion = (snapshot.schema_version as number) ?? topicStudyCardsSchemaVersion;
+        const studyCardsInputHash = await topicContentStageInputHash({
+          snapshot,
+          baseInputHash: _inputHash,
+          stage: 'study-cards',
+          parentContentHashes: bindParentArtifactHashes && theoryContentHash ? { theory: theoryContentHash } : undefined,
+        });
 
-        await runStage(
+        const studyCardsResult = (await useCachedStage(
+          repos, runId, deviceId, 'study-cards', 'topic-study-cards', studyCardsInputHash,
+        )) ?? await runStage(
           step, repos, runId, deviceId, 'study-cards', 'topic-study-cards',
-          snapshot, _inputHash, cardsSchemaVersion,
+          snapshot, studyCardsInputHash, cardsSchemaVersion,
           async (generationPolicy) => {
             const promptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId);
 
@@ -424,6 +478,9 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
             return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
           },
         );
+        studyCardsContentHash = studyCardsResult.contentHash;
+      } else if (studyCardsCheckpointArtifactId) {
+        studyCardsContentHash = await loadStageArtifactContentHash(repos, studyCardsCheckpointArtifactId, 'study-cards');
       }
 
       // ---- 4. MINI-GAMES (three in parallel) ----
@@ -432,15 +489,27 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         await checkCancel('before-mini-games');
 
         await Promise.all(
-          miniStages.map((miniStage) => {
+          miniStages.map(async (rawMiniStage) => {
+            const miniStage = rawMiniStage as `mini-games:${MiniGameType}`;
             const gameType = miniStage.replace('mini-games:', '') as MiniGameType;
             const kind = MINI_GAME_ARTIFACT_KINDS[gameType];
             const schemaVersion = MINI_GAME_SCHEMA_VERSIONS[gameType];
             const responseFormat = jsonSchemaResponseFormat(kind);
+            const parentContentHashes: Record<string, string> = {};
+            if (bindParentArtifactHashes && theoryContentHash) parentContentHashes.theory = theoryContentHash;
+            if (bindParentArtifactHashes && studyCardsContentHash) parentContentHashes.studyCards = studyCardsContentHash;
+            const miniGameInputHash = await topicContentStageInputHash({
+              snapshot,
+              baseInputHash: _inputHash,
+              stage: miniStage,
+              parentContentHashes: Object.keys(parentContentHashes).length > 0 ? parentContentHashes : undefined,
+            });
 
-            return runStage(
+            return (await useCachedStage(
+              repos, runId, deviceId, miniStage, kind, miniGameInputHash,
+            )) ?? await runStage(
               step, repos, runId, deviceId, miniStage, kind,
-              snapshot, _inputHash, schemaVersion,
+              snapshot, miniGameInputHash, schemaVersion,
               async (generationPolicy) => {
                 const promptSnapshot = await buildTopicCardPromptSnapshot(repos, {
                   ...snapshot,

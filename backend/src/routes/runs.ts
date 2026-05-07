@@ -75,12 +75,16 @@ function getSupersedesKey(req: Request): string | undefined {
   return val.trim();
 }
 
-function cacheArtifactKind(kind: PipelineKind): string {
+function cacheArtifactKind(kind: PipelineKind, snapshot: Record<string, unknown>): string | null {
   switch (kind) {
     case 'crystal-trial': return 'crystal-trial';
     case 'topic-expansion': return 'topic-expansion-cards';
-    case 'subject-graph': return 'subject-graph-topics';
-    case 'topic-content': return 'topic-theory';
+    case 'subject-graph': return snapshot.pipeline_kind === 'subject-graph-topics' ? 'subject-graph-topics' : null;
+    case 'topic-content': {
+      if (snapshot.stage === 'full') return null;
+      const pipelineKind = snapshot.pipeline_kind;
+      return typeof pipelineKind === 'string' ? pipelineKind : null;
+    }
   }
 }
 
@@ -186,8 +190,10 @@ runs.post('/', async (c) => {
 
   // 5. Check artifact cache BEFORE D1 run creation (so we know whether to mark
   //    the run `ready` or `queued`).
-  const artifactKind = cacheArtifactKind(kind);
-  const cached = await repos.artifacts.findCacheHit(deviceId, artifactKind, hash);
+  const artifactKind = cacheArtifactKind(kind, expanded.snapshot);
+  const cached = artifactKind
+    ? await repos.artifacts.findCacheHit(deviceId, artifactKind, hash)
+    : null;
 
   // 6. Handle supersession BEFORE D1 run creation (best-effort — if it
   //    fails the new run still gets created).
