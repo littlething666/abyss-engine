@@ -1,13 +1,13 @@
 <aside>
 📌
 
-**Status:** Plan v3, 2026-05-06. Phases 0–3.5 complete. Phase 4 productionization in progress: CORS production hardening, threat-model doc, storage retention policy, auth migration plan, and `legacyRunnerBoundary.test.ts` landed. Destructive cleanup (items 4–7) blocked pending operator routing of all four pipelines to durable backend.
+**Status:** Plan v3, 2026-05-07. Phases 0–3.5 mostly complete, but codebase review reopened a Phase 3.6 correctness gate before Phase 4 cleanup. Phase 4 productionization docs and CORS hardening landed; destructive cleanup (items 4–7) remains blocked pending operator routing of all four pipelines to durable backend and Phase 3.6 exit.
 
 </aside>
 
 ## Implementation Status
 
-Last updated: 2026-05-06. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed, Phase 3 (Observability + full budgets) core steps 3a–3i landed. PRs are stacked: each step's PR targets the previous step's branch as its base.
+Last updated: 2026-05-07. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed, Phase 3 (Observability + full budgets) core steps 3a–3i landed, and Phase 3.5 mostly landed. Phase 3.6 is now open to resolve durable transport, retry, idempotency, budget, and event-contract gaps found in the live codebase. PRs are stacked: each step's PR targets the previous step's branch as its base.
 
 ### Phase 0 — Reliability hardening + shared contracts
 
@@ -100,6 +100,18 @@ Last updated: 2026-05-06.
 - [x]  **Step 6 (Browser Transport CORS).** Added `supersedes-key`, `last-event-id`, `cache-control` to CORS allowed request headers in `backend/src/middleware/cors.ts`.
 - [x]  **Step 6A (Supersession Transaction Fix).** Migration drops and recreates the `idx_runs_active_supersedes` partial unique index to exclude `ready` status. A completed (`ready`) Topic Expansion no longer blocks future superseding runs with the same `Supersedes-Key`. The `cancelSupersededRun` repo method already filtered by non-terminal active states.
 - [x]  **Step 7 (Stats Scope + Idempotency TTL).** Stats route now filters `listInWindow` results by the requesting device's `device_id` — pre-auth v1 stats are per-device. Idempotency middleware enforces 24-hour TTL: dedupes only when the existing run was created <24h ago; stale keys create fresh runs.
+
+### Phase 3.6 — Reopened durable correctness gate
+
+Last updated: 2026-05-07. Opened after reviewing the live codebase against this plan. This phase must exit before Phase 4 destructive cleanup.
+
+- [ ] **Step 1 (Live SSE transport).** Replace the `GET /v1/runs/:id/events` replay-and-close stub with a real live tail. Recommended v1 implementation: a backend `RunEventTail` module that replays `seq > lastSeq`, keeps the SSE response open, polls `eventsAfter()` on a bounded cadence until a terminal run row is observed, emits keepalives without closing, and closes only after terminal events have been flushed. A RunEventBus Durable Object remains the stronger later module once event fan-out is needed. Tests: active run stream stays open until a later persisted event is emitted; terminal run stream closes after replay; `Last-Event-ID` and `?lastSeq=` continue to replay only `seq > lastSeq`; no UI polling workaround is introduced.
+- [ ] **Step 2 (Hydration cursor and terminal apply semantics).** Fix durable hydration so reopening the app cannot miss completed backend runs or replay completion side effects. Backend `status=active` must exclude terminal `ready`; hydration must query recent terminal `ready` runs and replay them only when local artifact application is still missing. `GenerationRunEventHandlers.observeRun()` must pass `getLastAppliedSeq(runId)` into `client.observe(runId, lastSeq)`, persist per-run event cursors across reloads, and fire legacy completion events only when this observation applied at least one new artifact for the run. Tests: close tab before completion, reopen after backend `ready`, artifact applies exactly once, mentor/HUD completion fires once, duplicate replay of `run.completed` is suppressed.
+- [ ] **Step 3 (Retry route contract).** Fix `POST /v1/runs/:id/retry` to return `{ runId }` and follow the same budget reservation, workflow dispatch, enqueue-failure, and event contract as initial submission. Dispatch failure must mark the retry run `failed_final` and emit `run.failed`; it must not log and return an empty response. Tests cover success body, workflow dispatch failure, lineage via `parent_run_id`, and `{ stage, jobId }` preservation.
+- [ ] **Step 4 (Single budget reservation owner).** Make run budget reservation happen exactly once per submitted durable run. The current combination of route-level `assertBelowDailyCap()`, workflow plan-level `assertBelowDailyCap()`, and extra `incrementRunsStarted()` calls can double or triple count. Recommended solution: reserve at `POST /v1/runs` / retry before workflow creation; workflows check cancellation, cache, and tokens but do not reserve run count again. Cache hits consume one run reservation and no token count. Tests cover cache hit, cache miss, retry, workflow plan execution, and UTC rollover without duplicate `runs_started` increments.
+- [ ] **Step 5 (Idempotency TTL schema correction).** The middleware allows stale idempotency keys after 24 hours, but the persistent unique `(device_id, idempotency_key)` index still makes fresh inserts with the same key fail. Replace the unique runs index with a non-unique lookup index plus middleware-enforced 24h selection, or move idempotency to a dedicated `idempotency_records(device_id, key, run_id, expires_at)` module. Tests must prove same key within 24h returns the old run and the same key after 24h creates a fresh run.
+- [ ] **Step 6 (Typed RunEvent persistence).** Add typed event builder/assertion helpers behind `backend/src/contracts/generationContracts.ts` and make `IRunsRepo.append` accept typed event inputs, not arbitrary strings plus loose payloads. This should close the remaining drift where comments claim typed `RunEvent` emission but workflows/routes still hand-write event names and payloads. Tests reject missing `artifact.ready.kind`, `inputHash`, `contentHash`, or `schemaVersion`; backend status payloads must map explicitly between DB underscore states and transport hyphen states.
+- [ ] **Step 7 (Status naming mapper).** Add one explicit mapper between backend row statuses (`generating_stage`, `failed_final`, `applied_local`) and transport `RunStatus` values (`generating-stage`, `failed-final`, `applied-local`). Use it in `DurableGenerationRunRepository.workerRunToSnapshot()`, `sseClient.rowToRunEvent()`, and backend event builders. Tests lock every status value so underscore/hyphen drift cannot leak into the client.
 
 ### Phase 4 — Productionization + cleanup
 
@@ -712,6 +724,28 @@ Exit criteria:
 - Topic Expansion supersession is transaction-backed and terminal `ready` runs do not block later expansions.
 - Durable browser flows survive reconnect/tab close without duplicate artifact application.
 
+### Phase 3.6 — Reopened durable correctness gate.
+
+This gate is required because the live codebase still contradicts several Phase 3.5 exit criteria even though most Phase 3.5 implementation landed.
+
+1. Replace the SSE replay-and-close stub with a live tail module or terminal-state reconnect implementation that keeps an active run observable until terminal state.
+2. Exclude terminal `ready` from `GET /v1/runs?status=active`; hydrate recent terminal `ready` runs that have unapplied artifacts; persist per-run event cursors and suppress duplicate terminal side effects.
+3. Fix retry route response and dispatch failure handling so retry mirrors initial submission.
+4. Make budget run-count reservation single-owner and remove duplicate route/workflow/manual increments.
+5. Correct idempotency persistence so the documented 24-hour TTL is possible at the database seam.
+6. Persist backend events through typed `RunEvent` builders/assertions, not loose event strings.
+7. Add explicit DB-status <-> transport-status mappers and lock them with tests.
+
+Exit criteria:
+
+- An active run emits new status/artifact/terminal events over an already-open SSE connection without a browser refresh.
+- Reopening after backend completion applies the artifact exactly once and does not double-fire mentor/HUD completion behavior.
+- Retry success and retry dispatch failure both return documented JSON bodies and leave no stranded queued retry run.
+- A submitted run increments `runs_started` exactly once across cache hit, cache miss, retry, and workflow execution.
+- Same `Idempotency-Key` dedupes within 24 hours and can create a fresh run after 24 hours.
+- Backend event rows cannot be inserted with missing required typed payload fields.
+- Client snapshots and SSE events expose canonical transport statuses, never raw database status strings.
+
 ### Phase 4 — Productionization + cleanup.
 
 Last updated: 2026-05-06.
@@ -835,3 +869,5 @@ Last updated: 2026-05-06.
 [Phase 0 Step 12 — Concrete Prompt-Quality Patches](phase0-step12.md)
 
 [Phase 3.5 — Contract Convergence + Backend Correctness](phase35-contract-convergence.md)
+
+[Phase 4 — Productionization + Cleanup: Concrete Implementation](phase4.md)
