@@ -2,18 +2,18 @@
  * Run routes — POST /v1/runs, GET /v1/runs, GET /v1/runs/:id,
  * POST /v1/runs/:id/cancel, POST /v1/runs/:id/retry.
  *
- * Phase 3.6: Single budget reservation owner, typed events, transport
- * statuses, idempotency-records-based 24h TTL, and proper retry contract.
+ * Phase 3.6: Atomic idempotency + budget + run creation via
+ * `atomic_submit_run` RPC. Typed events, transport statuses, and proper
+ * retry contract with checkpoint lineage copy.
  */
 
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
-import { assertBelowDailyCap } from '../budget/budgetGuard';
+import { assertBelowDailyCap, PIPELINE_BUDGET_CAPS } from '../budget/budgetGuard';
 import { inputHash } from '../contracts/generationContracts';
 import { buildRetryRunSnapshot } from './retryPlanning';
 import {
   buildRunQueuedEvent,
-  buildRunStatusEvent,
   buildArtifactReadyEvent,
   buildRunCompletedEvent,
   buildRunFailedEvent,
@@ -124,9 +124,12 @@ const runs = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotenc
 /**
  * POST /v1/runs — submit a new run.
  *
- * Budget is reserved exactly once here (Phase 3.6 Step 4). Workflows
- * do NOT call `assertBelowDailyCap` — they only check cancellation,
- * cache, and tokens.
+ * Phase 3.6 P0 #2: All idempotency + budget + run creation logic is
+ * consolidated into the `atomic_submit_run` RPC (migration 0008). The
+ * RPC serialises on (device_id, idempotency_key) via advisory lock so
+ * two concurrent callers converge on exactly one run and one budget
+ * reservation. The workflow is dispatched separately (after the RPC)
+ * because it needs the Supabase run row to exist first.
  */
 runs.post('/', async (c) => {
   const deviceId = c.get('deviceId');
@@ -152,59 +155,73 @@ runs.post('/', async (c) => {
     return c.json({ code: 'config:unexpected-supersedes-key', message: 'Supersedes-Key is only valid for kind=topic-expansion' }, 400);
   }
 
-  // 3. Idempotency check — must happen BEFORE budget reservation so duplicate
-  // submissions consume exactly one run-budget slot (Phase 3.6 Step 5).
-  if (idempotencyKey) {
-    const idem = await repos.idempotency.check(deviceId, idempotencyKey);
-    if (idem.status === 'hit') {
-      // Return the existing runId; the caller converges on the winner.
-      return c.json({ runId: idem.runId }, 200);
-    }
-    // miss or expired: proceed to create a fresh run.
-  }
-
-  // 4. Atomic budget reservation — SINGLE OWNER (Phase 3.6 Step 4).
-  const budget = await assertBelowDailyCap(deviceId, repos.db, kind);
-  if (!budget.ok) {
-    return c.json({ code: budget.code, message: budget.message }, 429);
-  }
-
-  // 5. Compute contract-owned input hash.
+  // 3. Compute contract-owned input hash.
   const hash = await inputHash(snapshot);
 
-  // 6. Cache-hit short-circuit.
+  // 4. Check artifact cache BEFORE calling the atomic RPC (so we know
+  //    whether to mark the run `ready` or `queued`).
   const artifactKind = cacheArtifactKind(kind);
   const cached = await repos.artifacts.findCacheHit(deviceId, artifactKind, hash);
 
+  // 5. Handle supersession BEFORE the atomic RPC (best-effort — if it
+  //    fails the new run still gets created).
+  let supersededRunId: string | null = null;
+  if (!cached && supersedesKey && kind === 'topic-expansion') {
+    supersededRunId = await repos.runs.cancelSupersededRun(deviceId, supersedesKey);
+  }
+
+  // 6. Atomic submit — idempotency + budget + run creation in one RPC.
+  const caps = PIPELINE_BUDGET_CAPS[kind];
+  const now = new Date().toISOString();
+  const snapshotRecord = snapshot as Record<string, unknown>;
+
+  const submitResult = await repos.db.rpc('atomic_submit_run', {
+    p_device_id: deviceId,
+    p_idempotency_key: idempotencyKey,
+    p_kind: kind,
+    p_input_hash: hash,
+    p_status: cached ? 'ready' : 'queued',
+    p_supersedes_key: supersedesKey ?? null,
+    p_subject_id: (snapshotRecord.subject_id as string) ?? null,
+    p_topic_id: (snapshotRecord.topic_id as string) ?? null,
+    p_snapshot_json: snapshotRecord,
+    p_parent_run_id: null,
+    p_run_cap: caps.runsPerDay,
+    p_token_cap: caps.tokensPerDay,
+    p_started_at: cached ? now : null,
+    p_finished_at: cached ? now : null,
+  });
+
+  const submit = submitResult.data as {
+    runId: string;
+    status: string;
+    existing: boolean;
+    code?: string;
+    message?: string;
+  };
+
+  if (submitResult.error) {
+    console.error('[runs] atomic_submit_run RPC failed:', submitResult.error);
+    return c.json({
+      code: 'budget:over-cap',
+      message: 'Budget check unavailable; failing closed.',
+    }, 429);
+  }
+
+  if (submit.status === 'budget_exceeded') {
+    return c.json({ code: submit.code, message: submit.message }, 429);
+  }
+
+  // If idempotency hit (serialised race winner), return the winner's runId.
+  if (submit.existing) {
+    return c.json({ runId: submit.runId }, 200);
+  }
+
+  const newRunId = submit.runId;
+
+  // 7. Emit events.
   if (cached) {
-    const runId = crypto.randomUUID();
-    const run = await repos.runs.insertRun({
-      id: runId,
-      device_id: deviceId,
-      kind,
-      status: 'ready',
-      input_hash: hash,
-      idempotency_key: idempotencyKey ?? null,
-      parent_run_id: null,
-      supersedes_key: supersedesKey ?? null,
-      cancel_requested_at: null,
-      cancel_reason: null,
-      subject_id: (snapshot as Record<string, unknown>).subject_id as string ?? null,
-      topic_id: (snapshot as Record<string, unknown>).topic_id as string ?? null,
-      started_at: new Date().toISOString(),
-      finished_at: new Date().toISOString(),
-      error_code: null,
-      error_message: null,
-      snapshot_json: snapshot as Record<string, unknown>,
-    });
-
-    // Update idempotency record to point to the actual run (Phase 3.6 Step 5).
-    if (idempotencyKey) {
-      await repos.idempotency.record(deviceId, idempotencyKey, runId);
-    }
-
-    // Emit typed events (Phase 3.6 Step 6).
-    await repos.runs.appendTyped(runId, deviceId,
+    await repos.runs.appendTyped(newRunId, deviceId,
       buildArtifactReadyEvent({
         artifactId: cached.id,
         kind: cached.kind,
@@ -214,72 +231,37 @@ runs.post('/', async (c) => {
         fromCache: true,
       }),
     );
-    await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
+    await repos.runs.appendTyped(newRunId, deviceId, buildRunCompletedEvent());
+  } else {
+    await repos.runs.appendTyped(newRunId, deviceId, buildRunQueuedEvent());
 
-    return c.json({ runId: run.id }, 201);
+    // Emit cancel-acknowledged + cancelled for the superseded run.
+    if (supersededRunId) {
+      await repos.runs.appendTyped(supersededRunId, deviceId,
+        buildRunCancelAcknowledgedEvent('superseded'),
+      );
+      await repos.runs.markCancelled(supersededRunId);
+      await repos.runs.appendTyped(supersededRunId, deviceId,
+        buildRunCancelledEvent('supersession', 'superseded'),
+      );
+    }
+
+    // 8. Durable enqueue — dispatch failure is terminal.
+    const dispatch = await dispatchWorkflow(kind, newRunId, deviceId, c.env);
+    if (!dispatch.ok) {
+      await repos.runs.markFailed(newRunId, 'config:invalid', `Workflow dispatch failed: ${dispatch.error}`);
+      await repos.runs.appendTyped(newRunId, deviceId,
+        buildRunFailedEvent('config:invalid', `Workflow dispatch failed: ${dispatch.error}`),
+      );
+      return c.json({
+        runId: newRunId,
+        error: 'workflow_dispatch_failed',
+        message: dispatch.error,
+      }, 502);
+    }
   }
 
-  // 7. Cache miss — handle supersession for topic-expansion.
-  let supersededRunId: string | null = null;
-  if (supersedesKey && kind === 'topic-expansion') {
-    supersededRunId = await repos.runs.cancelSupersededRun(deviceId, supersedesKey);
-  }
-
-  // 8. Create a queued run.
-  const run = await repos.runs.insertRun({
-    id: crypto.randomUUID(),
-    device_id: deviceId,
-    kind,
-    status: 'queued',
-    input_hash: hash,
-    idempotency_key: idempotencyKey ?? null,
-    parent_run_id: null,
-    supersedes_key: supersedesKey ?? null,
-    cancel_requested_at: null,
-    cancel_reason: null,
-    subject_id: (snapshot as Record<string, unknown>).subject_id as string ?? null,
-    topic_id: (snapshot as Record<string, unknown>).topic_id as string ?? null,
-    started_at: null,
-    finished_at: null,
-    error_code: null,
-    error_message: null,
-    snapshot_json: snapshot as Record<string, unknown>,
-  });
-
-  // Update idempotency record to point to the actual run (Phase 3.6 Step 5).
-  if (idempotencyKey) {
-    await repos.idempotency.record(deviceId, idempotencyKey, run.id);
-  }
-
-  // Emit typed events (Phase 3.6 Step 6).
-  await repos.runs.appendTyped(run.id, deviceId, buildRunQueuedEvent());
-
-  // Emit cancel-acknowledged + cancelled for the superseded run.
-  if (supersededRunId) {
-    await repos.runs.appendTyped(supersededRunId, deviceId,
-      buildRunCancelAcknowledgedEvent('superseded'),
-    );
-    await repos.runs.markCancelled(supersededRunId);
-    await repos.runs.appendTyped(supersededRunId, deviceId,
-      buildRunCancelledEvent('supersession', 'superseded'),
-    );
-  }
-
-  // 9. Durable enqueue — dispatch failure is terminal (Phase 3.6 Step 3 contract).
-  const dispatch = await dispatchWorkflow(kind, run.id, deviceId, c.env);
-  if (!dispatch.ok) {
-    await repos.runs.markFailed(run.id, 'config:invalid', `Workflow dispatch failed: ${dispatch.error}`);
-    await repos.runs.appendTyped(run.id, deviceId,
-      buildRunFailedEvent('config:invalid', `Workflow dispatch failed: ${dispatch.error}`),
-    );
-    return c.json({
-      runId: run.id,
-      error: 'workflow_dispatch_failed',
-      message: dispatch.error,
-    }, 502);
-  }
-
-  return c.json({ runId: run.id }, 201);
+  return c.json({ runId: newRunId }, 201);
 });
 
 /**
@@ -415,6 +397,11 @@ runs.post('/:id/retry', async (c) => {
   const retrySnapshot = retryPlan.snapshot;
   const retryInputHash = await inputHash(retrySnapshot);
 
+  // Phase 3.6 P0 #1: Retry child runs need parent checkpoint lineage so
+  // workflows can skip already-completed stages. Copy every `ready`
+  // checkpoint from the parent to the child (re-keying run_id).
+  const parentCheckpoints = await repos.stageCheckpoints.byRun(runId);
+
   const newRunId = crypto.randomUUID();
   await repos.runs.insertRun({
     id: newRunId,
@@ -435,6 +422,29 @@ runs.post('/:id/retry', async (c) => {
     error_message: null,
     snapshot_json: retrySnapshot,
   });
+
+  // Copy every ready parent checkpoint to the child so the workflow
+  // naturally skips completed stages via its existing checkpoint queries.
+  const readyCheckpoints = parentCheckpoints.filter(
+    (ckp) => ckp.status === 'ready' && ckp.artifact_id,
+  );
+  if (readyCheckpoints.length > 0) {
+    await Promise.all(
+      readyCheckpoints.map((ckp) =>
+        repos.stageCheckpoints.upsert({
+          runId: newRunId,
+          stage: ckp.stage,
+          status: 'ready',
+          inputHash: ckp.input_hash,
+          attempt: ckp.attempt,
+          artifactId: ckp.artifact_id,
+          jobId: undefined,
+          startedAt: ckp.started_at,
+          finishedAt: ckp.finished_at,
+        }),
+      ),
+    );
+  }
 
   await repos.runs.appendTyped(newRunId, deviceId,
     buildRunQueuedEvent({ retry_of: runId }),

@@ -165,7 +165,11 @@ function resolveWantedStages(
   snapshot: Record<string, unknown>,
   checkpoints: Array<{ stage: string; artifact_id: string | null }>,
 ): string[] {
-  const stage = (snapshot.stage as string) ?? 'full';
+  // Phase 3.6 P0 #1: Prefer `resume_from_stage` (set by the retry planner)
+  // over `stage` (set by the initial submit). The retry route copies ready
+  // parent checkpoints to the child run, so `resolveWantedStages` naturally
+  // skips completed stages via the `persisted` set below.
+  const stage = (snapshot.resume_from_stage as string) ?? (snapshot.stage as string) ?? 'full';
   const persisted = new Set(checkpoints.filter((c) => c.artifact_id).map((c) => c.stage));
 
   if (stage === 'theory') return persisted.has('theory') ? [] : ['theory'];

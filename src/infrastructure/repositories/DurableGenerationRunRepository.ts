@@ -144,7 +144,20 @@ function mapWorkerRunStatus(status: string): RunStatus {
   return parseRunStatus(status);
 }
 
-function mapWorkerJobStatus(
+/**
+ * Map a Worker-side job status to the client-side `JobSnapshot['status']`
+ * literal union.  Phase 3.6 P1 #2: Unknown statuses throw at the adapter
+ * boundary — no silent fallback to `queued`.
+ */
+/**
+ * Map a Worker-side job status to the client-side `JobSnapshot['status']`
+ * literal union.  Phase 3.6 P1 #2: Unknown statuses throw at the adapter
+ * boundary — no silent fallback to `queued`.
+ *
+ * Exported for unit tests only; production code calls through
+ * `workerRunToSnapshot` which delegates to this function.
+ */
+export function mapWorkerJobStatus(
   status: string,
 ): 'queued' | 'streaming' | 'completed' | 'failed' | 'aborted' {
   switch (status) {
@@ -163,7 +176,12 @@ function mapWorkerJobStatus(
     case 'cancelled':
       return 'aborted';
     default:
-      return 'queued';
+      throw new Error(
+        `mapWorkerJobStatus: unknown job status "${status}". ` +
+        `This is a transport contract violation — the Worker returned a job status ` +
+        `the client does not recognise. Valid statuses: queued, streaming, generating_stage, ` +
+        `completed, ready, failed, failed_final, aborted, cancelled.`,
+      );
   }
 }
 

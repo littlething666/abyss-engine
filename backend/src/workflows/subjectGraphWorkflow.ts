@@ -213,29 +213,62 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       const edgesSchemaVersion = (snapshot.schema_version as number) ?? subjectGraphEdgesSchemaVersion;
 
       // ---- 2. STAGE A: TOPIC LATTICE ----
-      // Phase 3.6: capture lattice topic IDs for Stage B semantic validation.
+      // Phase 3.6 P0 #1: honour `retry_stage` set by the retry planner so
+      // a Stage-B-only retry skips Stage A. Phase 3.6 P1 #1: capture
+      // lattice topic IDs for Stage B semantic validation and fail loudly
+      // when required context cannot be loaded.
       let latticeTopicIds: string[] | undefined;
 
+      const retryStage = snapshot.retry_stage as string | undefined;
+      const skipStageA = retryStage === 'edges';
+
       const topicsCkp = checkpoints.find((c) => c.stage === 'topics');
-      if (topicsCkp?.artifact_id) {
+      if (topicsCkp?.artifact_id || skipStageA) {
         await repos.runs.appendTyped(runId, deviceId,
-          buildStageProgressEvent('topics', undefined, 'resumed from checkpoint'),
+          buildStageProgressEvent('topics', undefined, skipStageA ? 'skipped (retry_stage=edges)' : 'resumed from checkpoint'),
         );
-        // When resuming from checkpoint, load the Stage A artifact to
-        // extract lattice topic IDs for Stage B validation.
-        try {
-          const stageARow = await repos.artifacts.get(topicsCkp.artifact_id);
-          if (stageARow) {
-            const stageAPayload = await repos.artifacts.getStorage(stageARow.storage_key);
-            if (stageAPayload && typeof stageAPayload === 'object' && Array.isArray((stageAPayload as Record<string, unknown>).topics)) {
-              latticeTopicIds = ((stageAPayload as Record<string, unknown>).topics as Array<{ topicId: string }>).map((t) => t.topicId);
-            }
-          }
-        } catch (err) {
-          console.warn(
-            `[subjectGraphWorkflow] failed to load Stage A payload for lattice IDs (runId=${runId}):`,
-            err,
+
+        // When resuming from checkpoint or skipping Stage A, we MUST load
+        // the Stage A artifact to extract lattice topic IDs for Stage B
+        // semantic validation.  If the load fails, Stage B cannot validate
+        // prerequisite edges — fail the workflow with a structured error
+        // code (Phase 3.6 P1 #1).
+        const artifactId = topicsCkp?.artifact_id ?? undefined;
+
+        if (!artifactId && skipStageA) {
+          // Retry wants edges-only but the parent has no Stage A checkpoint.
+          throw new WorkflowFail(
+            'precondition:missing-topic',
+            'subject-graph edges retry: parent run has no Stage A (topics) checkpoint. Run Stage A first.',
           );
+        }
+
+        if (artifactId) {
+          try {
+            const stageARow = await repos.artifacts.get(artifactId);
+            if (!stageARow) {
+              throw new Error(`artifact row not found for ${artifactId}`);
+            }
+            const stageAPayload = await repos.artifacts.getStorage(stageARow.storage_key);
+            if (
+              stageAPayload &&
+              typeof stageAPayload === 'object' &&
+              Array.isArray((stageAPayload as Record<string, unknown>).topics)
+            ) {
+              latticeTopicIds = (
+                (stageAPayload as Record<string, unknown>).topics as Array<{ topicId: string }>
+              ).map((t) => t.topicId);
+            }
+          } catch (err) {
+            // Phase 3.6 P1 #1: Fail loudly — Stage B requires the Stage A
+            // lattice for semantic validation.  A missing or unreadable
+            // Stage A artifact is a precondition failure, not a warning.
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new WorkflowFail(
+              'precondition:missing-topic',
+              `subject-graph Stage B: cannot load Stage A (topics) artifact (id=${artifactId}): ${msg}`,
+            );
+          }
         }
       } else {
         await checkCancel('before-topics');
@@ -291,12 +324,21 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       }
 
       // ---- 3. STAGE B: PREREQUISITE EDGES ----
+      // Phase 3.6 P0 #1: honour `retry_stage` — when explicitly set to
+      // 'topics', the caller only wants Stage A; skip Stage B entirely.
+      const skipStageB = retryStage === 'topics';
+      if (skipStageB) {
+        await repos.runs.appendTyped(runId, deviceId,
+          buildStageProgressEvent('edges', undefined, 'skipped (retry_stage=topics)'),
+        );
+      }
+
       const edgesCkp = checkpoints.find((c) => c.stage === 'edges');
       if (edgesCkp?.artifact_id) {
         await repos.runs.appendTyped(runId, deviceId,
           buildStageProgressEvent('edges', undefined, 'resumed from checkpoint'),
         );
-      } else {
+      } else if (!skipStageB) {
         await checkCancel('before-edges');
 
         const edgesResponseFormat = jsonSchemaResponseFormat('subject-graph-edges');

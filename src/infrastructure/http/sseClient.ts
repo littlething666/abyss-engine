@@ -58,6 +58,9 @@ interface WorkerEventRow {
  *
  * The Worker stores event types in `events.type` using the canonical
  * dotted names (e.g. `'run.queued'`, `'artifact.ready'`, `'run.failed'`).
+ *
+ * Phase 3.6 P1 #2: Strict transport decoding — unknown event types and
+ * malformed payloads throw at the adapter boundary. No fallback defaults.
  */
 function rowToRunEvent(row: WorkerEventRow): RunEvent {
   const base = {
@@ -70,8 +73,15 @@ function rowToRunEvent(row: WorkerEventRow): RunEvent {
   switch (row.type) {
     case 'run.queued':
       return { ...base, type: 'run.queued' };
-    case 'run.status':
-      return { ...base, type: 'run.status', status: parseRunStatus(String(p.status ?? 'queued')) };
+    case 'run.status': {
+      const rawStatus = String(p.status ?? '');
+      if (!rawStatus) {
+        throw new Error(
+          `[sseClient] run.status event missing required field "status" (runId=${row.run_id}, seq=${row.seq})`,
+        );
+      }
+      return { ...base, type: 'run.status', status: parseRunStatus(rawStatus) };
+    }
     case 'stage.progress':
       return {
         ...base,
@@ -82,29 +92,56 @@ function rowToRunEvent(row: WorkerEventRow): RunEvent {
         },
       };
     case 'artifact.ready':
-    case 'run.artifact-ready':
+    case 'run.artifact-ready': {
+      const artifactId = String(p.artifactId ?? p.artifact_id ?? '');
+      const kind = String(p.kind ?? '');
+      const contentHash = String(p.contentHash ?? p.content_hash ?? '');
+      const inputHash = String(p.inputHash ?? p.input_hash ?? '');
+      const schemaVersion: number | undefined =
+        typeof p.schemaVersion === 'number'
+          ? p.schemaVersion
+          : typeof p.schema_version === 'number'
+            ? p.schema_version
+            : undefined;
+
+      // Phase 3.6 P1 #2: Fail loudly on missing required fields.
+      const missing: string[] = [];
+      if (!artifactId) missing.push('artifactId');
+      if (!kind) missing.push('kind');
+      if (!contentHash) missing.push('contentHash');
+      if (!inputHash) missing.push('inputHash');
+      if (schemaVersion === undefined) missing.push('schemaVersion');
+      if (missing.length > 0) {
+        throw new Error(
+          `[sseClient] artifact.ready event missing required field(s): ${missing.join(', ')} (runId=${row.run_id}, seq=${row.seq})`,
+        );
+      }
+
+      // TypeScript can't narrow across the throw above, but we've verified
+      // schemaVersion is defined.
       return {
         ...base,
         type: 'artifact.ready',
         body: {
-          artifactId: String(p.artifactId ?? p.artifact_id ?? ''),
+          artifactId,
           subjectId: typeof p.subject_id === 'string' ? p.subject_id : undefined,
           topicId: typeof p.topic_id === 'string' ? p.topic_id : undefined,
-          kind: String(p.kind ?? ''),
-          contentHash: String(p.contentHash ?? p.content_hash ?? ''),
-          schemaVersion:
-            typeof p.schemaVersion === 'number'
-              ? p.schemaVersion
-              : typeof p.schema_version === 'number'
-                ? p.schema_version
-                : 0,
-          inputHash: String(p.inputHash ?? p.input_hash ?? ''),
+          kind,
+          contentHash,
+          schemaVersion: schemaVersion as number,
+          inputHash,
         },
       };
+    }
     case 'run.completed':
       return { ...base, type: 'run.completed' };
     case 'run.failed': {
-      const raw = (p.code ?? p.error_code ?? 'parse:json-mode-violation') as string;
+      const raw = (p.code ?? p.error_code ?? '') as string;
+      if (!raw) {
+        throw new Error(
+          `[sseClient] run.failed event missing required field "code" (runId=${row.run_id}, seq=${row.seq})`,
+        );
+      }
       const code = (
         raw === 'validation:semantic-subject-graph'
           ? 'validation:semantic-subject-graph'
@@ -130,14 +167,13 @@ function rowToRunEvent(row: WorkerEventRow): RunEvent {
         reason: (p.reason === 'superseded' ? 'superseded' : 'user') as 'user' | 'superseded',
       };
     default: {
-      // Unknown event type — log and continue.
-      // Future event types from the Worker must be added to this switch.
-      console.warn(`[sseClient] unknown event type: ${row.type}`, row);
-      return {
-        ...base,
-        type: 'run.status',
-        status: parseRunStatus(String(p.status ?? 'queued')),
-      };
+      // Phase 3.6 P1 #2: Unknown event types are a transport contract
+      // violation — throw at the adapter boundary instead of silently
+      // synthesising a fallback event.
+      throw new Error(
+        `[sseClient] unknown event type "${row.type}" (runId=${row.run_id}, seq=${row.seq}). ` +
+        `This is a transport contract violation — the Worker emitted an event type the client does not recognise.`,
+      );
     }
   }
 }
@@ -198,12 +234,16 @@ export async function* openSseStream(
             currentData += line.slice(5);
           } else if (line === '') {
             if (currentData.trim()) {
+              let row: WorkerEventRow;
               try {
-                const row: WorkerEventRow = JSON.parse(currentData);
-                yield rowToRunEvent(row);
+                row = JSON.parse(currentData);
               } catch (err) {
                 console.error('[sseClient] failed to parse SSE data:', err);
+                currentEventId = undefined;
+                currentData = '';
+                continue;
               }
+              yield rowToRunEvent(row);
             }
             currentEventId = undefined;
             currentData = '';
@@ -227,12 +267,16 @@ export async function* openSseStream(
         } else if (line === '') {
           // Empty line = end of event
           if (currentData.trim()) {
+            let row: WorkerEventRow;
             try {
-              const row: WorkerEventRow = JSON.parse(currentData);
-              yield rowToRunEvent(row);
+              row = JSON.parse(currentData);
             } catch (err) {
               console.error('[sseClient] failed to parse SSE data:', err);
+              currentEventId = undefined;
+              currentData = '';
+              continue;
             }
+            yield rowToRunEvent(row);
           }
           // Reset for next event
           currentEventId = undefined;

@@ -307,6 +307,89 @@ describe('openSseStream', () => {
     }
   });
 
+  // ---- Phase 3.6 P1 #2: strict transport decoding ----
+
+  it('throws on unknown event type (strict transport decoding)', async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchWithSse([
+      'id: 20',
+      'data: {"id":"20","run_id":"run-001","device_id":"dev-001","seq":20,"ts":"2026-01-01T00:00:20Z","type":"unknown.event.type","payload_json":{}}',
+      '',
+    ]);
+
+    try {
+      const events: RunEvent[] = [];
+      await expect(async () => {
+        for await (const event of openSseStream(baseOpts)) {
+          events.push(event);
+        }
+      }).rejects.toThrow(/unknown event type/);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('throws on artifact.ready missing required fields (strict transport decoding)', async () => {
+    const origFetch = globalThis.fetch;
+    // Missing kind, contentHash, inputHash, schemaVersion
+    globalThis.fetch = mockFetchWithSse([
+      'id: 21',
+      'data: {"id":"21","run_id":"run-001","device_id":"dev-001","seq":21,"ts":"2026-01-01T00:00:21Z","type":"artifact.ready","payload_json":{"artifactId":"art-incomplete"}}',
+      '',
+    ]);
+
+    try {
+      const events: RunEvent[] = [];
+      await expect(async () => {
+        for await (const event of openSseStream(baseOpts)) {
+          events.push(event);
+        }
+      }).rejects.toThrow(/missing required field/);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('throws on run.failed missing code (strict transport decoding)', async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchWithSse([
+      'id: 22',
+      'data: {"id":"22","run_id":"run-001","device_id":"dev-001","seq":22,"ts":"2026-01-01T00:00:22Z","type":"run.failed","payload_json":{"message":"no code here"}}',
+      '',
+    ]);
+
+    try {
+      const events: RunEvent[] = [];
+      await expect(async () => {
+        for await (const event of openSseStream(baseOpts)) {
+          events.push(event);
+        }
+      }).rejects.toThrow(/missing required field.+"code"/);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('throws on run.status missing status field (strict transport decoding)', async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchWithSse([
+      'id: 23',
+      'data: {"id":"23","run_id":"run-001","device_id":"dev-001","seq":23,"ts":"2026-01-01T00:00:23Z","type":"run.status","payload_json":{}}',
+      '',
+    ]);
+
+    try {
+      const events: RunEvent[] = [];
+      await expect(async () => {
+        for await (const event of openSseStream(baseOpts)) {
+          events.push(event);
+        }
+      }).rejects.toThrow(/missing required field.+"status"/);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
   it('handles AbortSignal for cancellation', async () => {
     const origFetch = globalThis.fetch;
     const ac = new AbortController();

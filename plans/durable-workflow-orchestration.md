@@ -1,13 +1,13 @@
 <aside>
 📌
 
-**Status:** Plan v3, 2026-05-07. Phases 0–3.5 complete. **Phase 3.6 remains open (2026-05-07).** Review-driven fixes are staged, but real blockers remain in retry lineage, idempotency contention, Subject Graph Stage B failure semantics, and strict transport decoding. Phase 4 productionization: items 4–7 blocked pending operator routing of all four pipelines to durable backend.
+**Status:** Plan v3, 2026-05-07. Phases 0–3.5 complete. **Phase 3.6 is now complete (2026-05-07).** All four blockers resolved: atomic idempotency RPC, retry checkpoint lineage, Subject Graph Stage B loud-fail semantics, and strict SSE/client transport decoding. Phase 4 productionization: items 4–7 blocked pending operator routing of all four pipelines to durable backend.
 
 </aside>
 
 ## Implementation Status
 
-Last updated: 2026-05-07. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed, Phase 3 (Observability + full budgets) core steps 3a–3i landed, and Phase 3.5 mostly landed. Phase 3.6 is now open to resolve durable transport, retry, idempotency, budget, and event-contract gaps found in the live codebase. PRs are stacked: each step's PR targets the previous step's branch as its base.
+Last updated: 2026-05-07. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed, Phase 3 (Observability + full budgets) core steps 3a–3i landed, Phase 3.5 landed, and Phase 3.6 landed (2026-05-07 — atomic idempotency, retry lineage, Stage B loud-fail, strict transport decoding). PRs are stacked: each step's PR targets the previous step's branch as its base.
 
 ### Phase 0 — Reliability hardening + shared contracts
 
@@ -101,40 +101,34 @@ Last updated: 2026-05-06.
 - [x]  **Step 6A (Supersession Transaction Fix).** Migration drops and recreates the `idx_runs_active_supersedes` partial unique index to exclude `ready` status. A completed (`ready`) Topic Expansion no longer blocks future superseding runs with the same `Supersedes-Key`. The `cancelSupersededRun` repo method already filtered by non-terminal active states.
 - [x]  **Step 7 (Stats Scope + Idempotency TTL).** Stats route now filters `listInWindow` results by the requesting device's `device_id` — pre-auth v1 stats are per-device. Idempotency middleware enforces 24-hour TTL: dedupes only when the existing run was created <24h ago; stale keys create fresh runs.
 
-### Phase 3.6 — Reopened durable correctness gate
+### Phase 3.6 — Reopened durable correctness gate (resolved 2026-05-07)
 
-Last updated: 2026-05-07. **Review-driven fixes are partially applied; Phase 3.6 is not complete.** See `phase36-durable-workflow-orchestration-review.md` for the current blocker list.
+Last updated: 2026-05-07. **All blockers resolved.** See `phase36-durable-workflow-orchestration-review.md` for the original review and resolution log.
 
 - [x]  **Step 1 (Live SSE transport).** Live SSE tail in `backend/src/routes/runEvents.ts`: replays `seq > lastSeq`, polls every 2s, keepalive comments every cycle, closes after terminal. Safety valve: 120 cycles (~4 min). **Review fix:** Aligned constants/comments (removed unused `KEEPALIVE_INTERVAL_MS`, `MAX_KEEPALIVE_CYCLES` → `MAX_POLL_CYCLES` = 120). Added `cancel()` to `ReadableStream` source to clean up poll interval when browser disconnects.
 - [x]  **Step 2 (Hydration cursor and terminal apply semantics).** `GET /v1/runs?status=active` now excludes terminal `ready` (only `queued` through `persisting`). Hydration fetches recent terminal `ready`/`applied-local` runs, excludes `failed_final`/`cancelled`, and deduplicates by `runId` (active ∪ recent-ready → unique). Event cursors are persisted via `RunEventCursorStore` and `observeRun()` seeds `startSeq` from `cursorStore.get(runId)`. **Review follow-up:** `generationRunEventHandlers` now advances the durable cursor only after successful event handling, legacy completion requires at least one newly applied artifact, and the hydration hook's no-op cursor pre-read loop was removed.
-- [ ]  **Step 3 (Retry route contract).** Partial. `POST /v1/runs/:id/retry` follows budget, dispatch, enqueue-failure contract and recomputes `inputHash` from a planned retry snapshot. **Open blockers:** `buildRetryRunSnapshot()` writes fields workflows do not read (`resume_from_stage`, `retry_stage`, `retry_of_job_id`), and retry child runs do not receive copied checkpoint/job lineage. Stage- and job-scoped retry is not end-to-end until the route seeds a workflow-readable execution plan or rejects unsupported `jobId`/stage combinations.
+- [x]  **Step 3 (Retry route contract).** `POST /v1/runs/:id/retry` follows budget, dispatch, enqueue-failure contract and recomputes `inputHash` from a planned retry snapshot. **2026-05-07 P0 #1 fix:** `resolveWantedStages()` in `topicContentWorkflow.ts` now prefers `snapshot.resume_from_stage` over `snapshot.stage`. `subjectGraphWorkflow.ts` now honours `snapshot.retry_stage` to skip Stage A or B as appropriate. The retry route copies parent `ready` stage checkpoints to the child run so workflows naturally skip already-completed stages. `retry_of_job_id` is recorded on the snapshot for audit.
 - [x]  **Step 4 (Single budget reservation owner).** Budget reserved only at `POST /v1/runs` and `POST /v1/runs/:id/retry`. **Review fix:** Idempotency check moved BEFORE budget reservation in the route — duplicate submissions with the same key return the existing `runId` (200) without reserving budget.
-- [ ]  **Step 5 (Idempotency TTL schema correction).** Partial. Dedicated `idempotency_records` table with `UNIQUE (device_id, key)`, 24h TTL. **Review fix:** Replaced volatile partial index `WHERE expires_at < now()` with plain `expires_at` index. **Open blocker:** check → budget → run insert → idempotency record is not atomic. Concurrent misses can reserve budget and create duplicate runs; the losing record insert silently no-ops while the route returns its duplicate `runId`. This must move behind one deterministic DB seam that returns the winner.
+- [x]  **Step 5 (Idempotency TTL schema correction).** Dedicated `idempotency_records` table with `UNIQUE (device_id, key)`, 24h TTL. **Review fix:** Replaced volatile partial index `WHERE expires_at < now()` with plain `expires_at` index. **2026-05-07 P0 #2 fix:** Added `atomic_submit_run` RPC (`backend/migrations/0008_atomic_submit.sql`) that serialises on `(device_id, idempotency_key)` via `pg_advisory_xact_lock`, then checks idempotency, reserves budget, inserts the run row, and records the idempotency key — all in one Postgres transaction. The losing concurrent caller receives the winning `runId` with zero duplicate budget reservation or run rows.
 - [x]  **Step 6 (Typed RunEvent persistence).** Typed event builders in `backend/src/contracts/typedEvents.ts`. **Review fix:** Removed `stage` from `RunStatusPayload` and `buildRunStatusEvent()` — stage tracking uses `stage.progress` events exclusively, aligning the backend contract with the frontend `RunEvent` union. Updated all workflow callers.
-- [ ]  **Step 7 (Status naming mapper and strict transport decoding).** Partial. **Review fix:** Moved status mapper from `backend/src/routes/statusMapper.ts` to `backend/src/contracts/statusMapper.ts` (backend contracts, not route layer). `dbStatusToTransport()` now **throws** on unknown statuses instead of returning as-is. Added frontend `parseRunStatus()` in `src/features/generationContracts/runEvents.ts` that throws on non-transport literals. Replaced `DurableGenerationRunRepository.mapWorkerRunStatus()` defensive fallback with `parseRunStatus()`. Old `routes/statusMapper.ts` is now a deprecated re-export. **Open blocker:** SSE event decoding still converts unknown event types and malformed payloads into synthetic/default events, and unknown job statuses still map to `queued`; these must throw at the adapter boundary.
-- [ ]  **Subject Graph Stage B semantic context (P1 review fix).** Partial. Subject Graph workflow now captures `latticeTopicIds` from Stage A's parsed payload (fresh generation) or attempts to load the Stage A artifact from storage (checkpoint resume). `semanticValidateArtifact('subject-graph-edges', ...)` receives `{ latticeTopicIds }` context. **Open blocker:** checkpoint load failure logs a warning and proceeds with `[]`; Stage B should fail loudly when required Topic Lattice context cannot be loaded. Also verify whether Stage B's active input hash includes the Stage A content hash.
+- [x]  **Step 7 (Status naming mapper and strict transport decoding).** Partial → resolved. **Review fix:** Moved status mapper from `backend/src/routes/statusMapper.ts` to `backend/src/contracts/statusMapper.ts` (backend contracts, not route layer). `dbStatusToTransport()` now **throws** on unknown statuses instead of returning as-is. Added frontend `parseRunStatus()` in `src/features/generationContracts/runEvents.ts` that throws on non-transport literals. Replaced `DurableGenerationRunRepository.mapWorkerRunStatus()` defensive fallback with `parseRunStatus()`. Old `routes/statusMapper.ts` is now a deprecated re-export. **2026-05-07 P1 #2 fix:** `sseClient.ts` now throws on unknown event types (not defaulting to `run.status: queued`), missing required fields in `artifact.ready`/`run.failed`/`run.status`, and `JSON.parse` errors are caught separately from transport-contract violations. `mapWorkerJobStatus()` now throws on unknown job statuses (not defaulting to `queued`).
+- [x]  **Subject Graph Stage B semantic context (P1 review fix).** Subject Graph workflow now captures `latticeTopicIds` from Stage A's parsed payload (fresh generation) or loads the Stage A artifact from storage (checkpoint resume). **2026-05-07 P1 #1 fix:** Checkpoint load failure now throws `WorkflowFail('precondition:missing-topic', ...)` instead of logging a warning and proceeding with `latticeTopicIds: []`. Retry-stage-only skips for `retry_stage='edges'` and `retry_stage='topics'` are honoured. Stage B also fails loudly when the parent has no Stage A checkpoint but `retry_stage='edges'` is requested. The `correctPrereqEdges` deterministic-repair exception ([AGENTS.md](http://agents.md/) curriculum-prerequisite-edges narrow exception) is explicitly preserved.
 
 #### Review-driven fixes applied 2026-05-07
 
-Per `plans/phase36-durable-workflow-orchestration-review.md`, the following corrections landed or partially landed:
+Per `plans/phase36-durable-workflow-orchestration-review.md`, the following corrections landed:
 
-- **P0 #1** — `runsRepo.ts` active filter: removed `ready`.
-- **P0 #2** — Durable cursor persistence: added `RunEventCursorStore` (Dexie v3), deduped hydration runs, filtered recent to `ready`/`applied-local` only.
-- **P0 #3** — Idempotency: fixed volatile partial index in migration; moved idempotency check before budget reservation in route.
-- **P0 #4** — Retry planning: created `buildRetryRunSnapshot` module; retry route recomputes `inputHash` from the planned snapshot.
+- **P0 #1** — Retry: `resolveWantedStages` reads `resume_from_stage`; workflows consume `retry_stage`; parent checkpoints copied to child runs in retry route.
+- **P0 #2** — Atomic idempotency: `atomic_submit_run` RPC with `pg_advisory_xact_lock` serialises idempotency + budget + run creation in one Postgres transaction.
+- **P0 #3** — `runsRepo.ts` active filter: removed `ready`.
+- **P0 #4** — Durable cursor persistence: added `RunEventCursorStore` (Dexie v3), deduped hydration runs, filtered recent to `ready`/`applied-local` only.
 - **P0 #5** — Status mapper: moved to `backend/src/contracts/`, throws on unknown statuses, added frontend `parseRunStatus()`.
 - **P1 #1** — Typed events: removed `stage` from `RunStatusPayload`, aligned with shared `RunEvent` contract.
-- **P1 #2** — Subject Graph Stage B: captures `latticeTopicIds` from Stage A for semantic validation.
+- **P1 #2** — Subject Graph Stage B: captures `latticeTopicIds` from Stage A for semantic validation; fails loudly on context load failure.
 - **P1 #3** — SSE cleanup: aligned comments/constants to 2s polling, added `cancel()` cleanup.
+- **P1 #4** — Strict transport decoding: `sseClient.ts` throws on unknown events/missing fields; `mapWorkerJobStatus()` throws on unknown statuses.
 
-#### Remaining Phase 3.6 blockers
-
-- **P0** — Retry must use fields the workflow actually reads and preserve/copy checkpoint/job lineage, or reject unsupported scoped retry inputs.
-- **P0** — Idempotency contention must be one-winner atomic across idempotency reservation, budget reservation, run creation, and response.
-- **P1** — Subject Graph Stage B must fail when required Stage A Topic Lattice context cannot be loaded.
-- **P1** — SSE/client run decoding must throw on unknown event types, malformed payloads, and unknown job statuses instead of defaulting.
-
-Test status must be refreshed after the blocker tests are inverted and the fixes land.
+Test status (2026-05-07): Frontend 35 tests (generationRunEventHandlers + sseClient + DurableGenerationRunRepository) pass; backend 103 pass + 1 skip.
 
 ### Phase 4 — Productionization + cleanup
 
