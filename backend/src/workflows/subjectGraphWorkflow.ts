@@ -10,9 +10,17 @@
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
-import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
+import { WorkflowFail, WorkflowAbort, toWorkflowRuntimeError } from '../lib/workflowErrors';
 import { callSubjectGraph } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
+import {
+  WORKFLOW_LLM_STEP_RETRY,
+  appendWorkflowEventOnce,
+  workflowArtifactReadyEventKey,
+  workflowStageProgressEventKey,
+  workflowStatusEventKey,
+  workflowTerminalEventKey,
+} from './shared/workflowDurability';
 import {
   resolveGenerationJobPolicy,
   type BackendGenerationJobKind,
@@ -81,7 +89,7 @@ async function runStage(
   schemaVersion: number,
   exec: (generationPolicy: ResolvedGenerationJobPolicy) => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
 ): Promise<StageRunResult> {
-  await repos.runs.appendTyped(runId, deviceId,
+  await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('generating_stage', stage),
     buildRunStatusEvent('generating_stage'),
   );
   await repos.stageCheckpoints.upsert({
@@ -112,7 +120,7 @@ async function runStage(
   try {
     result = (await step.do(
       `generate:${stage.replace(/:/g, '_')}`,
-      { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
+      WORKFLOW_LLM_STEP_RETRY,
       // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
       () => exec(generationPolicy),
     )) as GenerateResult & { parsedPayload: Record<string, unknown> };
@@ -141,7 +149,7 @@ async function runStage(
     await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
   }
 
-  await repos.runs.appendTyped(runId, deviceId,
+  await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey(kind, _inputHash),
     buildArtifactReadyEvent({
       artifactId,
       kind,
@@ -172,7 +180,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       const reason = await repos.runs.cancelRequested(runId);
       if (reason) {
         await repos.runs.markCancelled(runId);
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('cancelled'),
           buildRunCancelledEvent(boundary, reason),
         );
         throw new WorkflowAbort('cancelled');
@@ -185,7 +193,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
       const planOutcome = (await step.do('plan', async (): Promise<PlanOutcome> => {
         await repos.runs.transition(runId, 'planning');
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('planning'),
           buildRunStatusEvent('planning'),
         );
 
@@ -195,7 +203,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
         const cached = await repos.artifacts.findCacheHit(deviceId, 'subject-graph-topics', _inputHash);
         if (cached) {
-          await repos.runs.appendTyped(runId, deviceId,
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey('subject-graph-topics', _inputHash),
             buildArtifactReadyEvent({
               artifactId: cached.id,
               kind: 'subject-graph-topics',
@@ -206,7 +214,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
             }),
           );
           await repos.runs.markReady(runId);
-          await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
           return { ok: false };
         }
 
@@ -241,8 +249,9 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
       const topicsCkp = checkpoints.find((c) => c.stage === 'topics');
       if (topicsCkp?.artifact_id || skipStageA) {
-        await repos.runs.appendTyped(runId, deviceId,
-          buildStageProgressEvent('topics', undefined, skipStageA ? 'skipped (retry_stage=edges)' : 'resumed from checkpoint'),
+        const topicsProgressNote = skipStageA ? 'skipped (retry_stage=edges)' : 'resumed from checkpoint';
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStageProgressEventKey('topics', topicsProgressNote),
+          buildStageProgressEvent('topics', undefined, topicsProgressNote),
         );
 
         // When resuming from checkpoint or skipping Stage A, we MUST load
@@ -335,14 +344,14 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       // 'topics', the caller only wants Stage A; skip Stage B entirely.
       const skipStageB = retryStage === 'topics';
       if (skipStageB) {
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStageProgressEventKey('edges', 'skipped (retry_stage=topics)'),
           buildStageProgressEvent('edges', undefined, 'skipped (retry_stage=topics)'),
         );
       }
 
       const edgesCkp = checkpoints.find((c) => c.stage === 'edges');
       if (edgesCkp?.artifact_id) {
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStageProgressEventKey('edges', 'resumed from checkpoint'),
           buildStageProgressEvent('edges', undefined, 'resumed from checkpoint'),
         );
       } else if (!skipStageB) {
@@ -387,19 +396,19 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
       // ---- 4. READY ----
       await repos.runs.markReady(runId);
-      await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
+      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
       if (err instanceof WorkflowFail) {
         await repos.runs.markFailed(runId, err.code, err.message);
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
           buildRunFailedEvent(err.code, err.message),
         );
-        throw err;
+        throw toWorkflowRuntimeError(err);
       }
       const message = err instanceof Error ? err.message : String(err);
       await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
-      await repos.runs.appendTyped(runId, deviceId,
+      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
         buildRunFailedEvent('llm:upstream-5xx', message),
       );
       throw err;

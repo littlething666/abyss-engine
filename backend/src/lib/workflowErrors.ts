@@ -9,6 +9,18 @@
  * It stops the Workflow gracefully without writing error metadata.
  */
 
+import { NonRetryableError } from 'cloudflare:workflows';
+
+const NON_RETRYABLE_WORKFLOW_FAIL_PREFIXES = [
+  'config:',
+  'precondition:',
+  'parse:',
+  'validation:',
+  'semantic:',
+  'retry:',
+  'state:',
+] as const;
+
 export class WorkflowFail extends Error {
   readonly code: string;
 
@@ -27,4 +39,13 @@ export class WorkflowAbort extends Error {
     this.name = 'WorkflowAbort';
     this.reason = reason;
   }
+}
+
+export function isNonRetryableWorkflowFailCode(code: string): boolean {
+  return NON_RETRYABLE_WORKFLOW_FAIL_PREFIXES.some((prefix) => code.startsWith(prefix));
+}
+
+export function toWorkflowRuntimeError(error: WorkflowFail): Error {
+  if (!isNonRetryableWorkflowFailCode(error.code)) return error;
+  return new NonRetryableError(`${error.code}: ${error.message}`, error.name);
 }

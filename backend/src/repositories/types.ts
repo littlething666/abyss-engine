@@ -91,6 +91,7 @@ export interface EventRow {
   ts: string;
   type: string;
   payload_json: Record<string, unknown>;
+  semantic_key: string | null;
 }
 
 // ---------------------------------------------------------------------------

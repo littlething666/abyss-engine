@@ -57,9 +57,16 @@ export interface IRunsRepo {
   listInWindow(days: number): Promise<RunRow[]>;
   cancelSupersededRun(deviceId: string, supersedesKey: string): Promise<string | null>;
   append(runId: string, deviceId: string, type: string, payload: Record<string, unknown>): Promise<EventRow>;
+  appendOnce(runId: string, deviceId: string, semanticKey: string, type: string, payload: Record<string, unknown>): Promise<EventRow>;
   appendTyped<T extends TypedEventType>(
     runId: string,
     deviceId: string,
+    event: { type: T; payload: Record<string, unknown> },
+  ): Promise<EventRow>;
+  appendTypedOnce<T extends TypedEventType>(
+    runId: string,
+    deviceId: string,
+    semanticKey: string,
     event: { type: T; payload: Record<string, unknown> },
   ): Promise<EventRow>;
   eventsAfter(runId: string, deviceId: string, lastSeq: number): Promise<EventRow[]>;
@@ -75,6 +82,7 @@ function eventFromRow(row: RawEventRow): EventRow {
     ...row,
     id: String(row.id),
     payload_json: parseJsonObject(row.payload_json, 'events.payload_json'),
+    semantic_key: row.semantic_key ?? null,
   };
 }
 
@@ -318,8 +326,8 @@ export function createRunsRepo(db: D1Database): IRunsRepo {
       if (!seqRow) throw new Error(`D1 runs.append: cannot allocate event seq for run ${runId}`);
 
       const row = await db.prepare(`
-        insert into events (run_id, device_id, seq, ts, type, payload_json)
-        values (?, ?, ?, ?, ?, ?)
+        insert into events (run_id, device_id, seq, ts, type, payload_json, semantic_key)
+        values (?, ?, ?, ?, ?, ?, null)
         returning *
       `).bind(runId, deviceId, seqRow.next_event_seq, nowIso(), type, stringifyJson(payload, 'events.payload_json'))
         .first<RawEventRow>();
@@ -327,8 +335,54 @@ export function createRunsRepo(db: D1Database): IRunsRepo {
       return eventFromRow(row);
     },
 
+    async appendOnce(runId, deviceId, semanticKey, type, payload) {
+      const existing = await db.prepare(`
+        select * from events
+        where run_id = ? and semantic_key = ?
+      `).bind(runId, semanticKey).first<RawEventRow>();
+      if (existing) return eventFromRow(existing);
+
+      const seqRow = await db.prepare(`
+        update runs set next_event_seq = next_event_seq + 1
+        where id = ?
+          and not exists (
+            select 1 from events where run_id = ? and semantic_key = ?
+          )
+        returning next_event_seq
+      `).bind(runId, runId, semanticKey).first<{ next_event_seq: number }>();
+
+      if (!seqRow) {
+        const replayed = await db.prepare(`
+          select * from events
+          where run_id = ? and semantic_key = ?
+        `).bind(runId, semanticKey).first<RawEventRow>();
+        if (replayed) return eventFromRow(replayed);
+        throw new Error(`D1 runs.appendOnce: cannot allocate event seq for run ${runId}`);
+      }
+
+      const row = await db.prepare(`
+        insert into events (run_id, device_id, seq, ts, type, payload_json, semantic_key)
+        values (?, ?, ?, ?, ?, ?, ?)
+        on conflict(run_id, semantic_key) do nothing
+        returning *
+      `).bind(runId, deviceId, seqRow.next_event_seq, nowIso(), type, stringifyJson(payload, 'events.payload_json'), semanticKey)
+        .first<RawEventRow>();
+      if (row) return eventFromRow(row);
+
+      const replayed = await db.prepare(`
+        select * from events
+        where run_id = ? and semantic_key = ?
+      `).bind(runId, semanticKey).first<RawEventRow>();
+      if (!replayed) throw new Error('D1 runs.appendOnce: insert conflict but no existing event row');
+      return eventFromRow(replayed);
+    },
+
     async appendTyped(runId, deviceId, event) {
       return this.append(runId, deviceId, event.type, event.payload);
+    },
+
+    async appendTypedOnce(runId, deviceId, semanticKey, event) {
+      return this.appendOnce(runId, deviceId, semanticKey, event.type, event.payload);
     },
 
     async eventsAfter(runId, deviceId, lastSeq) {

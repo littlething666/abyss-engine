@@ -7,7 +7,12 @@
 export type WorkflowEvent<T = unknown> = { payload: T };
 
 export class WorkflowStep {
-  async do<T>(name: string, callback: () => Promise<T> | T): Promise<T> {
+  async do<T>(
+    _name: string,
+    configOrCallback: unknown,
+    maybeCallback?: () => Promise<T> | T,
+  ): Promise<T> {
+    const callback = (maybeCallback ?? configOrCallback) as () => Promise<T> | T;
     return callback();
   }
 }

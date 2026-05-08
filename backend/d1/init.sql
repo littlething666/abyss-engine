@@ -64,7 +64,9 @@ create table if not exists events (
   ts text not null,
   type text not null,
   payload_json text not null,
-  unique (run_id, seq)
+  semantic_key text null,
+  unique (run_id, seq),
+  unique (run_id, semantic_key)
 );
 
 create table if not exists artifacts (

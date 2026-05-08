@@ -11,9 +11,16 @@
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
-import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
+import { WorkflowFail, WorkflowAbort, toWorkflowRuntimeError } from '../lib/workflowErrors';
 import { callTopicExpansion } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
+import {
+  WORKFLOW_LLM_STEP_RETRY,
+  appendWorkflowEventOnce,
+  workflowArtifactReadyEventKey,
+  workflowStatusEventKey,
+  workflowTerminalEventKey,
+} from './shared/workflowDurability';
 import { resolveGenerationJobPolicy } from '../generationPolicy';
 import { buildTopicExpansionMessages } from '../prompts/generationPrompts';
 import {
@@ -65,7 +72,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
       const reason = await repos.runs.cancelRequested(runId);
       if (reason) {
         await repos.runs.markCancelled(runId);
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('cancelled'),
           buildRunCancelledEvent(boundary, reason),
         );
         throw new WorkflowAbort('cancelled');
@@ -78,7 +85,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
       const planOutcome = (await step.do('plan', async (): Promise<PlanOutcome> => {
         await repos.runs.transition(runId, 'planning');
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('planning'),
           buildRunStatusEvent('planning'),
         );
 
@@ -88,7 +95,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
         const cached = await repos.artifacts.findCacheHit(deviceId, 'topic-expansion-cards', _inputHash);
         if (cached) {
-          await repos.runs.appendTyped(runId, deviceId,
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey('topic-expansion-cards', _inputHash),
             buildArtifactReadyEvent({
               artifactId: cached.id,
               kind: 'topic-expansion-cards',
@@ -99,7 +106,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
             }),
           );
           await repos.runs.markReady(runId);
-          await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
           return { ok: false };
         }
 
@@ -132,10 +139,10 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
       try {
         genResult = (await step.do(
           'generate',
-          { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
+          WORKFLOW_LLM_STEP_RETRY,
           async (): Promise<GenerateResult> => {
             await repos.runs.transition(runId, 'generating_stage');
-            await repos.runs.appendTyped(runId, deviceId,
+            await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('generating_stage', 'generate'),
               buildRunStatusEvent('generating_stage'),
             );
 
@@ -167,7 +174,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
       // @ts-expect-error Serializable<Record> rejects `unknown` values.
       const parsed = (await step.do('parse', async () => {
         await repos.runs.transition(runId, 'parsing');
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('parsing', 'parse'),
           buildRunStatusEvent('parsing'),
         );
         const result = strictParseArtifact('topic-expansion-cards', genResult.text);
@@ -182,7 +189,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
       await step.do('validate', async () => {
         await repos.runs.transition(runId, 'validating');
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('validating', 'validate'),
           buildRunStatusEvent('validating'),
         );
         const existingStems = Array.isArray(snapshot.existing_concept_stems)
@@ -200,7 +207,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
       const persisted = (await step.do('persist', async (): Promise<PersistResult> => {
         await repos.runs.transition(runId, 'persisting');
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('persisting', 'persist'),
           buildRunStatusEvent('persisting'),
         );
         const _contentHash = await contentHash(parsed);
@@ -221,7 +228,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
       // ---- 6. READY ----
       await repos.runs.markReady(runId);
-      await repos.runs.appendTyped(runId, deviceId,
+      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey('topic-expansion-cards', _inputHash),
         buildArtifactReadyEvent({
           artifactId: persisted.artifactId,
           kind: 'topic-expansion-cards',
@@ -230,19 +237,19 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
           schemaVersion: (snapshot.schema_version as number) ?? topicExpansionCardsSchemaVersion,
         }),
       );
-      await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
+      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
       if (err instanceof WorkflowFail) {
         await repos.runs.markFailed(runId, err.code, err.message);
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
           buildRunFailedEvent(err.code, err.message),
         );
-        throw err;
+        throw toWorkflowRuntimeError(err);
       }
       const message = err instanceof Error ? err.message : String(err);
       await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
-      await repos.runs.appendTyped(runId, deviceId,
+      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
         buildRunFailedEvent('llm:upstream-5xx', message),
       );
       throw err;

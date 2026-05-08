@@ -41,6 +41,7 @@ class FakeD1Statement {
         ts: this.args[3],
         type: this.args[4],
         payload_json: this.args[5],
+        semantic_key: this.args[6] ?? null,
       } as T;
     }
 

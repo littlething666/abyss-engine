@@ -50,11 +50,35 @@ describe('createRunsRepo', () => {
   });
 
   it('appends events with D1-allocated monotonic sequence numbers', async () => {
-    const eventRow: EventRow = { id: '1', run_id: 'run-1', device_id: 'dev-1', seq: 1, ts: '2026-05-05T00:00:00Z', type: 'run.created', payload_json: {} };
+    const eventRow: EventRow = { id: '1', run_id: 'run-1', device_id: 'dev-1', seq: 1, ts: '2026-05-05T00:00:00Z', type: 'run.created', payload_json: {}, semantic_key: null };
     const { db } = createFakeD1([q({ next_event_seq: 1 }), q(eventRow)]);
     const result = await createRunsRepo(db).append('run-1', 'dev-1', 'run.created', {});
     expect(result.seq).toBe(1);
     expect(result.type).toBe('run.created');
+    expect(result.semantic_key).toBeNull();
+  });
+
+  it('appends semantic-keyed events once and returns existing rows on replay', async () => {
+    const eventRow: EventRow = {
+      id: '1',
+      run_id: 'run-1',
+      device_id: 'dev-1',
+      seq: 1,
+      ts: '2026-05-05T00:00:00Z',
+      type: 'run.completed',
+      payload_json: {},
+      semantic_key: 'terminal:completed',
+    };
+    const { db, calls } = createFakeD1([q(null, 0), q({ next_event_seq: 1 }), q(eventRow), q(eventRow)]);
+    const repo = createRunsRepo(db);
+
+    await expect(repo.appendOnce('run-1', 'dev-1', 'terminal:completed', 'run.completed', {})).resolves.toMatchObject({
+      seq: 1,
+      semantic_key: 'terminal:completed',
+    });
+    await expect(repo.appendOnce('run-1', 'dev-1', 'terminal:completed', 'run.completed', {})).resolves.toMatchObject({ seq: 1 });
+
+    expect(calls.filter((call) => call.sql.toLowerCase().includes('insert into events'))).toHaveLength(1);
   });
 
   it('reserves idempotency and budget in atomicSubmitRun batch', async () => {

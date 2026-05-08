@@ -15,9 +15,16 @@
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
-import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
+import { WorkflowFail, WorkflowAbort, toWorkflowRuntimeError } from '../lib/workflowErrors';
 import { callCrystalTrial } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
+import {
+  WORKFLOW_LLM_STEP_RETRY,
+  appendWorkflowEventOnce,
+  workflowArtifactReadyEventKey,
+  workflowStatusEventKey,
+  workflowTerminalEventKey,
+} from './shared/workflowDurability';
 import { resolveGenerationJobPolicy } from '../generationPolicy';
 import { buildCrystalTrialMessages } from '../prompts/generationPrompts';
 import {
@@ -66,7 +73,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
       const reason = await repos.runs.cancelRequested(runId);
       if (reason) {
         await repos.runs.markCancelled(runId);
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('cancelled'),
           buildRunCancelledEvent(boundary, reason),
         );
         throw new WorkflowAbort('cancelled');
@@ -79,7 +86,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
 
       const planOutcome = (await step.do('plan', async (): Promise<PlanOutcome> => {
         await repos.runs.transition(runId, 'planning');
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('planning'),
           buildRunStatusEvent('planning'),
         );
 
@@ -90,7 +97,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
         // Cache-hit short-circuit.
         const cached = await repos.artifacts.findCacheHit(deviceId, 'crystal-trial', _inputHash);
         if (cached) {
-          await repos.runs.appendTyped(runId, deviceId,
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey('crystal-trial', _inputHash),
             buildArtifactReadyEvent({
               artifactId: cached.id,
               kind: 'crystal-trial',
@@ -101,7 +108,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
             }),
           );
           await repos.runs.markReady(runId);
-          await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
           return { ok: false };
         }
 
@@ -134,10 +141,10 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
       try {
         genResult = (await step.do(
           'generate',
-          { retries: { limit: 2, delay: 5, backoff: 'exponential' } },
+          WORKFLOW_LLM_STEP_RETRY,
           async (): Promise<GenerateResult> => {
             await repos.runs.transition(runId, 'generating_stage');
-            await repos.runs.appendTyped(runId, deviceId,
+            await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('generating_stage', 'generate'),
               buildRunStatusEvent('generating_stage'),
             );
 
@@ -169,7 +176,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
       // @ts-expect-error Serializable<Record> rejects `unknown` values; JSON.parse output is persisted as jsonb.
       const parsed = (await step.do('parse', async () => {
         await repos.runs.transition(runId, 'parsing');
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('parsing', 'parse'),
           buildRunStatusEvent('parsing'),
         );
         const result = strictParseArtifact('crystal-trial', genResult.text);
@@ -184,7 +191,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
 
       await step.do('validate', async () => {
         await repos.runs.transition(runId, 'validating');
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('validating', 'validate'),
           buildRunStatusEvent('validating'),
         );
         const expectedQuestionCount = snapshot.question_count as number | undefined;
@@ -202,7 +209,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
 
       const persisted = (await step.do('persist', async (): Promise<PersistResult> => {
         await repos.runs.transition(runId, 'persisting');
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('persisting', 'persist'),
           buildRunStatusEvent('persisting'),
         );
         const _contentHash = await contentHash(parsed);
@@ -223,7 +230,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
 
       // ---- 6. READY — typed artifact.ready event ----
       await repos.runs.markReady(runId);
-      await repos.runs.appendTyped(runId, deviceId,
+      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey('crystal-trial', _inputHash),
         buildArtifactReadyEvent({
           artifactId: persisted.artifactId,
           kind: 'crystal-trial',
@@ -232,20 +239,20 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
           schemaVersion: (snapshot.schema_version as number) ?? crystalTrialSchemaVersion,
         }),
       );
-      await repos.runs.appendTyped(runId, deviceId, buildRunCompletedEvent());
+      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
 
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
       if (err instanceof WorkflowFail) {
         await repos.runs.markFailed(runId, err.code, err.message);
-        await repos.runs.appendTyped(runId, deviceId,
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
           buildRunFailedEvent(err.code, err.message),
         );
-        throw err;
+        throw toWorkflowRuntimeError(err);
       }
       const message = err instanceof Error ? err.message : String(err);
       await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
-      await repos.runs.appendTyped(runId, deviceId,
+      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
         buildRunFailedEvent('llm:upstream-5xx', message),
       );
       throw err;

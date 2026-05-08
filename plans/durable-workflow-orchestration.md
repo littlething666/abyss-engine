@@ -1,7 +1,7 @@
 <aside>
 📌
 
-**Status:** Plan v3, 2026-05-07. Phases 0–3.5 complete. **Phase 3.6 is now complete (2026-05-07).** All four blockers resolved: atomic idempotency RPC, retry checkpoint lineage, Subject Graph Stage B loud-fail semantics, and strict SSE/client transport decoding. Phase 4 productionization has started: PR-A and PR-B are landed, and the Learning Content Store schema/repository core of PR-C is landed. Items 4–7 remain blocked pending operator routing of all four pipelines to the durable backend and backend content reads.
+**Status:** Plan v3, 2026-05-08. Phases 0–3.5 complete. **Phase 3.6 is now complete (2026-05-07).** All four blockers resolved: atomic idempotency RPC, retry checkpoint lineage, Subject Graph Stage B loud-fail semantics, and strict SSE/client transport decoding. Phase 4 productionization has started: backend reads/intents/prompt seams/stage cache keys are landed, and the first durability hardening pass added D1 event semantic idempotency, explicit Workflow LLM retry delay constants, and terminal `WorkflowFail` → `NonRetryableError` mapping. Remaining Phase 4 critical work: move all remaining side effects behind named idempotent Workflow steps, add backend artifact appliers, and add Cloudflare runtime integration coverage.
 
 **Current infrastructure note:** Phase 4 targets Workflows + D1 + R2. Numbered
 migration and hosted Supabase references in earlier phase logs are historical.
@@ -13,7 +13,7 @@ Durable Objects are optional coordination infrastructure only.
 
 ## Implementation Status
 
-Last updated: 2026-05-07. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed, Phase 3 (Observability + full budgets) core steps 3a–3i landed, Phase 3.5 landed, Phase 3.6 landed (2026-05-07 — atomic idempotency, retry lineage, Stage B loud-fail, strict transport decoding), and Phase 4 started with backend generation policy plus Learning Content Store foundations. PRs are stacked: each step's PR targets the previous step's branch as its base.
+Last updated: 2026-05-08. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed, Phase 3 (Observability + full budgets) core steps 3a–3i landed, Phase 3.5 landed, Phase 3.6 landed (2026-05-07 — atomic idempotency, retry lineage, Stage B loud-fail, strict transport decoding), and Phase 4 started with backend generation policy, Learning Content Store foundations, intent-only durable submission, backend prompt seams, parent-bound Topic Content cache keys, D1 event semantic idempotency, explicit Workflow LLM retry delay constants, and terminal `WorkflowFail` → `NonRetryableError` mapping. PRs are stacked: each step's PR targets the previous step's branch as its base.
 
 ### Phase 0 — Reliability hardening + shared contracts
 
