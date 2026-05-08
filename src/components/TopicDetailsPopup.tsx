@@ -95,7 +95,7 @@ export function TopicDetailsPopup({
           ) : null}
 
           {syllabus ? (
-            <div className="mb-4 space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+            <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-3">
               <p className="text-foreground text-sm font-semibold">Syllabus (core questions)</p>
               {([1, 2, 3] as const).map((tier) => {
                 const qs = syllabus[tier];
@@ -105,7 +105,7 @@ export function TopicDetailsPopup({
                 return (
                   <div key={tier}>
                     <p className="text-muted-foreground mb-1 text-xs font-medium">Difficulty {tier}</p>
-                    <ul className="text-foreground list-inside list-disc space-y-1 text-sm">
+                    <ul className="text-foreground list-inside list-disc flex flex-col gap-1 text-sm">
                       {qs.map((q, i) => (
                         <li key={`${tier}-${i}`}>{q}</li>
                       ))}
@@ -117,7 +117,7 @@ export function TopicDetailsPopup({
           ) : null}
 
           {topic.isLocked && !unlockStatus.hasPrerequisites && (
-            <div className="mb-4 space-y-2">
+            <div className="mb-4 flex flex-col gap-2">
               <div className="bg-destructive/10 border-destructive rounded-lg border p-3">
                 <Badge variant="destructive" className="mb-2">
                   🔒 Requires prerequisites

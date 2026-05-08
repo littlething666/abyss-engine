@@ -360,7 +360,7 @@ export function StudyPanelStudyView({
 
         {/* Choice Options */}
         {!isFlashcard && renderedCard.options && (
-          <div className="mt-4 space-y-2 study-markdown-secondary" data-testid="study-card-choice-options">
+          <div className="mt-4 flex flex-col gap-2 study-markdown-secondary" data-testid="study-card-choice-options">
             {renderedCard.options.map((option, index) => {
               const isSelected = selectedAnswers.includes(option);
               const isCorrectOption = Boolean(renderedCard.correctAnswers?.includes(option));

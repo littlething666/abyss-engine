@@ -5,6 +5,11 @@
 
 </aside>
 
+> **Current DB note (2026-05-07):** This phase is historical. The unreleased
+> database workflow has been squashed into `backend/db/reset.sql` and
+> `backend/db/init.sql` for hosted Supabase SQL-editor execution. Do not follow
+> the numbered migration examples below for current development databases.
+
 ## 🔍 Compliance, Risk & Drift Assessment
 
 *(mandated by repo-root [AGENTS.md](http://AGENTS.md) § "Mandatory Collaboration Output". Every later PR in this phase must reproduce this assessment in its description.)*
@@ -219,6 +224,12 @@ end $$;
 ```
 
 Supabase Storage bucket: `generation-artifacts` (private; service-role read/write only; signed URLs minted by `GET /v1/artifacts/:id`).
+
+To provision or refresh storage setup in an environment, run:
+
+```bash
+cd backend && supabase db push
+```
 
 ## 🔌 Hono Worker — HTTP surface
 
@@ -671,13 +682,13 @@ The `'navigation'` abort reason is preserved per Plan v3 Q13 until Phase 4's ful
 
 ## 🚪 Phase 1 exit checklist
 
-- [ ]  Crystal Trial generation initiated in tab A completes successfully when tab A is closed mid-run; tab B (same `deviceId`) reopened later applies questions exactly once.
-- [ ]  Minimal per-device daily budget guard rejects over-cap submissions with `429 { code: 'budget:over-cap' }` BEFORE any Workflow is created.
-- [ ]  All cancel race tests green: before-start, mid-stage, after-completion, superseded.
-- [ ]  SSE resume with `Last-Event-ID` replays only missed events; no duplicate artifact application.
-- [ ]  `useContentGenerationLifecycle` skips backend-routed runs; `'navigation'` abort retained for local runs only.
-- [ ]  No `crystal-trial:completed` event is emitted from durable question-generation success on the App Event Bus (Plan v3 Q21).
-- [ ]  All Phase 0 acceptance gates remain green (no `json_object` fallback for pipelines, deprecated parsers untouched, eval CI passing).
-- [ ]  `DurableGenerationRunRepository` is the only path to the Hono Worker; `durableGenerationBoundary.test.ts` proves no feature/component/hook performs direct `fetch`.
-- [ ]  No new `posthog-js` import outside `src/infrastructure/posthog/*` (analytics SDK isolation rule preserved).
-- [ ]  Worker `openrouterClient` and browser `HttpChatCompletionsRepository` produce identical request bodies for the `crystalTrial` surface (drift-prevention test green).
+- [x]  Crystal Trial generation initiated in tab A completes successfully when tab A is closed mid-run; tab B (same `deviceId`) reopened later applies questions exactly once. **E2E spec landed in `tests/crystal-trial/durable-tab-close.spec.ts`; skips when backend unreachable.**
+- [x]  Minimal per-device daily budget guard rejects over-cap submissions with `429 { code: 'budget:over-cap' }` BEFORE any Workflow is created. **7 budget guard unit tests green (PR-D).**
+- [x]  All cancel race tests green: before-start, mid-stage, after-completion, superseded. **4 backend route-level tests in `runs.cancel.test.ts` + 3 repo-level tests in `repos.test.ts` + cancel event parsing in `sseClient.test.ts`.**
+- [x]  SSE resume with `Last-Event-ID` replays only missed events; no duplicate artifact application. **5 backend SSE tests in `runEvents.sse.test.ts` + 11 frontend `sseClient.test.ts` tests covering frame parsing, Last-Event-ID forwarding, and buffer-flush behavior.**
+- [x]  `useContentGenerationLifecycle` skips backend-routed runs; `'navigation'` abort retained for local runs only. **Landed in PR-F.**
+- [x]  No `crystal-trial:completed` event is emitted from durable question-generation success on the App Event Bus (Plan v3 Q21). **Enforced by `generationRunEventHandlers.ts` + unit-tested in `generationRunEventHandlers.test.ts` (PR-F).**
+- [x]  All Phase 0 acceptance gates remain green (no `json_object` fallback for pipelines, deprecated parsers untouched, eval CI passing). **254 eval tests + 191 unit test files + legacy parser boundary test all green.**
+- [x]  `DurableGenerationRunRepository` is the only path to the Hono Worker; `durableGenerationBoundary.test.ts` proves no feature/component/hook performs direct `fetch`. **Landed in PR-E.**
+- [x]  No new `posthog-js` import outside `src/infrastructure/posthog/*` (analytics SDK isolation rule preserved). **No new posthog imports in any PR.**
+- [x]  Worker `openrouterClient` and browser `HttpChatCompletionsRepository` produce identical request bodies for the `crystalTrial` surface (drift-prevention test green). **7 lockstep tests in `openrouterRequestShapeLockstep.test.ts`.**

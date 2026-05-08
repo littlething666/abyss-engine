@@ -61,7 +61,7 @@ export function CopyableLlmTextBlock({
         aria-label="Copy to clipboard"
         data-testid={copyButtonTestId}
       >
-        <Copy className="size-4" aria-hidden />
+        <Copy data-icon="inline-start" aria-hidden />
       </Button>
       <pre
         className={cn(

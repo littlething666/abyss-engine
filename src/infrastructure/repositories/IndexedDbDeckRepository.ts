@@ -95,10 +95,10 @@ function partitionRowsByVisibility(
   rows: DeckSubjectRow[],
   includePregeneratedCurriculums: boolean,
 ): DeckSubjectRow[] {
-  const generated = rows.filter((row) => row.contentSource === 'generated');
+  const userOwned = rows.filter((row) => row.contentSource === 'generated' || row.contentSource === 'manual');
   if (!includePregeneratedCurriculums) {
-    return generated;
+    return userOwned;
   }
   const bundled = rows.filter((row) => row.contentSource === 'bundled');
-  return [...generated, ...bundled];
+  return [...userOwned, ...bundled];
 }

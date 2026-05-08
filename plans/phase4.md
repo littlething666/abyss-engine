@@ -1,485 +1,517 @@
 <aside>
 📌
 
-**Scope.** File-level implementation plan for Phase 4, the *final* phase of the Durable Workflow Orchestration program. Written against fork `littlething666/abyss-engine` @ `716b0780` plus the projected end-state of Phases 0 → 3. Phase 4 is **destructive cleanup + productionization**: it deletes the local in-tab runners, removes deprecated permissive parsers from generation pipeline code paths, drops the `'navigation'` abort reason, locks down CORS, ships the threat-model + retention docs, transfers `openRouterResponseHealing` ownership to the server, and lays the foundation for Supabase Auth migration.
+**Status:** Phase 4 implementation started 2026-05-07. PR-A, PR-B, and the schema/repository core of PR-C are landed in this workspace; Phase 3.6 is complete per `plans/durable-workflow-orchestration.md`. Phase 4 remains a **destructive backend-authoritative generation and persistence reset**.
 
-**Prerequisite gates (must be green before any Phase 4 PR opens):** every pipeline (`subject-graph`, `topic-content`, `topic-expansion`, `crystal-trial`) is backend-routed by default with `NEXT_PUBLIC_DURABLE_RUNS=true`; Phase 3 telemetry + token accounting is live; failure-rate dashboards have shown ≥ 14 consecutive days at the durable success-rate floor declared at Phase 3 exit.
+**Breaking-change posture:** no backwards compatibility, no local data migration, no browser-owned generation fallback. Existing local IndexedDB decks, local generation logs, client model bindings, client response-healing settings, local runners, and frontend pipeline prompt/snapshot builders may be deleted.
 
 </aside>
 
-## 📖 Overview
+## Overview
 
-Phase 4 is the **only** phase that *removes* code paths. Every prior phase added a parallel durable path while preserving the legacy in-tab path behind `NEXT_PUBLIC_DURABLE_RUNS`. Phase 4 retires the legacy path entirely.
+Phase 4 completes the Durable Workflow Orchestration program by making the backend the only authority for generation execution and generated learning content.
 
-Four invariants must hold at the end of Phase 4:
+After Phase 4:
 
-1. **`LocalGenerationRunRepository.ts` is deleted** along with the four legacy entry points (`runTopicGenerationPipeline`, `runExpansionJob`, `createSubjectGenerationOrchestrator`, `generateTrialQuestions`). The `GenerationClient` always resolves to `DurableGenerationRunRepository`.
-2. **Permissive pipeline parsers are deleted** from the four `@deprecated`-marked files landed in PR #44. Non-pipeline display surfaces that still need permissive shaping keep their own narrowly-scoped helpers.
-3. **`ContentGenerationAbortReason` no longer carries `{ kind: 'navigation' }`.** All references — including `useContentGenerationLifecycle.ts` and the abort-reason guards — drop the navigation branch.
-4. **`openRouterResponseHealing` is owned server-side.** The client no longer reads or persists this setting; the Worker derives it from per-device settings stored in Supabase.
+- the browser submits **generation intents**, not execution snapshots with model/provider policy;
+- the backend expands intents into canonical `RunInputSnapshot`s;
+- model choice, prompt construction, response-healing posture, strict parsing, semantic validation, retries, idempotency, budget accounting, and artifact persistence live behind backend seams;
+- generated Subjects, Subject Graphs, Topic Content, study cards, and Crystal Trial question sets persist in the backend **Learning Content Store**;
+- the frontend reads learning content from backend repositories and observes run events for UI state only;
+- the frontend never runs pipeline LLM calls, never chooses pipeline models, never toggles provider response healing, and never applies durable artifacts into local IndexedDB as source of truth.
 
-The `Eval Gate` workflow (PR #51) does NOT block Phase 4 because Phase 4 changes neither prompts, schemas, nor model bindings. The full `pr-unit-tests.yml` Vitest run remains the required check, plus the new `legacyRunnerBoundary.test.ts` and `legacyParserBoundary.test.ts` whose assertions tighten in this phase.
+## Accepted Product/Architecture Decisions
 
-## 🔍 Compliance, Risk & Drift Assessment
+1. **Backend owns pipeline model choice.** Pipeline model IDs are resolved from backend generation policy. Frontend study-explanation surfaces may keep their own local settings for now, but Subject Graph Generation, Topic Content Pipeline, Topic Expansion, and Crystal Trial generation cannot read `studySettingsStore` model bindings.
+2. **Response healing is not user-toggleable.** The OpenRouter `response-healing` plugin is a backend generation-policy decision. Phase 4 v1 keeps it enabled in backend defaults and records `providerHealingRequested` in run/job metadata. There is no browser setting and no localStorage migration.
+3. **Full backend learning-content persistence lands now.** The browser no longer owns generated deck persistence. Durable workflows write validated artifacts into backend learning-content tables before `run.completed` is emitted.
+4. **Destructive reset is allowed.** Do not preserve old IndexedDB/localStorage generation data. Do not write compatibility adapters for old snapshots/settings.
+5. **Strict failure at seams.** Invalid backend generation policy, invalid intents, missing backend learning content, unsupported model capabilities, and malformed model output fail loudly with structured errors. Do not add frontend fallbacks or downstream repair branches.
+6. **Cloudflare infrastructure split is locked.** Workflows own durable execution, D1 owns queryable run/job/event/usage/artifact metadata state, R2 owns artifact/checkpoint blobs, and Durable Objects are optional coordination infrastructure only. See `docs/infrastructure-decisions.md`.
+7. **R2 stores artifact bodies and checkpoints.** Supabase Storage is not part of the Phase 4 target. D1 keeps the `artifacts` metadata/cache index; JSON artifact envelopes and stage checkpoints live in R2.
+8. **Backend generation settings are removed.** Pipeline model policy and response healing are backend-owned policy, not persisted device settings. If future product settings need backend persistence, D1 is their queryable store; generation-pipeline policy stays backend configuration.
 
-*(mandated by repo-root [AGENTS.md](http://AGENTS.md) § "Mandatory Collaboration Output". Reproduce in every Phase 4 PR description.)*
+## Compliance, Risk & Drift Assessment
 
-### Misalignment check
+### Misalignment Check
 
-- **Layered architecture.** All durable I/O continues to flow through `DurableGenerationRunRepository` under `src/infrastructure/repositories/`. No new `fetch` reaches features/components/hooks. The `eventBusHandlers.ts` exception is preserved.
-- **Repository pattern.** `IGenerationRunRepository` stays the only seam between `GenerationClient` and the Worker. The interface gains zero methods in Phase 4 — only its sole implementation.
-- **Analytics SDK isolation.** `posthog-js` imports remain confined to `src/infrastructure/posthog/*`. Phase 4's `openRouterResponseHealing` migration to server-side ownership does NOT introduce a new browser SDK.
-- **No magic strings.** The deletion of `'navigation'` from `ContentGenerationAbortReason` is enforced by the type system — every callsite either narrows on `kind === 'navigation'` (deleted) or constructs the reason inline (deleted).
-- **No legacy burden.** This phase IS the legacy-burden retirement. Every `@deprecated` JSDoc landed in PR #44 either has its file deleted or has the `@deprecated` block removed because the file's pipeline-path callers are gone.
-- **Curriculum prerequisite-edge exception preserved.** The Subject Graph Stage B `correctPrereqEdges` deterministic-repair narrow exception in [AGENTS.md](http://AGENTS.md) survives Phase 4 untouched; it lives inside the Worker's strict-validate step, not inside `parseTopicLatticeResponse.ts` (which is deleted with the rest of the legacy permissive parsers).
-- **Mobile-first / WebGPU strictness.** No UI/renderer/shader surface is touched.
+- The previous corrected Phase 4 plan was stale: it treated Phase 3.6 as open and focused mainly on deleting local runners. Current `plans/durable-workflow-orchestration.md` marks Phase 3.6 complete.
+- Current code still contradicts the target architecture because browser modules resolve pipeline models (`resolveModelForSurface(...)`), persist `openRouterResponseHealing`, construct pipeline snapshots with `model_id`, and apply generated artifacts locally.
+- No AGENTS.md contradiction in this rewritten scope: backend persistence stays in infrastructure/backend adapters; frontend feature modules communicate through public interfaces; direct frontend remote I/O remains isolated in repositories/clients.
 
-### Architectural risk
+### Architectural Risk
 
-| Risk | Severity | Mitigation | A site-pinned developer relies on the legacy in-tab path with `NEXT_PUBLIC_DURABLE_RUNS=false` and discovers the regression only on rebase. | Medium | The flag is REMOVED in PR-D below — there is no "local fallback" to fall back to. Migration note in `CHANGELOG.md` calls this out and points at the Phase 1+2 success criteria as the upgrade gate. Drift-prevention test asserts `process.env.NEXT_PUBLIC_DURABLE_RUNS` no longer appears anywhere in `src/**`. |
-| --- | --- | --- | --- | --- | --- |
-| A non-pipeline display surface (study-question explain, study-formula explain) still calls `extractJsonString()`; deleting it would regress those features. | Medium | `extractJsonString()` and `stripMarkdownJsonFenceForDisplay()` are MOVED, not deleted: they relocate to `src/features/study/lib/legacyDisplayJson.ts` (or similar feature-scoped module) where the only callers live. The boundary test then forbids any `src/features/contentGeneration/**`, `src/features/subjectGeneration/**`, `src/features/crystalTrial/**`, `src/features/generationContracts/**`, or `backend/**` import of these helpers. | Removing `'navigation'` regresses the closing-tab-mid-local-run UX (no abort markdown log). | Low | By Phase 4, no run is local. The `useContentGenerationLifecycle` hook is deleted in its entirety after the navigation branch is dropped (the `'user'` and `'superseded'` branches are constructed by HUD UI / supersession map, not by lifecycle). |
-| Server-side OpenRouter healing settings drift from per-device client expectations during the migration window. | Medium | One-shot migration step on first Worker boot post-deploy: `PUT /v1/settings/migrate-from-localstorage` accepts a one-time payload with the legacy localStorage `openRouterResponseHealing` boolean and seeds `device_settings.openrouter_response_healing`. The browser sends this exactly once, then deletes the localStorage key. | CORS lockdown blocks a forgotten internal preview deploy. | Low | The new allowlist is environment-driven (`PRODUCTION_ORIGINS` env in `wrangler.toml`); preview deploys add their own ephemeral origin. Tested against a synthetic `Origin: https://example.com` request in Worker integration tests. |
+| Risk | Severity | Mitigation |
+| --- | --- | --- |
+| Moving generated learning content to backend can strand UI reads if repository replacement is partial. | High | Land backend content routes and `BackendDeckRepository` before deleting Dexie deck reads. Add boundary tests that generation screens use repository interfaces only. |
+| Removing client model settings may break generation submissions that still require `modelId`. | High | Introduce `RunIntent` and backend snapshot expansion first, then delete `modelId` parameters from frontend call sites. |
+| Artifact cache hits may skip content-table writes. | High | Backend cache-hit path must materialize the cached artifact into the Learning Content Store, or prove it is already materialized, before marking run completed. |
+| Backend prompt drift from frontend prompt templates can degrade output quality. | Medium | Move pipeline prompt templates into backend modules and run `pnpm run test:eval` / backend prompt tests on every prompt/schema/model-policy touch. |
+| Study explanation settings get accidentally deleted with pipeline settings. | Medium | Split `studyInference` settings from backend generation policy. Delete only pipeline surfaces from frontend settings. |
+| Treating R2 or Durable Objects as the database would blur ownership of run state. | High | D1 is the system of record for indexed run/job/event/usage/artifact metadata; R2 stores blobs only; Durable Objects coordinate only after a proven need. |
 
-### Prompt-drift prevention
+### Prompt Drift Prevention
 
-- This subpage and every Phase 4 PR must restate: *no `json_object` fallback, no permissive parser in pipeline paths, no inline `posthog-js` import outside `src/infrastructure/posthog/*`**, no direct **`fetch`** outside **`src/infrastructure/`**, no magic-string status/event/failure-code literals, no client-side **`openRouterResponseHealing` read/write*.
-- Three new boundary tests pin the Phase 4 contract:
-    - `localGenerationDeletionBoundary.test.ts` — asserts `LocalGenerationRunRepository.ts` and the four legacy runner files no longer exist in the working tree.
-    - `legacyParserDeletionBoundary.test.ts` — extends PR #44's `legacyParserBoundary.test.ts`: the four `@deprecated`-marked parser files no longer exist OR have been moved to the feature-scoped legacyDisplayJson module; **no** import of those filenames remains anywhere under `src/features/contentGeneration/pipelines/*`, `src/features/contentGeneration/jobs/*`, or `src/features/subjectGeneration/orchestrator/*`.
-    - `clientResponseHealingBoundary.test.ts` — walks `src/**/*.{ts,tsx}` and asserts no source file references `openRouterResponseHealing`, `OPEN_ROUTER_RESPONSE_HEALING`, or any localStorage key matching `/openRouterResponseHealing/i`.
+Phase 4 must not normalize:
 
-## 🎯 Phase 4 goals (reaffirmed from Plan v3)
+- browser model/provider/healing ownership for generation pipelines;
+- frontend construction of canonical pipeline execution snapshots;
+- local runner fallback after backend routing is mandatory;
+- local IndexedDB as source of truth for generated learning content;
+- permissive parser or markdown-fence extraction in pipeline/backend paths;
+- response-healing as permission for parser fallback;
+- backend model fallback strings (`snapshot.model_id ?? '...'`) instead of policy resolution;
+- direct `fetch` outside infrastructure adapters;
+- numbered DB migrations before release;
+- Supabase Storage buckets for generation artifacts;
+- backend device settings as a place to store generation-pipeline policy;
+- R2 JSON objects as the run ledger or queryable database;
+- Durable Objects as a homemade workflow engine or global source-of-truth database.
 
-1. **CORS allowlist for production domains** — replace permissive Phase 1 dev allowlist with a tight, env-driven production allowlist.
-2. **Threat-model doc** — pre-auth `deviceId`, Supabase service role, signed-URL artifact access, and the auth migration plan.
-3. **Supabase Storage retention/lifecycle policy** — TTL on `generation-artifacts` keyed by access-pattern + per-device cap.
-4. **Remove `'navigation'` from `ContentGenerationAbortReason`**.
-5. **Delete `LocalGenerationRunRepository` and legacy in-tab runners**.
-6. **Remove deprecated permissive parsers from generation pipeline code paths**.
-7. **Remove client-side `openRouterResponseHealing` ownership** (server-side authoritative).
-8. **Plan Supabase Auth migration** from `device_id` to `user_id` (specification only — implementation lands in a follow-on initiative).
+## Current Infrastructure Posture
 
-## 🧱 Step 1 — CORS lockdown (`backend/src/middleware/cors.ts`)
+Phase 4 targets a Cloudflare-native backend:
 
-**File:** `backend/src/middleware/cors.ts` (REPLACE Phase 1 permissive impl)
+- **Workflows** own durable execution and retries.
+- **D1** owns queryable state: `devices`, `runs`, `jobs`, `events`, `artifacts` metadata, `usage_counters`, and the Learning Content Store.
+- **R2** owns generated artifact JSON, stage checkpoints, raw model outputs, eval snapshots, and replay/debug bundles.
+- **Durable Objects** are optional v1.5 infrastructure for per-device locking, per-run live fanout, or low-latency sequence allocation after a concrete contention/fanout problem appears.
 
-### 1.1 Allowlist source
+Do not add numbered DB migrations before release. The next schema artifact should be a canonical D1 schema/init path, not hosted Supabase migration history.
 
-The Phase 1 implementation hardcoded `http://localhost:3000` plus the production app origin. Phase 4 reads from `Env.PRODUCTION_ORIGINS` (comma-separated) declared in `wrangler.toml` per environment:
+## Target Architecture
 
-```toml
-[env.production.vars]
-PRODUCTION_ORIGINS = "https://abyss-engine.app,https://www.abyss-engine.app"
+### Backend modules
 
-[env.preview.vars]
-# Preview deploys add their own ephemeral *.pages.dev origin per branch.
-PRODUCTION_ORIGINS = "https://preview.abyss-engine.app"
+Add these backend modules and keep their interfaces deep and narrow:
 
-[env.dev.vars]
-PRODUCTION_ORIGINS = "http://localhost:3000"
-```
+- `backend/src/generationPolicy/`
+  - resolves model, provider-healing, temperature, and policy hash for each generation job kind;
+  - validates the default/operator policy at the seam;
+  - exposes `resolveGenerationJobPolicy(deviceId, jobKind)` and `generationPolicyHash(policy)`.
+- `backend/src/learningContent/`
+  - owns persistence of Subjects, Subject Graphs, Topic Content, study cards, and Crystal Trial question sets;
+  - exposes repository methods used by routes, workflow intent expansion, and backend artifact appliers.
+- `backend/src/runIntents/`
+  - validates browser-submitted generation intents;
+  - expands intents into canonical backend `RunInputSnapshot`s using Learning Content Store reads and generation policy;
+  - rejects any client-supplied model/provider/healing fields.
+- `backend/src/prompts/`
+  - owns pipeline prompt construction for all four pipeline kinds;
+  - uses source data from snapshots and prompt-template versions from backend constants.
+- `backend/src/artifactAppliers/`
+  - applies strict-validated artifact payloads into the Learning Content Store transactionally/atomically with workflow persistence.
 
-### 1.2 Middleware behavior
+### Frontend modules
 
-```tsx
-import type { Context, Next } from 'hono';
+- `src/features/contentGeneration/generationClient.ts` becomes a run-intent facade: `startTopicContent`, `startTopicExpansion`, `startSubjectGraph`, and `startCrystalTrial` submit intents and observe runs.
+- `src/infrastructure/repositories/BackendDeckRepository.ts` implements `IDeckRepository` against backend learning-content routes.
+- Local Dexie/IndexedDB deck writer code is deleted or narrowed to non-authoritative temporary UI cache only. It must not be used by generation pipelines.
+- Pipeline settings are removed from `src/store/studySettingsStore.ts`, `src/types/llmInference.ts`, and `GlobalSettingsSheet.tsx`. Keep study-question/study-formula explanation settings only if still needed.
 
-export function cors() {
-	return async (c: Context<{ Bindings: Env }>, next: Next) => {
-		const allow = (c.env.PRODUCTION_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-		const origin = c.req.header('origin');
-		const isPreflight = c.req.method === 'OPTIONS';
+## Data Model: Learning Content Store
 
-		if (origin && allow.includes(origin)) {
-			c.header('Access-Control-Allow-Origin', origin);
-			c.header('Vary', 'Origin');
-			c.header('Access-Control-Allow-Credentials', 'false');
-			c.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-			c.header('Access-Control-Allow-Headers', 'content-type,idempotency-key,x-abyss-device,last-event-id');
-			c.header('Access-Control-Max-Age', '600');
-		}
+The Learning Content Store lives in D1 as queryable read-model state. Because no released database exists, obsolete generated-content tables should be replaced in the canonical D1 schema/init path rather than migrated forward.
 
-		if (isPreflight) return new Response(null, { status: origin && allow.includes(origin) ? 204 : 403 });
-		if (origin && !allow.includes(origin)) return c.json({ code: 'cors:forbidden', message: 'origin not allowed' }, 403);
+Recommended tables:
 
-		await next();
-	};
+- `subjects`
+  - `device_id uuid not null references devices(id)`
+  - `subject_id text not null`
+  - `title text not null`
+  - `metadata_json jsonb not null default '{}'::jsonb`
+  - `content_source text not null check (...)`
+  - `created_by_run_id uuid null references runs(id)`
+  - `created_at`, `updated_at`
+  - `primary key (device_id, subject_id)`
+- `subject_graphs`
+  - `device_id`, `subject_id`
+  - `graph_json jsonb not null`
+  - `content_hash text not null`
+  - `updated_by_run_id uuid not null references runs(id)`
+  - `primary key (device_id, subject_id)`
+- `topic_contents`
+  - `device_id`, `subject_id`, `topic_id`
+  - `details_json jsonb not null`
+  - `content_hash text not null`
+  - `status text not null check (status in ('ready','generating','unavailable'))`
+  - `updated_by_run_id uuid not null references runs(id)`
+  - `primary key (device_id, subject_id, topic_id)`
+- `topic_cards`
+  - `device_id`, `subject_id`, `topic_id`, `card_id`
+  - `card_json jsonb not null`
+  - `difficulty integer not null`
+  - `source_artifact_kind text not null`
+  - `created_by_run_id uuid not null references runs(id)`
+  - `primary key (device_id, subject_id, topic_id, card_id)`
+- `crystal_trial_sets`
+  - `device_id`, `subject_id`, `topic_id`, `target_level integer not null`
+  - `card_pool_hash text not null`
+  - `questions_json jsonb not null`
+  - `content_hash text not null`
+  - `created_by_run_id uuid not null references runs(id)`
+  - `primary key (device_id, subject_id, topic_id, target_level, card_pool_hash)`
+
+Keep `artifacts` as the immutable audit/cache metadata layer in D1. R2 stores artifact JSON blobs and checkpoints. The Learning Content Store is the application read model.
+
+## Backend API Shape
+
+### Learning content routes
+
+Add routes behind `X-Abyss-Device`:
+
+- `GET /v1/library/manifest`
+- `GET /v1/subjects/:subjectId/graph`
+- `GET /v1/subjects/:subjectId/topics/:topicId/details`
+- `GET /v1/subjects/:subjectId/topics/:topicId/cards`
+- `GET /v1/subjects/:subjectId/topics/:topicId/trials/:targetLevel?cardPoolHash=...`
+
+Optional subject bootstrap route if the UI creates a Subject before generation:
+
+- `POST /v1/subjects` with `{ subjectId, title, metadata }`; no model/provider fields.
+
+### Run submission route
+
+Change `POST /v1/runs` from snapshot submission to intent submission:
+
+```ts
+{
+  "kind": "topic-content" | "topic-expansion" | "subject-graph" | "crystal-trial",
+  "intent": { /* kind-specific source request, no model/provider/healing */ }
 }
 ```
 
-- Disallowed origins receive a `403` with structured failure body (no permissive `*` fallback).
-- `Access-Control-Allow-Credentials` stays `false` because the client never sends cookies — `X-Abyss-Device` is the identity token.
-- The `Vary: Origin` header is required so Cloudflare's edge cache does not cross-pollinate responses across origins.
+Allowed intent shapes:
 
-### 1.3 Tests
+- Subject Graph Generation:
+  - `{ subjectId, checklist }`
+- Topic Content Pipeline:
+  - `{ subjectId, topicId, stage?: 'theory' | 'study-cards' | 'mini-games' | 'full', forceRegenerate?: boolean }`
+- Topic Expansion:
+  - `{ subjectId, topicId, nextLevel }`
+- Crystal Trial generation:
+  - `{ subjectId, topicId, currentLevel }`
 
-`backend/src/middleware/cors.test.ts`:
+The route must reject intents containing any of these fields at any depth where they would affect pipeline policy: `model`, `modelId`, `model_id`, `provider`, `providerHealingRequested`, `responseHealing`, `openRouterResponseHealing`, `plugins`, `response_format`.
 
-- Allowed production origin → preflight `204` with full ACAO headers.
-- Disallowed origin → preflight `403`, non-preflight `403` with `cors:forbidden` body.
-- Missing `Origin` header → request proceeds; no ACAO header set (server-to-server / internal).
-- Comma-trimmed allowlist parses correctly with whitespace and trailing commas.
+The backend expands the intent into a `RunInputSnapshot` with:
 
-## 🧱 Step 2 — Threat model (`backend/SECURITY.md`, `docs/threat-model.md`)
+- source fields loaded from Learning Content Store;
+- backend `schema_version`;
+- backend `prompt_template_version`;
+- resolved `model_id` from generation policy;
+- `provider_healing_requested` from generation policy;
+- `generation_policy_hash`.
 
-**Files:** `backend/SECURITY.md` (UPDATE; Phase 1 stub) + `docs/threat-model.md` (NEW; root-level public-facing doc)
+`inputHash(snapshot)` remains the idempotency/cache key. Model or response-healing policy changes therefore invalidate artifact cache deterministically.
 
-### 2.1 Required sections
+## Generation Policy Details
 
-1. **Identity boundaries.**
-    - `X-Abyss-Device` is an *identifier*, not a credential. Anyone with a device UUID can read that device's runs and artifacts. This is documented and accepted for the pre-auth window only.
-    - Supabase service role is held only by the Worker. Browser bundles never reference `SUPABASE_SERVICE_ROLE`. The Worker is the only Supabase RLS bypass surface.
-    - Signed URLs from `GET /v1/artifacts/:id` carry a 15-minute TTL and are scoped by `(device_id, kind, input_hash)`. Replay outside the window 404s.
-2. **Trust boundaries.**
-    - Browser → Worker via HTTPS + CORS allowlist (Step 1).
-    - Worker → OpenRouter via HTTPS, API key never logged.
-    - Worker → Supabase via service-role JWT, scoped per-request.
-    - Worker → Cloudflare Workflows binding, internal.
-3. **Failure modes.**
-    - Lost `deviceId` = lost run history (acceptable pre-auth).
-    - Stolen `deviceId` (e.g., shared device) = read access to that device's runs. Documented; Supabase Auth migration mitigates.
-    - Compromised OpenRouter API key = service degradation; rotated via `wrangler secret put`. No PII at risk because the Worker never sends user identifiers to OpenRouter.
-    - Compromised Supabase service-role key = full data exposure across all devices. Rotation procedure documented.
-4. **Auth migration plan (forward-looking — Step 8).**
-5. **Vulnerability disclosure** — link to repo's security policy issue label.
+Files:
 
-### 2.2 Tests
+- `backend/src/generationPolicy/types.ts`
+- `backend/src/generationPolicy/defaultPolicy.ts`
+- `backend/src/generationPolicy/parseGenerationPolicy.ts`
+- `backend/src/generationPolicy/resolveGenerationPolicy.ts`
+- `backend/src/generationPolicy/generationPolicy.test.ts`
 
-No runtime tests; documentation. `pnpm run lint:docs` (or equivalent markdown lint job in `pr-unit-tests.yml`) ensures the file is valid markdown and links resolve.
+Recommended shape:
 
-## 🧱 Step 3 — Supabase Storage retention/lifecycle (`backend/migrations/0010_artifact_retention.sql` + `backend/src/jobs/pruneArtifacts.ts`)
+```ts
+type BackendGenerationJobKind =
+  | 'subject-graph-topics'
+  | 'subject-graph-edges'
+  | 'topic-theory'
+  | 'topic-study-cards'
+  | 'topic-mini-game-category-sort'
+  | 'topic-mini-game-sequence-build'
+  | 'topic-mini-game-match-pairs'
+  | 'topic-expansion-cards'
+  | 'crystal-trial';
 
-**Files:**
-
-- `backend/migrations/0010_artifact_retention.sql` (NEW)
-- `backend/src/jobs/pruneArtifacts.ts` (NEW; Cloudflare Cron Trigger handler)
-- `backend/wrangler.toml` (UPDATE — add cron trigger)
-
-### 3.1 Retention policy
-
-Three axes governed by per-row metadata in the existing `artifacts` table:
-
-- **Time-to-live**: artifacts with `last_accessed_at < now() - interval '90 days'` AND `last_applied_at < now() - interval '90 days'` are deleted from Storage and the row is hard-deleted.
-- **Per-device cap**: 500 artifacts per `device_id` (across all kinds). Eviction policy: oldest `last_accessed_at` first; never evict an artifact whose `created_by_run_id` is referenced as `parent_run_id` of any unfinalized run.
-- **Orphaned-storage sweep**: weekly scan of `generation-artifacts` bucket; objects whose `storage_key` does not appear in the `artifacts` table are deleted.
-
-### 3.2 Migration
-
-```sql
-alter table artifacts
-	add column last_accessed_at timestamptz not null default now(),
-	add column last_applied_at timestamptz null;
-
-create index idx_artifacts_device_lru on artifacts(device_id, last_accessed_at);
-create index idx_artifacts_orphan_sweep on artifacts(storage_key);
+type GenerationPolicy = {
+  version: 1;
+  provider: 'openrouter';
+  responseHealing: { enabled: true };
+  jobs: Record<BackendGenerationJobKind, {
+    modelId: string;
+    temperature?: number;
+  }>;
+};
 ```
 
-The `last_accessed_at` column is touched by `GET /v1/artifacts/:id`. The `last_applied_at` column is set by an explicit client `POST /v1/artifacts/:id/apply-ack` call invoked from `applyRunEvent` after `ArtifactApplier.apply` returns `{ applied: true }` — this lets the retention policy distinguish artifacts the client *consumed* from artifacts that merely sat in cache.
+Rules:
 
-### 3.3 Cron worker
+- v1 response healing is fixed as `{ enabled: true }`; there is no user setting and no device setting.
+- If an operator override is later introduced, it must be backend-only and validated by `parseGenerationPolicy`; do not expose it in browser settings.
+- Pipeline workflows must never use default model string fallbacks. Missing/invalid policy throws `WorkflowFail('config:invalid', ...)`.
+- Job metadata and traces record `modelId`, `generationPolicyHash`, and `providerHealingRequested`.
 
-```tsx
-// backend/src/jobs/pruneArtifacts.ts
-import { makeRepos } from '../repositories';
+## PR Sequencing
 
-export async function pruneArtifacts(env: Env) {
-	const repos = makeRepos(env);
-	const expired = await repos.artifacts.findExpired(); // last_accessed_at AND last_applied_at older than 90d
-	for (const a of expired) {
-		await repos.artifacts.deleteFromStorage(a.storage_key);
-		await repos.artifacts.deleteRow(a.id);
-	}
-	const overcap = await repos.artifacts.findOverCap(500);
-	for (const a of overcap) {
-		await repos.artifacts.deleteFromStorage(a.storage_key);
-		await repos.artifacts.deleteRow(a.id);
-	}
-	const orphans = await repos.artifacts.findStorageOrphans();
-	for (const key of orphans) await repos.artifacts.deleteFromStorage(key);
-}
-```
+### Current implementation status (2026-05-07)
 
-```toml
-# wrangler.toml additions
-[[triggers.crons]]
-schedule = "0 4 * * *"   # daily at 04:00 UTC
-name = "prune-artifacts-daily"
+- [x] **PR-A** — Plan/status and destructive-reset declaration, including `CHANGELOG.md` skeleton.
+- [x] **PR-B** — Backend Generation Policy module (`backend/src/generationPolicy/*`) with strict parser/resolver/hash tests. `POST /v1/runs` now binds backend policy fields into accepted snapshots before hashing/storage, and workflows resolve per-job policy through this module. Full RunIntent-only expansion remains in PR-E.
+- [x] **PR-C** — Active backend repository adapters are now D1-backed (`backend/src/repositories/*`, `backend/src/learningContent/*`, `Repos.learningContent`) with canonical D1 schema in `backend/d1/init.sql`.
+- [~] **PR-D** — Backend Learning Content routes landed in workspace 2026-05-07 (`backend/src/routes/learningContent.ts`) with route-level per-device/not-found tests. Frontend `BackendDeckRepository` and durable-mode read-path wiring are now implemented; production bootstrap failure for missing Worker URL remains open until the legacy local-runner path is deleted.
+- [~] **PR-E+** — PR-E RunIntent-only routing is not started; PR-F policy wiring is partially complete (prompt modules and snapshot assertions remain).
 
-[[triggers.crons]]
-schedule = "0 5 * * 0"   # weekly Sunday 05:00 UTC
-name = "prune-artifacts-orphan-sweep"
-```
+### PR-A — Plan/status and destructive-reset declaration ✅
 
-### 3.4 Tests
+Files: `plans/phase4.md`, docs/changelog skeleton.
 
-`backend/src/jobs/pruneArtifacts.test.ts`:
+- Mark Phase 3.6 complete.
+- Record accepted decisions: backend model policy, non-toggleable response healing, full backend Learning Content Store, no migration.
+- Add boundary-test checklist before implementation starts.
 
-- Expired artifact deleted from both Storage and table.
-- Per-device cap evicts oldest LRU first; never evicts artifact referenced by an unfinalized run.
-- Orphan sweep deletes only objects with no matching `artifacts.storage_key` row.
-- Idempotent: running the cron twice in succession is a no-op the second time.
+Exit:
 
-## 🧱 Step 4 — Drop `'navigation'` from `ContentGenerationAbortReason`
+- Plan no longer references localStorage-to-Worker migration for response healing.
+- Plan no longer treats Phase 3.6 as open.
 
-**Files:**
+### PR-B — Backend Generation Policy module ✅
 
-- `src/types/contentGenerationAbort.ts` (UPDATE)
-- `src/hooks/useContentGenerationLifecycle.ts` (DELETE)
-- All call sites of `useContentGenerationLifecycle` (UPDATE — remove the hook invocation)
+Files: `backend/src/generationPolicy/*`, workflow tests.
 
-### 4.1 Type narrowing
+- Add policy types, default policy, parser, resolver, and policy hash.
+- Include all nine artifact/job kinds.
+- Hard-code response healing enabled in v1 policy.
+- Add tests proving invalid policy fails loudly and every job kind resolves.
 
-```tsx
-// BEFORE (current main; lines 5–11):
-export type ContentGenerationAbortReason =
-	| { kind: 'user'; source: ContentGenerationUserAbortSource }
-	| { kind: 'navigation'; source: 'beforeunload' }
-	| { kind: 'superseded'; source: 'expansion-replaced' };
+Exit:
 
-// AFTER:
-export type ContentGenerationAbortReason =
-	| { kind: 'user'; source: ContentGenerationUserAbortSource }
-	| { kind: 'superseded'; source: 'expansion-replaced' };
-```
+- `resolveGenerationJobPolicy()` is the only backend source for pipeline model/healing decisions.
 
-The `isContentGenerationAbortReason` guard drops its navigation branch; `isContentGenerationAbortReasonExcludedFromFailureMarkdown` retains only the `'user'` and `'superseded'` branches.
+### PR-C — Learning Content Store schema and repositories ✅
 
-### 4.2 Hook deletion
+Files: D1 schema/init path, `backend/src/learningContent/*`, `backend/src/repositories/index.ts`.
 
-`src/hooks/useContentGenerationLifecycle.ts` is **deleted in its entirety**. Its only purpose was the `beforeunload` `navigationAbortReason` dispatch — by Phase 4 every run is backend-routed and survives tab close, so the hook has no remaining job. The Phase 1 patch (which already skipped backend-routed runs) is irrelevant: there are no local runs left to skip.
+- Add tables listed above to the canonical D1 schema/init path.
+- Add repository methods for manifest, subject graph, topic details, cards, and trial sets.
+- Add backend route tests around per-device scoping and not-found behavior.
 
-Callsites: locate via `grep -r useContentGenerationLifecycle src/` and remove each invocation. The HMR `disposers` pattern in `eventBusHandlers.ts` is unaffected.
+Exit:
 
-### 4.3 Failure-markdown surface
+- Backend can read/write generated learning content without browser IndexedDB.
 
-The markdown emitter (`buildPipelineFailureLog` and friends inside `runTopicGenerationPipeline.ts` etc.) is also deleted with the legacy runners (Step 5). `useContentGenerationStore` retains `registerSessionAbortRouting` for the `'user'` and `'superseded'` reasons, fed by the HUD cancel button and the supersession map respectively.
+### PR-D — Backend learning-content routes and frontend repository adapter ◑
 
-### 4.4 Tests
+Files: backend content routes, `src/infrastructure/repositories/BackendDeckRepository.ts`, `src/infrastructure/di.ts`, repository tests.
 
-- `src/types/contentGenerationAbort.test.ts` (UPDATE) — remove navigation branch tests; assert the type compile-fails when an arbitrary string `'navigation'` is passed.
-- Boundary test `localGenerationDeletionBoundary.test.ts` (NEW; see Step 5) asserts no source file references `'navigation'` as an abort `kind`.
+- ✅ Implement backend Learning Content routes:
+  - `GET /v1/library/manifest`
+  - `GET /v1/subjects/:subjectId/graph`
+  - `GET /v1/subjects/:subjectId/topics/:topicId/details`
+  - `GET /v1/subjects/:subjectId/topics/:topicId/cards`
+  - `GET /v1/subjects/:subjectId/topics/:topicId/trials/:targetLevel?cardPoolHash=...`
+- ✅ Add route-level per-device scoping and not-found tests.
+- ✅ Implement `IDeckRepository` reads through backend routes using `ApiClient` (`BackendDeckRepository`).
+- ✅ Keep all direct HTTP inside infrastructure adapters; hooks/features continue through `IDeckRepository`.
+- ✅ Wire `deckRepository` to backend Learning Content reads when `NEXT_PUBLIC_DURABLE_RUNS=true` and `NEXT_PUBLIC_DURABLE_GENERATION_URL` is configured; legacy local-runner builds still use IndexedDB until PR-J.
+- ✅ Share the anonymous device id between durable generation and backend deck reads via `src/infrastructure/deviceIdentity.ts`.
+- ⏳ Fail loudly at app bootstrap in production when `NEXT_PUBLIC_DURABLE_GENERATION_URL` is missing. Current wiring keeps the legacy IndexedDB path when durable runs are not enabled so the pre-PR-J local runner path remains operational.
 
-## 🧱 Step 5 — Delete `LocalGenerationRunRepository` and legacy in-tab runners
+Backend manifest contract now required by the frontend adapter:
 
-### 5.1 Files DELETED
+- `subjects.metadata_json.subject.description: string`
+- `subjects.metadata_json.subject.color: string`
+- `subjects.metadata_json.subject.geometry.gridTile: GeometryType`
+- optional `subjects.metadata_json.subject.topicIds: string[]`
+- optional `subjects.metadata_json.subject.metadata: SubjectMetadata`
 
-- `src/infrastructure/repositories/LocalGenerationRunRepository.ts` (Phase 0.5 introduction)
-- `src/features/contentGeneration/pipelines/runTopicGenerationPipeline.ts` and all its `pipelines/` siblings reachable only from it
+The frontend adapter intentionally throws if this envelope is missing. The backend Learning Content repository now enforces the same envelope at `upsertSubject`, so backend subject bootstrap / artifact appliers must materialize it instead of relying on frontend defaults.
+
+Exit:
+
+- Frontend read paths can load Subject manifest, Subject Graph, Topic Content, and cards from backend when durable backend mode is configured.
+
+### PR-E — RunIntent submission and backend snapshot expansion
+
+Files: `backend/src/runIntents/*`, `backend/src/routes/runs.ts`, `backend/src/routes/validation.ts`, `src/features/contentGeneration/generationClient.ts`.
+
+- Change `POST /v1/runs` to accept `{ kind, intent }`.
+- Add intent validators with forbidden policy-field rejection.
+- Expand intents to snapshots in backend using Learning Content Store and Generation Policy.
+- Keep backend-owned `model_id`, `generation_policy_hash`, and `provider_healing_requested` on snapshots during intent expansion. The current snapshot-accepting transition route already overwrites these fields before hashing/storage; PR-E must remove snapshot submission entirely and reject policy fields at any depth.
+- Update frontend `GenerationClient` to submit intents only.
+
+Exit:
+
+- No frontend runtime path passes `modelId` into pipeline run submission.
+- Backend route tests prove client-supplied model/healing fields are rejected.
+
+### PR-F — Backend prompt modules and workflow policy wiring
+
+Files: `backend/src/prompts/*`, `backend/src/workflows/*Workflow.ts`, `backend/src/llm/openrouterClient.ts`.
+
+- Move pipeline prompt construction into backend prompt modules.
+- Replace inline workflow prompts with prompt-module calls.
+- ✅ Replace every `snapshot.model_id ?? ...` and `providerHealingRequested: true` with resolved backend policy fields.
+- ✅ Include `generationPolicyHash` in LLM traces.
+- ⏳ Assert snapshots contain `model_id`, `generation_policy_hash`, and `provider_healing_requested` after backend RunIntent expansion.
+
+Exit:
+
+- Backend workflows contain no model fallback strings and no hard-coded provider-healing booleans.
+
+### PR-G — Backend artifact appliers write the Learning Content Store ✅ implementation landed / runtime proof pending
+
+Files: `backend/src/learningContent/artifactApplication.ts`, workflow persist/apply/ready steps, tests.
+
+- ✅ After strict parse + semantic validation, workflows apply artifacts into the Learning Content Store before `run.completed`.
+- ✅ Subject Graph Stage A writes graph nodes without edges and seeds unavailable topic details; Stage B wires prerequisites into the same graph row.
+- ✅ Topic Theory writes ready `topic_contents`; study cards, mini-games, and Topic Expansion upsert `topic_cards` through the backend read model.
+- ✅ Crystal Trial writes `crystal_trial_sets` and does not emit player-assessment completion.
+- ✅ Cache-hit runs/stages materialize cached artifacts into the Learning Content Store before completion.
+- ⏳ Runtime replay/concurrency proof remains in the Cloudflare Workers Vitest pool, including stale Topic Expansion supersession under replay/concurrency. Also resolve the inherited CLOZE deck-read-model gap before deleting frontend appliers.
+
+Exit:
+
+- A close-tab/reopen after backend `ready` can render content from backend reads without local artifact application; prove this with Worker/runtime tests plus frontend durable-read coverage.
+
+### PR-H — Delete frontend artifact appliers and local deck persistence authority
+
+Files: frontend appliers, `appliedArtifactsStore`, Dexie deck writer/repository wiring, hydration/event handlers.
+
+- Remove frontend artifact appliers as source-of-truth writers.
+- `generationRunEventHandlers` observes run events, emits legacy AppEventBus notifications, and invalidates/refetches backend-backed queries; it does not write generated learning content to IndexedDB.
+- Delete or quarantine local deck persistence so it cannot serve generated content for pipeline paths.
+
+Exit:
+
+- No generated learning-content pipeline path writes to browser IndexedDB/localStorage.
+
+### PR-I — Remove frontend pipeline model/provider/healing settings
+
+Files: `src/store/studySettingsStore.ts`, `src/types/llmInference.ts`, `src/components/settings/GlobalSettingsSheet.tsx`, `src/infrastructure/llmInferenceSurfaceProviders.ts`.
+
+- Delete `openRouterResponseHealing`.
+- Delete pipeline inference surface IDs from frontend settings: `subjectGenerationTopics`, `subjectGenerationEdges`, `topicContent`, `crystalTrial`.
+- Keep or rename study-only settings for `studyQuestionExplain` and `studyFormulaExplain`.
+- Remove `validatePipelineSurfaceConfig`, `assertPipelineSurfaceConfigValid`, and OpenRouter structured-output helpers from frontend pipeline paths.
+
+Exit:
+
+- Global Settings only exposes study-explanation inference preferences, not generation-pipeline model policy.
+
+### PR-J — Remove local in-tab runners and durable routing flags
+
+Files to delete/refactor:
+
+- `src/infrastructure/repositories/LocalGenerationRunRepository.ts`
+- `src/infrastructure/repositories/localGenerationRunArtifactCapture.ts`
+- `src/features/contentGeneration/pipelines/runTopicGenerationPipeline.ts`
 - `src/features/contentGeneration/jobs/runExpansionJob.ts`
-- `src/features/subjectGeneration/orchestrator/subjectGenerationOrchestrator.ts` and `resolveSubjectGenerationStageBindings.ts`
+- `src/features/subjectGeneration/orchestrator/subjectGenerationOrchestrator.ts`
 - `src/features/crystalTrial/generateTrialQuestions.ts`
-- `src/features/contentGeneration/runContentGenerationJob.ts` (Phase 0 step 8 boundary lives at the in-tab job runner; once no in-tab pipelines exist, this file becomes unreferenced)
-- `src/features/contentGeneration/retryContentGeneration.ts`'s in-tab branches collapse — the file shrinks to a thin pass-through that just calls `client.retry(...)`. Decision: delete the file; move `retryFailedJob` / `retryFailedPipeline` / `emitRetryFailed` helpers directly onto `GenerationClient` if any callsite still needs them.
+- local-runner tests
+- `NEXT_PUBLIC_DURABLE_RUNS`
+- `NEXT_PUBLIC_DURABLE_RUNS_KINDS`
 
-### 5.2 `GenerationClient` simplification
+Recommended implementation:
 
-The Phase 0.5 facade signature stays. The factory loses its `localRepo` + `flags` arguments:
+- `createGenerationClient()` accepts a single durable repository/intent adapter.
+- `wireGenerationClient.ts` registers durable-only clients unconditionally when backend URL exists.
+- Production build fails loudly if backend URL is missing.
 
-```tsx
-export function createGenerationClient(deps: {
-	deviceId: string;
-	now: () => number;
-	repo: IGenerationRunRepository; // always DurableGenerationRunRepository in Phase 4
-}): GenerationClient;
-```
+Exit:
 
-The `NEXT_PUBLIC_DURABLE_RUNS` flag is deleted from `.env.example`, `README.md`, and every consumer. `wireGeneration.ts` is updated to instantiate `DurableGenerationRunRepository` unconditionally.
+- No local generation runner import specifiers remain.
 
-### 5.3 Boundary test (NEW)
+### PR-K — Drop navigation abort
 
-`src/infrastructure/legacyRunnerDeletionBoundary.test.ts`:
+Files: `src/types/contentGenerationAbort.ts`, `src/hooks/useContentGenerationLifecycle.ts`, call sites.
 
-- Walks `src/**/*.{ts,tsx}` and asserts none of the deleted file paths exist (uses `fs.existsSync` against the working tree at test time).
-- Asserts no import statement references the deleted module specifiers (`@/features/contentGeneration/pipelines/runTopicGenerationPipeline`, `@/features/contentGeneration/jobs/runExpansionJob`, `@/features/subjectGeneration/orchestrator/*`, `@/features/crystalTrial/generateTrialQuestions`, `@/infrastructure/repositories/LocalGenerationRunRepository`).
-- Asserts `process.env.NEXT_PUBLIC_DURABLE_RUNS` no longer appears anywhere in `src/**`.
-- Asserts `'navigation'` does not appear as a string literal under `src/types/contentGenerationAbort.ts`.
+- Remove `{ kind: 'navigation'; source: 'beforeunload' }`.
+- Delete `useContentGenerationLifecycle.ts` if its only remaining purpose is beforeunload cancellation.
+- Preserve user cancel and superseded cancel through Worker routes.
 
-### 5.4 Test cleanup
+Exit:
 
-Each deleted runtime file's adjacent `.test.ts` is also deleted. The Phase 0.5 `LocalGenerationRunRepository.test.ts` and the four adapter-coverage tests are deleted with their target.
+- No beforeunload path aborts generation.
 
-## 🧱 Step 6 — Remove deprecated permissive parsers from generation pipeline paths
+### PR-L — Delete permissive pipeline parsers and frontend prompt/snapshot builders
 
-### 6.1 Files DELETED
+Candidate files:
 
-The four `@deprecated`-marked parsers from PR #44 are deleted entirely **if and only if** their non-pipeline display callers have already migrated. Per the current main (Step 5 codebase review):
+- `src/features/contentGeneration/parsers/*Payload.ts`
+- `src/features/subjectGeneration/graph/topicLattice/parseTopicLatticeResponse.ts`
+- `src/lib/llmResponseText.ts` if no display-only caller remains
+- frontend pipeline prompt templates/builders that moved to backend
+- frontend pipeline snapshot builders no longer used by runtime submission
 
-- `src/features/contentGeneration/parsers/parseCrystalTrialPayload.ts` — only callers were the legacy in-tab Crystal Trial runner deleted in Step 5 → **DELETE**.
-- `src/features/contentGeneration/parsers/parseTopicCardsPayload.ts` (and `diagnoseTopicCardsPayload`) — only callers were the legacy in-tab topic-content / topic-expansion runners deleted in Step 5 → **DELETE**. The adjacent `normalizeGeneratedCardItem.ts`, `normalizeMiniGameCardContent.ts`, and `validateGeneratedCard.ts` are deleted with it (they were only referenced from the deleted parser).
-- `src/features/contentGeneration/parsers/parseTopicTheoryContentPayload.ts` — same fate → **DELETE**.
-- `src/features/subjectGeneration/graph/topicLattice/parseTopicLatticeResponse.ts` — same fate → **DELETE**. The Subject Graph Stage B `correctPrereqEdges` deterministic-repair narrow exception relocates to the Worker's `validate.ts` step, where it operates on the already-Zod-parsed lattice (NOT on raw text).
-- `src/lib/llmResponseText.ts` `extractJsonString()` — STILL has live non-pipeline callers (study-question explain, study-formula explain). **MOVE**, do not delete: relocate to `src/features/study/lib/legacyDisplayJson.ts`. `stripMarkdownJsonFenceForDisplay()` and `logJsonParseError()` move with it. The original file `src/lib/llmResponseText.ts` is deleted.
+Keep only:
 
-### 6.2 Boundary test (NEW)
+- shared transport/event/artifact types needed by the frontend;
+- strict contracts/eval fixtures if still intentionally shared by frontend tests;
+- the documented `correctPrereqEdges` backend Stage B repair exception.
 
-`src/features/generationContracts/strictParsers/legacyParserDeletionBoundary.test.ts` extends PR #44's `legacyParserBoundary.test.ts`:
+Exit:
 
-- Original assertion (no contracts-module import of the five forbidden specifier fragments) stays.
-- New assertion: the five forbidden specifier fragments do NOT match any *file path* under `src/features/contentGeneration/parsers/*`, `src/features/subjectGeneration/graph/topicLattice/parseTopicLatticeResponse*`, or `src/lib/llmResponseText*`. The file walker uses `fs.readdirSync` recursively.
-- New assertion: `legacyDisplayJson` is imported only from files matching `src/features/study/**`. No `src/features/contentGeneration/**`, `src/features/subjectGeneration/**`, `src/features/crystalTrial/**`, `src/features/generationContracts/**`, or `backend/**` import is permitted.
+- No pipeline/backend path imports permissive parsers or frontend prompt builders.
 
-### 6.3 Worker-side prerequisite-edge correction relocation
+### PR-M — Final docs, changelog, and boundary tests
 
-The deterministic `correctPrereqEdges(rawLattice, edges)` helper today runs inside `parseTopicLatticeResponse.ts` BEFORE Zod validation, on raw model output. In Phase 4 it relocates to `backend/src/workflows/steps/validate.ts` for the `subject-graph-edges` workflow:
+Files: `README.md`, `docs/security/*`, `CHANGELOG.md`, boundary tests.
 
-```tsx
-// backend/src/workflows/steps/validate.ts (subject-graph-edges branch)
-import { correctPrereqEdges } from '@contracts/subjectGraph/correctPrereqEdges';
+- Document durable-only backend generation.
+- Document Learning Content Store as the source of truth.
+- Document no migration / destructive reset via the canonical D1 schema/init path.
+- Document Workflows + D1 + R2 default infrastructure and Durable Objects as optional coordination only.
+- Clarify `deviceId` remains an identifier, not a credential, until auth migration.
 
-// runs AFTER strictParseArtifact returned ok and BEFORE semanticValidateArtifact
-const corrected = correctPrereqEdges(parsed, latticeFromStageA);
-const sem = semanticValidateArtifact('subject-graph-edges', corrected, ctx);
-if (!sem.ok) throw new WorkflowFail(sem.code, sem.message);
-return corrected; // persisted as the artifact payload
-```
+Exit:
 
-The helper moves into `src/features/generationContracts/subjectGraph/correctPrereqEdges.ts` so both Worker and any future tool can consume it through the contracts barrel. The narrow [AGENTS.md](http://AGENTS.md) exception text is updated to reference the new file path.
+- Docs match implemented behavior.
 
-### 6.4 Tests
+## Boundary Tests Required
 
-- Existing `parseCrystalTrialPayload.test.ts`, `parseTopicCardsPayload.test.ts`, `parseTopicTheoryContentPayload.test.ts`, `normalizeMiniGameCardContent.test.ts` — DELETED with their target.
-- New `correctPrereqEdges.test.ts` covers the relocated helper with the existing test fixtures.
+Add repository-wide tests that fail if any of these regressions appear:
 
-## 🧱 Step 7 — Remove client-side `openRouterResponseHealing` ownership
+- No `resolveModelForSurface('subjectGenerationTopics' | 'subjectGenerationEdges' | 'topicContent' | 'crystalTrial')` under `src/**`.
+- No `openRouterResponseHealing` under `src/**`.
+- No pipeline surface IDs in frontend settings UI/state.
+- No frontend generation submission type contains `modelId`, `model_id`, `providerHealingRequested`, `responseHealing`, `plugins`, or `response_format`.
+- No backend workflow contains `providerHealingRequested: true` literals.
+- No backend workflow contains model fallback expressions like `snapshot.model_id ??`.
+- `POST /v1/runs` rejects policy fields in intents.
+- `generation_policy_hash` changes when backend model policy changes.
+- Backend cache-hit path materializes Learning Content Store rows before emitting completion.
+- No local runner files exist.
+- No `NEXT_PUBLIC_DURABLE_RUNS` / `NEXT_PUBLIC_DURABLE_RUNS_KINDS` references remain.
+- No `kind: 'navigation'` content-generation abort reason can be constructed.
+- No pipeline/backend path imports `extractJsonString()` or deprecated permissive parsers.
+- No component/hook imports `ApiClient`, `DurableGenerationRunRepository`, or SSE primitives directly.
+- No `backend/migrations/*.sql`, Supabase Storage bucket setup, backend generation-settings route/table, R2-as-database pattern, or Durable-Objects-as-workflow-engine pattern returns.
 
-### 7.1 Server-side authoritative storage
+## Exit Criteria
 
-`backend/migrations/0011_device_settings.sql`:
+- [ ] Frontend submits only generation intents for all four pipeline kinds.
+- [ ] Backend expands intents into canonical snapshots with model/policy/healing fields.
+- [ ] Backend Generation Policy is the only model/response-healing authority for pipelines.
+- [ ] Response healing has no user-facing toggle or frontend persisted state.
+- [ ] Backend workflows use backend prompt modules and contain no inline model fallbacks.
+- [ ] Learning Content Store persists generated Subjects, Subject Graphs, Topic Content, study cards, and Crystal Trial question sets.
+- [ ] Frontend reads generated learning content from backend repositories.
+- [ ] Frontend artifact appliers and local generated-content writers are deleted or non-authoritative and unreachable from pipeline paths.
+- [ ] Local in-tab runners are deleted.
+- [ ] Durable routing flags are deleted.
+- [ ] Navigation abort is deleted.
+- [ ] Permissive pipeline parsers are deleted or unreachable from pipeline/backend paths.
+- [ ] Close-tab/reopen verification passes for Subject Graph Generation, Topic Content Pipeline, Topic Expansion, and Crystal Trial generation using backend content reads.
+- [ ] Docs/changelog clearly state the destructive reset, Workflows + D1 + R2 infrastructure split, optional Durable Objects posture, and backend-authoritative architecture.
 
-```sql
-create table device_settings (
-	device_id uuid primary key references devices(id) on delete cascade,
-	openrouter_response_healing boolean not null default true,
-	updated_at timestamptz not null default now()
-);
-```
+## Manual Verification Before Program Close
 
-New Worker route `PUT /v1/settings`:
+1. Reset local browser storage, reset the D1 development database from the canonical schema/init path, and clear the R2 artifact bucket if testing cache-free generation.
+2. Create a Subject; confirm the backend Learning Content Store has a `subjects` row.
+3. Run Subject Graph Generation; close the tab before completion; reopen and confirm graph renders from backend rows exactly once.
+4. Run Topic Content Pipeline; close the tab before completion; reopen and confirm theory/cards/mini-games render from backend rows exactly once.
+5. Trigger Topic Expansion; confirm new cards append in backend `topic_cards` and superseded runs do not show player-facing failures.
+6. Generate a Crystal Trial; confirm questions load from backend `crystal_trial_sets` and no `crystal-trial:completed` assessment event fires.
+7. Change backend model policy in a test environment; submit the same intent and confirm `generation_policy_hash` and `input_hash` change.
+8. Confirm OpenRouter request bodies include `response-healing` from backend policy and that no frontend setting controls it.
+9. Run boundary searches for local runners, durable flags, navigation abort, frontend pipeline model resolution, frontend response-healing settings, and permissive parser imports.
 
-```tsx
-// backend/src/routes/settings.ts
-router.put('/v1/settings', async (c) => {
-	const { openRouterResponseHealing } = await c.req.json<{ openRouterResponseHealing: boolean }>();
-	if (typeof openRouterResponseHealing !== 'boolean') return c.json({ code: 'parse:zod-shape' }, 400);
-	await makeRepos(c.env).deviceSettings.upsert(c.var.deviceId, { openrouter_response_healing: openRouterResponseHealing });
-	return c.json({ ok: true });
-});
-```
-
-The Worker's `openrouterClient.callCrystalTrial` (and the four pipeline siblings landed in Phases 1+2) reads the per-device setting at the start of `step.do('plan', ...)` and threads it into `providerHealingRequested`:
-
-```tsx
-const settings = await repos.deviceSettings.get(deviceId);
-const providerHealingRequested = settings.openrouter_response_healing;
-// ... later in generate step:
-await openrouterClient.callCrystalTrial({ snapshot: plan.snapshot, providerHealingRequested, env: this.env });
-```
-
-### 7.2 Client-side removal
-
-- Delete the localStorage key `abyss.openRouterResponseHealing` (or whatever name the current client uses — `clientResponseHealingBoundary.test.ts` will fail-loud if any reference remains).
-- Delete the React settings UI component / store slice that toggles the flag.
-- Replace it with a settings UI that calls `PUT /v1/settings` against the Worker. The settings panel becomes thinner: it reads from `useDeviceSettingsQuery()` (a new hook backed by `GET /v1/settings`) and writes through `PUT /v1/settings`.
-
-### 7.3 One-time migration
-
-On first app boot post-Phase-4-deploy:
-
-```tsx
-// src/infrastructure/migrations/migrateLocalSettingsToServer.ts
-export async function migrateLocalSettingsToServer(http: ApiClient) {
-	const legacy = window.localStorage.getItem('abyss.openRouterResponseHealing');
-	if (legacy === null) return;
-	const value = legacy === 'true';
-	await http.put('/v1/settings', { openRouterResponseHealing: value });
-	window.localStorage.removeItem('abyss.openRouterResponseHealing');
-}
-```
-
-Called exactly once from `wireGeneration.ts` after `registerGenerationClient` completes. Idempotent: re-running with the localStorage key already deleted is a no-op.
-
-### 7.4 Boundary test
-
-`src/infrastructure/clientResponseHealingBoundary.test.ts`:
-
-- No source file under `src/**` references `openRouterResponseHealing`, `OPEN_ROUTER_RESPONSE_HEALING`, or any localStorage key matching `/openRouterResponseHealing/i` (the migration helper is exempted via inline `// boundary-test:exempt` marker).
-- The `useDeviceSettingsQuery` hook is the only file that imports `'/v1/settings'` (string literal pin).
-
-## 🧱 Step 8 — Plan Supabase Auth migration (`docs/auth-migration-plan.md`)
-
-**File:** `docs/auth-migration-plan.md` (NEW; specification only — no code in Phase 4)
-
-### 8.1 Required content
-
-1. **Goal**: replace `device_id`-only scoping with `(user_id, device_id)` scoping, where `user_id` is a Supabase Auth UUID.
-2. **Phased rollout**:
-    - **A. Add `auth.users` table** (managed by Supabase Auth) and `devices.user_id` foreign key (already nullable since Phase 1).
-    - **B. Sign-in surface in client** — Supabase Auth UI; on successful sign-in, the client `POST`s the JWT to a new Worker route `POST /v1/devices/:deviceId/claim` which sets `devices.user_id`.
-    - **C. RLS policies** — `devices`, `runs`, `jobs`, `events`, `artifacts`, `usage_counters`, `device_settings` all gain RLS policies of the shape `device_id in (select id from devices where user_id = auth.uid())`. The Worker continues to use service-role (bypassing RLS) for backwards-compat, but adds a parallel auth-scoped path.
-    - **D. Browser direct-to-Supabase reads** — once RLS is on, the browser can `select` from `runs` / `events` / `artifacts` directly using its anon key + JWT, avoiding the Worker for read paths. Generation-run *writes* still flow through the Worker.
-    - **E. Multi-device claim** — a signed-in user can claim additional devices by entering the device's UUID on a settings page. Run history merges across all claimed devices.
-3. **Non-goals for Phase 4** — implementation, UI design, JWT refresh strategy. Phase 4 ships only the planning doc.
-4. **Open questions** — listed explicitly so a follow-on initiative can pick them up: Apple/Google sign-in choice, anonymous-to-authenticated transition UX, device-disclaim flow, JWT expiry vs SSE long-lived connection.
-
-### 8.2 Tests
-
-No runtime tests; documentation-only. The `pr-unit-tests.yml` markdown lint job covers it.
-
-## 🧱 Step 9 — Documentation + changelog
-
-### 9.1 Files updated
-
-- `README.md` — remove all `NEXT_PUBLIC_DURABLE_RUNS` references; describe the durable-only architecture.
-- `CHANGELOG.md` — "Phase 4 — productionization + cleanup" section enumerating every breaking deletion (legacy runners, permissive parsers, `'navigation'` abort kind, client `openRouterResponseHealing`, `NEXT_PUBLIC_DURABLE_RUNS`).
-- `AGENTS.md` (root) — drop the `eventBusHandlers`-only durable-run composition root amendment text that referenced "local synthetic RunEvents" because there are no local synthetic events anymore.
-- `src/features/generationContracts/AGENTS.md` — drop the temporary "compatibility surface for local legacy/non-pipeline paths" caveat from PR #44; keep the strict-parser policy.
-
-## ✅ Exit criteria checklist
-
-- [ ]  `cors.ts` rejects unknown origins with structured `403 cors:forbidden`; preview/prod allowlists wired through `wrangler.toml` per environment.
-- [ ]  `backend/SECURITY.md` and `docs/threat-model.md` published; markdown lint green.
-- [ ]  `0010_artifact_retention.sql` applied; daily + weekly cron triggers active; `pruneArtifacts` tests green.
-- [ ]  `ContentGenerationAbortReason` no longer carries `{ kind: 'navigation' }`; `useContentGenerationLifecycle.ts` deleted; type-system pin in place.
-- [ ]  `LocalGenerationRunRepository.ts` and the four legacy entry points deleted; `legacyRunnerDeletionBoundary.test.ts` green.
-- [ ]  Four `@deprecated`-marked permissive parsers deleted (or `extractJsonString` family relocated to `src/features/study/lib/legacyDisplayJson.ts`); `legacyParserDeletionBoundary.test.ts` green.
-- [ ]  `correctPrereqEdges` relocated to `src/features/generationContracts/subjectGraph/`; Worker `validate.ts` invokes it for `subject-graph-edges`; tests green.
-- [ ]  Client-side `openRouterResponseHealing` ownership removed; `PUT /v1/settings` and `device_settings` table live; `clientResponseHealingBoundary.test.ts` green.
-- [ ]  One-time localStorage → server migration runs idempotently on app boot.
-- [ ]  `docs/auth-migration-plan.md` published with all required sections.
-- [ ]  `NEXT_PUBLIC_DURABLE_RUNS` removed from `.env.example`, `README.md`, and source tree; `process.env.NEXT_PUBLIC_DURABLE_RUNS` does not appear under `src/**`.
-- [ ]  `CHANGELOG.md` Phase 4 entry lists every breaking deletion.
-
-## 🧪 Manual verification before merge
-
-1. Open the app fresh on a new browser profile (no `abyss.deviceId` minted): start a Crystal Trial generation, close the tab mid-run, reopen 30 seconds later — questions appear; no console error from missing `useContentGenerationLifecycle`.
-2. Set browser localStorage `abyss.openRouterResponseHealing=false` BEFORE the Phase 4 deploy; deploy; reload the app; confirm one `PUT /v1/settings` fires with `{ openRouterResponseHealing: false }` and the localStorage key is removed.
-3. From the network panel, confirm a request with `Origin: https://example.com` to `POST /v1/runs` is rejected with `403 cors:forbidden`. Same request from the production origin succeeds.
-4. Wait 90 days (or run the cron manually via `wrangler triggers cron --cron prune-artifacts-daily`); confirm an unaccessed test artifact is pruned from both Storage and the `artifacts` table.
-5. Trigger a Subject Graph generation; confirm Stage B's deterministic prerequisite-edge correction still applies (compare lattice output to a fixture with known dropped edges that the correction restores).
-6. `grep -r runTopicGenerationPipeline src/` returns zero hits. `grep -r 'kind: '\''navigation'\''' src/` returns zero hits. `grep -r openRouterResponseHealing src/` returns zero hits (or only the migration helper with its boundary-test exempt marker).
-
-## 📦 PR sequencing (stacked)
-
-Each PR's branch targets the previous PR's branch as base. All seven PRs land behind a single Phase-4 merge train into `main` post Phase 3 exit.
-
-1. **PR-A (CORS lockdown)** — `backend/src/middleware/cors.ts` + per-env `wrangler.toml` `PRODUCTION_ORIGINS` + `cors.test.ts`. No client changes.
-2. **PR-B (Threat model + storage retention)** — `backend/SECURITY.md`, `docs/threat-model.md`, `0010_artifact_retention.sql`, `pruneArtifacts.ts`, cron triggers, `apply-ack` route, `last_accessed_at` write paths. No client changes.
-3. **PR-C (Server-side response-healing settings)** — `0011_device_settings.sql`, `PUT/GET /v1/settings`, Worker pipeline integration, server-side `migrateLocalSettingsToServer` endpoint. Client still reads/writes localStorage; clean swap-over in PR-D.
-4. **PR-D (Client cutover for response-healing + remove `NEXT_PUBLIC_DURABLE_RUNS`)** — replace client localStorage usage with `useDeviceSettingsQuery`; run one-shot migration; delete the flag; `clientResponseHealingBoundary.test.ts` lands.
-5. **PR-E (Drop `'navigation'` abort kind + delete `useContentGenerationLifecycle`)** — type narrowing + hook deletion + every callsite cleanup. `localGenerationDeletionBoundary.test.ts` (preview-only assertion: type-system pin) lands.
-6. **PR-F (Delete legacy runners + `LocalGenerationRunRepository`)** — bulk deletion. `GenerationClient` factory simplification. `legacyRunnerDeletionBoundary.test.ts` flips on. The deletion volume is large; PR description must reproduce the Compliance, Risk & Drift Assessment.
-7. **PR-G (Delete legacy permissive parsers + relocate `extractJsonString` + relocate `correctPrereqEdges`)** — parser bulk deletion, study-feature legacyDisplayJson module created, Worker `validate.ts` updated. `legacyParserDeletionBoundary.test.ts` extends PR #44's boundary test. `docs/auth-migration-plan.md` lands alongside (small, doc-only).
-
-## 🚪 Phase 4 program-end checklist (Durable Workflow Orchestration complete)
-
-- [ ]  All four pipelines (`subject-graph`, `topic-content`, `topic-expansion`, `crystal-trial`) run durably on Cloudflare Workflows, behind tightened CORS, with server-authoritative response-healing settings.
-- [ ]  Zero in-tab generation runners remain. `LocalGenerationRunRepository`, `runTopicGenerationPipeline`, `runExpansionJob`, `subjectGenerationOrchestrator`, and `generateTrialQuestions` are deleted.
-- [ ]  Zero permissive parsers remain in pipeline code paths. The four `@deprecated` parsers are deleted; `extractJsonString` is feature-scoped to study display.
-- [ ]  `NEXT_PUBLIC_DURABLE_RUNS` and `'navigation'` abort kind are gone from the codebase.
-- [ ]  Threat model, storage-retention policy, and Supabase Auth migration plan are published.
-- [ ]  All Phase 0 / 0.5 / 1 / 2 / 3 acceptance gates remain green.
-- [ ]  The repo-root [AGENTS.md](http://AGENTS.md) `eventBusHandlers` exception text is updated to reflect the durable-only architecture (no local synthetic `RunEvent`s).
-- [ ]  Failure-rate dashboards (Phase 3) show 14+ consecutive days at the Phase 3 exit floor with the simplified architecture.
-
-The Durable Workflow Orchestration program is complete. Future work — Supabase Auth migration, additional pipelines (e.g., new mini-game kinds), or alternative LLM providers — proceeds against the durable substrate as ordinary feature work, not as part of this program.
+When these checks pass, the Durable Workflow Orchestration program is complete and the browser is no longer responsible for content-generation pipelines. Auth, multi-device account sync, richer observability, and new generation surfaces proceed as follow-on initiatives.

@@ -160,7 +160,7 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
   const qualityReport = isQualityReport(job.metadata?.qualityReport) ? job.metadata.qualityReport : null;
 
   return (
-    <div className="border-border/60 mt-2 space-y-2 border-t pt-2">
+    <div className="border-border/60 mt-2 flex flex-col gap-2 border-t pt-2">
       {job.error ? (
         <p className="text-destructive text-xs" role="alert">
           {job.error}
@@ -180,7 +180,7 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
             className="w-full gap-1.5 text-xs"
             onClick={handleCopyFailureReport}
           >
-            <Copy className="size-3 shrink-0" aria-hidden />
+            <Copy data-icon="inline-start" aria-hidden />
             Copy failure report (markdown)
           </Button>
         </div>
@@ -210,7 +210,7 @@ function GenerationJobDetails({ job }: { job: ContentGenerationJob }) {
           <summary className="text-destructive text-xs font-medium">
             Validation issues ({validationFailures.length})
           </summary>
-          <ul className="mt-2 space-y-1 text-xs">
+          <ul className="mt-2 flex flex-col gap-1 text-xs">
             {validationFailures.slice(0, 8).map((failure, index) => (
               <li key={`${failure.code}-${failure.index}-${index}`} className="text-muted-foreground">
                 {failure.cardId ?? `card ${failure.index + 1}`}: {failure.message}
@@ -364,9 +364,9 @@ export function GenerationProgressHud({ showTrigger = true }: GenerationProgress
             title="Open background LLM content generation"
           >
             {isBusy ? (
-              <Spinner className="size-3.5 shrink-0" aria-hidden />
+              <Spinner data-icon="inline-start" aria-hidden />
             ) : (
-              <ListTree className="size-3.5 shrink-0" aria-hidden />
+              <ListTree data-icon="inline-start" aria-hidden />
             )}
           </Button>
         </div>
@@ -388,13 +388,13 @@ export function GenerationProgressHud({ showTrigger = true }: GenerationProgress
               </InfoPopover>
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+          <div className="min-h-0 flex flex-1 flex-col gap-4 overflow-y-auto">
             <section>
               <h3 className="text-foreground mb-1.5 text-xs font-semibold tracking-wide uppercase">Active</h3>
               {activeStandalone.length === 0 && pipelineIdsOrdered.length === 0 ? (
                 <p className="text-muted-foreground text-sm">No jobs in progress.</p>
               ) : (
-                <div className="space-y-3">
+                <div className="flex flex-col gap-3">
                   {pipelineIdsOrdered.map((pid) => {
                     const groupJobs = activeByPipeline.get(pid) ?? [];
                     const meta = pipelines[pid];
@@ -412,7 +412,7 @@ export function GenerationProgressHud({ showTrigger = true }: GenerationProgress
                             Abort pipeline
                           </Button>
                         </div>
-                        <ul className="border-border/50 space-y-2 border-l-2 pl-3">
+                        <ul className="border-border/50 flex flex-col gap-2 border-l-2 pl-3">
                           {groupJobs.map((j) => (
                             <li key={j.id}>
                               <details className="rounded bg-muted/20 [&_summary::-webkit-details-marker]:hidden">
@@ -467,7 +467,7 @@ export function GenerationProgressHud({ showTrigger = true }: GenerationProgress
               {terminalSorted.length === 0 ? (
                 <p className="text-muted-foreground text-sm">No completed or failed runs yet.</p>
               ) : (
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   {terminalSorted.map((j) => {
                     const pipelineMeta = j.pipelineId ? pipelines[j.pipelineId] : undefined;
                     const pipelineJobs = j.pipelineId ? terminalPipelineGroups.get(j.pipelineId) : undefined;
@@ -514,7 +514,7 @@ export function GenerationProgressHud({ showTrigger = true }: GenerationProgress
                                     void retryFailedJob(j);
                                   }}
                                 >
-                                  <RotateCcw className="size-3" aria-hidden />
+                                  <RotateCcw data-icon="inline-start" aria-hidden />
                                   {retryingIds.has(j.id) ? 'Retrying…' : 'Retry job'}
                                 </Button>
                               ) : null}
@@ -530,7 +530,7 @@ export function GenerationProgressHud({ showTrigger = true }: GenerationProgress
                                     void retryFailedJob(j);
                                   }}
                                 >
-                                  <RotateCcw className="size-3" aria-hidden />
+                                  <RotateCcw data-icon="inline-start" aria-hidden />
                                   {retryingIds.has(j.id) ? 'Retrying…' : 'Retry this stage'}
                                 </Button>
                               ) : null}
@@ -546,7 +546,7 @@ export function GenerationProgressHud({ showTrigger = true }: GenerationProgress
                                     void retryFailedPipeline(j.pipelineId!);
                                   }}
                                 >
-                                  <RotateCcw className="size-3" aria-hidden />
+                                  <RotateCcw data-icon="inline-start" aria-hidden />
                                   {retryingIds.has(j.pipelineId) ? 'Retrying…' : 'Retry pipeline from failed stage'}
                                 </Button>
                               ) : null}

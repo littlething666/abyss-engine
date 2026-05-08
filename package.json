@@ -5,7 +5,7 @@
     "dev": "next dev",
     "build": "NODE_ENV=production next build",
     "serve": "npx serve out",
-    "check:compile": "next typegen && tsc --noEmit",
+    "check:compile": "next typegen && tsc --noEmit && pnpm --filter abyss-durable-orchestrator typecheck",
     "test:e2e": "node scripts/run-playwright.mjs --project=chromium-headful",
     "test:e2e:headful": "node scripts/run-playwright.mjs --project=chromium-headful",
     "test:e2e:headless": "node scripts/run-playwright.mjs --project=chromium-headless-ci",

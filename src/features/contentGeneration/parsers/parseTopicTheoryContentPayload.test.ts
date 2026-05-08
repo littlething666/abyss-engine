@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { TOPIC_THEORY_INTERIM_UNGROUNDED_POLICY } from '../grounding/groundingPolicy';
+import { validateGroundingSources } from '../grounding/validateGroundingSources';
 import { parseTopicTheoryContentPayload } from './parseTopicTheoryContentPayload';
 
 const validPayload = {
@@ -21,6 +23,17 @@ describe('parseTopicTheoryContentPayload', () => {
     if (!result.ok) return;
     expect(result.data.coreConcept).toBe('Core idea.');
     expect(result.data.coreQuestionsByDifficulty[4]).toEqual(['q4']);
+    expect(result.data.groundingSources).toEqual([]);
+  });
+
+  it('accepts interim ungrounded policy with empty provider metadata', () => {
+    const result = parseTopicTheoryContentPayload(JSON.stringify(validPayload), {
+      groundingPolicy: TOPIC_THEORY_INTERIM_UNGROUNDED_POLICY,
+      providerMetadata: {},
+      validateGroundingSources,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
     expect(result.data.groundingSources).toEqual([]);
   });
 

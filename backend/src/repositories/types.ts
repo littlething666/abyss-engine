@@ -1,7 +1,7 @@
 /**
- * Shared repository types for the backend Supabase adapter.
+ * Shared repository types for the backend D1 adapter.
  *
- * Row shapes mirror the `0001_init.sql` schema exactly. Every function
+ * Row shapes mirror `backend/d1/init.sql`. Every function
  * that touches a table uses these types as its return / parameter contract.
  */
 
@@ -46,6 +46,7 @@ export interface RunRow {
   input_hash: string;
   idempotency_key: string | null;
   parent_run_id: string | null;
+  supersedes_key: string | null;
   cancel_requested_at: string | null;
   cancel_reason: CancelReason | null;
   subject_id: string | null;
@@ -90,6 +91,7 @@ export interface EventRow {
   ts: string;
   type: string;
   payload_json: Record<string, unknown>;
+  semantic_key: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +118,32 @@ export interface UsageCounterRow {
   tokens_in: number;
   tokens_out: number;
   runs_started: number;
+}
+
+// ---------------------------------------------------------------------------
+// stage_checkpoints
+// ---------------------------------------------------------------------------
+export type StageCheckpointStatus =
+  | 'pending'
+  | 'generating'
+  | 'parsing'
+  | 'validating'
+  | 'persisting'
+  | 'ready'
+  | 'failed';
+
+export interface StageCheckpointRow {
+  run_id: string;
+  stage: string;
+  status: StageCheckpointStatus;
+  artifact_id: string | null;
+  job_id: string | null;
+  input_hash: string;
+  attempt: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
 }
 
 // ---------------------------------------------------------------------------

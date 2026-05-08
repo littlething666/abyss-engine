@@ -436,7 +436,7 @@ export function DiscoveryModal({
     <>
       <Dialog open={isOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="flex max-h-[95vh] min-h-0 flex-col sm:max-w-4xl">
-          <DialogHeader className="shrink-0 space-y-3 pb-0">
+          <DialogHeader className="shrink-0 gap-3 pb-0">
             <DialogTitle>🏛️ Wisdom Altar</DialogTitle>
             <DialogDescription className="flex flex-wrap items-center gap-1">
               <span className="min-w-0">Spend keys to unlock topic crystals, tier by tier.</span>
@@ -591,7 +591,7 @@ export function DiscoveryModal({
                 </Empty>
               )
             ) : (
-              <div className="space-y-6 pb-2">
+              <div className="flex flex-col gap-6 pb-2">
                 {displayTiers.map((tierData) => (
                   <div key={tierData.tier}>
                     <div className="mb-3 flex items-center">
@@ -603,14 +603,14 @@ export function DiscoveryModal({
                     </div>
 
                     {showSubjectGroups ? (
-                      <div className="space-y-5">
+                    <div className="flex flex-col gap-5">
                         {groupTopicsBySubjectInManifestOrder(tierData.topics, subjectOrderRank).map((subjectGroup) => {
                           const headingId = `tier-${tierData.tier}-subject-${subjectGroup.subjectId}`;
                           return (
-                            <section
+                              <section
                               key={`${tierData.tier}:${subjectGroup.subjectId}`}
                               aria-labelledby={headingId}
-                              className="space-y-2"
+                              className="flex flex-col gap-2"
                             >
                               <h3
                                 id={headingId}

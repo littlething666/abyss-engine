@@ -5,10 +5,11 @@
  * - Happy-path artifact application + legacy event emission per pipeline kind.
  * - crystal-trial:completed is NEVER emitted from question generation.
  * - Superseded expansion silence (no player-facing event).
- * - Subject Graph Stage B without Stage A (missing-stage-a).
+ * - Subject Graph Stage B without Stage A (missing-stage-a) stays silent.
  * - Duplicate artifact idempotency.
  * - Run failure event routing (validation vs generic).
  * - Cancel/supersession event routing.
+ * - Artifact contract failures fail loudly instead of emitting completion.
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
@@ -23,6 +24,7 @@ import type {
   AppliedArtifactsStore,
   RunEvent,
 } from '@/features/generationContracts';
+import type { RunEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
 import type {
   GenerationClient,
   TopicContentApplier,
@@ -50,6 +52,18 @@ function createMockEventBus(): {
     on: (() => () => {}) as AppEventBus['on'],
   };
   return { bus, emitted };
+}
+
+/** Create a mock cursor store backed by an in-memory map. */
+function createMockCursorStore(): RunEventCursorStore {
+  const cursors = new Map<string, number>();
+  return {
+    get: vi.fn(async (runId: string) => cursors.get(runId) ?? 0),
+    set: vi.fn(async (runId: string, seq: number) => {
+      const prev = cursors.get(runId) ?? 0;
+      if (seq > prev) cursors.set(runId, seq);
+    }),
+  };
 }
 
 /** Create a mock DedupeStore that never has duplicates by default. */
@@ -394,6 +408,7 @@ describe('generationRunEventHandlers', () => {
       },
       eventBus: overrides.eventBus ?? mockEventBus.bus,
       dedupeStore: mockDedupe,
+      cursorStore: createMockCursorStore(),
       deckRepository: mockDeck,
     };
   }
@@ -748,7 +763,7 @@ describe('generationRunEventHandlers', () => {
 
   // ── Duplicate/idempotency ─────────────────────────────────────
 
-  it('does not re-apply duplicate artifacts (idempotent by contentHash)', async () => {
+  it('does not emit completion when every artifact is deduped', async () => {
     const input = topicContentInput({ stage: 'full' });
     const runId = 'run-dup-1';
     const CONTENT_HASH = 'cnt_dup1';
@@ -778,18 +793,19 @@ describe('generationRunEventHandlers', () => {
       },
       eventBus: mockEventBus.bus,
       dedupeStore: dedupeWithHash,
+      cursorStore: createMockCursorStore(),
       deckRepository: mockDeck,
     });
 
     await handlers.observeRun(runId, input);
 
-    // Applier was called but returned duplicate
     expect(applySpy).toHaveBeenCalled();
-    // Completion event still fires (run succeeded, just deduped)
+    // Legacy completion represents newly applied product content, not just a
+    // terminal durable run. Replays with duplicate artifacts must stay silent.
     const completedEvent = mockEventBus.emitted.find(
       (e) => e.event === 'topic-content:generation-completed',
     );
-    expect(completedEvent).toBeDefined();
+    expect(completedEvent).toBeUndefined();
 
     handlers.stop();
   });
@@ -869,25 +885,26 @@ describe('generationRunEventHandlers', () => {
       },
       eventBus: mockEventBus.bus,
       dedupeStore: mockDedupe,
+      cursorStore: createMockCursorStore(),
       deckRepository: mockDeck,
     });
 
     await handlers.observeRun(runId, input);
 
     expect(sgApplierSpy.apply).toHaveBeenCalled();
-    // Event still fires (run completed; missing-stage-a is applier concern)
+    // Missing Stage A means no local Subject Graph artifact was applied, so
+    // the legacy generated event must not fire.
     const generatedEvent = mockEventBus.emitted.find(
       (e) => e.event === 'subject-graph:generated',
     );
-    expect(generatedEvent).toBeDefined();
+    expect(generatedEvent).toBeUndefined();
 
     handlers.stop();
   });
 
   // ── Unknown artifact kind ─────────────────────────────────────
 
-  it('logs error for unknown artifact kind but does not crash', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  it('fails loudly for unknown artifact kind and does not emit completion', async () => {
     const input = topicContentInput();
     const runId = 'run-unknown-kind';
 
@@ -904,31 +921,24 @@ describe('generationRunEventHandlers', () => {
       buildDeps({ client }),
     );
 
-    await handlers.observeRun(runId, input);
-
-    // Should log warning but not crash
-    expect(consoleErrorSpy).toHaveBeenCalled();
-    const warningCall = consoleErrorSpy.mock.calls.find((c) =>
-      String(c[0]).includes('unknown artifact kind'),
+    await expect(handlers.observeRun(runId, input)).rejects.toThrow(
+      'unknown artifact kind',
     );
-    expect(warningCall).toBeDefined();
 
-    // Completion event still fires (artifact failure shouldn't block terminal)
     const completedEvent = mockEventBus.emitted.find(
       (e) => e.event === 'topic-content:generation-completed',
     );
-    expect(completedEvent).toBeDefined();
+    expect(completedEvent).toBeUndefined();
 
     handlers.stop();
-    consoleErrorSpy.mockRestore();
   });
 
   // ── Artifact fetch failure ────────────────────────────────────
 
-  it('logs error on artifact fetch failure and continues', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  it('fails loudly on artifact fetch failure and does not emit completion', async () => {
     const input = topicContentInput();
     const runId = 'run-art-fail';
+    const cursorStore = createMockCursorStore();
 
     const client = createMockGenerationClient({
       // No artifact for art-missing
@@ -941,25 +951,90 @@ describe('generationRunEventHandlers', () => {
       runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local' }]]),
     });
 
-    const handlers = createGenerationRunEventHandlers(
-      buildDeps({ client }),
+    const handlers = createGenerationRunEventHandlers({
+      ...buildDeps({ client }),
+      cursorStore,
+    });
+
+    await expect(handlers.observeRun(runId, input)).rejects.toThrow(
+      'Unknown artifact: art-missing',
     );
 
-    await handlers.observeRun(runId, input);
-
-    // Should log error about missing artifact
-    const errorCall = consoleErrorSpy.mock.calls.find((c) =>
-      String(c[0]).includes('failed to fetch artifact'),
-    );
-    expect(errorCall).toBeDefined();
-
-    // Completion event still fires
     const completedEvent = mockEventBus.emitted.find(
       (e) => e.event === 'topic-content:generation-completed',
     );
-    expect(completedEvent).toBeDefined();
+    expect(completedEvent).toBeUndefined();
+    expect(await cursorStore.get(runId)).toBe(1);
 
     handlers.stop();
-    consoleErrorSpy.mockRestore();
+  });
+
+  // ── getLastAppliedSeq (Phase 3.6 Step 2: durable cursor store) ─
+
+  it('getLastAppliedSeq returns 0 for an unknown run', () => {
+    const handlers = createGenerationRunEventHandlers(buildDeps());
+    // Phase 3.6 Step 2: always returns 0; callers use cursorStore.get(runId)
+    expect(handlers.getLastAppliedSeq()).toBe(0);
+    handlers.stop();
+  });
+
+  it('cursor store is updated as events are processed', async () => {
+    const input = topicContentInput();
+    const runId = 'run-seq-track';
+    const hash = 'cnt_seq_hash';
+    const cursorStore = createMockCursorStore();
+
+    const client = createMockGenerationClient({
+      activeRuns: [[
+        evt(runId, 1, { type: 'run.queued' }),
+        evt(runId, 2, { type: 'run.status', status: 'generating-stage' }),
+        evt(runId, 5, { type: 'artifact.ready', body: { artifactId: 'art-seq', kind: 'topic-theory', contentHash: hash, schemaVersion: 1, inputHash: 'inp_seq', subjectId: 'subj-1', topicId: 'topic-1' } }),
+        evt(runId, 7, { type: 'run.completed' }),
+      ]],
+      artifacts: new Map([['art-seq', artifactEnvelope({ id: 'art-seq', kind: 'topic-theory', contentHash: hash })]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_seq', createdAt: 1000, snapshotJson: input.snapshot, jobs: [] }]]),
+    });
+
+    const handlers = createGenerationRunEventHandlers({
+      ...buildDeps({ client }),
+      cursorStore,
+    });
+
+    // Before observation, cursor should be 0.
+    expect(await cursorStore.get(runId)).toBe(0);
+
+    await handlers.observeRun(runId, input);
+
+    // After observation, cursor should be the last event seq (7).
+    expect(await cursorStore.get(runId)).toBe(7);
+
+    handlers.stop();
+  });
+
+  it('cursor store is monotonic and never decreases', async () => {
+    const input = topicContentInput();
+    const runId = 'run-mono';
+    const cursorStore = createMockCursorStore();
+
+    const client = createMockGenerationClient({
+      activeRuns: [[
+        evt(runId, 3, { type: 'run.queued' }),
+        evt(runId, 1, { type: 'run.status', status: 'generating-stage' }), // out-of-order lower seq
+        evt(runId, 5, { type: 'run.completed' }),
+      ]],
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_mono', createdAt: 1000, snapshotJson: input.snapshot, jobs: [] }]]),
+    });
+
+    const handlers = createGenerationRunEventHandlers({
+      ...buildDeps({ client }),
+      cursorStore,
+    });
+
+    await handlers.observeRun(runId, input);
+
+    // Should be 5 (max of 3, 1, 5) not 1.
+    expect(await cursorStore.get(runId)).toBe(5);
+
+    handlers.stop();
   });
 });

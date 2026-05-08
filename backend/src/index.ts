@@ -1,7 +1,7 @@
 /**
  * abyss-durable-orchestrator — Hono Worker entry point.
  *
- * Phase 1 PR-C: full HTTP surface (runs, events, artifacts, settings).
+ * Phase 1 PR-C: full HTTP surface (runs, events, artifacts).
  * Middleware chain: cors → deviceId → idempotency (POST /v1/runs only).
  * Workflow creation is stubbed; live SSE tail is stubbed.
  */
@@ -14,7 +14,14 @@ import { idempotencyMiddleware } from './middleware/idempotency';
 import { runs } from './routes/runs';
 import { runEvents } from './routes/runEvents';
 import { artifacts } from './routes/artifacts';
-import { settings } from './routes/settings';
+import { learningContent } from './routes/learningContent';
+import { stats } from './routes/runs.stats';
+import { WorkflowFail } from './lib/workflowErrors';
+
+export { CrystalTrialWorkflow } from './workflows/crystalTrialWorkflow';
+export { TopicExpansionWorkflow } from './workflows/topicExpansionWorkflow';
+export { SubjectGraphWorkflow } from './workflows/subjectGraphWorkflow';
+export { TopicContentWorkflow } from './workflows/topicContentWorkflow';
 
 const app = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotencyKey?: string } }>();
 
@@ -41,12 +48,20 @@ v1.use('*', deviceIdMiddleware);
 // GET /v1/runs, GET /v1/runs/:id, POST /v1/runs/:id/cancel, etc. skip it.
 v1.post('/runs', idempotencyMiddleware);
 
+v1.route('/runs', stats);
 v1.route('/runs', runs);
 v1.route('/runs', runEvents);
+v1.route('/', learningContent);
 v1.route('/artifacts', artifacts);
-v1.route('/settings', settings);
 
 app.route('/v1', v1);
+
+app.onError((error, c) => {
+  if (error instanceof WorkflowFail) {
+    return c.json({ error: error.code, message: error.message }, 500);
+  }
+  throw error;
+});
 
 // ---------------------------------------------------------------------------
 // Catch-all 404

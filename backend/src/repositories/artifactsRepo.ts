@@ -1,25 +1,23 @@
 /**
- * Artifacts repository — Supabase Storage + Postgres metadata.
+ * Artifacts repository — Cloudflare R2 blob storage + D1 metadata.
  *
- * JSON artifact envelopes are stored in the `generation-artifacts` bucket
- * under `{deviceId}/{kind}/{input_hash}.json`. The `artifacts` table records
- * the storage key, content hash, and schema version for lookup and dedupe.
- *
- * Cache-hit short-circuit (Plan v3 Q7): before creating a Workflow, the
- * POST /v1/runs handler checks `findCacheHit(deviceId, kind, inputHash)`.
- * On hit, a synthetic run is created with `status = 'ready'` and synthetic
- * events referencing the cached artifact — no LLM call is made.
+ * R2 stores artifact JSON envelopes. D1 stores only metadata/cache index rows;
+ * it is never used for artifact bodies.
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ArtifactRow } from './types';
+import { nowIso, parseJsonValue } from './d1';
 
-const BUCKET_NAME = 'generation-artifacts';
+export interface ArtifactObjectStore {
+  put(
+    key: string,
+    value: string,
+    options?: { httpMetadata?: { contentType?: string } },
+  ): Promise<unknown>;
+  get(key: string): Promise<{ text(): Promise<string> } | null>;
+}
 
-/**
- * Payload shape expected by `putStorage`. The caller builds this from the
- * parsed-and-validated artifact.
- */
+/** Payload shape expected by `putStorage`. */
 export interface ArtifactStoragePayload {
   deviceId: string;
   kind: string;
@@ -29,116 +27,78 @@ export interface ArtifactStoragePayload {
 }
 
 export interface IArtifactsRepo {
-  /**
-   * Check for a cached artifact matching (device_id, kind, input_hash).
-   * Returns the artifact row on hit, null on miss.
-   */
   findCacheHit(deviceId: string, kind: string, inputHash: string): Promise<ArtifactRow | null>;
-
-  /**
-   * Store the JSON artifact in Supabase Storage and insert/update the
-   * `artifacts` metadata row. Returns the artifact id.
-   */
   putStorage(input: ArtifactStoragePayload, contentHash: string, schemaVersion: number, runId: string): Promise<string>;
-
-  /**
-   * Retrieve the stored JSON artifact from Supabase Storage.
-   */
   getStorage(storageKey: string): Promise<unknown>;
-
-  /**
-   * Generate a signed download URL for the given storage key.
-   * Used by GET /v1/artifacts/:id to return redirect-able URLs.
-   */
-  getSignedUrl(storageKey: string): Promise<string>;
-
-  /** Read a single artifact row by id. */
   get(artifactId: string): Promise<ArtifactRow | null>;
 }
 
-export function createArtifactsRepo(db: SupabaseClient): IArtifactsRepo {
-  function storageKey(deviceId: string, kind: string, inputHash: string): string {
-    return `${deviceId}/${kind}/${inputHash}.json`;
+export function createArtifactsRepo(db: D1Database, objectStore?: ArtifactObjectStore): IArtifactsRepo {
+  function storageKey(deviceId: string, kind: string, schemaVersion: number, inputHash: string): string {
+    return `abyss/${deviceId}/${kind}/${schemaVersion}/${inputHash}.json`;
+  }
+
+  function requireObjectStore(): ArtifactObjectStore {
+    if (!objectStore) {
+      throw new Error('GENERATION_ARTIFACTS_BUCKET binding is required for artifact storage');
+    }
+    return objectStore;
   }
 
   return {
-    async findCacheHit(deviceId: string, kind: string, inputHash: string) {
-      const { data, error } = await db
-        .from('artifacts')
-        .select('*')
-        .eq('device_id', deviceId)
-        .eq('kind', kind)
-        .eq('input_hash', inputHash)
-        .maybeSingle();
-
-      if (error) throw error;
-      return (data as ArtifactRow) ?? null;
+    async findCacheHit(deviceId, kind, inputHash) {
+      return await db.prepare(`
+        select * from artifacts
+        where device_id = ? and kind = ? and input_hash = ?
+      `).bind(deviceId, kind, inputHash).first<ArtifactRow>();
     },
 
-    async putStorage(input: ArtifactStoragePayload, contentHash: string, schemaVersion: number, runId: string) {
-      const key = storageKey(input.deviceId, input.kind, input.inputHash);
+    async putStorage(input, contentHash, schemaVersion, runId) {
+      const key = storageKey(input.deviceId, input.kind, schemaVersion, input.inputHash);
       const body = JSON.stringify(input.payload);
+      await requireObjectStore().put(key, body, {
+        httpMetadata: { contentType: 'application/json' },
+      });
 
-      // 1. Upload to Supabase Storage.
-      const { error: uploadError } = await db.storage
-        .from(BUCKET_NAME)
-        .upload(key, new Blob([body], { type: 'application/json' }), {
-          contentType: 'application/json',
-          upsert: true,
-        });
+      const artifactId = crypto.randomUUID();
+      const now = nowIso();
+      const row = await db.prepare(`
+        insert into artifacts (
+          id, device_id, created_by_run_id, kind, input_hash, storage_key,
+          content_hash, schema_version, created_at, retention_tier, retention_updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+        on conflict(device_id, kind, input_hash) do update set
+          storage_key = excluded.storage_key,
+          content_hash = excluded.content_hash,
+          schema_version = excluded.schema_version,
+          retention_tier = 'active',
+          retention_updated_at = excluded.retention_updated_at
+        returning id
+      `).bind(
+        artifactId,
+        input.deviceId,
+        runId,
+        input.kind,
+        input.inputHash,
+        key,
+        contentHash,
+        schemaVersion,
+        now,
+        now,
+      ).first<{ id: string }>();
 
-      if (uploadError) throw uploadError;
-
-      // 2. Upsert the artifacts metadata row.
-      const { data, error } = await db
-        .from('artifacts')
-        .upsert({
-          device_id: input.deviceId,
-          created_by_run_id: runId,
-          kind: input.kind,
-          input_hash: input.inputHash,
-          storage_key: key,
-          content_hash: contentHash,
-          schema_version: schemaVersion,
-        })
-        .select('id')
-        .single();
-
-      if (error) throw error;
-      return (data as { id: string }).id;
+      if (!row) throw new Error('D1 artifacts.putStorage: failed to return artifact id');
+      return row.id;
     },
 
-    async getStorage(key: string) {
-      const { data, error } = await db.storage
-        .from(BUCKET_NAME)
-        .download(key);
-
-      if (error) throw error;
-      if (!data) throw new Error(`artifact not found: ${key}`);
-
-      const text = await data.text();
-      return JSON.parse(text);
+    async getStorage(key) {
+      const object = await requireObjectStore().get(key);
+      if (!object) throw new Error(`artifact not found in R2: ${key}`);
+      return parseJsonValue(await object.text(), `R2 artifact ${key}`);
     },
 
-    async getSignedUrl(key: string) {
-      const { data, error } = await db.storage
-        .from(BUCKET_NAME)
-        .createSignedUrl(key, 3600); // 1-hour expiry
-
-      if (error) throw error;
-      if (!data?.signedUrl) throw new Error(`failed to create signed URL for ${key}`);
-      return data.signedUrl;
-    },
-
-    async get(artifactId: string) {
-      const { data, error } = await db
-        .from('artifacts')
-        .select('*')
-        .eq('id', artifactId)
-        .maybeSingle();
-
-      if (error) throw error;
-      return (data as ArtifactRow) ?? null;
+    async get(artifactId) {
+      return await db.prepare('select * from artifacts where id = ?').bind(artifactId).first<ArtifactRow>();
     },
   };
 }

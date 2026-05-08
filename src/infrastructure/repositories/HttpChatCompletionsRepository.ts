@@ -38,19 +38,43 @@ async function sleepAbortable(ms: number, signal: AbortSignal | undefined): Prom
   });
 }
 
+type ChatCompletionAssistantMessage = {
+  content?: string | null;
+  reasoning?: unknown;
+  reasoning_details?: unknown;
+  annotations?: unknown;
+  citations?: unknown;
+};
+
+type ChatCompletionChoiceBody = {
+  finish_reason?: string | null;
+  /** OpenRouter / gateway: tool or server failures may appear here with HTTP 200. */
+  error?: { code?: unknown; message?: unknown; metadata?: unknown } | null;
+  message?: ChatCompletionAssistantMessage | null;
+};
+
+/** Parsed non-streaming chat/completions body; may include additional provider keys at runtime. */
 type ChatCompletionResponseBody = {
   usage?: unknown;
   citations?: unknown;
   annotations?: unknown;
-  choices?: Array<{
-    message?: {
-      content?: string | null;
-      reasoning_details?: unknown;
-      annotations?: unknown;
-      citations?: unknown;
-    } | null;
-  } | null>;
+  choices?: Array<ChatCompletionChoiceBody | null>;
 };
+
+/** Cap for completion JSON embedded in thrown errors (pipeline failure logs / console). */
+const MAX_COMPLETION_DEBUG_JSON_CHARS = 200_000;
+
+/** Pretty-print completion JSON for thrown errors when assistant `content` is missing (bounded). */
+function completionResponseJsonForDebug(respBody: ChatCompletionResponseBody): string {
+  let text: string;
+  try {
+    text = JSON.stringify(respBody, null, 2) ?? 'null';
+  } catch {
+    text = '[completion body: JSON.stringify threw]';
+  }
+  if (text.length <= MAX_COMPLETION_DEBUG_JSON_CHARS) return text;
+  return `${text.slice(0, MAX_COMPLETION_DEBUG_JSON_CHARS)}\n… [truncated: ${text.length} chars total]`;
+}
 
 type StreamChunkBody = {
   choices?: Array<{
@@ -195,7 +219,7 @@ export class HttpChatCompletionsRepository implements IChatCompletionsRepository
     const message = respBody.choices?.[0]?.message;
     const content = message?.content;
     if (typeof content !== 'string' || !content.trim()) {
-      throw new Error('Chat completion response missing assistant message content');
+      throw new Error(completionResponseJsonForDebug(respBody));
     }
     const reasoningDetails = message ? mergeAssistantReasoningDetails(message) : null;
     const providerMetadata = extractProviderMetadata(respBody);

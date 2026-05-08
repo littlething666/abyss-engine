@@ -40,6 +40,7 @@ export type ChatResponseFormatJsonSchema = {
 
 export type ChatResponseFormat = ChatResponseFormatJsonObject | ChatResponseFormatJsonSchema;
 
+/** @deprecated Prefer backend search; OpenRouter server tool was removed from production theory jobs. */
 export type OpenRouterWebSearchTool = {
   type: 'openrouter:web_search';
   parameters: {
@@ -76,7 +77,7 @@ export interface ChatCompletionStreamInput {
   responseFormat?: ChatResponseFormat;
   /** OpenRouter plugins array, e.g. `[{ id: 'response-healing' }]`. */
   plugins?: Array<{ id: string }>;
-  /** OpenRouter server tools, e.g. `openrouter:web_search`. */
+  /** OpenRouter server tools (deprecated in production: `openrouter:web_search` removed until backend search lands). */
   tools?: ChatCompletionTool[];
 }
 
@@ -91,6 +92,7 @@ export interface IChatCompletionsRepository {
     temperature?: number;
     responseFormat?: ChatResponseFormat;
     plugins?: Array<{ id: string }>;
+    /** @see ChatCompletionStreamInput.tools */
     tools?: ChatCompletionTool[];
   }): Promise<ChatCompletionResult>;
   streamChat(input: ChatCompletionStreamInput): AsyncIterable<ChatStreamChunk>;

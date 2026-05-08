@@ -1,9 +1,12 @@
-# abyss-durable-orchestrator — Phase 1 Crystal Trial pilot
+# abyss-durable-orchestrator — Phase 4 Cloudflare-native durable backend
 #
 # Secrets (set via `wrangler secret put`):
-#   SUPABASE_URL            — Supabase project URL (e.g. https://<ref>.supabase.co)
-#   SUPABASE_SERVICE_ROLE   — Supabase service-role key (server-side only)
 #   OPENROUTER_API_KEY      — OpenRouter API key for LLM calls
+# D1/R2:
+#   Create/bind the database and bucket named below before deployment.
+#   R2 (matches [[r2_buckets]] bucket_name): pnpm r2:bucket:create
+#   Verify: pnpm r2:bucket:info | pnpm r2:buckets:list
+#   From repo root: pnpm backend:r2:bucket:create (same for :info / :list).
 
 name = "abyss-durable-orchestrator"
 main = "src/index.ts"
@@ -11,26 +14,54 @@ compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 
 # ---------------------------------------------------------------------------
-# Build — esbuild aliases for the contracts module.
+# Module aliasing for Wrangler's esbuild-based bundler.
 # ---------------------------------------------------------------------------
-[build]
-alias = { "@contracts" = "../src/features/generationContracts" }
+[alias]
+# Esbuild alias substitution does not resolve a directory to index.ts; point at the entry file.
+"@contracts" = "../src/features/generationContracts/index.ts"
 
 # ---------------------------------------------------------------------------
-# Workflow bindings — one class per pipeline kind.
-# Only Crystal Trial is wired in Phase 1; Topic Content, Topic Expansion,
-# and Subject Graph land in Phase 2.
+# Workflow bindings — one Cloudflare Workflow class per pipeline kind.
 # ---------------------------------------------------------------------------
-# [[workflows]]
-# binding = "CRYSTAL_TRIAL_WORKFLOW"
-# class_name = "CrystalTrialWorkflow"
+[[workflows]]
+name = "crystal-trial-workflow"
+binding = "CRYSTAL_TRIAL_WORKFLOW"
+class_name = "CrystalTrialWorkflow"
+
+[[workflows]]
+name = "topic-expansion-workflow"
+binding = "TOPIC_EXPANSION_WORKFLOW"
+class_name = "TopicExpansionWorkflow"
+
+[[workflows]]
+name = "subject-graph-workflow"
+binding = "SUBJECT_GRAPH_WORKFLOW"
+class_name = "SubjectGraphWorkflow"
+
+[[workflows]]
+name = "topic-content-workflow"
+binding = "TOPIC_CONTENT_WORKFLOW"
+class_name = "TopicContentWorkflow"
 
 # ---------------------------------------------------------------------------
-# Durable Object binding for per-run event-bus pub/sub (SSE tailing).
+# D1 queryable durable state.
 # ---------------------------------------------------------------------------
-# [[durable_objects.bindings]]
-# name = "RUN_EVENT_BUS"
-# class_name = "RunEventBus"
+[[d1_databases]]
+binding = "GENERATION_DB"
+database_name = "abyss-generation-state"
+database_id = "00000000-0000-0000-0000-000000000000" # replace with production D1 database id
+
+# ---------------------------------------------------------------------------
+# R2 artifact storage.
+# ---------------------------------------------------------------------------
+[[r2_buckets]]
+binding = "GENERATION_ARTIFACTS_BUCKET"
+bucket_name = "abyss-generation-artifacts"
+
+# ---------------------------------------------------------------------------
+# Durable Objects are intentionally not bound for v1. Add a narrow binding only
+# after a proven D1 contention or live-fanout coordination need.
+# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Environment variables (non-secret — safe for version control).
@@ -40,9 +71,3 @@ alias = { "@contracts" = "../src/features/generationContracts" }
 # Production origin(s) go first; localhost is always included for dev.
 ALLOWED_ORIGINS = "https://abyss.globesoul.com,https://littlething666.github.io,http://localhost:3000"
 
-# ---------------------------------------------------------------------------
-# Placement — keep the Worker close to Supabase (us-east).
-# ---------------------------------------------------------------------------
-[placement]
-mode = "targeted"
-region = "gcp:us-east4"

@@ -68,3 +68,10 @@ export {
   StudyCardType,
   MiniGameType,
 } from './_shared';
+
+export {
+  jsonSchemaResponseFormat,
+  JSON_SCHEMA_RESPONSE_FORMAT_BY_KIND,
+  JSON_SCHEMA_RESPONSE_FORMAT_NAMES,
+  type JsonSchemaResponseFormat,
+} from './jsonSchemaResponseFormats';

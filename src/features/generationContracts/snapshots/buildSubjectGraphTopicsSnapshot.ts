@@ -3,6 +3,7 @@ import {
   assertIsoTimestamp,
   assertNonEmptyString,
   assertPositiveInteger,
+  assertString,
 } from './_validators';
 
 export interface BuildSubjectGraphTopicsSnapshotParams {
@@ -33,6 +34,10 @@ export interface BuildSubjectGraphTopicsSnapshotParams {
  * The snapshot fully determines `input_hash`, so any change to model,
  * prompt template, schema, checklist, or strategy brief must be reflected
  * in the inputs to this builder.
+ *
+ * `focus_constraints` may be empty (no learner-supplied constraints, or
+ * pass-through from an upstream step). It is trimmed so hashing matches
+ * prompt builders that gate on `focusConstraints.trim()`.
  */
 export function buildSubjectGraphTopicsSnapshot(
   p: BuildSubjectGraphTopicsSnapshotParams,
@@ -56,10 +61,7 @@ export function buildSubjectGraphTopicsSnapshot(
     'strategyBrief.domain_brief',
     p.strategyBrief.domain_brief,
   );
-  assertNonEmptyString(
-    'strategyBrief.focus_constraints',
-    p.strategyBrief.focus_constraints,
-  );
+  assertString('strategyBrief.focus_constraints', p.strategyBrief.focus_constraints);
 
   return {
     snapshot_version: 1,
@@ -70,6 +72,9 @@ export function buildSubjectGraphTopicsSnapshot(
     captured_at: p.capturedAt,
     subject_id: p.subjectId,
     checklist: { ...p.checklist },
-    strategy_brief: { ...p.strategyBrief },
+    strategy_brief: {
+      ...p.strategyBrief,
+      focus_constraints: p.strategyBrief.focus_constraints.trim(),
+    },
   };
 }

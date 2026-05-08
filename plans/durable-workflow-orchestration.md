@@ -1,13 +1,19 @@
 <aside>
 📌
 
-**Status:** Plan v3, 2026-05-04. Rewritten after architecture review and user decisions: feature-owned generation contracts, Supabase Postgres v1 state, `RunInputSnapshot`, strict pipeline parsers with legacy parser deprecation, OpenRouter response-healing retained for v1, [AGENTS.md](http://AGENTS.md) durable-run composition exception, corrected Crystal Trial event semantics, Phase 1 budget guard, and complete Generation Client routing coverage.
+**Status:** Plan v3, 2026-05-08. Phases 0–3.5 complete. **Phase 3.6 is now complete (2026-05-07).** All four blockers resolved: atomic idempotency RPC, retry checkpoint lineage, Subject Graph Stage B loud-fail semantics, and strict SSE/client transport decoding. Phase 4 productionization has started: backend reads/intents/prompt seams/stage cache keys are landed, durability hardening added D1 event semantic idempotency, explicit Workflow retry/timeout constants, terminal `WorkflowFail` → `NonRetryableError` mapping, and backend Learning Content artifact materialization before `run.completed`. Remaining Phase 4 critical work: prove Workflow replay/concurrency behavior with Cloudflare runtime integration coverage, then delete local-runner/settings legacy.
+
+**Current infrastructure note:** Phase 4 targets Workflows + D1 + R2. Numbered
+migration and hosted Supabase references in earlier phase logs are historical.
+Workflows own durable execution, D1 owns queryable run/job/event/usage/artifact
+metadata plus the Learning Content Store, R2 owns artifact/checkpoint blobs, and
+Durable Objects are optional coordination infrastructure only.
 
 </aside>
 
 ## Implementation Status
 
-Last updated: 2026-05-05. Reflects Phase 0 complete and Phase 0.5 complete (all steps 1–7 landed in workspace). PRs are stacked: each step's PR targets the previous step's branch as its base.
+Last updated: 2026-05-08. Reflects Phase 0 complete, Phase 0.5 complete, Phase 1 PRs A–G landed, Phase 2 PRs 2A–2E landed, Phase 3 (Observability + full budgets) core steps 3a–3i landed, Phase 3.5 landed, Phase 3.6 landed (2026-05-07 — atomic idempotency, retry lineage, Stage B loud-fail, strict transport decoding), and Phase 4 started with backend generation policy, Learning Content Store foundations, intent-only durable submission, backend prompt seams, parent-bound Topic Content cache keys, D1 event semantic idempotency, explicit Workflow retry/timeout constants, terminal `WorkflowFail` → `NonRetryableError` mapping, and backend artifact materialization into the Learning Content Store before completion. PRs are stacked: each step's PR targets the previous step's branch as its base.
 
 ### Phase 0 — Reliability hardening + shared contracts
 
@@ -42,25 +48,99 @@ Last updated: 2026-05-05. PRs are stacked on `feat/durable-generation-client-pha
 
 - [x] **PR-A (`backend/` skeleton).** Workspace scaffold, `wrangler.toml`, `tsconfig.json` with `@contracts/*` path-mapping, minimal Hono app (`GET /health` + 404 catch-all), `Env` type, Vitest config, CI workflow (`backend-ci.yml`). All 2 smoke tests green; root 182-file / 1686-test suite unchanged. **Landed in workspace 2026-05-05.**
 - [x] **PR-B (Supabase schema).** Landed in workspace 2026-05-05. Adds `migrations/0001_init.sql` (full schema: devices, runs, jobs, events, artifacts, usage_counters + `allocate_event_seq`, `increment_runs_started`, `record_tokens` RPC functions + all Phase 1 indexes) and `migrations/0002_indexes.sql` (placeholder for future indexes). Adds `backend/src/repositories/` with shared types (`types.ts`), Supabase client factory (`supabaseClient.ts`), and four repos (`devicesRepo`, `runsRepo`, `artifactsRepo`, `usageCountersRepo`) bundled via `makeRepos(env)` barrel. 18 unit tests against manual DI mock clients (no `vi.mock` needed). Root 1706-test suite + 254 eval tests green.
-- [x] **PR-C (HTTP surface, no workflow yet).** Landed in workspace 2026-05-05. Adds full Hono API surface: `POST /v1/runs` (cache-hit path works, Workflow creation stubbed), `GET /v1/runs`, `GET /v1/runs/:id`, `POST /v1/runs/:id/cancel` (cooperative cancel with `requestCancel` repo method), `POST /v1/runs/:id/retry`, `GET /v1/runs/:id/events` (SSE replay of persisted events, live tail stubbed), `GET /v1/artifacts/:id`, `PUT /v1/settings` (Phase 1 mirror). Middleware chain: CORS → device-id (UUID validation + devices upsert) → idempotency (POST /v1/runs only). Budget guard (minimal Phase 1 caps: 10 runs/day, 500K tokens/day) returns 429 before run creation. Added `findByIdempotencyKey` and `requestCancel` to `IRunsRepo`. 22 tests pass, 1 skipped (idempotency integration test needs mock Supabase). Root 1708-test suite + 254 eval tests green.
+- [x] **PR-C (HTTP surface, no workflow yet).** Landed in workspace 2026-05-05. Adds full Hono API surface: `POST /v1/runs` (cache-hit path works, Workflow creation stubbed), `GET /v1/runs`, `GET /v1/runs/:id`, `POST /v1/runs/:id/cancel` (cooperative cancel with `requestCancel` repo method), `POST /v1/runs/:id/retry`, `GET /v1/runs/:id/events` (SSE replay of persisted events, live tail stubbed), `GET /v1/artifacts/:id`, and a temporary `PUT /v1/settings` mirror later removed by the Phase 4 reset. Middleware chain: CORS → device-id (UUID validation + devices upsert) → idempotency (POST /v1/runs only). Budget guard (minimal Phase 1 caps: 10 runs/day, 500K tokens/day) returns 429 before run creation. Added `findByIdempotencyKey` and `requestCancel` to `IRunsRepo`. 22 tests pass, 1 skipped (idempotency integration test needs mock Supabase). Root 1708-test suite + 254 eval tests green.
 - [x] **PR-D (Workflow class).** Landed in workspace 2026-05-05. Adds `CrystalTrialWorkflow` extending `WorkflowEntrypoint` with all six steps (plan → generate → parse → validate → persist → ready), cooperative cancel via `checkCancel` before every boundary, `WorkflowFail`/`WorkflowAbort` error classes, server-side `openrouterClient.callCrystalTrial` (strict `json_schema` + response-healing plugin), `budgetGuard.assertBelowDailyCap` (10 runs/day, 500K tokens/day), `[build]` esbuild alias for `@contracts`, and `cloudflare:workers` type integration. Parse step carries `@ts-expect-error` for `Serializable<Record<string, unknown>>` constraint (safe at runtime — DB stores `jsonb`). 15 new tests (7 budget guard + 8 openrouter client) all green. Root 186 files / 1723 tests + 254 eval tests green.
-- [ ] **PR-E (Frontend wiring).** Pending.
-- [ ] **PR-F (Hydration + lifecycle).** Pending.
-- [ ] **PR-G (E2E + cancel + SSE-resume tests).** Pending.
+- [x] **PR-E (Frontend wiring).** Landed in workspace 2026-05-05. Adds `src/infrastructure/http/apiClient.ts` (base fetch wrapper with `X-Abyss-Device` header, JSON request/response, timeout handling, and `ApiError` class), `src/infrastructure/http/sseClient.ts` (SSE stream client: opens `GET /v1/runs/:id/events`, parses SSE frames into typed `RunEvent`s via `rowToRunEvent` normalizer that handles Worker-side column naming, supports `Last-Event-ID` / `lastSeq` resumption), and `src/infrastructure/repositories/DurableGenerationRunRepository.ts` (implements `IGenerationRunRepository` against the Hono Worker API — `submitRun` sends `POST /v1/runs` with `Idempotency-Key` header, `streamRunEvents` delegates to `openSseStream`, `cancelRun` POSTs `/:id/cancel`, `retryRun` POSTs `/:id/retry`, `listRuns` parses Worker `{ runs: [...] }` response, `getArtifact` returns inline `ArtifactEnvelope` from `GET /v1/artifacts/:id`; normalises Worker column names to camelCase client types via `workerRunToSnapshot` and `mapWorkerJobStatus`). Updates `src/infrastructure/wireGenerationClient.ts` to replace the `unreachableDurableRepo` stub with a real `DurableGenerationRunRepository` when both `NEXT_PUBLIC_DURABLE_RUNS` and `NEXT_PUBLIC_DURABLE_GENERATION_URL` are configured (fallback stub preserved for builds where the Worker is unreachable). `ApiClient` interface now exposes `baseUrl` and `deviceId` as read-only fields for SSE wiring. Adds `src/features/generationContracts/durableGenerationBoundary.test.ts` enforcing that features, components, and hooks NEVER import `DurableGenerationRunRepository`, `@/infrastructure/http/apiClient`, or `@/infrastructure/http/sseClient` directly — only `wireGenerationClient.ts` is allowlisted. All 186 existing test files (1716 tests) continue to pass.
+- [x] **PR-F (Hydration + lifecycle).** Landed in workspace 2026-05-05. Rewrites `useContentGenerationHydration` with backend-driven hydration: fetches active durable runs from the Worker via `client.listActive()`, reconstructs `RunInput` from each run's `snapshotJson`, and calls `handlers.observeRun()` to open SSE event streams, apply artifacts through the idempotent `AppliedArtifactsStore` (dedupe by `contentHash`), and fire legacy AppEventBus events. Patches `useContentGenerationLifecycle` with explicit documentation that backend-routed (durable) runs naturally skip abort — `DurableGenerationRunRepository` never registers `AbortController` instances in the content generation store, so `beforeunload` abort only touches local-run controllers. Demotes `contentGenerationLogRepository` JSDoc to *UI read-cache only* (the Dexie `abyss-content-generation-logs` store is no longer authoritative for generation run state). Adds `src/utils/consumeAsync.ts` utility with cooperative cancellation (returns `[stop, done]` tuple). Extends `GenerationRunEventHandlers` interface with `getLastAppliedSeq(runId)` for resumable hydration tracking and monotonic per-run seq recording in the `observeRun` event loop. Exports `getGenerationRunEventHandlers()` and `isDurableRunsEnabled()` from `wireGenerationClient.ts` for hydration hook access. 25 new/updated tests across `generationRunEventHandlers.test.ts` (3 new seq-tracking tests) and `consumeAsync.test.ts` (7 tests) all green. Root 139 files / 1448 tests + 254 eval tests green.
+- [x] **PR-G (E2E + cancel + SSE-resume tests).** **Landed in workspace 2026-05-05.**
+  - **Backend cancel race tests** (`backend/src/routes/runs.cancel.test.ts`, 4 tests): cancel-before-start (queued → 200 cancel_acknowledged), cancel-after-completion (terminal → 409), device-ownership enforcement (404 for different device), cancel-mid-stage (generating_stage → 200). All mocked at the Supabase client layer via `vi.doMock('@supabase/supabase-js')` with per-test fake query-builder chains; full middleware → route → repo integration coverage.
+  - **Backend SSE resume tests** (`backend/src/routes/runEvents.sse.test.ts`, 5 tests): correct SSE Content-Type + cache headers, Last-Event-ID header replays only `seq > lastSeq` events, `?lastSeq=` query parameter parity, 404 on device-ownership mismatch, keepalive comment emitted for active runs.
+  - **Frontend SSE client unit tests** (`src/infrastructure/http/sseClient.test.ts`, 11 tests): single/multi-event frame parsing, keepalive comment suppression, `artifact.ready` payload normalization (including `run.artifact-ready` alias), `run.cancel-acknowledged` / `run.cancelled` / `superseded` reason routing, `run.failed` failure-code mapping, non-200 HTTP error handling, Last-Event-ID header forwarding, and AbortSignal propagation. Also fixes `openSseStream` to flush the remaining buffer on stream end (trailing blank-line termination).
+  - **OpenRouter request-shape lockstep test** (`src/infrastructure/llm/openrouterRequestShapeLockstep.test.ts`, 7 tests): asserts shared core body keys match (model, messages, response_format, plugins), response_format uses `json_schema` (not `json_object`), plugins shape identical when healing is on/off, browser excludes server-only `usage` field, Worker includes `usage.include`, and neither client sets `stream: true` for pipeline calls. Snapshots the Worker's `callCrystalTrial` canonical shape against the browser's `HttpChatCompletionsRepository` expected keys.
+  - **E2E tab-close spec** (`tests/crystal-trial/durable-tab-close.spec.ts`, 2 tests): tab-close-survival (submit trial generation → close tab → reopen → verify trial status is 'available' or 'cooldown') and cancel-before-start smoke (verify abort controller maps are plumbed to the store). Both skip when `NEXT_PUBLIC_DURABLE_RUNS` is false or the Worker is unreachable, with clear skip messages.
+  - **Root test suite**: 191 files / 1753 tests + 254 eval tests green (+4 new test files, +27 new vitest tests vs PR-F). Backend: 6 test files, 46 passed + 1 skipped.
 
 ### Phase 2 — Migrate remaining pipelines
 
-- [ ]  Pending.
+Last updated: 2026-05-06. Backend PRs implemented in-workspace (not separate GitHub PRs since Phase 2 spans all three pipelines at once).
+
+- [x] **PR-2A (Migrations).** `backend/migrations/0003_stage_checkpoints.sql` (stage-level checkpoint persistence table), `backend/migrations/0004_supersedes_key.sql` (supersedes_key on runs + partial unique index for active supersession). Extended `backend/src/repositories/types.ts` with `StageCheckpointRow` / `StageCheckpointStatus` types. Created `backend/src/repositories/stageCheckpointsRepo.ts` (`IStageCheckpointsRepo` — `byRun`, `upsert`, `markReady`, `markFailed`). Extended `backend/src/repositories/index.ts` barrel with `stageCheckpoints` repo. Expanded `backend/src/budget/budgetGuard.ts` with per-kind budget caps (`PIPELINE_BUDGET_CAPS` covering all four `PipelineKind` — crystal-trial: 10/500K, topic-content: 30/4M, topic-expansion: 60/1.5M, subject-graph: 8/800K). Updated `assertBelowDailyCap` signature to accept `PipelineKind` parameter. Extended `RunRow` with `supersedes_key` column. Added `IRunsRepo.cancelSupersededRun` method. Rewrote `backend/src/routes/runs.ts` to handle all four pipeline kinds with per-kind budget enforcement, supersession transaction for topic-expansion, and Workflow binding dispatch (all four Workflow classes now created at submit-time). Added `SubmitRunBody` type to `backend/src/types/api.ts`. Updated budget guard tests with per-kind cap coverage. Updated repos test with `supersedes_key` in base run fixture.
+- [x] **PR-2B (Topic Expansion Workflow).** Created `backend/src/workflows/topicExpansionWorkflow.ts` — single-stage durable pipeline (plan → generate → parse → validate → persist → ready) mirroring `runExpansionJob.ts`. Server-side `existingConceptRegistry` validation (duplicate concept stems, pool-size minimum, per-card shape). Added `callTopicExpansion` to `backend/src/llm/openrouterClient.ts` with strict json_schema, response-healing plugin, usage tracking, and 429/5xx error handling. Added 4 new OpenRouter client tests for topic expansion.
+- [x] **PR-2C (Subject Graph Workflow).** Created `backend/src/workflows/subjectGraphWorkflow.ts` — two-stage durable pipeline (Stage A: Topic Lattice → Stage B: Prerequisite Edges). Stage B input_hash covers the Stage A artifact (via `lattice_artifact_content_hash` in snapshot). Stage-level resume via `stage_checkpoints`. Parse step runs deterministic edge validation (self-loop check, deduplicate, array shape). Added `callSubjectGraph` to `backend/src/llm/openrouterClient.ts` with optional temperature parameter. Added 3 new OpenRouter client tests for subject graph.
+- [x] **PR-2D (Topic Content Workflow).** Created `backend/src/workflows/topicContentWorkflow.ts` — three-stage durable pipeline (theory → study-cards → mini-games ×3 in parallel) mirroring `runTopicGenerationPipeline.ts`. Stage-level resume via `resolveWantedStages` reading `stage` / `resumeFromStage` from snapshot and `stage_checkpoints`. Mini-games run in parallel (CATEGORY_SORT, SEQUENCE_BUILD, MATCH_PAIRS) with each gameType as its own checkpoint. Cross-bucket dedupe step after all mini-games complete. Per-stage validation (coreConcept presence, card pool size, mini-game items minimum). Added `callTopicContent` to `backend/src/llm/openrouterClient.ts` with stage-aware schema naming. Added 4 new OpenRouter client tests for topic content.
+- [x] **Workflow binding wiring.** Updated `backend/wrangler.toml` with all four Workflow bindings (CRYSTAL_TRIAL_WORKFLOW, TOPIC_EXPANSION_WORKFLOW, SUBJECT_GRAPH_WORKFLOW, TOPIC_CONTENT_WORKFLOW). Updated `backend/src/env.ts` `Env` type with the four Workflow bindings. Updated `POST /v1/runs` and `POST /v1/runs/:id/retry` route handlers to dispatch Workflow creation for all four pipeline kinds.
+- [x] **PR-2E (Hardening).** Landed in workspace 2026-05-06. Cross-pipeline testing suite with zero production code changes: (a) OpenRouter request-shape lockstep extended to all four pipeline call sites (`topic-expansion`, `subject-graph`, `topic-content` lockstep snapshots alongside existing Crystal Trial; 15 new assertions across 3 describe blocks); (b) cancel race tests per pipeline kind — parametric `for (const kind of PIPELINE_KINDS)` loop covering cancel-before-start (200), cancel-after-completion (409), and cancel-mid-stage (200) for `crystal-trial`, `topic-content`, `topic-expansion`, and `subject-graph` (9 new tests); (c) SSE resume tests for all four pipeline kinds — parametric loop verifying correct SSE Content-Type/cache headers, Last-Event-ID replay (events with `seq > lastSeq` only), and 404 on device-ownership mismatch for all four kinds (12 new tests); (d) durable-repo retry tests covering `{ stage }` + `{ jobId }` across all four pipeline kinds — parametric matrix testing simple retry (no opts), stage-only, jobId-only, and stage+jobId combined for `crystal-trial` (2+2+1 cases), `topic-content` (3+2+2 cases), `topic-expansion` (1+1+1 cases), and `subject-graph` (2+2+2 cases) — 22 new test cases. Backend: 6 test files, 99 passed + 1 skipped (+24 tests vs PR-2D). Frontend: 191 test files, 1851 passed + 1 skipped (+65 tests vs PR-2D).
+- [x] **Per-kind routing in `generationClient.ts`.** The `NEXT_PUBLIC_DURABLE_RUNS_KINDS` env var is parsed in `wireGenerationClient.ts` and wired through `createGenerationClient({ durableKinds })`. The `selectRepoFor(kind, deps)` function routes each `PipelineKind` independently to durable or local repo. Default when `durableRuns` is true: only `crystal-trial`. Operators add more kinds as they migrate (`crystal-trial,topic-expansion,subject-graph,topic-content`).
+- [x] **Frontend Supersedes-Key header passthrough.** The `DurableGenerationRunRepository.submitRun` forwards `Supersedes-Key: te-supersedes:<subjectId>:<topicId>` header for `topic-expansion` submissions. The backend `POST /v1/runs` handler runs a transactional supersession (cancel prior active run with `cancel_reason='superseded'`, create new run) when the header is present. Returns `400 { code: 'config:unexpected-supersedes-key' }` if any other pipeline kind ships the header.
 
 ### Phase 3 — Observability + full budgets
 
-- [ ]  Pending.
+Last updated: 2026-05-06.
+
+- [x] **Step 3a. Historical settings persistence.** `backend/migrations/0005_device_settings.sql` added a temporary `device_settings` table for Plan v3 observability. Phase 4 deleted this table from the canonical init script because pipeline policy is backend-owned and not a device setting.
+- [x] **Step 3b. Historical settings repository.** `backend/src/repositories/deviceSettingsRepo.ts` was a temporary `IDeviceSettingsRepo`. Phase 4 deleted the repository and backend settings route.
+- [x] **Step 3c. Settings endpoint persistence.** `backend/src/routes/settings.ts` — full GET/PUT implementation replacing the Phase 1 stub. PUT accepts `model-bindings`, `response-healing`, `durable-kinds` keys (well-known allowlist); unknown keys silently ignored. GET merges all rows into a single `{ settings: { [key]: value } }` response. 5 integration tests green (upsert, unknown-key rejection, no-keys 400, invalid-JSON 400, GET round-trip).
+- [x] **Step 3d. Observability tracer.** `backend/src/observability/tracer.ts` — `createTracer()` factory returning `{ startTrace(start), finalizeTrace(trace, success, opts?) }`. Every trace captures: `traceId`, `runId`, `deviceId`, `pipelineKind`, `stage`, `model`, `promptVersion`, `schemaVersion`, `inputHash`, `providerHealingRequested`, `startedAt`, `finishedAt`, `success`, `errorCode`, `errorMessage`, `usage` (promptTokens, completionTokens, totalTokens), `durationMs`. Traces emitted as structured JSON via `console.log('[llm-trace] ...')` (Cloudflare logpush / tail workers target). 6 unit tests green (success trace shape, failure trace shape, default version numbers, unique traceId per call, failure without usage, all required fields).
+- [x] **Step 3e. Workflow observability helpers.** `backend/src/workflows/shared/workflowObservability.ts` — `traceLlmCall(start)` returns `{ trace, finalizeSuccess(usage), finalizeFailure(code, msg) }` wrapper for the tracer, and `recordTokensRobust(deviceId, repos, trace, usage)` that logs failures via `console.error` instead of silently swallowing them (Phase 3 robust token accounting).
+- [x] **Step 3f. Wire tracer into all four Workflow classes.** Updated `crystalTrialWorkflow.ts`, `topicContentWorkflow.ts`, `subjectGraphWorkflow.ts`, and `topicExpansionWorkflow.ts` to: (1) import `traceLlmCall` + `recordTokensRobust`; (2) create a trace before every LLM call with pipeline-kind, stage, model, and version metadata from the snapshot; (3) finalize the trace on success (with usage) or failure (with error code/message); (4) replace silent `try/catch /* non-critical */` token recording with `recordTokensRobust` that surfaces failures. Subject Graph and Topic Content workflows updated their `runStage` helper signatures to accept `inputHash` for tracing.
+- [x] **Step 3g. Failure dashboard endpoint.** `backend/src/routes/runs.stats.ts` — `GET /v1/runs/stats?days=N&pipelineKind=&model=&failureCode=` aggregating runs by pipeline kind, failure code, model, and schema version. Returns `{ windowDays, windowStart, windowEnd, pipelines: [{ pipelineKind, totalRuns, failedRuns, failureRate, byFailureCode, byModel, bySchemaVersion }] }`. Failure-stats filters are validated at the shared route-validation seam (`days` must be 1–90). Requires `X-Abyss-Device` header. Wired into `src/index.ts` before `GET /v1/runs/:id` so `/v1/runs/stats` cannot be captured by the generic run-id route.
+- [x] **Step 3h. Runs repo extension.** Extended `IRunsRepo` with `listInWindow(days: number): Promise<RunRow[]>` method (queries `runs` table with `created_at >= since` and 1000-row limit). Implemented in `createRunsRepo`.
+- [x] **Step 3i. Tests.** 8 new test files / describe blocks: `tracer.test.ts` (6 tests), `settings.test.ts` (5 integration tests), `runs.stats.test.ts` (8 aggregation logic tests — empty, per-kind, per-model, per-schema-version, filtering, missing-field graceful, day-window handling, sort order, lastSeenAt tracking). All 118 backend tests green + 254 eval tests unchanged.
+
+**Deferred to later Phase 3 / Phase 4 sub-steps:**
+- Full Langfuse integration adapter (tracer currently emits to console, ready for forwarding).
+- Per-device usage dashboard querying `usage_counters` table (the `GET /v1/runs/stats` endpoint exists; a UI dashboard component is deferred).
+
+### Phase 3.5 — Contract Convergence + Backend Correctness
+
+Last updated: 2026-05-06.
+
+- [x]  **Step 1 (Worker Contract Adapter).** Created `backend/src/contracts/generationContracts.ts` — single import surface for backend workflows re-exporting `inputHash`, `contentHash`, `strictParseArtifact`, `semanticValidateArtifact`, `jsonSchemaResponseFormat`, `ArtifactKind`, schema version constants, failure codes, run event types, and eval fixtures from `@contracts`. Backend typecheck green with 0 direct `@contracts/*` imports outside the adapter.
+- [x]  **Step 1A (Feature-Owned JSON Schema Response Formats).** Created `src/features/generationContracts/schemas/jsonSchemaResponseFormats.ts` with `jsonSchemaResponseFormat(kind)` returning OpenRouter `{ type: 'json_schema', json_schema: { name, strict: true, schema } }` for all nine `ArtifactKind` literals. Derived from Zod schemas via `z.toJSONSchema()`. Stable schema names (e.g., `crystal_trial`, `topic_theory`, `subject_graph_topics`). Exported through the contracts barrel. Backend `openrouterClient.ts` updated to accept `JsonSchemaResponseFormat` instead of hand-written `jsonSchema` objects.
+- [x]  **Step 2 (Canonical Hashes Everywhere).** Removed all 5 local `computeInputHash` implementations from backend workflows + routes. All workflows and routes now use `inputHash(snapshot)` from contracts. All random `cnt_*` placeholder content hashes replaced with `await contentHash(parsedPayload)`. Stage checkpoints carry contract-owned `inputHash` values.
+- [x]  **Step 3 (Strict Parse + Semantic Validation).** All 4 workflows now use `strictParseArtifact(kind, raw)` + `semanticValidateArtifact(kind, payload, context)` instead of `JSON.parse` + ad-hoc manual validation. Parse failures produce `parse:json-mode-violation` / `parse:zod-shape` codes. Semantic failures produce `validation:semantic-*` codes. Subject Graph Stage B preserves the deterministic `correctPrereqEdges` exception.
+- [x]  **Step 4 (Typed RunEvent Emission).** All event emission uses canonical type names: `run.status` (with `{ status, stage }` body), `artifact.ready` (with full `{ artifactId, kind, contentHash, inputHash, schemaVersion }` payload), `run.completed`, `run.failed`, `run.cancelled`, `run.cancel-acknowledged`. No `run.status:planning` or `run.status:generating-stage` legacy event names remain. No partial `artifact.ready` payloads (all include `kind`, `inputHash`, `schemaVersion`).
+- [x]  **Step 4A (Artifact Cache Semantics).** Routes use artifact-kind-aware cache lookup (`cacheArtifactKind(kind)` mapping: crystal-trial→crystal-trial, topic-expansion→topic-expansion-cards, subject-graph→subject-graph-topics, topic-content→topic-theory). Cache-hit `artifact.ready` events include full typed payloads.
+- [x]  **Step 5 (Atomic Budget Reservation).** Created `0006_phase35_corrective.sql` migration with `reserve_run_budget` RPC function that locks `usage_counters` row, checks run/token caps, and increments `runs_started` in a single transaction. Updated `assertBelowDailyCap` signature from `(deviceId, IUsageCountersRepo, kind)` → `(deviceId, SupabaseClient, kind)` with fail-closed semantics when RPC is not deployed. Exposed `repos.db` on the `Repos` bundle. Updated all 5 call sites. Budget guard tests rewritten for atomic RPC mock.
+- [x]  **Step 5A (Durable Enqueue).** Workflow dispatch failure in `POST /v1/runs` now marks the run `failed_final` with `config:invalid` code, emits `run.failed` event, and returns `502` — no unowned `queued` runs can remain. Retry route also follows the same enqueue/failure policy.
+- [x]  **Step 6 (Browser Transport CORS).** Added `supersedes-key`, `last-event-id`, `cache-control` to CORS allowed request headers in `backend/src/middleware/cors.ts`.
+- [x]  **Step 6A (Supersession Transaction Fix).** Migration drops and recreates the `idx_runs_active_supersedes` partial unique index to exclude `ready` status. A completed (`ready`) Topic Expansion no longer blocks future superseding runs with the same `Supersedes-Key`. The `cancelSupersededRun` repo method already filtered by non-terminal active states.
+- [x]  **Step 7 (Stats Scope + Idempotency TTL).** Stats route now filters `listInWindow` results by the requesting device's `device_id` — pre-auth v1 stats are per-device. Idempotency middleware enforces 24-hour TTL: dedupes only when the existing run was created <24h ago; stale keys create fresh runs.
+
+### Phase 3.6 — Reopened durable correctness gate (resolved 2026-05-07)
+
+Last updated: 2026-05-07. **All blockers resolved.** See `phase36-durable-workflow-orchestration-review.md` for the original review and resolution log.
+
+- [x]  **Step 1 (Live SSE transport).** Live SSE tail in `backend/src/routes/runEvents.ts`: replays `seq > lastSeq`, polls every 2s, keepalive comments every cycle, closes after terminal. Safety valve: 120 cycles (~4 min). **Review fix:** Aligned constants/comments (removed unused `KEEPALIVE_INTERVAL_MS`, `MAX_KEEPALIVE_CYCLES` → `MAX_POLL_CYCLES` = 120). Added `cancel()` to `ReadableStream` source to clean up poll interval when browser disconnects.
+- [x]  **Step 2 (Hydration cursor and terminal apply semantics).** `GET /v1/runs?status=active` now excludes terminal `ready` (only `queued` through `persisting`). Hydration fetches recent terminal `ready`/`applied-local` runs, excludes `failed_final`/`cancelled`, and deduplicates by `runId` (active ∪ recent-ready → unique). Event cursors are persisted via `RunEventCursorStore` and `observeRun()` seeds `startSeq` from `cursorStore.get(runId)`. **Review follow-up:** `generationRunEventHandlers` now advances the durable cursor only after successful event handling, legacy completion requires at least one newly applied artifact, and the hydration hook's no-op cursor pre-read loop was removed.
+- [x]  **Step 3 (Retry route contract).** `POST /v1/runs/:id/retry` follows budget, dispatch, enqueue-failure contract and recomputes `inputHash` from a planned retry snapshot. **2026-05-07 P0 #1 fix:** `resolveWantedStages()` in `topicContentWorkflow.ts` now prefers `snapshot.resume_from_stage` over `snapshot.stage`. `subjectGraphWorkflow.ts` now honours `snapshot.retry_stage` to skip Stage A or B as appropriate. The retry route copies parent `ready` stage checkpoints to the child run so workflows naturally skip already-completed stages. `retry_of_job_id` is recorded on the snapshot for audit.
+- [x]  **Step 4 (Single budget reservation owner).** Budget reserved only at `POST /v1/runs` and `POST /v1/runs/:id/retry`. **Review fix:** Idempotency check moved BEFORE budget reservation in the route — duplicate submissions with the same key return the existing `runId` (200) without reserving budget.
+- [x]  **Step 5 (Idempotency TTL schema correction).** Dedicated `idempotency_records` table with `UNIQUE (device_id, key)`, 24h TTL. **Review fix:** Replaced volatile partial index `WHERE expires_at < now()` with plain `expires_at` index. **2026-05-07 P0 #2 fix:** Added `atomic_submit_run` RPC (`backend/migrations/0008_atomic_submit.sql`) that serialises on `(device_id, idempotency_key)` via `pg_advisory_xact_lock`, then checks idempotency, reserves budget, inserts the run row, and records the idempotency key — all in one Postgres transaction. The losing concurrent caller receives the winning `runId` with zero duplicate budget reservation or run rows.
+- [x]  **Step 6 (Typed RunEvent persistence).** Typed event builders in `backend/src/contracts/typedEvents.ts`. **Review fix:** Removed `stage` from `RunStatusPayload` and `buildRunStatusEvent()` — stage tracking uses `stage.progress` events exclusively, aligning the backend contract with the frontend `RunEvent` union. Updated all workflow callers.
+- [x]  **Step 7 (Status naming mapper and strict transport decoding).** Partial → resolved. **Review fix:** Moved status mapper from `backend/src/routes/statusMapper.ts` to `backend/src/contracts/statusMapper.ts` (backend contracts, not route layer). `dbStatusToTransport()` now **throws** on unknown statuses instead of returning as-is. Added frontend `parseRunStatus()` in `src/features/generationContracts/runEvents.ts` that throws on non-transport literals. Replaced `DurableGenerationRunRepository.mapWorkerRunStatus()` defensive fallback with `parseRunStatus()`. Old `routes/statusMapper.ts` is now a deprecated re-export. **2026-05-07 P1 #2 fix:** `sseClient.ts` now throws on unknown event types (not defaulting to `run.status: queued`), missing required fields in `artifact.ready`/`run.failed`/`run.status`, and `JSON.parse` errors are caught separately from transport-contract violations. `mapWorkerJobStatus()` now throws on unknown job statuses (not defaulting to `queued`).
+- [x]  **Subject Graph Stage B semantic context (P1 review fix).** Subject Graph workflow now captures `latticeTopicIds` from Stage A's parsed payload (fresh generation) or loads the Stage A artifact from storage (checkpoint resume). **2026-05-07 P1 #1 fix:** Checkpoint load failure now throws `WorkflowFail('precondition:missing-topic', ...)` instead of logging a warning and proceeding with `latticeTopicIds: []`. Retry-stage-only skips for `retry_stage='edges'` and `retry_stage='topics'` are honoured. Stage B also fails loudly when the parent has no Stage A checkpoint but `retry_stage='edges'` is requested. The `correctPrereqEdges` deterministic-repair exception ([AGENTS.md](http://agents.md/) curriculum-prerequisite-edges narrow exception) is explicitly preserved.
+
+#### Review-driven fixes applied 2026-05-07
+
+Per `plans/phase36-durable-workflow-orchestration-review.md`, the following corrections landed:
+
+- **P0 #1** — Retry: `resolveWantedStages` reads `resume_from_stage`; workflows consume `retry_stage`; parent checkpoints copied to child runs in retry route.
+- **P0 #2** — Atomic idempotency: `atomic_submit_run` RPC with `pg_advisory_xact_lock` serialises idempotency + budget + run creation in one Postgres transaction.
+- **P0 #3** — `runsRepo.ts` active filter: removed `ready`.
+- **P0 #4** — Durable cursor persistence: added `RunEventCursorStore` (Dexie v3), deduped hydration runs, filtered recent to `ready`/`applied-local` only.
+- **P0 #5** — Status mapper: moved to `backend/src/contracts/`, throws on unknown statuses, added frontend `parseRunStatus()`.
+- **P1 #1** — Typed events: removed `stage` from `RunStatusPayload`, aligned with shared `RunEvent` contract.
+- **P1 #2** — Subject Graph Stage B: captures `latticeTopicIds` from Stage A for semantic validation; fails loudly on context load failure.
+- **P1 #3** — SSE cleanup: aligned comments/constants to 2s polling, added `cancel()` cleanup.
+- **P1 #4** — Strict transport decoding: `sseClient.ts` throws on unknown events/missing fields; `mapWorkerJobStatus()` throws on unknown statuses.
+
+Test status (2026-05-07): Frontend 35 tests (generationRunEventHandlers + sseClient + DurableGenerationRunRepository) pass; backend 103 pass + 1 skip.
 
 ### Phase 4 — Productionization + cleanup
 
 - [ ]  Pending.
 
-### MCP-write-blocked files (require manual user patches in later phases)
+### [Completed] MCP-write-blocked files (require manual user patches in later phases)
 
 The agent's GitHub MCP write surface refuses any file containing `{{}}` template strings. The seven `.prompt` template files under `src/prompts/` consumed by `interpolatePromptTemplate()` carry every `var` placeholder in the durable pipeline path — edits require a local editor or agent outside that MCP constraint (Phase 0 step 12 landed in [PR #52](https://github.com/littlething666/abyss-engine/pull/52)):
 
@@ -76,7 +156,7 @@ The TypeScript prompt-builder files originally listed in this section (`buildTop
 
 ## Architectural rule
 
-**The backend owns durable execution, authoritative run/artifact/event state, budgets, and server-side model access. The frontend owns intent capture, source-data snapshot submission, visual progress, local read-cache application, and compatibility event emission.**
+**The backend owns durable execution, authoritative run/artifact/event state, budgets, and server-side model access. The frontend owns intent capture, visual progress, backend read orchestration, local UI cache application, and compatibility event emission.**
 
 Browser `CustomEvent`s on the App Event Bus are no longer orchestration for backend-routed generation. They become UI/domain notifications derived from backend `RunEvent`s. Closing the tab must not stop a backend-routed run; reopening the tab must rehydrate progress from the backend and apply artifacts exactly once.
 
@@ -98,9 +178,9 @@ Browser `CustomEvent`s on the App Event Bus are no longer orchestration for back
 
 | # | Decision | Implication |
 | --- | --- | --- |
-| Q1 | Cloudflare-first orchestration; Supabase persistence for v1 | Cloudflare Workflows + Hono Workers execute durable runs. Supabase Postgres stores runs/jobs/events/artifacts/usage. Supabase Storage stores JSON artifacts unless R2 is explicitly selected later. |
-| Q2 | Multi-user, no auth yet; persist a `deviceId` per device | Every row scoped by `device_id`. `deviceId` is **not a security boundary**. Future Supabase Auth migration planned from day one. |
-| Q3 | Backend portability remains required | Hono stays the API surface. Supabase Postgres is the v1 relational adapter; future self-hosted Postgres should require repository-adapter replacement, not feature rewrites. |
+| Q1 | Cloudflare-first orchestration; D1 + R2 persistence for v1 | Cloudflare Workflows + Hono Workers execute durable runs. D1 stores runs/jobs/events/artifacts metadata/usage and the Learning Content Store. Cloudflare R2 stores JSON artifact blobs and checkpoints. |
+| Q2 | Multi-user, no auth yet; persist a `deviceId` per device | Every row scoped by `device_id`. `deviceId` is **not a security boundary**. Future account-auth migration planned from day one. |
+| Q3 | Backend portability remains required | Hono stays the API surface. D1 is the v1 relational adapter; future database changes should require repository-adapter replacement, not feature rewrites. |
 | Q4 | **Hard** durability | Backend orchestrator is in scope from Phase 1. No “in-tab durability” intermediate phase. |
 | Q5 | Parse fail-loud; raise generation correctness from ~50% to ≥90% | Reliability hardening gates backend work. Strict `json_schema`; OpenRouter response-healing requested in v1; one strict parse and one semantic validation pass after provider return. |
 | Q6 | All four generation surfaces are high-cost and load-bearing | In scope: Subject Graph Generation, Topic Content Pipeline, Topic Expansion, Crystal Trial. Minimal per-device budget guard ships with Phase 1; full observability in Phase 3. |
@@ -116,10 +196,11 @@ Browser `CustomEvent`s on the App Event Bus are no longer orchestration for back
 | Q16 | Cancel is cooperative | `runs.cancel_requested_at`; workflow checks between steps. `cancel_acknowledged` and terminal `cancelled` are distinct. |
 | Q17 | Artifact dedupe is per-device for v1 | `(device_id, kind, input_hash)` unique. Global dedupe deferred until auth/threat model is ready. |
 | Q18 | Retries preserve run/job lineage | `POST /v1/runs/:id/retry` creates a new run with `parent_run_id`; rerun job carries `retry_of`. |
-| Q19 | Supabase is v1 system of record | Worker uses Supabase service-role credentials server-side only. Browser never talks directly to Supabase for generation runs. |
+| Q19 | D1 is v1 queryable system of record | Worker uses D1 bindings server-side only. Browser never talks directly to D1 or R2 for generation runs. |
 | Q20 | Legacy permissive parsers are deprecated | Strict pipeline parsers replace them for durable surfaces; permissive parsers are marked legacy and removed after Phase 4. |
 | Q21 | Crystal Trial generation is not trial completion | Durable Crystal Trial artifact application prepares questions and may trigger availability. It must not emit `crystal-trial:completed`; that remains player assessment completion only. |
 | Q22 | OpenRouter response healing remains enabled for v1 pipelines | `response-healing` may be requested together with strict `json_schema`. It is provider-side structured-output support, not downstream parser fallback. |
+| Q23 | Durable Objects are optional coordination only | Ship Workflows + D1 + R2 first. Add a narrow `DeviceRunCoordinatorDO(deviceId)` only if D1 contention, strict per-device serialization, live fanout, or sequence allocation proves necessary. Durable Objects must not replace D1 or Workflows. |
 
 ## Target stack v1
 
@@ -127,8 +208,9 @@ Browser `CustomEvent`s on the App Event Bus are no longer orchestration for back
 | --- | --- | --- |
 | Orchestration | Cloudflare Workflows | Durable execution; sleeps/retries survive Worker restarts. One Workflow class per pipeline kind. |
 | API gateway | Hono on Cloudflare Workers | Portable HTTP interface. No Next.js API routes while static export remains. |
-| State of record | Supabase Postgres | `devices`, `runs`, `jobs`, `events`, `artifacts`, `usage_counters`. Accessed only from Worker/server adapters. Local artifact application remains an IndexedDB read-cache concern. |
-| Artifact store | Supabase Storage v1 | JSON artifacts keyed by device/kind/input hash. R2 remains an optional later storage adapter. |
+| Queryable state | Cloudflare D1 | `devices`, `runs`, `jobs`, `events`, `artifacts` metadata, `usage_counters`, and the Learning Content Store. Accessed only from Worker/server adapters. |
+| Artifact/checkpoint store | Cloudflare R2 v1 | JSON artifacts, stage checkpoints, raw model outputs, eval snapshots, and replay/debug bundles keyed by device/kind/run/hash. |
+| Coordination | Durable Objects, optional | Not part of the v1 critical path. Use only for proven per-device locking, per-run fanout, hot state, or low-latency counters. |
 | LLM gateway | Cloudflare AI Gateway → OpenRouter, or Worker → OpenRouter if AI Gateway blocks response-healing | Must preserve strict `json_schema` and OpenRouter `response-healing` for v1 pipeline calls. |
 | Live updates | SSE from Worker (`/v1/runs/:id/events`) | Closing SSE never cancels a run. Replays missed events via `Last-Event-ID`. |
 | Validation | Zod + OpenRouter `json_schema` strict + semantic validators | Fail-loud after provider return. No broad downstream parsers in durable path. |
@@ -316,8 +398,7 @@ POST   /v1/runs/:id/cancel              cooperative user cancel
 POST   /v1/runs/:id/retry               { stage?, jobId? } → new run, parent_run_id
 GET    /v1/runs?status=active           hydrate on app boot
 GET    /v1/runs?status=recent&limit=N   HUD/history
-GET    /v1/artifacts/:id                signed Supabase Storage download URL or artifact JSON envelope
-PUT    /v1/settings                     mirror surface bindings + healing flag
+GET    /v1/artifacts/:id                artifact JSON envelope proxied from R2
 ```
 
 Every request carries `X-Abyss-Device: <uuid>`. The Worker upserts `devices` and scopes every query by `device_id`.
@@ -328,99 +409,101 @@ Every request carries `X-Abyss-Device: <uuid>`. The Worker upserts `devices` and
 - Worker upserts `devices(id, created_at, last_seen_at, user_id NULL)`.
 - All run data is scoped by `device_id`.
 - Pre-auth disclaimer: anyone with a device UUID can read that device's generation runs. Acceptable for v1 only and documented in threat model.
-- Supabase Auth migration: populate `devices.user_id`, add RLS/auth checks, and allow queries by user-owned devices.
+- Future auth migration: populate `devices.user_id`, validate auth at the Worker boundary, and allow queries by user-owned devices.
 
-## Supabase data model v1
+## D1 Data Model V1
 
-Supabase Postgres schema, simplified:
+D1 schema, simplified:
 
 ```sql
 devices (
-  id uuid primary key,
-  user_id uuid null,
-  created_at timestamptz not null,
-  last_seen_at timestamptz not null
+  id text primary key,
+  user_id text null,
+  created_at text not null,
+  last_seen_at text not null
 );
 
 runs (
-  id uuid primary key,
-  device_id uuid not null references devices(id),
+  id text primary key,
+  device_id text not null references devices(id),
   kind text not null,
   status text not null,
   input_hash text not null,
   idempotency_key text null,
-  parent_run_id uuid null,
-  cancel_requested_at timestamptz null,
+  parent_run_id text null,
+  cancel_requested_at text null,
   cancel_reason text null,
   subject_id text null,
   topic_id text null,
-  created_at timestamptz not null,
-  started_at timestamptz null,
-  finished_at timestamptz null,
+  created_at text not null,
+  started_at text null,
+  finished_at text null,
   error_code text null,
   error_message text null,
-  snapshot_json jsonb not null
+  snapshot_json text not null
 );
 create index idx_runs_device_status_created on runs(device_id, status, created_at desc);
-create unique index idx_runs_device_idempotency on runs(device_id, idempotency_key) where idempotency_key is not null;
+create unique index idx_runs_device_idempotency on runs(device_id, idempotency_key)
+  where idempotency_key is not null;
 
 jobs (
-  id uuid primary key,
-  run_id uuid not null references runs(id),
+  id text primary key,
+  run_id text not null references runs(id),
   kind text not null,
   stage text not null,
   status text not null,
-  retry_of uuid null,
+  retry_of text null,
   input_hash text not null,
   model text not null,
-  metadata_json jsonb null,
-  started_at timestamptz null,
-  finished_at timestamptz null,
+  metadata_json text null,
+  started_at text null,
+  finished_at text null,
   error_code text null,
   error_message text null
 );
 create index idx_jobs_run on jobs(run_id);
 
 events (
-  id bigserial primary key,
-  run_id uuid not null references runs(id),
-  device_id uuid not null references devices(id),
+  id integer primary key autoincrement,
+  run_id text not null references runs(id),
+  device_id text not null references devices(id),
   seq integer not null,
-  ts timestamptz not null,
+  ts text not null,
   type text not null,
-  payload_json jsonb not null,
+  payload_json text not null,
   unique(run_id, seq)
 );
 create index idx_events_run_seq on events(run_id, seq);
 
 artifacts (
-  id uuid primary key,
-  device_id uuid not null references devices(id),
-  created_by_run_id uuid not null references runs(id),
+  id text primary key,
+  device_id text not null references devices(id),
+  created_by_run_id text not null references runs(id),
   kind text not null,
   input_hash text not null,
   storage_key text not null,
   content_hash text not null,
   schema_version integer not null,
-  created_at timestamptz not null,
+  created_at text not null,
   unique(device_id, kind, input_hash)
 );
 
 usage_counters (
   device_id uuid not null references devices(id),
   day text not null,
-  tokens_in bigint not null default 0,
-  tokens_out bigint not null default 0,
+  tokens_in integer not null default 0,
+  tokens_out integer not null default 0,
   runs_started integer not null default 0,
   primary key (device_id, day)
 );
 ```
 
-Supabase access rules:
+D1 access rules:
 
-- Worker uses service-role credentials server-side only.
-- Browser never receives service-role credentials.
-- Pre-auth v1 checks `device_id`; post-auth migration adds Supabase Auth/RLS.
+- Worker accesses D1 through a binding.
+- Browser never talks directly to D1 or R2.
+- Pre-auth v1 checks `device_id`; post-auth migration adds Worker-level auth and user-scoped queries.
+- Store large generated bodies in R2, not D1 JSON/text columns.
 
 ## Idempotency and artifact cache
 
@@ -437,7 +520,7 @@ content_hash = sha256(canonical_json(ArtifactPayload))
 Artifact path:
 
 ```txt
-supabase://generation-artifacts/{deviceId}/{kind}/{input_hash}.json
+r2://abyss-generation-artifacts/abyss/{deviceId}/{kind}/{schemaVersion}/{inputHash}.json
 ```
 
 Cache-hit rules:
@@ -526,7 +609,7 @@ QUEUED
   → GENERATING_STAGE    // strict json_schema call; OpenRouter response-healing requested when enabled
   → PARSING             // exact JSON + Zod
   → VALIDATING          // semantic validators
-  → PERSISTING          // Supabase Storage + Postgres artifact row
+  → PERSISTING          // R2 artifact blob + D1 artifact row
   → READY               // artifact ready for client application
   → APPLIED_LOCAL       // client-side read-cache/store application succeeded (client event/cache state)
   → FAILED_FINAL        // structured failure code
@@ -592,7 +675,7 @@ Exit criteria:
 
 ### Phase 1 — Durable orchestrator skeleton + Crystal Trial pilot.
 
-1. Stand up Hono Worker, Cloudflare Workflow class for `crystal-trial`, Supabase Postgres schema, Supabase Storage bucket, and server-side OpenRouter access.
+1. Stand up Hono Worker, Cloudflare Workflow class for `crystal-trial`, D1 schema, R2 artifact bucket, and server-side OpenRouter access.
 2. Implement minimal per-device budget guard before Workflow creation:
    - daily run count cap;
    - conservative estimated token cap;
@@ -632,27 +715,96 @@ Exit criteria per pipeline:
 
 1. Worker-only tracing (Langfuse or equivalent) for every LLM call with `device_id`, `run_id`, `job_id`, model, prompt version, schema version, input hash, output hash, and provider-healing requested flag.
 2. Token accounting from provider metadata.
-3. Full per-device daily budget enforcement using UTC `usage_[counters.day](http://counters.day)`.
+3. Full per-device daily budget enforcement using UTC `usage_counters.day`.
 4. Failure dashboard by pipeline, model, prompt version, schema version, and failure code.
 5. Settings endpoint persists model bindings and OpenRouter response-healing preference server-side per device.
 
+### Phase 3.5 — Contract convergence + backend correctness.
+
+Immediate corrective phase: [Phase 3.5 — Contract Convergence + Backend Correctness](phase35-contract-convergence.md).
+
+Phase 3.5 is a hard prerequisite for Phase 4. It closes the gap between the durable plan and the backend implementation now that backend compile errors are fixed; no Phase 4 productionization or destructive cleanup starts until the linked corrective plan exits.
+
+1. Worker workflows consume `src/features/generationContracts/` through a Worker-safe `@contracts` adapter for canonical hashes, strict parsers, semantic validators, JSON Schema response formats, failure codes, and run-event builders.
+2. Remove backend-local `computeInputHash`, random `contentHash`, inline response schemas, ad hoc `JSON.parse` validation, and loose/partial RunEvent payloads from durable workflow paths.
+3. `generationContracts` owns the OpenRouter JSON Schema response-format builders; backend workflows must not hand-write artifact response schemas.
+4. Artifact cache checks are artifact-kind-aware. Multi-artifact pipelines short-circuit only when every requested artifact exists; partial cache hits become skipped stages or checkpoints.
+5. Replace read-then-increment budget checks with atomic per-device UTC budget reservation before Workflow creation.
+6. Workflow dispatch is recoverable or fails loudly. Inserted runs must not remain `queued` without a Workflow owner or outbox dispatch record.
+7. `POST /v1/runs/:id/retry` returns `{ runId }` and follows the same budget, dispatch, and event contract as initial submission.
+8. Complete browser durable transport: CORS covers durable headers, SSE live tail or terminal-state reconnect is implemented, and replay remains `seq > lastSeq`.
+9. Fix Topic Expansion supersession transactionality and ensure terminal `ready` runs do not block new runs with the same `Supersedes-Key`.
+10. Resolve pre-auth visibility decisions: `/v1/runs/stats` is per-device by default unless explicitly admin-protected, and `Idempotency-Key` dedupe obeys the documented 24h window.
+
+Exit criteria:
+
+- Backend typecheck is green.
+- Frontend and backend produce the same `input_hash` and `content_hash` for the same snapshot/artifact payload.
+- Every durable `artifact.ready` event includes `artifactId`, `kind`, `contentHash`, `inputHash`, and `schemaVersion`.
+- Backend event rows are produced from typed `RunEvent` builders, not loose status-specific strings or partial payload objects.
+- Backend workflows consume contracts-owned JSON Schema response formats.
+- Cache-hit behavior is correct for single-artifact and multi-artifact pipelines.
+- Budget enforcement is atomic and fail-closed.
+- Workflow enqueue failures cannot strand queued runs.
+- Retry returns the child `{ runId }` and preserves lineage.
+- Topic Expansion supersession is transaction-backed and terminal `ready` runs do not block later expansions.
+- Durable browser flows survive reconnect/tab close without duplicate artifact application.
+
+### Phase 3.6 — Reopened durable correctness gate.
+
+This gate is required because the live codebase still contradicts several Phase 3.5 exit criteria even though most Phase 3.5 implementation landed.
+
+1. Replace the SSE replay-and-close stub with a live tail module or terminal-state reconnect implementation that keeps an active run observable until terminal state.
+2. Exclude terminal `ready` from `GET /v1/runs?status=active`; hydrate recent terminal `ready` runs that have unapplied artifacts; persist per-run event cursors and suppress duplicate terminal side effects.
+3. Fix retry route response and dispatch failure handling so retry mirrors initial submission.
+4. Make budget run-count reservation single-owner and remove duplicate route/workflow/manual increments.
+5. Correct idempotency persistence so the documented 24-hour TTL is possible at the database seam.
+6. Persist backend events through typed `RunEvent` builders/assertions, not loose event strings.
+7. Add explicit DB-status <-> transport-status mappers and lock them with tests.
+
+Exit criteria:
+
+- [x] An active run emits new status/artifact/terminal events over an already-open SSE connection without a browser refresh.
+- [x] Reopening after backend completion applies the artifact exactly once and does not double-fire mentor/HUD completion behavior.
+- [x] Retry success and retry dispatch failure both return documented JSON bodies and leave no stranded queued retry run.
+- [x] A submitted run increments `runs_started` exactly once across cache hit, cache miss, retry, and workflow execution.
+- [x] Same `Idempotency-Key` dedupes within 24 hours and can create a fresh run after 24 hours.
+- [x] Backend event rows cannot be inserted with missing required typed payload fields.
+- [x] Client snapshots and SSE events expose canonical transport statuses, never raw database status strings.
+
 ### Phase 4 — Productionization + cleanup.
 
-1. CORS allowlist for production domains.
-2. Threat-model doc covering pre-auth `deviceId`, Supabase service role, artifact URLs, and auth migration.
-3. Supabase Storage retention/lifecycle policy.
-4. Remove `'navigation'` from `ContentGenerationAbortReason` after all four pipelines are backend-routed.
-5. Delete `LocalGenerationRunRepository` and legacy in-tab runners.
-6. Remove deprecated permissive parsers from generation pipeline code paths.
-7. Remove client-side `openRouterResponseHealing` ownership after server-side settings are authoritative.
-8. Plan Supabase Auth migration from `deviceId` to `user_id`.
+Last updated: 2026-05-07.
+
+- [x]  **Phase 4 PR-A (destructive reset plan/status).** Landed in workspace 2026-05-07. `plans/phase4.md` now governs the destructive backend-authoritative generation reset, and `CHANGELOG.md` records the no-migration posture.
+- [x]  **Phase 4 PR-B (Backend Generation Policy module).** Landed in workspace 2026-05-07. Adds `backend/src/generationPolicy/*` with strict policy parsing, backend default policy, all nine job kinds, deterministic `gpol_` policy hashes, backend-owned response-healing=true, and tests for loud invalid-policy failure plus all-kind resolution.
+- [x]  **Phase 4 PR-C (D1 repository and Learning Content Store core).** Active backend Supabase repository usage was replaced by D1-backed adapters in workspace 2026-05-07: `backend/d1/init.sql`, `backend/src/repositories/*`, `backend/src/learningContent/*`, and `Repos.learningContent`.
+- [x]  **Phase 4 PR-D (Backend Learning Content routes + frontend repository adapter).** Backend Learning Content routes landed in workspace 2026-05-07: `GET /v1/library/manifest`, `GET /v1/subjects/:subjectId/graph`, `GET /v1/subjects/:subjectId/topics/:topicId/details`, `GET /v1/subjects/:subjectId/topics/:topicId/cards`, and `GET /v1/subjects/:subjectId/topics/:topicId/trials/:targetLevel?cardPoolHash=...`. Route-level tests cover device-scoped lookup, malformed trial route inputs, and missing read-model rows returning 404. Frontend `BackendDeckRepository` wiring and durable-mode repository factory switching are implemented.
+- [x]  **Item 1 (CORS production hardening).** Landed in workspace 2026-05-06. Tightened `backend/src/middleware/cors.ts`: production default origins (`https://abyss.globesoul.com`, `https://www.abyss.globesoul.com`) applied when `ALLOWED_ORIGINS` env var is unset. `localhost:3000` always included for local dev. Origin set re-resolved per request when env var is set (supports live config changes without redeploy). Phase 3.5 step 6 already added `supersedes-key`, `last-event-id`, `cache-control` to `Access-Control-Allow-Headers`.
+- [x]  **Item 2 (Threat-model doc).** Updated in workspace 2026-05-07. `docs/security/threat-model.md` covers: trust boundaries (browser → Worker → D1/R2 → OpenRouter), asset inventory, per-threat analysis (unauthorized device access, Worker secret compromise, artifact exposure, budget bypass, SSE stream abuse, idempotency-key replay), dependency risks, and future auth-driven additions. Referenced from CORS middleware JSDoc.
+- [x]  **Item 3 (R2 artifact retention).** Updated in workspace 2026-05-07. `docs/security/storage-retention.md` defines: three-tier retention (active → archived at 90d inactivity → deleted at 270d), deduplication by `(device_id, kind, input_hash)`, R2 object cleanup, artifact versioning interaction with `input_hash`, and cost estimates.
+- [x]  **Phase 4 PR-E (Backend prompt modules).** Landed in workspace 2026-05-07. `backend/src/prompts/generationPrompts.ts` now owns prompt message construction for Subject Graph Generation, Topic Content, Topic Expansion, and Crystal Trial workflows. Durable workflows call this seam instead of declaring inline prompt arrays; strict parse and semantic validation paths remain unchanged. Subject Graph Stage B prompt construction consumes the loaded Stage A Topic Lattice artifact, and Topic Content study-card/mini-game prompt construction derives missing theory context from the ready theory artifact for full-pipeline runs. Follow-up: per-stage Topic Content input hashes should incorporate parent artifact content hashes.
+- [x]  **Item 8 (Auth migration plan).** Updated in workspace 2026-05-07. `docs/security/auth-migration.md` covers: current pre-auth v1 model, provider-neutral auth target, schema prep → auth UI + enrollment → Worker JWT validation → legacy device-ID deprecation, cross-device experience post-migration, risk assessment, and open decisions (auth providers, anonymous grace period, data export/deletion, collaborative features).
+- [x]  **Deferred boundary test.** `src/infrastructure/repositories/legacyRunnerBoundary.test.ts` (deferred from Phase 0.5 step 4) landed in workspace 2026-05-06. Enforces that no file outside the allowlist (adapter, legacy runners themselves, feature barrels, wireGenerationClient bootstrap) imports the four legacy runner entry points (`runTopicGenerationPipeline`, `runExpansionJob`, `generateTrialQuestions`, Subject Graph orchestrator). Includes specific invariant assertion that `eventBusHandlers.ts` routes through `GenerationClient`. 6 tests pass.
+- [ ]  **Item 4 (Remove `'navigation'` abort).** Blocked — Phase 4 intentionally replaces environment-flag routing with durable-only intent submission. The `'navigation'` abort reason and `beforeunload` listener in `useContentGenerationLifecycle` remain until PR-J/PR-K delete local runners and navigation abort together.
+- [ ]  **Item 5 (Delete LocalGenerationRunRepository).** Blocked — depends on PR-E through PR-J cutover. Currently `LocalGenerationRunRepository` is still the runtime adapter for non-durable pipelines.
+- [ ]  **Item 6 (Remove deprecated permissive parsers).** Blocked — local runners still use them. The `@deprecated` JSDoc added in Phase 0 step 4 documents the migration path; `legacyParserBoundary.test.ts` enforces strict paths don't call them.
+- [ ]  **Item 7 (Remove client-side openRouterResponseHealing).** Blocked — local runners and frontend pipeline settings still own model/healing config. Phase 4 PR-B introduced backend generation policy; client-side ownership removal waits on PR-I/J.
 
 ## What changes in the existing codebase
 
 - **New:** `src/features/generationContracts/` — strict schemas, parsers, validators, prompt builders, snapshots, hashes, failure codes, run events, eval fixtures.
+- **New:** `backend/src/generationPolicy/` — backend-owned Phase 4 model/provider-healing policy resolver and policy hash.
+- **New:** `backend/src/learningContent/` + `backend/d1/init.sql` — D1-backed Learning Content Store schema/repository foundation.
+- **New:** `backend/src/routes/learningContent.ts` — device-scoped Learning Content Store read routes for manifest, Subject Graphs, Topic Content details/cards, and Crystal Trial sets.
+- **New:** `backend/src/prompts/generationPrompts.ts` — backend-owned durable workflow prompt construction seam.
 - **New:** `src/infrastructure/generationRunEventHandlers.ts` — sanctioned durable-run composition root.
 - **New:** `src/infrastructure/repositories/LocalGenerationRunRepository.ts`.
 - **New:** `src/infrastructure/repositories/DurableGenerationRunRepository.ts`.
+- **New:** `src/infrastructure/repositories/legacyRunnerBoundary.test.ts` — enforcement that only the sanctioned adapter imports legacy runners (Phase 4).
+- **New:** `docs/security/threat-model.md` — pre-auth v1 threat model (Phase 4).
+- **New:** `docs/security/storage-retention.md` — R2 artifact lifecycle policy (Phase 4).
+- **New:** `docs/security/auth-migration.md` — auth migration plan (Phase 4).
 - **Updated:** `src/types/repository.ts` — `IGenerationRunRepository` and generation run data contracts.
 - **Updated:** `src/infrastructure/llmInferenceSurfaceProviders.ts` — `requireJsonSchema`, `allowProviderHealing`, strict config failure.
 - **Updated:** existing parsers — marked `@deprecated` for pipeline paths; strict replacements introduced.
@@ -661,6 +813,8 @@ Exit criteria per pipeline:
 - **Updated:** `src/hooks/useContentGenerationLifecycle.ts` — no-op for backend-routed runs until deleted.
 - **Updated:** `src/hooks/useContentGenerationHydration.ts` — backend active/recent run hydration.
 - **Updated:** `src/infrastructure/repositories/contentGenerationLogRepository.ts` — UI read-cache only.
+- **Updated:** `backend/src/middleware/cors.ts` — production default origins, per-request origin re-evaluation (Phase 4).
+- **Updated:** `vitest.config.ts` — `@contracts` alias for root-level backend test resolution (Phase 4).
 - **Phase 4 delete:** local runners and deprecated generation parsers no longer needed by generation pipelines.
 
 ## Acceptance criteria
@@ -728,7 +882,7 @@ Exit criteria per pipeline:
 4. **OpenRouter response-healing stays enabled for v1 when configured.** It is provider-side structured-output support; downstream parsers still fail loudly.
 5. **Legacy permissive parsers are deprecated.** They are compatibility surfaces for local legacy/non-pipeline paths only and are removed after cutover.
 6. **`RunInputSnapshot` is mandatory.** The Worker never infers browser IndexedDB state.
-7. **`deviceId` is not a security boundary.** Document it and migrate to Supabase Auth later.
+7. **`deviceId` is not a security boundary.** Document it and migrate to account auth later.
 8. **Hard durability is the contract.** Closing the tab never stops backend-routed runs.
 9. **Artifact Appliers are the only local writers** from generation artifacts after Phase 0.5.
 10. **Crystal Trial generation is not trial completion.** Never emit `crystal-trial:completed` from question generation success.
@@ -736,7 +890,7 @@ Exit criteria per pipeline:
 12. **`input_hash` and Idempotency-Key stay separate.** Cache key vs duplicate-submit protection.
 13. **Cancel is cooperative.** `cancel_acknowledged` is not terminal `cancelled`.
 14. **One Workflow per pipeline kind.** No branching mega-workflow.
-15. **Supabase access stays server-side.** Browser never talks directly to Supabase for generation runs.
+15. **D1/R2 access stays server-side.** Browser never talks directly to D1 or R2 for generation runs.
 16. **`'navigation'` abort reason stays until full cutover.** Removal lives in Phase 4.
 17. **Eval CI is a merge gate** on prompt/schema/model changes.
 18. **No direct remote I/O in features/components/hooks.** Durable run I/O goes through repository contracts and infrastructure adapters.
@@ -748,3 +902,7 @@ Exit criteria per pipeline:
 [Phase 1 — Durable Orchestrator + Crystal Trial Pilot: Concrete Implementation](phase1.md)
 
 [Phase 0 Step 12 — Concrete Prompt-Quality Patches](phase0-step12.md)
+
+[Phase 3.5 — Contract Convergence + Backend Correctness](phase35-contract-convergence.md)
+
+[Phase 4 — Productionization + Cleanup: Concrete Implementation](phase4.md)

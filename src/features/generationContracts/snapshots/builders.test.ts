@@ -40,6 +40,36 @@ describe('buildSubjectGraphTopicsSnapshot', () => {
     expect(snap.strategy_brief.total_tiers).toBe(3);
   });
 
+  it('allows empty focus_constraints and trims whitespace', () => {
+    const empty = buildSubjectGraphTopicsSnapshot({
+      ...ENVELOPE,
+      subjectId: 'sub-1',
+      checklist: { topic_name: 'Algebra' },
+      strategyBrief: {
+        total_tiers: 3,
+        topics_per_tier: 5,
+        audience_brief: 'undergrad',
+        domain_brief: 'STEM',
+        focus_constraints: '',
+      },
+    });
+    expect(empty.strategy_brief.focus_constraints).toBe('');
+
+    const trimmed = buildSubjectGraphTopicsSnapshot({
+      ...ENVELOPE,
+      subjectId: 'sub-1',
+      checklist: { topic_name: 'Algebra' },
+      strategyBrief: {
+        total_tiers: 3,
+        topics_per_tier: 5,
+        audience_brief: 'undergrad',
+        domain_brief: 'STEM',
+        focus_constraints: '  \t\n',
+      },
+    });
+    expect(trimmed.strategy_brief.focus_constraints).toBe('');
+  });
+
   it('rejects empty subjectId', () => {
     expect(() =>
       buildSubjectGraphTopicsSnapshot({

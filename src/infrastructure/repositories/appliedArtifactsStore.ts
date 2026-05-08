@@ -9,7 +9,12 @@
  * scope metadata so supersession can compare against the latest applied
  * expansion per topic without session-global Maps.
  *
- * A lightweight hygiene cap keeps the table bounded; this is NOT a
+ * **Phase 3.6 Step 2 — Run event cursor persistence:** the `runEventCursors`
+ * table stores the highest applied `seq` per `runId` so rehydration can
+ * resume SSE replay and suppress duplicate terminal side effects across
+ * browser reloads.
+ *
+ * A lightweight hygiene cap keeps both tables bounded; this is NOT a
  * security boundary — it prevents UI noise, not adversarial replay.
  */
 
@@ -33,8 +38,15 @@ interface AppliedArtifactRow {
   expansionTargetLevel?: number;
 }
 
+interface RunEventCursorRow {
+  runId: string;
+  lastSeq: number;
+  updatedAt: number;
+}
+
 class AppliedArtifactsDb extends Dexie {
   artifacts!: Dexie.Table<AppliedArtifactRow, string>;
+  runEventCursors!: Dexie.Table<RunEventCursorRow, string>;
 
   constructor() {
     super('abyss-applied-artifacts');
@@ -43,6 +55,10 @@ class AppliedArtifactsDb extends Dexie {
     });
     this.version(2).stores({
       artifacts: 'contentHash, kind, appliedAt, topicScopeKey',
+    });
+    this.version(3).stores({
+      artifacts: 'contentHash, kind, appliedAt, topicScopeKey',
+      runEventCursors: 'runId, updatedAt',
     });
   }
 }
@@ -57,6 +73,53 @@ async function pruneIfNeeded(): Promise<void> {
     await db.artifacts.bulkDelete(oldest.map((r) => r.contentHash));
   }
 }
+
+// ---------------------------------------------------------------------------
+// Run event cursor persistence (Phase 3.6 Step 2)
+// ---------------------------------------------------------------------------
+
+export interface RunEventCursorStore {
+  /** Return the highest persisted seq for a run, or 0 if never observed. */
+  get(runId: string): Promise<number>;
+  /** Persist the highest seq applied for a run. */
+  set(runId: string, seq: number): Promise<void>;
+}
+
+/** Max per-run cursor rows kept. */
+const MAX_CURSOR_ROWS = 200;
+
+async function pruneCursorsIfNeeded(): Promise<void> {
+  const count = await db.runEventCursors.count();
+  if (count <= MAX_CURSOR_ROWS) return;
+  const oldest = await db.runEventCursors
+    .orderBy('updatedAt')
+    .limit(count - MAX_CURSOR_ROWS)
+    .toArray();
+  if (oldest.length > 0) {
+    await db.runEventCursors.bulkDelete(oldest.map((r) => r.runId));
+  }
+}
+
+export const runEventCursorStore: RunEventCursorStore = {
+  async get(runId) {
+    const row = await db.runEventCursors.get(runId);
+    return row?.lastSeq ?? 0;
+  },
+
+  async set(runId, seq) {
+    const existing = await db.runEventCursors.get(runId);
+    // Monotonic: only increase, never decrease.
+    if (existing && existing.lastSeq >= seq) return;
+    await db.runEventCursors.put({
+      runId,
+      lastSeq: seq,
+      updatedAt: Date.now(),
+    });
+    void pruneCursorsIfNeeded().catch((e) => {
+      console.error('[runEventCursors] prune failed', e);
+    });
+  },
+};
 
 export const appliedArtifactsStore: AppliedArtifactsStore = {
   async has(contentHash) {

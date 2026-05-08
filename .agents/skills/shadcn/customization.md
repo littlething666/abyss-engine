@@ -142,6 +142,8 @@ module.exports = {
 
 See also: [rules/styling.md](./rules/styling.md) for Incorrect/Correct examples.
 
+When editing component source, apply the same repository gate as in `SKILL.md`: only do this when the user explicitly names the target `src/components/ui/*` file and confirms they want the primitive changed.
+
 Prefer these approaches in order:
 
 ### 1. Built-in variants
@@ -163,8 +165,18 @@ Prefer these approaches in order:
 Edit the component source to add a variant via `cva`:
 
 ```tsx
-// components/ui/button.tsx
-warning: "bg-warning text-warning-foreground hover:bg-warning/90",
+const buttonVariants = cva("inline-flex items-center justify-center gap-2", {
+  variants: {
+    variant: {
+      default: "bg-primary text-primary-foreground",
+      warning:
+        "bg-warning text-warning-foreground shadow hover:bg-warning/90",
+    },
+  },
+  defaultVariants: {
+    variant: "default",
+  },
+})
 ```
 
 ### 4. Wrapper components

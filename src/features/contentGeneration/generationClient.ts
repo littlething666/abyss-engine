@@ -23,6 +23,7 @@ import type {
   RunListQuery,
   RunSnapshot,
   TopicContentRunInputSnapshot,
+  PipelineKind,
 } from '@/types/repository';
 
 /** Stage segment for topic-content idempotency keys and snapshot routing. */
@@ -62,6 +63,15 @@ export interface CreateGenerationClientDeps {
   /** Reserved for clock-skew / testing at the composition root. */
   now: () => number;
   flags: GenerationClientFlags;
+  /**
+   * Per-kind allow-list. When non-empty, only listed kinds route to the
+   * durable repo; every other kind stays local.
+   *
+   * Derived from `NEXT_PUBLIC_DURABLE_RUNS_KINDS` (comma-separated list).
+   * Default: `['crystal-trial']` when `durableRuns` is true (Phase 1 default).
+   * Operators add more kinds in Phase 2 PRs.
+   */
+  durableKinds?: Set<import('@/types/repository').PipelineKind>;
   localRepo: IGenerationRunRepository;
   durableRepo: IGenerationRunRepository;
 }
@@ -116,6 +126,25 @@ export function getGenerationClient(): GenerationClient {
     );
   }
   return registeredClient;
+}
+
+function selectRepoFor(
+  kind: PipelineKind,
+  deps: CreateGenerationClientDeps,
+): IGenerationRunRepository {
+  // When durableKinds is not explicitly set, ALL pipeline kinds route to durable
+  // (backwards-compat with Phase 1 tests and the simple boolean flag).
+  // When set explicitly (production wireGenerationClient with env vars),
+  // only listed kinds go through the Worker.
+  const kinds = deps.durableKinds ?? new Set<PipelineKind>([
+    'crystal-trial',
+    'topic-content',
+    'topic-expansion',
+    'subject-graph',
+  ]);
+  return deps.flags.durableRuns && kinds.has(kind)
+    ? deps.durableRepo
+    : deps.localRepo;
 }
 
 function pickRepo(deps: CreateGenerationClientDeps): IGenerationRunRepository {
@@ -215,6 +244,7 @@ async function defaultIdempotencyKeyForRunInput(input: RunInput): Promise<string
 
 export function createGenerationClient(deps: CreateGenerationClientDeps): GenerationClient {
   const repo = (): IGenerationRunRepository => pickRepo(deps);
+  const repoForKind = (kind: PipelineKind): IGenerationRunRepository => selectRepoFor(kind, deps);
 
   return {
     async startTopicContent(input, opts) {
@@ -234,7 +264,7 @@ export function createGenerationClient(deps: CreateGenerationClientDeps): Genera
         subjectId,
         topicId,
       };
-      return repo().submitRun(runInput, idempotencyKey);
+      return repoForKind('topic-content').submitRun(runInput, idempotencyKey);
     },
 
     async startTopicExpansion(input, opts) {
@@ -254,7 +284,7 @@ export function createGenerationClient(deps: CreateGenerationClientDeps): Genera
         topicId: input.topicId,
         nextLevel: input.nextLevel,
       };
-      return repo().submitRun(runInput, idempotencyKey);
+      return repoForKind('topic-expansion').submitRun(runInput, idempotencyKey);
     },
 
     async startSubjectGraph(input, opts) {
@@ -272,7 +302,7 @@ export function createGenerationClient(deps: CreateGenerationClientDeps): Genera
         subjectId,
         stage: input.stage,
       };
-      return repo().submitRun(runInput, idempotencyKey);
+      return repoForKind('subject-graph').submitRun(runInput, idempotencyKey);
     },
 
     async startCrystalTrial(input, opts) {
@@ -292,13 +322,13 @@ export function createGenerationClient(deps: CreateGenerationClientDeps): Genera
         topicId: input.topicId,
         currentLevel: input.currentLevel,
       };
-      return repo().submitRun(runInput, idempotencyKey);
+      return repoForKind('crystal-trial').submitRun(runInput, idempotencyKey);
     },
 
     async submitRun(input, opts) {
       const idempotencyKey =
         opts?.idempotencyKey ?? (await defaultIdempotencyKeyForRunInput(input));
-      return repo().submitRun(input, idempotencyKey);
+      return repoForKind(input.pipelineKind).submitRun(input, idempotencyKey);
     },
 
     cancel(runId, reason) {

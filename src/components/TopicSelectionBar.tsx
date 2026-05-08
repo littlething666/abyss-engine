@@ -286,7 +286,7 @@ export default function TopicSelectionBar({
           title="Generate content"
           className="shrink-0"
         >
-          <Sparkles className="h-3.5 w-3.5" />
+          <Sparkles data-icon="inline-start" aria-hidden />
         </Button>
       );
     }
@@ -304,7 +304,7 @@ export default function TopicSelectionBar({
         title="Begin study session"
         className="relative shrink-0 overflow-visible"
       >
-        <Play className="relative z-10 h-3.5 w-3.5" aria-hidden />
+        <Play data-icon="inline-start" className="relative z-10" aria-hidden />
         <ParticlesAnimation isActive={playCelebrationParticlesActive} particles={RITUAL_PARTICLE_ANIMATION} />
       </Button>
     );
@@ -363,7 +363,7 @@ export default function TopicSelectionBar({
                 title="Unlock topic"
                 className="shrink-0"
               >
-                <Lock className="h-3.5 w-3.5" />
+                <Lock data-icon="inline-start" aria-hidden />
               </Button>
             ) : null}
 
@@ -400,9 +400,9 @@ export default function TopicSelectionBar({
                 className="relative shrink-0 overflow-visible disabled:opacity-60"
               >
                 {isTrialLoading ? (
-                  <Loader2 className="relative z-10 h-3.5 w-3.5 animate-spin" aria-hidden />
+                  <Loader2 data-icon="inline-start" className="relative z-10 animate-spin" aria-hidden />
                 ) : (
-                  <Sparkles className="relative z-10 h-3.5 w-3.5" aria-hidden />
+                  <Sparkles data-icon="inline-start" className="relative z-10" aria-hidden />
                 )}
                 <ParticlesAnimation isActive={trialGateParticlesActive} particles={RITUAL_PARTICLE_ANIMATION} />
               </Button>
@@ -424,7 +424,7 @@ export default function TopicSelectionBar({
               size="icon-sm"
               className="shrink-0"
             >
-              <X className="h-3.5 w-3.5" />
+              <X data-icon="inline-start" aria-hidden />
             </Button>
           </div>
         </div>

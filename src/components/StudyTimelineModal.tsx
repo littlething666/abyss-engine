@@ -197,7 +197,7 @@ function TimelineReviewBlock({
               {cardLabel} • {new Date(entry.occurredAt).toLocaleString()}
             </CardDescription>
           </CardHeader>
-          <CardContent className="px-2 pt-0 pb-2 space-y-2">
+          <CardContent className="px-2 pt-0 pb-2 flex flex-col gap-2">
             <p className="text-xs text-muted-foreground">
               Session {entry.sessionId} in {entry.topicName}
             </p>
@@ -358,7 +358,7 @@ function SessionDetailStrip({
           data-session-group={session.sessionId}
           className="w-full min-w-0 rounded-md border border-border/50 bg-card/20"
         >
-          <div className="px-2 py-1.5 border-b border-border/40 text-xs text-muted-foreground space-y-0.5">
+            <div className="px-2 py-1.5 border-b border-border/40 text-xs text-muted-foreground flex flex-col gap-0.5">
             <span className="flex w-full min-w-0 items-center gap-1.5 text-foreground/90">
               {session.iconName ? (
                 <TopicIcon
@@ -486,11 +486,11 @@ export function StudyTimelineModal({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="shrink-0 h-8 w-8"
+                className="shrink-0"
                 aria-label="Back to summary"
                 onClick={() => setSelectedBucketId(null)}
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft data-icon="inline-start" aria-hidden />
               </Button>
             ) : null}
             <div className="min-w-0 flex-1">

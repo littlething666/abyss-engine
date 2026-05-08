@@ -343,9 +343,118 @@ describe('registerGenerationClient / getGenerationClient', () => {
     expect(mod.getGenerationClient()).toBe(client);
   });
 
-  it('throws when nothing registered', async () => {
+  it('throw when nothing registered', async () => {
     vi.resetModules();
     const mod = await import('./generationClient');
     expect(() => mod.getGenerationClient()).toThrow(/registerGenerationClient/);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2 PR-2E: Durable-repo retry tests covering { stage } + { jobId }
+// ---------------------------------------------------------------------------
+
+describe('retryRun with { stage } + { jobId } per pipeline kind', () => {
+  const PIPELINE_RETRY_CASES = [
+    {
+      kind: 'crystal-trial' as const,
+      stageOpts: [{ stage: 'generate' }, { stage: 'validate' }],
+      jobIdOpts: [{ jobId: 'job-ct-1' }, { jobId: 'job-ct-2' }],
+      combinedOpts: [{ stage: 'generate', jobId: 'job-ct-3' }],
+    },
+    {
+      kind: 'topic-content' as const,
+      stageOpts: [
+        { stage: 'theory' },
+        { stage: 'study-cards' },
+        { stage: 'mini-games' },
+      ],
+      jobIdOpts: [{ jobId: 'job-tc-1' }, { jobId: 'job-tc-2' }],
+      combinedOpts: [
+        { stage: 'theory', jobId: 'job-tc-3' },
+        { stage: 'mini-games', jobId: 'job-tc-4' },
+      ],
+    },
+    {
+      kind: 'topic-expansion' as const,
+      stageOpts: [{ stage: 'expansion-cards' }],
+      jobIdOpts: [{ jobId: 'job-te-1' }],
+      combinedOpts: [{ stage: 'expansion-cards', jobId: 'job-te-2' }],
+    },
+    {
+      kind: 'subject-graph' as const,
+      stageOpts: [{ stage: 'topics' }, { stage: 'edges' }],
+      jobIdOpts: [{ jobId: 'job-sg-1' }, { jobId: 'job-sg-2' }],
+      combinedOpts: [
+        { stage: 'topics', jobId: 'job-sg-3' },
+        { stage: 'edges', jobId: 'job-sg-4' },
+      ],
+    },
+  ];
+
+  for (const { kind, stageOpts, jobIdOpts, combinedOpts } of PIPELINE_RETRY_CASES) {
+    describe(`${kind} retries`, () => {
+      it('forwards simple retry (no opts) to repo', async () => {
+        const local = mockRepo();
+        const client = createGenerationClient({
+          deviceId: 'dev-1',
+          now: () => 0,
+          flags: { durableRuns: false },
+          localRepo: local,
+          durableRepo: mockRepo(),
+        });
+
+        await client.retry('run-1');
+        expect(local.retryRun).toHaveBeenCalledWith('run-1', undefined);
+      });
+
+      for (const opts of stageOpts) {
+        it(`forwards retry with stage=${opts.stage} to repo`, async () => {
+          const local = mockRepo();
+          const client = createGenerationClient({
+            deviceId: 'dev-1',
+            now: () => 0,
+            flags: { durableRuns: false },
+            localRepo: local,
+            durableRepo: mockRepo(),
+          });
+
+          await client.retry('run-stage', opts);
+          expect(local.retryRun).toHaveBeenCalledWith('run-stage', opts);
+        });
+      }
+
+      for (const opts of jobIdOpts) {
+        it(`forwards retry with jobId=${opts.jobId} to repo`, async () => {
+          const local = mockRepo();
+          const client = createGenerationClient({
+            deviceId: 'dev-1',
+            now: () => 0,
+            flags: { durableRuns: false },
+            localRepo: local,
+            durableRepo: mockRepo(),
+          });
+
+          await client.retry('run-job', opts);
+          expect(local.retryRun).toHaveBeenCalledWith('run-job', opts);
+        });
+      }
+
+      for (const opts of combinedOpts) {
+        it(`forwards retry with stage=${opts.stage} + jobId=${opts.jobId} to repo`, async () => {
+          const local = mockRepo();
+          const client = createGenerationClient({
+            deviceId: 'dev-1',
+            now: () => 0,
+            flags: { durableRuns: false },
+            localRepo: local,
+            durableRepo: mockRepo(),
+          });
+
+          await client.retry('run-combined', opts);
+          expect(local.retryRun).toHaveBeenCalledWith('run-combined', opts);
+        });
+      }
+    });
+  }
 });

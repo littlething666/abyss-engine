@@ -41,6 +41,7 @@ import type {
   ArtifactKind,
   RunEvent,
 } from '@/features/generationContracts';
+import type { RunEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
 import type { TopicLattice, TopicLatticeNode } from '@/types/topicLattice';
 import type { GenerationClient } from '@/features/contentGeneration';
 import type { TopicContentApplier } from '@/features/contentGeneration/appliers/topicContentApplier';
@@ -62,6 +63,8 @@ export interface GenerationRunEventHandlersDeps {
   };
   eventBus: AppEventBus;
   dedupeStore: AppliedArtifactsStore;
+  /** Phase 3.6 Step 2: Durable per-run event cursor so rehydration survives browser reloads. */
+  cursorStore: RunEventCursorStore;
   deckRepository: IDeckRepository;
 }
 
@@ -84,6 +87,14 @@ export interface GenerationRunEventHandlers {
    *    (mentor triggers, telemetry, HUD) continue to work.
    */
   observeRun(runId: string, runInput: RunInput): Promise<void>;
+
+  /**
+   * Returns `0` (backwards compat only). For the authoritative seq, use
+   * `runEventCursorStore.get(runId)` from `appliedArtifactsStore`.
+   *
+   * Phase 3.6 Step 2: seq tracking is now durable via cursorStore.
+   */
+  getLastAppliedSeq(): number;
 
   /** Stop all active observations. */
   stop(): void;
@@ -440,9 +451,18 @@ function isSubjectGraphValidationCode(code: string): boolean {
 export function createGenerationRunEventHandlers(
   deps: GenerationRunEventHandlersDeps,
 ): GenerationRunEventHandlers {
-  const { client, appliers, eventBus, dedupeStore, deckRepository } = deps;
+  const { client, appliers, eventBus, dedupeStore, cursorStore, deckRepository } = deps;
   const activeRuns = new Set<string>();
   let stopped = false;
+
+  /**
+   * Record the highest seq we've seen for a run.
+   * Persisted durably so rehydration survives browser reloads.
+   */
+  async function trackSeq(runId: string, seq: number): Promise<void> {
+    const prev = await cursorStore.get(runId);
+    if (seq > prev) await cursorStore.set(runId, seq);
+  }
 
   /**
    * Core observation loop. Creates an async context that reads the
@@ -467,7 +487,12 @@ export function createGenerationRunEventHandlers(
         dedupeStore,
       );
 
-      for await (const event of client.observe(runId)) {
+      // Phase 3.6 Step 2: seed startSeq from the durable cursor so SSE
+      // replays only unprocessed events after a browser reload.
+      const startSeq = await cursorStore.get(runId);
+      let newArtifactsApplied = false;
+
+      for await (const event of client.observe(runId, startSeq)) {
         if (stopped) break;
 
         switch (event.type) {
@@ -476,22 +501,12 @@ export function createGenerationRunEventHandlers(
             const { artifactId, kind } = event.body;
             const applier = pickApplier(kind, appliers);
             if (!applier) {
-              console.error(
+              throw new Error(
                 `[generationRunEventHandlers] unknown artifact kind: ${kind} (runId=${runId})`,
               );
-              break;
             }
 
-            let artifact: ArtifactEnvelope;
-            try {
-              artifact = await client.getArtifact(artifactId);
-            } catch (err) {
-              console.error(
-                `[generationRunEventHandlers] failed to fetch artifact ${artifactId}:`,
-                err,
-              );
-              break;
-            }
+            const artifact: ArtifactEnvelope = await client.getArtifact(artifactId);
 
             const result = await applier.apply(
               artifact as ArtifactEnvelope<ArtifactKind>,
@@ -499,17 +514,25 @@ export function createGenerationRunEventHandlers(
             );
 
             if (!result.applied) {
-              // supressed: duplicate, superseded, missing-stage-a, or invalid
+              // suppressed: duplicate, superseded, missing-stage-a, or invalid
               if (result.reason === 'superseded') {
                 // Superseded expansion — silence, per Plan v3 policy.
                 // The winning run will emit the completion event.
               }
+            } else {
+              newArtifactsApplied = true;
             }
             break;
           }
 
           // ── run.completed: fire legacy completion event ────────
           case 'run.completed': {
+            // Phase 3.6 Step 2: legacy completion events are product-facing
+            // artifact-application events. Replays that apply nothing must not
+            // refire them, even when no durable cursor existed at startup.
+            if (!newArtifactsApplied) {
+              break;
+            }
             switch (runInput.pipelineKind) {
               case 'topic-content':
                 await emitTopicContentCompleted(
@@ -640,12 +663,13 @@ export function createGenerationRunEventHandlers(
 
           default: {
             const _exhaustive: never = event;
-            console.warn(
+            throw new Error(
               `[generationRunEventHandlers] unhandled event type: ${(_exhaustive as RunEvent).type}`,
             );
-            break;
           }
         }
+
+        await trackSeq(runId, event.seq);
       }
     } finally {
       activeRuns.delete(runId);
@@ -654,6 +678,11 @@ export function createGenerationRunEventHandlers(
 
   return {
     observeRun,
+    getLastAppliedSeq(): number {
+      // Phase 3.6 Step 2: seq tracking moved to durable cursorStore.
+      // Callers needing the authoritative value should use cursorStore.get(runId).
+      return 0;
+    },
     stop() {
       stopped = true;
     },

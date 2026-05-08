@@ -20,7 +20,7 @@ import {
   createLegacyLocalRunnerDispatchers,
   LocalGenerationRunRepository,
 } from '@/infrastructure/repositories/LocalGenerationRunRepository';
-import { appliedArtifactsStore } from '@/infrastructure/repositories/appliedArtifactsStore';
+import { appliedArtifactsStore, runEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
 import {
   createGenerationRunEventHandlers,
   type GenerationRunEventHandlers,
@@ -28,27 +28,16 @@ import {
 import { appEventBus } from '@/infrastructure/eventBus';
 import { deckRepository, deckWriter } from '@/infrastructure/di';
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
-import type { IGenerationRunRepository, RunInput } from '@/types/repository';
+import { DurableGenerationRunRepository } from '@/infrastructure/repositories/DurableGenerationRunRepository';
+import { createApiClient } from '@/infrastructure/http/apiClient';
+import { readOrMintDeviceId } from '@/infrastructure/deviceIdentity';
+import type { IGenerationRunRepository, PipelineKind, RunInput } from '@/types/repository';
 
-const DEVICE_STORAGE_KEY = 'abyss.deviceId';
-
-function readOrMintDeviceId(): string {
-  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
-    return 'ssr-anonymous-device';
-  }
-  try {
-    const existing = window.localStorage.getItem(DEVICE_STORAGE_KEY);
-    if (existing && existing.trim().length > 0) {
-      return existing.trim();
-    }
-    const id = crypto.randomUUID();
-    window.localStorage.setItem(DEVICE_STORAGE_KEY, id);
-    return id;
-  } catch {
-    return crypto.randomUUID();
-  }
-}
-
+/**
+ * Stub that returns synthetic failures when the Worker is unreachable.
+ * Kept for builds where `NEXT_PUBLIC_DURABLE_RUNS` is off and no
+ * `NEXT_PUBLIC_DURABLE_GENERATION_URL` is configured.
+ */
 const unreachableDurableRepo: IGenerationRunRepository = {
   submitRun: async () => {
     throw new Error('Durable generation runs are not wired in this build (NEXT_PUBLIC_DURABLE_RUNS).');
@@ -71,6 +60,28 @@ const unreachableDurableRepo: IGenerationRunRepository = {
   },
 };
 
+/**
+ * Resolve the durable repo for this build.
+ *
+ * When `NEXT_PUBLIC_DURABLE_RUNS` is on AND `NEXT_PUBLIC_DURABLE_GENERATION_URL`
+ * is set, returns a real `DurableGenerationRunRepository` wired to the Worker.
+ * Otherwise returns the unreachable stub.
+ */
+function resolveDurableRepo(deviceId: string): IGenerationRunRepository {
+  const workerUrl =
+    typeof process !== 'undefined' &&
+    typeof process.env.NEXT_PUBLIC_DURABLE_GENERATION_URL === 'string'
+      ? process.env.NEXT_PUBLIC_DURABLE_GENERATION_URL.trim()
+      : '';
+
+  if (durableRunsEnabled && workerUrl) {
+    const http = createApiClient({ baseUrl: workerUrl, deviceId });
+    return new DurableGenerationRunRepository({ http, deviceId });
+  }
+
+  return unreachableDurableRepo;
+}
+
 let wired = false;
 let handlersInstance: GenerationRunEventHandlers | null = null;
 let durableRunsEnabled = false;
@@ -92,6 +103,31 @@ export function ensureGenerationClientRegistered(): GenerationClient {
     typeof process.env.NEXT_PUBLIC_DURABLE_RUNS === 'string' &&
     process.env.NEXT_PUBLIC_DURABLE_RUNS === 'true';
 
+  // Phase 2: per-kind routing via NEXT_PUBLIC_DURABLE_RUNS_KINDS.
+  // Default when durableRuns is true: only crystal-trial (Phase 1 default).
+  // Operators add more kinds as they migrate: crystal-trial,topic-expansion,subject-graph,topic-content.
+  const durableKindsString =
+    typeof process !== 'undefined' &&
+    typeof process.env.NEXT_PUBLIC_DURABLE_RUNS_KINDS === 'string'
+      ? process.env.NEXT_PUBLIC_DURABLE_RUNS_KINDS.trim()
+      : '';
+
+  const ALL_KINDS: PipelineKind[] = [
+    'crystal-trial',
+    'topic-content',
+    'topic-expansion',
+    'subject-graph',
+  ];
+
+  const durableKinds: Set<PipelineKind> = durableKindsString
+    ? new Set<PipelineKind>(
+        durableKindsString
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s): s is PipelineKind => ALL_KINDS.includes(s as PipelineKind)),
+      )
+    : new Set<PipelineKind>(['crystal-trial']);
+
   const localRepo = new LocalGenerationRunRepository({
     deviceId,
     now,
@@ -103,12 +139,15 @@ export function ensureGenerationClientRegistered(): GenerationClient {
     }),
   });
 
+  const durableRepo = resolveDurableRepo(deviceId);
+
   const client = createGenerationClient({
     deviceId,
     now,
     flags: { durableRuns: durableRunsEnabled },
+    durableKinds,
     localRepo,
-    durableRepo: unreachableDurableRepo,
+    durableRepo,
   });
   registerGenerationClient(client);
 
@@ -128,6 +167,7 @@ export function ensureGenerationClientRegistered(): GenerationClient {
     },
     eventBus: appEventBus,
     dedupeStore: appliedArtifactsStore,
+    cursorStore: runEventCursorStore,
     deckRepository,
   });
 
@@ -161,4 +201,24 @@ export function observeGenerationRun(runId: string, runInput: RunInput): void {
       err,
     );
   });
+}
+
+/**
+ * Get the registered `GenerationRunEventHandlers` instance.
+ *
+ * Used by `useContentGenerationHydration` to rehydrate durable runs.
+ * Returns `null` when the module hasn't been bootstrapped yet.
+ */
+export function getGenerationRunEventHandlers(): GenerationRunEventHandlers | null {
+  return handlersInstance;
+}
+
+/**
+ * Returns `true` when `NEXT_PUBLIC_DURABLE_RUNS` is set to `'true'`.
+ *
+ * Used by hooks and components that need to branch between local and
+ * durable generation paths without importing `process.env` directly.
+ */
+export function isDurableRunsEnabled(): boolean {
+  return durableRunsEnabled;
 }

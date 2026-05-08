@@ -13,12 +13,17 @@ A framework for building ui, components and design systems. Components are added
 
 **AGENTS.md** is authoritative. For 2D UI here: compose only from existing `src/components/ui/*` primitives. **Do not** run `shadcn add` (or otherwise add or edit files under `src/components/ui`) unless the user explicitly names the file to add or change. Use this skill for patterns, docs, and composition that respect installed primitives.
 
+### Implementation policy
+
+- Only propose or compose with components that are already installed in this repo. If the user asks for a pattern outside the installed surface, first align on installation via CLI commands.
+- Do not edit `src/components/ui/*` source without explicit user permission and the exact file name.
+
 > **IMPORTANT:** Run all CLI commands using the project's package runner: `npx shadcn@latest`, `pnpm dlx shadcn@latest`, or `bunx --bun shadcn@latest` — based on the project's `packageManager`. Examples below use `npx shadcn@latest` but substitute the correct runner for the project.
 
 ## Current Project Context
 
-```json
-!`npx shadcn@latest info --json`
+```bash
+npx shadcn@latest info --json
 ```
 
 The JSON above contains the project config and installed components. Use `npx shadcn@latest docs <component>` to get documentation and example URLs for any component.
@@ -123,6 +128,8 @@ These are the most common patterns that differentiate correct shadcn/ui code. Fo
 ```
 
 ## Component Selection
+
+Use this table as a starting point. Validate component availability before suggesting components not already present in `src/components/ui` unless install is explicitly requested.
 
 | Need                       | Use                                                                                                 |
 | -------------------------- | --------------------------------------------------------------------------------------------------- |
