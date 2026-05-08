@@ -115,6 +115,43 @@ describe('runtime Worker run routes', () => {
       .toBe(1);
   });
 
+  it('POST /v1/runs/:id/cancel after ready leaves the terminal ready run unchanged', async () => {
+    const runId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await env.GENERATION_DB.prepare(`
+      insert into runs (
+        id, device_id, kind, status, input_hash, idempotency_key, parent_run_id,
+        supersedes_key, cancel_requested_at, cancel_reason, subject_id, topic_id,
+        created_at, started_at, finished_at, error_code, error_message, snapshot_json
+      ) values (?, ?, 'crystal-trial', 'ready', 'ih_ready_runtime', null, null,
+        null, null, null, 'runtime-subject', 'runtime-topic', ?, ?, ?, null, null, ?)
+    `).bind(
+      runId,
+      RUNTIME_DEVICE_ID,
+      now,
+      now,
+      now,
+      JSON.stringify({ pipeline_kind: 'crystal-trial', subject_id: 'runtime-subject', topic_id: 'runtime-topic' }),
+    ).run();
+
+    const response = await app.fetch(new Request(`https://runtime.test/v1/runs/${runId}/cancel`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ reason: 'user' }),
+    }), env);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'run_already_terminal', status: 'ready' });
+    const row = await env.GENERATION_DB.prepare(
+      'select status, cancel_requested_at, cancel_reason, finished_at from runs where id = ?',
+    ).bind(runId).first<{ status: string; cancel_requested_at: string | null; cancel_reason: string | null; finished_at: string | null }>();
+    expect(row?.status).toBe('ready');
+    expect(row?.cancel_requested_at).toBeNull();
+    expect(row?.cancel_reason).toBeNull();
+    expect(row?.finished_at).toBe(now);
+    expect(await scalar(env.GENERATION_DB, 'select count(*) as value from events where run_id = ?', runId)).toBe(0);
+  });
+
   it('POST /v1/runs/:id/retry creates a child run with parent lineage', async () => {
     const parentRunId = crypto.randomUUID();
     await seedFailedParentRun(parentRunId);
