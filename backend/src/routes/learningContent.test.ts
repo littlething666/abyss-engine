@@ -224,12 +224,18 @@ describe('Learning Content Store routes', () => {
     const { db: missingHashDb } = createFakeD1([q(deviceRow(DEVICE_ID))]);
     const missingHash = await fetchLearningContent('/v1/subjects/math/topics/limits/trials/3', missingHashDb);
     expect(missingHash.status).toBe(400);
-    await expect(missingHash.json()).resolves.toMatchObject({ error: 'missing_query' });
+    await expect(missingHash.json()).resolves.toMatchObject({
+      code: 'parse:invalid-route-input',
+      message: expect.stringContaining('cardPoolHash'),
+    });
 
     const { db: badLevelDb } = createFakeD1([q(deviceRow(DEVICE_ID))]);
     const badLevel = await fetchLearningContent('/v1/subjects/math/topics/limits/trials/not-a-level?cardPoolHash=pool-1', badLevelDb);
     expect(badLevel.status).toBe(400);
-    await expect(badLevel.json()).resolves.toMatchObject({ error: 'invalid_target_level' });
+    await expect(badLevel.json()).resolves.toMatchObject({
+      code: 'parse:invalid-route-input',
+      message: expect.stringContaining('targetLevel'),
+    });
   });
 
   it('returns 404 for missing Crystal Trial sets', async () => {

@@ -15,7 +15,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "hono": "^4.12.16"
+    "hono": "^4.12.16",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260503.0",

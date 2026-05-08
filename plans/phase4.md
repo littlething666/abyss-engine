@@ -328,7 +328,7 @@ Exit:
 
 ### PR-E — RunIntent submission and backend snapshot expansion
 
-Files: `backend/src/runIntents/*`, `backend/src/routes/runs.ts`, `backend/src/types/api.ts`, `src/features/contentGeneration/generationClient.ts`.
+Files: `backend/src/runIntents/*`, `backend/src/routes/runs.ts`, `backend/src/routes/validation.ts`, `src/features/contentGeneration/generationClient.ts`.
 
 - Change `POST /v1/runs` to accept `{ kind, intent }`.
 - Add intent validators with forbidden policy-field rejection.

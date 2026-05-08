@@ -9,18 +9,12 @@
 import { Hono } from 'hono';
 import type { Env } from '../env';
 import { makeRepos } from '../repositories';
+import { validateCrystalTrialReadInput } from './validation';
 
 const learningContent = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotencyKey?: string } }>();
 
 function notFound(message: string) {
   return { error: 'not_found', message };
-}
-
-function parseTargetLevel(value: string): number | null {
-  if (!/^\d+$/.test(value)) return null;
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) return null;
-  return parsed;
 }
 
 learningContent.get('/library/manifest', async (c) => {
@@ -63,24 +57,23 @@ learningContent.get('/subjects/:subjectId/topics/:topicId/cards', async (c) => {
 
 learningContent.get('/subjects/:subjectId/topics/:topicId/trials/:targetLevel', async (c) => {
   const repos = makeRepos(c.env);
-  const subjectId = c.req.param('subjectId');
-  const topicId = c.req.param('topicId');
-  const targetLevel = parseTargetLevel(c.req.param('targetLevel'));
-  if (targetLevel === null) {
-    return c.json({ error: 'invalid_target_level', message: 'targetLevel must be a positive integer' }, 400);
+  const input = validateCrystalTrialReadInput({
+    subjectId: c.req.param('subjectId'),
+    topicId: c.req.param('topicId'),
+    targetLevel: c.req.param('targetLevel'),
+    cardPoolHash: c.req.query('cardPoolHash'),
+  });
+  if (!input.ok) {
+    return c.json(input.failure, 400);
   }
-
-  const cardPoolHash = c.req.query('cardPoolHash');
-  if (!cardPoolHash || cardPoolHash.trim().length === 0) {
-    return c.json({ error: 'missing_query', message: 'cardPoolHash query parameter is required' }, 400);
-  }
+  const { subjectId, topicId, targetLevel, cardPoolHash } = input.value;
 
   const trialSet = await repos.learningContent.getCrystalTrialSet(
     c.get('deviceId'),
     subjectId,
     topicId,
     targetLevel,
-    cardPoolHash.trim(),
+    cardPoolHash,
   );
   if (!trialSet) {
     return c.json(notFound(`Crystal Trial set not found for subject ${subjectId}, topic ${topicId}, target level ${targetLevel}`), 404);

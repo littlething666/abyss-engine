@@ -1,0 +1,181 @@
+/**
+ * Route validation seam for backend HTTP inputs.
+ *
+ * Routes should validate request bodies, params, and query strings here before
+ * invoking repositories or workflow/domain modules. The schemas fail loudly at
+ * the Worker boundary; they do not repair, coerce ambiguous shapes, or accept
+ * client-owned generation policy fields.
+ */
+
+import { z } from 'zod';
+import type { PipelineKind } from '../repositories/types';
+import type { RetryOptions } from './retryPlanning';
+
+const PIPELINE_KIND_VALUES = [
+  'crystal-trial',
+  'topic-content',
+  'topic-expansion',
+  'subject-graph',
+] as const satisfies readonly PipelineKind[];
+
+const RUN_LIST_STATUS_VALUES = ['active', 'recent'] as const;
+
+const pipelineKindSchema = z.enum(PIPELINE_KIND_VALUES);
+
+const nonEmptyRouteString = z.string().min(1);
+
+const positiveIntegerPathParam = z
+  .string()
+  .regex(/^\d+$/, 'must be a positive integer')
+  .transform((value) => Number(value))
+  .refine((value) => Number.isSafeInteger(value) && value > 0, 'must be a positive integer');
+
+const exactNonEmptyQueryString = z
+  .string()
+  .min(1)
+  .refine((value) => value.trim() === value, 'must not contain leading or trailing whitespace');
+
+const optionalRouteQueryString = z
+  .string()
+  .min(1)
+  .refine((value) => value.trim() === value, 'must not contain leading or trailing whitespace')
+  .optional();
+
+const limitQuerySchema = z
+  .string()
+  .regex(/^\d+$/, 'must be an integer between 1 and 500')
+  .transform((value) => Number(value))
+  .refine((value) => Number.isSafeInteger(value) && value >= 1 && value <= 500, 'must be an integer between 1 and 500')
+  .optional();
+
+const submitRunBodySchema = z.strictObject({
+  kind: pipelineKindSchema,
+  intent: z.record(z.string(), z.unknown()),
+});
+
+const retryBodySchema = z.strictObject({
+  stage: z.string().min(1).optional(),
+  jobId: z.string().min(1).optional(),
+});
+
+const runsListQuerySchema = z.strictObject({
+  status: z.enum(RUN_LIST_STATUS_VALUES).optional(),
+  kind: pipelineKindSchema.optional(),
+  subjectId: optionalRouteQueryString,
+  topicId: optionalRouteQueryString,
+  limit: limitQuerySchema,
+});
+
+const crystalTrialReadSchema = z.strictObject({
+  subjectId: nonEmptyRouteString,
+  topicId: nonEmptyRouteString,
+  targetLevel: positiveIntegerPathParam,
+  cardPoolHash: exactNonEmptyQueryString,
+});
+
+export interface ValidationFailure {
+  code: string;
+  message: string;
+}
+
+export interface ValidatedSubmitRunBody {
+  kind: PipelineKind;
+  intent: Record<string, unknown>;
+}
+
+export interface ValidatedRunsListQuery {
+  status?: 'active' | 'recent';
+  kind?: PipelineKind;
+  subjectId?: string;
+  topicId?: string;
+  limit?: number;
+}
+
+export interface ValidatedCrystalTrialReadInput {
+  subjectId: string;
+  topicId: string;
+  targetLevel: number;
+  cardPoolHash: string;
+}
+
+export type ValidationResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; failure: ValidationFailure };
+
+function formatIssues(issues: z.core.$ZodIssue[]): string {
+  return issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join('.') : 'body';
+      return `${path}: ${issue.message}`;
+    })
+    .join('; ');
+}
+
+function fromSafeParse<T>(
+  parsed: z.ZodSafeParseResult<T>,
+  code: string,
+  fallbackMessage: string,
+): ValidationResult<T> {
+  if (parsed.success) return { ok: true, value: parsed.data };
+  return {
+    ok: false,
+    failure: {
+      code,
+      message: formatIssues(parsed.error.issues) || fallbackMessage,
+    },
+  };
+}
+
+function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function validateSubmitRunBody(body: unknown): ValidationResult<ValidatedSubmitRunBody> {
+  if (!isRecordLike(body)) {
+    return { ok: false, failure: { code: 'parse:json-mode-violation', message: 'body must be an object' } };
+  }
+
+  if ('snapshot' in body) {
+    return {
+      ok: false,
+      failure: {
+        code: 'parse:json-mode-violation',
+        message: 'snapshot is not accepted; POST /v1/runs requires { kind, intent }',
+      },
+    };
+  }
+
+  return fromSafeParse(
+    submitRunBodySchema.safeParse(body),
+    'parse:json-mode-violation',
+    'POST /v1/runs requires { kind, intent }',
+  );
+}
+
+export function validateRunsListQuery(query: Record<string, string | undefined>): ValidationResult<ValidatedRunsListQuery> {
+  return fromSafeParse(
+    runsListQuerySchema.safeParse(query),
+    'parse:invalid-query',
+    'invalid run list query',
+  );
+}
+
+export function validateRetryBody(body: unknown): ValidationResult<RetryOptions> {
+  if (!isRecordLike(body)) {
+    return { ok: false, failure: { code: 'parse:json-mode-violation', message: 'retry body must be an object when provided' } };
+  }
+
+  return fromSafeParse(
+    retryBodySchema.safeParse(body),
+    'parse:json-mode-violation',
+    'retry body must contain optional string stage/jobId fields only',
+  );
+}
+
+export function validateCrystalTrialReadInput(input: Record<string, string | undefined>): ValidationResult<ValidatedCrystalTrialReadInput> {
+  return fromSafeParse(
+    crystalTrialReadSchema.safeParse(input),
+    'parse:invalid-route-input',
+    'invalid Crystal Trial route input',
+  );
+}

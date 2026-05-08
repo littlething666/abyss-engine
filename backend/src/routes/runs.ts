@@ -15,6 +15,11 @@ import { inputHash } from '../contracts/generationContracts';
 import { expandRunIntent, assertNoForbiddenPolicyFields } from '../runIntents/runIntentExpansion';
 import { buildRetryRunSnapshot } from './retryPlanning';
 import {
+  validateRetryBody,
+  validateRunsListQuery,
+  validateSubmitRunBody,
+} from './validation';
+import {
   buildRunQueuedEvent,
   buildArtifactReadyEvent,
   buildRunCompletedEvent,
@@ -25,49 +30,9 @@ import {
 import { dbStatusToTransport } from '../contracts/statusMapper';
 import type { Env } from '../env';
 import type { PipelineKind } from '../repositories/types';
-import type { SubmitRunBody } from '../types/api';
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Lightweight intent assertion. Snapshot construction is backend-owned: the
- * route accepts only `{ kind, intent }`, then expands the intent through the
- * Learning Content Store and backend Generation Policy.
- */
-function assertIntentBody(body: unknown): {
-  kind: PipelineKind;
-  intent: Record<string, unknown>;
-  error?: string;
-} {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return { kind: 'crystal-trial', intent: {}, error: 'invalid_body' };
-  }
-
-  const b = body as SubmitRunBody & { snapshot?: unknown };
-
-  const VALID_KINDS: PipelineKind[] = [
-    'crystal-trial',
-    'topic-content',
-    'topic-expansion',
-    'subject-graph',
-  ];
-
-  if (!VALID_KINDS.includes(b.kind)) {
-    return { kind: 'crystal-trial', intent: {}, error: `unsupported kind: ${String(b.kind)}` };
-  }
-
-  if ('snapshot' in b) {
-    return { kind: b.kind, intent: {}, error: 'snapshot is not accepted; POST /v1/runs requires { kind, intent }' };
-  }
-
-  if (!b.intent || typeof b.intent !== 'object' || Array.isArray(b.intent)) {
-    return { kind: b.kind, intent: {}, error: 'missing or invalid intent' };
-  }
-
-  return { kind: b.kind, intent: b.intent };
-}
 
 function getSupersedesKey(req: Request): string | undefined {
   const val = req.headers.get('Supersedes-Key');
@@ -158,10 +123,11 @@ runs.post('/', async (c) => {
     return c.json({ code: 'config:forbidden-generation-policy-field', message }, 400);
   }
 
-  const { kind, intent, error: intentErr } = assertIntentBody(body);
-  if (intentErr) {
-    return c.json({ code: 'parse:json-mode-violation', message: intentErr }, 400);
+  const intentBody = validateSubmitRunBody(body);
+  if (!intentBody.ok) {
+    return c.json(intentBody.failure, 400);
   }
+  const { kind, intent } = intentBody.value;
 
   // 2. Supersedes-Key is only valid for topic-expansion.
   const supersedesKey = getSupersedesKey(c.req.raw);
@@ -293,13 +259,18 @@ runs.get('/', async (c) => {
   const deviceId = c.get('deviceId');
   const repos = makeRepos(c.env);
 
-  const status = c.req.query('status') as string | undefined;
-  const kind = c.req.query('kind') as string | undefined;
-  const subjectId = c.req.query('subjectId') as string | undefined;
-  const topicId = c.req.query('topicId') as string | undefined;
-  const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!, 10) : undefined;
+  const query = validateRunsListQuery({
+    status: c.req.query('status'),
+    kind: c.req.query('kind'),
+    subjectId: c.req.query('subjectId'),
+    topicId: c.req.query('topicId'),
+    limit: c.req.query('limit'),
+  });
+  if (!query.ok) {
+    return c.json(query.failure, 400);
+  }
 
-  const rows = await repos.runs.listByDevice(deviceId, { status, kind, subjectId, topicId, limit });
+  const rows = await repos.runs.listByDevice(deviceId, query.value);
 
   // Map DB statuses to transport statuses in the response (Phase 3.6 Step 7).
   const mapped = rows.map((r) => ({
@@ -375,17 +346,22 @@ runs.post('/:id/retry', async (c) => {
   const runId = c.req.param('id');
   const repos = makeRepos(c.env);
 
-  // Parse optional { stage?, jobId? } body.
+  // Parse optional { stage?, jobId? } body. Invalid JSON fails at the boundary;
+  // only a genuinely absent body means “retry with default options”.
   let retryOpts: { stage?: string; jobId?: string } = {};
-  try {
-    const body = await c.req.json();
-    if (body && typeof body === 'object' && !Array.isArray(body)) {
-      const b = body as Record<string, unknown>;
-      if (typeof b.stage === 'string') retryOpts.stage = b.stage;
-      if (typeof b.jobId === 'string') retryOpts.jobId = b.jobId;
+  if (c.req.raw.body !== null) {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ code: 'invalid_json_body', message: 'retry body must be valid JSON when provided' }, 400);
     }
-  } catch {
-    // No body or invalid JSON — proceed with empty opts.
+
+    const retryBody = validateRetryBody(body);
+    if (!retryBody.ok) {
+      return c.json(retryBody.failure, 400);
+    }
+    retryOpts = retryBody.value;
   }
 
   const run = await repos.runs.load(runId);
