@@ -3,7 +3,6 @@ import type {
   CancelReason,
   GenerationRunIntent,
   IGenerationRunRepository,
-  PipelineKind,
   RunInput,
   RunListQuery,
   RunSnapshot,
@@ -16,20 +15,12 @@ export type SubjectGraphStartInput = Extract<GenerationRunIntent, { kind: 'subje
 export type TopicExpansionStartInput = Extract<GenerationRunIntent, { kind: 'topic-expansion' }>;
 export type CrystalTrialStartInput = Extract<GenerationRunIntent, { kind: 'crystal-trial' }>;
 
-export interface GenerationClientFlags {
-  durableRuns: boolean;
-}
-
 export interface CreateGenerationClientDeps {
   /** Reserved for durable HTTP wiring; repository adapters already scope runs. */
   deviceId: string;
   /** Reserved for clock-skew / testing at the composition root. */
   now: () => number;
-  flags: GenerationClientFlags;
-  /** Transitional routing seam removed once durable-only wiring lands. */
-  durableKinds?: Set<PipelineKind>;
-  localRepo: IGenerationRunRepository;
-  durableRepo: IGenerationRunRepository;
+  repo: IGenerationRunRepository;
 }
 
 export interface GenerationClient {
@@ -70,22 +61,14 @@ function isLegacyRunInput(input: SubmitGenerationRunInput): input is RunInput {
   return 'pipelineKind' in input;
 }
 
-function kindOf(input: SubmitGenerationRunInput): PipelineKind {
-  return isLegacyRunInput(input) ? input.pipelineKind : input.kind;
-}
+function assertSupportedSubmitInput(input: SubmitGenerationRunInput): void {
+  if (!isLegacyRunInput(input)) return;
 
-function selectRepoFor(kind: PipelineKind, deps: CreateGenerationClientDeps): IGenerationRunRepository {
-  const kinds = deps.durableKinds ?? new Set<PipelineKind>([
-    'crystal-trial',
-    'topic-content',
-    'topic-expansion',
-    'subject-graph',
-  ]);
-  return deps.flags.durableRuns && kinds.has(kind) ? deps.durableRepo : deps.localRepo;
-}
-
-function pickRepo(deps: CreateGenerationClientDeps): IGenerationRunRepository {
-  return deps.flags.durableRuns ? deps.durableRepo : deps.localRepo;
+  // Temporary compatibility for durable rehydration/local-runner deletion sequencing:
+  // legacy RunInput can still reach low-level submit until PR 7 removes the type.
+  if (!input.pipelineKind) {
+    throw new Error('GenerationClient received an invalid legacy RunInput without pipelineKind');
+  }
 }
 
 function defaultIdempotencyKey(): string {
@@ -97,10 +80,10 @@ function defaultIdempotencyKey(): string {
 }
 
 export function createGenerationClient(deps: CreateGenerationClientDeps): GenerationClient {
-  const repo = (): IGenerationRunRepository => pickRepo(deps);
+  const repo = (): IGenerationRunRepository => deps.repo;
 
   async function submitIntent(input: GenerationRunIntent, opts?: { idempotencyKey?: string }): Promise<{ runId: string }> {
-    return selectRepoFor(input.kind, deps).submitRun(input, opts?.idempotencyKey ?? defaultIdempotencyKey());
+    return repo().submitRun(input, opts?.idempotencyKey ?? defaultIdempotencyKey());
   }
 
   return {
@@ -121,7 +104,8 @@ export function createGenerationClient(deps: CreateGenerationClientDeps): Genera
     },
 
     async submitRun(input, opts) {
-      return selectRepoFor(kindOf(input), deps).submitRun(input, opts?.idempotencyKey ?? defaultIdempotencyKey());
+      assertSupportedSubmitInput(input);
+      return repo().submitRun(input, opts?.idempotencyKey ?? defaultIdempotencyKey());
     },
 
     cancel(runId, reason) {

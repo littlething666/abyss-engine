@@ -3,10 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useContentGenerationStore } from '@/features/contentGeneration';
 import { getGenerationClient } from '@/features/contentGeneration/generationClient';
 import { loadPersistedLogs } from '@/infrastructure/repositories/contentGenerationLogRepository';
-import {
-  getGenerationRunEventHandlers,
-  isDurableRunsEnabled,
-} from '@/infrastructure/wireGenerationClient';
+import { getGenerationRunEventHandlers } from '@/infrastructure/wireGenerationClient';
 import type {
   CrystalTrialRunInputSnapshot,
   SubjectGraphEdgesRunInputSnapshot,
@@ -97,8 +94,8 @@ function runInputFromSnapshot(run: RunSnapshot): RunInput {
  * Phase 0.5 (default): loads persisted terminal job logs from IndexedDB
  * (the `contentGenerationLogRepository` read-cache) into the Zustand store.
  *
- * Phase 1+ (NEXT_PUBLIC_DURABLE_RUNS=true):
- * 1. Merges the local read-cache as above.
+ * Durable-only generation:
+ * 1. Merges the local read-cache as above while HUD projection migration is in progress.
  * 2. Fetches active durable runs from the Worker (excludes terminal `ready`).
  * 3. Fetches recently completed `ready` runs and replays them ONLY when
  *    local artifact application is still missing (Phase 3.6 Step 2).
@@ -125,9 +122,7 @@ export function useContentGenerationHydration(): void {
       if (cancelled) return;
       useContentGenerationStore.getState().hydrateFromPersisted(jobs, pipelines);
 
-      // ── 2. Backend hydration (Phase 1+ only) ─────────────────
-      if (!isDurableRunsEnabled()) return;
-
+      // ── 2. Backend hydration ─────────────────────────────────
       const client = getGenerationClient();
       const handlers = getGenerationRunEventHandlers();
       if (!handlers) return;

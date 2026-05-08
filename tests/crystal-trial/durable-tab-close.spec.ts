@@ -2,8 +2,7 @@
  * Crystal Trial durable generation E2E tests — Phase 1 PR-G.
  *
  * Tests that Crystal Trial question generation survives tab close when
- * `NEXT_PUBLIC_DURABLE_RUNS` is enabled and the Worker backend is
- * reachable.
+ * the durable Worker backend is configured and reachable.
  *
  * Core scenarios:
  * 1. Tab-close survival: submit generation → close tab → reopen →
@@ -13,7 +12,6 @@
  * ## Prerequisites
  *
  * These tests require:
- * - `NEXT_PUBLIC_DURABLE_RUNS=true` in the Next.js build/env
  * - `NEXT_PUBLIC_DURABLE_GENERATION_URL` pointing to a running Worker
  * - The Worker's Supabase backend reachable
  *
@@ -46,29 +44,6 @@ declare global {
       spawnCrystal?: (topicId: string) => Promise<void>;
       getState?: () => { activeCards?: number };
     };
-    __abyssDurableRunsEnabled?: boolean;
-  }
-}
-
-/** Check if durable runs are actually enabled in the running app. */
-async function isDurableRunsEnabled(page: Page): Promise<boolean> {
-  try {
-    const enabled = await page.evaluate(() => {
-      try {
-        return (
-          typeof (window as unknown as { __abyssDurableRunsEnabled?: boolean })
-            .__abyssDurableRunsEnabled === 'boolean'
-            ? (window as unknown as { __abyssDurableRunsEnabled: boolean })
-                .__abyssDurableRunsEnabled
-            : false
-        );
-      } catch {
-        return false;
-      }
-    });
-    return enabled;
-  } catch {
-    return false;
   }
 }
 
@@ -116,10 +91,6 @@ test.describe('Crystal Trial — durable generation (tab-close survival)', () =>
     seededApp: page,
   }) => {
     await waitForSceneProbe(page);
-
-    // Skip if durable runs are not enabled.
-    const durableEnabled = await isDurableRunsEnabled(page);
-    test.skip(!durableEnabled, 'Durable runs not enabled (NEXT_PUBLIC_DURABLE_RUNS is false or not set)');
 
     const workerReachable = await isWorkerReachable(page);
     test.skip(!workerReachable, 'Worker backend not reachable');
@@ -204,9 +175,6 @@ test.describe('Crystal Trial — durable generation (tab-close survival)', () =>
     seededApp: page,
   }) => {
     await waitForSceneProbe(page);
-
-    const durableEnabled = await isDurableRunsEnabled(page);
-    test.skip(!durableEnabled, 'Durable runs not enabled');
 
     const workerReachable = await isWorkerReachable(page);
     test.skip(!workerReachable, 'Worker backend not reachable');

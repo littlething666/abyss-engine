@@ -1,6 +1,6 @@
 # Local Workflows Removal Plan
 
-Status: in progress (2026-05-08). PR 1 core is implemented and PR 2 runtime entry paths are now intent-only. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and HUD retry routing no longer reconstruct frontend snapshots or resolve pipeline models. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 3 durable-only routing and PR 7 local runners are deleted.
+Status: in progress (2026-05-08). PR 1 core, PR 2 runtime intent submission, and PR 3 durable-only routing are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and HUD retry routing no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 7 local runners are deleted.
 
 ## Goal
 
@@ -45,18 +45,18 @@ Move generation to durable-only routing and delete the local-runner/settings leg
 
 ## Current Codebase Findings
 
-### Durable/local routing seams to remove
+### Durable/local routing seams status
 
 - `src/features/contentGeneration/generationClient.ts`
-  - Builds snapshots, computes `inputHash`, supports `flags.durableRuns`, `durableKinds`, `localRepo`, and `durableRepo`.
+  - Durable-only facade now delegates to one repository and no longer supports `flags.durableRuns`, per-kind routing, `localRepo`, or `durableRepo` selection.
 - `src/infrastructure/wireGenerationClient.ts`
-  - Parses `NEXT_PUBLIC_DURABLE_RUNS` and `NEXT_PUBLIC_DURABLE_RUNS_KINDS`, creates both local and durable repositories, and no-ops observation when the flag is off.
-- `src/infrastructure/repositories/LocalGenerationRunRepository.ts`
-  - Wraps all four in-tab runners and imports local feature execution modules.
-- `src/infrastructure/repositories/localGenerationRunArtifactCapture.ts`
-  - Exists only to synthesize local `artifact.ready` payloads.
+  - Durable-only bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, constructs one `DurableGenerationRunRepository`, and always observes run events.
 - `src/infrastructure/deckRepositoryFactory.ts`
-  - Selects backend reads only when durable flags are present.
+  - Selects backend reads whenever the Worker URL is configured; no durable flag gate remains.
+- `src/infrastructure/repositories/LocalGenerationRunRepository.ts`
+  - Still exists as a deletion target and wraps all four in-tab runners, but is no longer constructed by runtime durable bootstrap.
+- `src/infrastructure/repositories/localGenerationRunArtifactCapture.ts`
+  - Still exists only for the local adapter deletion wave.
 
 ### Frontend snapshot/model/healing construction to remove
 
@@ -165,7 +165,19 @@ Still pending under later PRs:
 
 ### PR 3 — Make durable routing unconditional
 
-**Recommended next task:** now that runtime submissions are intents, remove durable/local routing and require `NEXT_PUBLIC_DURABLE_GENERATION_URL` at bootstrap. This unblocks safe deletion of local runners and frontend pipeline settings.
+**Status (2026-05-08): complete for runtime routing and hydration.**
+
+Completed:
+- Removed `NEXT_PUBLIC_DURABLE_RUNS` / `NEXT_PUBLIC_DURABLE_RUNS_KINDS` parsing from frontend runtime and build env export configuration.
+- Removed `LocalGenerationRunRepository` construction and per-kind routing from `wireGenerationClient.ts`.
+- `ensureGenerationClientRegistered()` now throws a descriptive bootstrap error when `NEXT_PUBLIC_DURABLE_GENERATION_URL` is absent.
+- `GenerationClient` now delegates all submit/observe/cancel/retry/list/artifact methods to a single durable repository.
+- `observeGenerationRun()` and `useContentGenerationHydration()` always use durable observation/hydration.
+- Deck read selection now uses the backend repository whenever the durable Worker URL is configured.
+
+Still pending under later PRs:
+- Delete local runner modules/tests and remove the temporary low-level `RunInput` compatibility path (PR 7).
+- Project durable run ids explicitly into HUD/store state before deleting abort controller fields (PR 4/5).
 
 **Files:**
 - `src/infrastructure/wireGenerationClient.ts`
@@ -189,6 +201,8 @@ Still pending under later PRs:
 - App bootstrap cannot silently fall back to local generation.
 
 ### PR 4 — Project durable runs into HUD/store state
+
+**Recommended next task:** durable routing is now unconditional, so the next dependency is making the HUD/store a durable run projection with explicit `runId` fields before removing navigation abort and local-runner execution files.
 
 **Files:**
 - `src/features/contentGeneration/contentGenerationStore.ts`

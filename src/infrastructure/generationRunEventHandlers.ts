@@ -20,14 +20,11 @@
  *
  * ## When this runs
  *
- * During the Phase 0.5 → Phase 1 transition, `generationRunEventHandlers`
- * activates only when `NEXT_PUBLIC_DURABLE_RUNS` is `true` and the
- * `DurableGenerationRunRepository` is the active adapter. For local
- * runs (flag OFF), today's in-tab runners still own store writes and
- * event emission through the legacy path.
- *
- * In Phase 1, this composition root becomes the sole path for artifact
- * application and event emission from generation results.
+ * `generationRunEventHandlers` now runs against the durable Worker adapter
+ * unconditionally. Local in-tab runners no longer participate in runtime
+ * submission/observation; remaining local runner files are deletion targets.
+ * This composition root is the sole path for artifact application and event
+ * emission from generation results while the HUD projection is migrated.
  */
 
 import { appEventBus, type AppEventBus } from './eventBus';

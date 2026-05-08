@@ -5,14 +5,12 @@ import { BackendDeckRepository } from './repositories/BackendDeckRepository';
 import { IndexedDbDeckRepository } from './repositories/IndexedDbDeckRepository';
 
 export interface DeckRepositoryEnvironment {
-  NEXT_PUBLIC_DURABLE_RUNS?: string;
   NEXT_PUBLIC_DURABLE_GENERATION_URL?: string;
 }
 
 function readPublicEnv(): DeckRepositoryEnvironment {
   if (typeof process === 'undefined') return {};
   return {
-    NEXT_PUBLIC_DURABLE_RUNS: process.env.NEXT_PUBLIC_DURABLE_RUNS,
     NEXT_PUBLIC_DURABLE_GENERATION_URL: process.env.NEXT_PUBLIC_DURABLE_GENERATION_URL,
   };
 }
@@ -24,15 +22,15 @@ function workerBaseUrl(env: DeckRepositoryEnvironment): string {
 }
 
 export function shouldUseBackendDeckRepository(env: DeckRepositoryEnvironment): boolean {
-  return env.NEXT_PUBLIC_DURABLE_RUNS === 'true' && workerBaseUrl(env).length > 0;
+  return workerBaseUrl(env).length > 0;
 }
 
 /**
  * Composition root for deck read authority.
  *
- * Durable backend generation reads from the backend Learning Content Store.
- * Legacy local generation keeps IndexedDB reads until the local runners are
- * deleted later in Phase 4.
+ * Generated learning content is backend-authoritative whenever the durable
+ * generation Worker URL is configured. Bundled/manual local content can still
+ * use IndexedDB in environments that have not configured a Worker URL.
  */
 export function createDeckRepository(env: DeckRepositoryEnvironment = readPublicEnv()): IDeckRepository {
   if (shouldUseBackendDeckRepository(env)) {

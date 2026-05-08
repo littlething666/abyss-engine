@@ -15,12 +15,11 @@ import type { ContentGenerationAbortReason } from '@/types/contentGenerationAbor
  * hook naturally skips them. No explicit `backendRoutedJobIds` filter
  * is needed.
  *
- * When `NEXT_PUBLIC_DURABLE_RUNS` is on, only `crystal-trial` runs are
- * backend-routed in Phase 1; all other pipeline kinds continue through
- * the local in-tab runner and still abort on `beforeunload`.
+ * Runtime generation is durable-only; this hook remains only until the
+ * remaining local-runner store fields are deleted. Durable Worker runs are
+ * never aborted by navigation.
  *
- * The `'navigation'` abort reason is preserved per Plan v3 Q13 until
- * Phase 4 (full local-runner deletion).
+ * The `'navigation'` abort reason is a local-runner deletion target.
  */
 export function useContentGenerationLifecycle(): void {
   useEffect(() => {

@@ -10,7 +10,6 @@ export type {
   CreateGenerationClientDeps,
   CrystalTrialStartInput,
   GenerationClient,
-  GenerationClientFlags,
   SubjectGraphStartInput,
   TopicContentStageTag,
   TopicContentStartInput,

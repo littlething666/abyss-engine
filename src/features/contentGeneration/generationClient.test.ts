@@ -19,14 +19,11 @@ function mockRepo(): IGenerationRunRepository {
 
 describe('createGenerationClient', () => {
   it('submits topic-content intents without client-built snapshots', async () => {
-    const local = mockRepo();
-    const durable = mockRepo();
+    const repo = mockRepo();
     const client = createGenerationClient({
       deviceId: 'dev-1',
       now: () => 0,
-      flags: { durableRuns: false },
-      localRepo: local,
-      durableRepo: durable,
+      repo,
     });
 
     await client.startTopicContent({
@@ -36,9 +33,8 @@ describe('createGenerationClient', () => {
       stage: 'theory',
     });
 
-    expect(local.submitRun).toHaveBeenCalledTimes(1);
-    expect(durable.submitRun).not.toHaveBeenCalled();
-    const [input, idempotencyKey] = vi.mocked(local.submitRun).mock.calls[0]!;
+    expect(repo.submitRun).toHaveBeenCalledTimes(1);
+    const [input, idempotencyKey] = vi.mocked(repo.submitRun).mock.calls[0]!;
     expect(input).toEqual({
       kind: 'topic-content',
       subjectId: 'sub-1',
@@ -51,13 +47,11 @@ describe('createGenerationClient', () => {
   });
 
   it('forwards explicit idempotencyKey unchanged', async () => {
-    const local = mockRepo();
+    const repo = mockRepo();
     const client = createGenerationClient({
       deviceId: 'dev-1',
       now: () => 0,
-      flags: { durableRuns: false },
-      localRepo: local,
-      durableRepo: mockRepo(),
+      repo,
     });
 
     await client.startTopicContent(
@@ -65,72 +59,64 @@ describe('createGenerationClient', () => {
       { idempotencyKey: 'explicit-key' },
     );
 
-    const [, key] = vi.mocked(local.submitRun).mock.calls[0]!;
+    const [, key] = vi.mocked(repo.submitRun).mock.calls[0]!;
     expect(key).toBe('explicit-key');
   });
 
-  it('routes each intent kind to durable when enabled', async () => {
-    const local = mockRepo();
-    const durable = mockRepo();
+  it('submits each intent kind through the durable repository', async () => {
+    const repo = mockRepo();
     const client = createGenerationClient({
       deviceId: 'dev-1',
       now: () => 0,
-      flags: { durableRuns: true },
-      localRepo: local,
-      durableRepo: durable,
+      repo,
     });
 
     await client.startTopicExpansion({ kind: 'topic-expansion', subjectId: 'sub-1', topicId: 'topic-1', nextLevel: 2 });
     await client.startSubjectGraph({ kind: 'subject-graph', subjectId: 'sub-1', stage: 'topics', checklist: { topicName: 'Algebra' } });
     await client.startCrystalTrial({ kind: 'crystal-trial', subjectId: 'sub-1', topicId: 'topic-1', currentLevel: 0, targetLevel: 1 });
 
-    expect(durable.submitRun).toHaveBeenCalledTimes(3);
-    expect(local.submitRun).not.toHaveBeenCalled();
-    expect(vi.mocked(durable.submitRun).mock.calls.map(([input]) => input)).toEqual([
+    expect(repo.submitRun).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(repo.submitRun).mock.calls.map(([input]) => input)).toEqual([
       { kind: 'topic-expansion', subjectId: 'sub-1', topicId: 'topic-1', nextLevel: 2 },
       { kind: 'subject-graph', subjectId: 'sub-1', stage: 'topics', checklist: { topicName: 'Algebra' } },
       { kind: 'crystal-trial', subjectId: 'sub-1', topicId: 'topic-1', currentLevel: 0, targetLevel: 1 },
     ]);
   });
 
-  it('cancel and retry delegate to the selected repository', async () => {
-    const local = mockRepo();
+  it('cancel and retry delegate to the durable repository', async () => {
+    const repo = mockRepo();
     const client = createGenerationClient({
       deviceId: 'dev-1',
       now: () => 0,
-      flags: { durableRuns: false },
-      localRepo: local,
-      durableRepo: mockRepo(),
+      repo,
     });
 
     await client.cancel('run-a', 'user');
-    expect(local.cancelRun).toHaveBeenCalledWith('run-a', 'user');
+    expect(repo.cancelRun).toHaveBeenCalledWith('run-a', 'user');
 
     await client.retry('run-b', { stage: 'theory', jobId: 'j1' });
-    expect(local.retryRun).toHaveBeenCalledWith('run-b', { stage: 'theory', jobId: 'j1' });
+    expect(repo.retryRun).toHaveBeenCalledWith('run-b', { stage: 'theory', jobId: 'j1' });
   });
 
   it('observe delegates streamRunEvents', async () => {
-    const local = mockRepo();
+    const repo = mockRepo();
     async function* gen(): AsyncGenerator<RunEvent> {
       yield { type: 'run.queued', runId: 'r', seq: 1, ts: '1970-01-01T00:00:00.000Z' };
     }
-    vi.mocked(local.streamRunEvents).mockReturnValue(gen());
+    vi.mocked(repo.streamRunEvents).mockReturnValue(gen());
 
     const client = createGenerationClient({
       deviceId: 'dev-1',
       now: () => 0,
-      flags: { durableRuns: false },
-      localRepo: local,
-      durableRepo: mockRepo(),
+      repo,
     });
 
     for await (const e of client.observe('run-x', 3)) expect(e.type).toBe('run.queued');
-    expect(local.streamRunEvents).toHaveBeenCalledWith('run-x', 3);
+    expect(repo.streamRunEvents).toHaveBeenCalledWith('run-x', 3);
   });
 
   it('listActive and listRecent delegate listRuns', async () => {
-    const local = mockRepo();
+    const repo = mockRepo();
     const rows: RunSnapshot[] = [{
       runId: 'a',
       deviceId: 'd',
@@ -141,21 +127,19 @@ describe('createGenerationClient', () => {
       snapshotJson: {} as RunSnapshot['snapshotJson'],
       jobs: [],
     }];
-    vi.mocked(local.listRuns).mockResolvedValue(rows);
+    vi.mocked(repo.listRuns).mockResolvedValue(rows);
 
     const client = createGenerationClient({
       deviceId: 'dev-1',
       now: () => 0,
-      flags: { durableRuns: false },
-      localRepo: local,
-      durableRepo: mockRepo(),
+      repo,
     });
 
     await expect(client.listActive()).resolves.toEqual(rows);
-    expect(local.listRuns).toHaveBeenCalledWith({ status: 'active' });
+    expect(repo.listRuns).toHaveBeenCalledWith({ status: 'active' });
 
     await client.listRecent(15);
-    expect(local.listRuns).toHaveBeenCalledWith({ status: 'recent', limit: 15 });
+    expect(repo.listRuns).toHaveBeenCalledWith({ status: 'recent', limit: 15 });
   });
 });
 
@@ -166,9 +150,7 @@ describe('registerGenerationClient / getGenerationClient', () => {
     const client = mod.createGenerationClient({
       deviceId: 'dev-1',
       now: () => 0,
-      flags: { durableRuns: false },
-      localRepo: mockRepo(),
-      durableRepo: mockRepo(),
+      repo: mockRepo(),
     });
     mod.registerGenerationClient(client);
     expect(mod.getGenerationClient()).toBe(client);
