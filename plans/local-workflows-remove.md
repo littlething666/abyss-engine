@@ -1,6 +1,6 @@
 # Local Workflows Removal Plan
 
-Status: in progress (2026-05-08). PR 1 core is implemented: intent-only frontend submission types exist, `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 2 entry paths and PR 7 local runners are deleted.
+Status: in progress (2026-05-08). PR 1 core is implemented and PR 2 runtime entry paths are now intent-only. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and HUD retry routing no longer reconstruct frontend snapshots or resolve pipeline models. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 3 durable-only routing and PR 7 local runners are deleted.
 
 ## Goal
 
@@ -126,6 +126,20 @@ Still pending under later PRs:
 
 ### PR 2 — Convert generation entry paths to submit intents
 
+**Status (2026-05-08): complete for runtime entry paths; deletion of the unused snapshot-builder module is deferred until local runner deletion.**
+
+Completed:
+- Replaced runtime `prepare*RunInput()` usage in `src/infrastructure/eventBusHandlers.ts` with direct `GenerationRunIntent` submissions through `startTopicContent()`, `startTopicExpansion()`, `startSubjectGraph()`, and `startCrystalTrial()`.
+- Removed pipeline `resolveModelForSurface()` / `resolveEnableReasoningForSurface()` calls from those generation entry paths.
+- Changed `src/components/AbyssCommandPalette.tsx` crystal-trial regeneration to submit a crystal-trial intent.
+- Changed `retryContentGeneration.ts` to call `GenerationClient.retry(runId, { stage?, jobId? })` instead of rebuilding snapshots/model ids.
+- Adapted durable run observation to accept intent inputs while preserving the temporary legacy `RunInput` path for local runner compatibility.
+- Removed `prepare*RunInput` exports from the content-generation public API and added `intentSubmissionBoundary.test.ts` to guard against runtime imports of frontend snapshot submit builders / input hashing.
+
+Still pending under later PRs:
+- Delete `prepareGenerationRunSubmit.ts` after local runner modules and their tests are removed.
+- Project durable run ids explicitly into HUD job/pipeline state (PR 4); retry currently uses `metadata.runId`, `pipelineId`, or standalone job id according to the durable projection available.
+
 **Files:**
 - `src/infrastructure/eventBusHandlers.ts`
 - `src/features/contentGeneration/retryContentGeneration.ts`
@@ -145,10 +159,13 @@ Still pending under later PRs:
 6. Remove pipeline `resolveModelForSurface()` and `resolveEnableReasoningForSurface()` calls from generation entry paths.
 
 **Exit checks:**
-- No `prepare*RunInput` exports remain.
-- No `resolveModelForSurface('topicContent' | 'crystalTrial' | 'subjectGenerationTopics' | 'subjectGenerationEdges')` remains under runtime `src/**`.
+- No `prepare*RunInput` exports remain from `src/features/contentGeneration/index.ts`.
+- Runtime generation entry paths no longer import `prepareGenerationRunSubmit` or `inputHash`; `intentSubmissionBoundary.test.ts` enforces this.
+- No `resolveModelForSurface('topicContent' | 'crystalTrial' | 'subjectGenerationTopics' | 'subjectGenerationEdges')` remains in runtime entry paths. Remaining hits are local runner modules scheduled for PR 7 deletion.
 
 ### PR 3 — Make durable routing unconditional
+
+**Recommended next task:** now that runtime submissions are intents, remove durable/local routing and require `NEXT_PUBLIC_DURABLE_GENERATION_URL` at bootstrap. This unblocks safe deletion of local runners and frontend pipeline settings.
 
 **Files:**
 - `src/infrastructure/wireGenerationClient.ts`

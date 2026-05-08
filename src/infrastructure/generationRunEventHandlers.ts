@@ -31,7 +31,7 @@
  */
 
 import { appEventBus, type AppEventBus } from './eventBus';
-import type { RunInput, RunSnapshot } from '@/types/repository';
+import type { GenerationRunIntent, PipelineKind, RunInput, RunSnapshot, SubmitGenerationRunInput } from '@/types/repository';
 import type { IDeckRepository } from '@/types/repository';
 import type {
   ArtifactApplier,
@@ -87,7 +87,7 @@ export interface GenerationRunEventHandlers {
    *    today's runner emissions so `eventBusHandlers.ts` listeners
    *    (mentor triggers, telemetry, HUD) continue to work.
    */
-  observeRun(runId: string, runInput: RunInput): Promise<void>;
+  observeRun(runId: string, runInput: SubmitGenerationRunInput): Promise<void>;
 
   /**
    * Returns `0` (backwards compat only). For the authoritative seq, use
@@ -104,6 +104,20 @@ export interface GenerationRunEventHandlers {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+type ObservedRunInput = SubmitGenerationRunInput;
+type ObservedTopicContentInput = Extract<RunInput, { pipelineKind: 'topic-content' }> | Extract<GenerationRunIntent, { kind: 'topic-content' }>;
+type ObservedTopicExpansionInput = Extract<RunInput, { pipelineKind: 'topic-expansion' }> | Extract<GenerationRunIntent, { kind: 'topic-expansion' }>;
+type ObservedSubjectGraphInput = Extract<RunInput, { pipelineKind: 'subject-graph' }> | Extract<GenerationRunIntent, { kind: 'subject-graph' }>;
+type ObservedCrystalTrialInput = Extract<RunInput, { pipelineKind: 'crystal-trial' }> | Extract<GenerationRunIntent, { kind: 'crystal-trial' }>;
+
+function pipelineKindOf(input: ObservedRunInput): PipelineKind {
+  return 'pipelineKind' in input ? input.pipelineKind : input.kind;
+}
+
+function runInputSnapshot(input: ObservedRunInput) {
+  return 'snapshot' in input ? input.snapshot : undefined;
+}
 
 /**
  * Resolve a human-readable topic label from the deck.
@@ -130,8 +144,10 @@ async function resolveTopicLabel(
  * event payloads.
  */
 function topicContentStageFromSnapshot(
-  input: Extract<RunInput, { pipelineKind: 'topic-content' }>,
+  input: ObservedTopicContentInput,
 ): 'theory' | 'study-cards' | 'mini-games' | 'full' {
+  if ('kind' in input) return input.stage;
+
   // Legacy stage option takes priority (supplied by in-tab callers)
   const legacy = input.topicContentLegacyOptions?.legacyStage;
   if (legacy) return legacy;
@@ -147,7 +163,7 @@ function topicContentStageFromSnapshot(
  * Build the `ArtifactApplyContext` for a given run + artifact.
  */
 function buildApplyContext(
-  runInput: RunInput,
+  runInput: ObservedRunInput,
   runId: string,
   deviceId: string,
   dedupeStore: AppliedArtifactsStore,
@@ -165,7 +181,7 @@ function buildApplyContext(
 
   // Topic expansion supersession context
   if (
-    runInput.pipelineKind === 'topic-expansion' &&
+    pipelineKindOf(runInput) === 'topic-expansion' &&
     'nextLevel' in runInput
   ) {
     ctx.topicExpansionTargetLevel = runInput.nextLevel;
@@ -206,7 +222,7 @@ function pickApplier(
 async function emitTopicContentCompleted(
   eventBus: AppEventBus,
   deck: IDeckRepository,
-  input: Extract<RunInput, { pipelineKind: 'topic-content' }>,
+  input: ObservedTopicContentInput,
   runId: string,
 ): Promise<void> {
   const topicLabel = await resolveTopicLabel(
@@ -231,7 +247,7 @@ async function emitTopicContentCompleted(
 async function emitTopicContentFailed(
   eventBus: AppEventBus,
   deck: IDeckRepository,
-  input: Extract<RunInput, { pipelineKind: 'topic-content' }>,
+  input: ObservedTopicContentInput,
   runId: string,
   errorCode: string,
   errorMessage: string,
@@ -260,7 +276,7 @@ async function emitTopicContentFailed(
 async function emitTopicExpansionCompleted(
   eventBus: AppEventBus,
   deck: IDeckRepository,
-  input: Extract<RunInput, { pipelineKind: 'topic-expansion' }>,
+  input: ObservedTopicExpansionInput,
 ): Promise<void> {
   const topicLabel = await resolveTopicLabel(
     deck,
@@ -282,7 +298,7 @@ async function emitTopicExpansionCompleted(
 async function emitTopicExpansionFailed(
   eventBus: AppEventBus,
   deck: IDeckRepository,
-  input: Extract<RunInput, { pipelineKind: 'topic-expansion' }>,
+  input: ObservedTopicExpansionInput,
   errorCode: string,
   errorMessage: string,
 ): Promise<void> {
@@ -310,14 +326,15 @@ async function emitTopicExpansionFailed(
  */
 async function emitSubjectGraphGenerated(
   eventBus: AppEventBus,
-  input: Extract<RunInput, { pipelineKind: 'subject-graph' }>,
+  input: ObservedSubjectGraphInput,
   runId: string,
   runSnapshot: RunSnapshot,
 ): Promise<void> {
-  // Derive model from the snapshot
+  // Derive model from the snapshot when observing a legacy local run.
+  const snapshot = runInputSnapshot(input);
   const boundModel =
-    input.snapshot && 'model_id' in input.snapshot
-      ? (input.snapshot as { model_id: string }).model_id
+    snapshot && 'model_id' in snapshot
+      ? (snapshot as { model_id: string }).model_id
       : 'unknown';
 
   // Compute durations from run timestamps
@@ -350,7 +367,7 @@ async function emitSubjectGraphGenerated(
  */
 function emitSubjectGraphFailed(
   eventBus: AppEventBus,
-  input: Extract<RunInput, { pipelineKind: 'subject-graph' }>,
+  input: ObservedSubjectGraphInput,
   runId: string,
   errorCode: string,
   errorMessage: string,
@@ -371,13 +388,14 @@ function emitSubjectGraphFailed(
  */
 function emitSubjectGraphValidationFailed(
   eventBus: AppEventBus,
-  input: Extract<RunInput, { pipelineKind: 'subject-graph' }>,
+  input: ObservedSubjectGraphInput,
   errorCode: string,
   errorMessage: string,
 ): void {
+  const snapshot = runInputSnapshot(input);
   const boundModel =
-    input.snapshot && 'model_id' in input.snapshot
-      ? (input.snapshot as { model_id: string }).model_id
+    snapshot && 'model_id' in snapshot
+      ? (snapshot as { model_id: string }).model_id
       : 'unknown';
 
   eventBus.emit('subject-graph:validation-failed', {
@@ -400,7 +418,7 @@ function emitSubjectGraphValidationFailed(
 async function emitCrystalTrialFailed(
   eventBus: AppEventBus,
   deck: IDeckRepository,
-  input: Extract<RunInput, { pipelineKind: 'crystal-trial' }>,
+  input: ObservedCrystalTrialInput,
   errorCode: string,
   errorMessage: string,
 ): Promise<void> {
@@ -456,7 +474,7 @@ export function createGenerationRunEventHandlers(
    */
   async function observeRun(
     runId: string,
-    runInput: RunInput,
+    runInput: ObservedRunInput,
   ): Promise<void> {
     if (stopped) return;
     if (activeRuns.has(runId)) return;
@@ -488,7 +506,7 @@ export function createGenerationRunEventHandlers(
           case 'artifact.ready': {
             const { artifactId, kind } = event.body;
             const isDurableSubjectGraphArtifact =
-              runInput.pipelineKind === 'subject-graph' &&
+              pipelineKindOf(runInput) === 'subject-graph' &&
               (kind === 'subject-graph-topics' || kind === 'subject-graph-edges');
 
             if (isDurableSubjectGraphArtifact) {
@@ -530,15 +548,16 @@ export function createGenerationRunEventHandlers(
             // product-facing artifact-application events. Durable subject-graph
             // completion is different: backend publication, not local artifact
             // application, is the content-readiness boundary.
-            if (!newArtifactsApplied && runInput.pipelineKind !== 'subject-graph') {
+            const runKind = pipelineKindOf(runInput);
+            if (!newArtifactsApplied && runKind !== 'subject-graph') {
               break;
             }
-            switch (runInput.pipelineKind) {
+            switch (runKind) {
               case 'topic-content':
                 await emitTopicContentCompleted(
                   eventBus,
                   deckRepository,
-                  runInput as Extract<RunInput, { pipelineKind: 'topic-content' }>,
+                  runInput as ObservedTopicContentInput,
                   runId,
                 );
                 break;
@@ -546,14 +565,14 @@ export function createGenerationRunEventHandlers(
                 await emitTopicExpansionCompleted(
                   eventBus,
                   deckRepository,
-                  runInput as Extract<RunInput, { pipelineKind: 'topic-expansion' }>,
+                  runInput as ObservedTopicExpansionInput,
                 );
                 break;
               case 'subject-graph':
                 contentPublication.publishBackendSubjectGraph(runInput.subjectId);
                 await emitSubjectGraphGenerated(
                   eventBus,
-                  runInput as Extract<RunInput, { pipelineKind: 'subject-graph' }>,
+                  runInput as ObservedSubjectGraphInput,
                   runId,
                   runSnapshot ?? {
                     runId,
@@ -562,7 +581,7 @@ export function createGenerationRunEventHandlers(
                     status: 'applied-local',
                     inputHash: '',
                     createdAt: 0,
-                    snapshotJson: runInput.snapshot,
+                    snapshotJson: (runInputSnapshot(runInput) ?? { pipeline_kind: runKind }) as RunSnapshot['snapshotJson'],
                     jobs: [],
                   },
                 );
@@ -581,12 +600,12 @@ export function createGenerationRunEventHandlers(
           // ── run.failed: fire legacy failure event ──────────────
           case 'run.failed': {
             const { code, message } = event;
-            switch (runInput.pipelineKind) {
+            switch (pipelineKindOf(runInput)) {
               case 'topic-content':
                 await emitTopicContentFailed(
                   eventBus,
                   deckRepository,
-                  runInput as Extract<RunInput, { pipelineKind: 'topic-content' }>,
+                  runInput as ObservedTopicContentInput,
                   runId,
                   code,
                   message,
@@ -596,16 +615,13 @@ export function createGenerationRunEventHandlers(
                 await emitTopicExpansionFailed(
                   eventBus,
                   deckRepository,
-                  runInput as Extract<RunInput, { pipelineKind: 'topic-expansion' }>,
+                  runInput as ObservedTopicExpansionInput,
                   code,
                   message,
                 );
                 break;
               case 'subject-graph': {
-                const sgInput = runInput as Extract<
-                  RunInput,
-                  { pipelineKind: 'subject-graph' }
-                >;
+                const sgInput = runInput as ObservedSubjectGraphInput;
                 if (isSubjectGraphValidationCode(code)) {
                   emitSubjectGraphValidationFailed(
                     eventBus,
@@ -628,7 +644,7 @@ export function createGenerationRunEventHandlers(
                 await emitCrystalTrialFailed(
                   eventBus,
                   deckRepository,
-                  runInput as Extract<RunInput, { pipelineKind: 'crystal-trial' }>,
+                  runInput as ObservedCrystalTrialInput,
                   code,
                   message,
                 );
@@ -641,7 +657,7 @@ export function createGenerationRunEventHandlers(
           case 'run.cancelled': {
             if (
               event.reason === 'superseded' &&
-              runInput.pipelineKind === 'topic-expansion'
+              pipelineKindOf(runInput) === 'topic-expansion'
             ) {
               // Superseded expansion — suppress player-facing event.
             }

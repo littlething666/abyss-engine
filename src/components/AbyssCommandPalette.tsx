@@ -31,8 +31,6 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { appEventBus } from '@/infrastructure/eventBus';
-import { deckRepository } from '@/infrastructure/di';
-import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProviders';
 import {
   crystalCeremonyStore,
   crystalGardenOrchestrator,
@@ -43,10 +41,8 @@ import {
 import { uiStore, useUIStore } from '@/store/uiStore';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import { calculateLevelFromXP, MAX_CRYSTAL_LEVEL } from '@/types/crystalLevel';
-import {
-  getGenerationClient,
-  prepareCrystalTrialRunInput,
-} from '@/features/contentGeneration';
+import { getGenerationClient } from '@/features/contentGeneration';
+import { observeGenerationRun } from '@/infrastructure/wireGenerationClient';
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 
 const DEV_XP_BUFF_ID = 'dev_xp_multiplier_5x' as const;
@@ -273,16 +269,15 @@ export function AbyssCommandPalette({
       });
       void (async () => {
         try {
-          const modelId = resolveModelForSurface('crystalTrial');
-          const runInput = await prepareCrystalTrialRunInput(
-            deckRepository,
-            modelId,
-            new Date().toISOString(),
-            selectedTopic.subjectId,
-            selectedTopic.topicId,
-            selectedCrystalLevel,
-          );
-          await getGenerationClient().submitRun(runInput);
+          const intent = {
+            kind: 'crystal-trial' as const,
+            subjectId: selectedTopic.subjectId,
+            topicId: selectedTopic.topicId,
+            currentLevel: selectedCrystalLevel,
+            targetLevel: selectedCrystalLevel + 1,
+          };
+          const { runId } = await getGenerationClient().startCrystalTrial(intent);
+          observeGenerationRun(runId, intent);
         } catch (err) {
           console.error('[AbyssCommandPalette] trial regeneration failed', err);
         }

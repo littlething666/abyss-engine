@@ -29,7 +29,7 @@ import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInfe
 import { DurableGenerationRunRepository } from '@/infrastructure/repositories/DurableGenerationRunRepository';
 import { createApiClient } from '@/infrastructure/http/apiClient';
 import { readOrMintDeviceId } from '@/infrastructure/deviceIdentity';
-import type { IGenerationRunRepository, PipelineKind, RunInput } from '@/types/repository';
+import type { IGenerationRunRepository, PipelineKind, SubmitGenerationRunInput } from '@/types/repository';
 
 /**
  * Stub that returns synthetic failures when the Worker is unreachable.
@@ -184,7 +184,7 @@ export function ensureGenerationClientRegistered(): GenerationClient {
  * durable repo produces RunEvents from the Worker; this function
  * opens the event stream and applies artifacts + fires events.
  */
-export function observeGenerationRun(runId: string, runInput: RunInput): void {
+export function observeGenerationRun(runId: string, runInput: SubmitGenerationRunInput): void {
   if (!durableRunsEnabled) return;
   const h = handlersInstance;
   if (!h) {

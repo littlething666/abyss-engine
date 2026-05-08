@@ -12,3 +12,4 @@
 - Added backend Learning Content read routes and a frontend `BackendDeckRepository` adapter, wired for durable backend mode through infrastructure-only HTTP seams.
 - Added backend-owned durable prompt modules and moved workflow prompt construction out of inline workflow code.
 - Started local-workflow removal by introducing intent-only frontend generation submissions: `GenerationClient` no longer builds snapshots or hashes inputs, and the durable adapter posts `{ kind, intent }` bodies without client policy fields.
+- Converted runtime generation entry paths and retry routing to intent/durable endpoints: event-bus generation requests and command-palette trial regeneration no longer prepare frontend snapshots or resolve pipeline models, and HUD retries call `GenerationClient.retry()`.
