@@ -1,5 +1,6 @@
 import type { Card, MiniGameType, Subject, SubjectGraph, TopicDetails } from './core';
 import type { TopicPipelineRetryContext } from './contentGeneration';
+import type { TopicContentStatusRecord } from './topicContent';
 import type {
   ArtifactEnvelope,
   CrystalTrialRunInputSnapshot,
@@ -41,6 +42,7 @@ export interface IDeckRepository {
   getSubjectGraph(subjectId: string): Promise<SubjectGraph>;
   getTopicDetails(subjectId: string, topicId: string): Promise<TopicDetails>;
   getTopicCards(subjectId: string, topicId: string): Promise<Card[]>;
+  getTopicContentStatuses(subjectId: string): Promise<TopicContentStatusRecord[]>;
 }
 
 export interface IDeckContentWriter {

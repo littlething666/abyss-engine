@@ -205,6 +205,22 @@ async function applyTopicTheory(input: ApplyArtifactToLearningContentInput): Pro
     topicId,
     details,
     contentHash: input.contentHash,
+    status: existing?.status === 'generating' ? 'generating' : 'unavailable',
+    updatedByRunId: input.runId,
+  });
+}
+
+async function markTopicReady(input: ApplyArtifactToLearningContentInput, subjectId: string, topicId: string): Promise<void> {
+  const existing = await input.learningContent.getTopicDetails(input.deviceId, subjectId, topicId);
+  if (!existing) {
+    throw new WorkflowFail('precondition:missing-topic', `Topic Details row missing for ${subjectId}/${topicId}`);
+  }
+  await input.learningContent.putTopicDetails({
+    deviceId: input.deviceId,
+    subjectId,
+    topicId,
+    details: existing.details,
+    contentHash: existing.contentHash,
     status: 'ready',
     updatedByRunId: input.runId,
   });
@@ -220,6 +236,9 @@ async function applyTopicCards(input: ApplyArtifactToLearningContentInput): Prom
     cards: cardRowsFromPayload(input.artifactKind, input.payload),
     createdByRunId: input.runId,
   });
+  if (input.artifactKind === 'topic-study-cards') {
+    await markTopicReady(input, subjectId, topicId);
+  }
 }
 
 async function applyCrystalTrial(input: ApplyArtifactToLearningContentInput): Promise<void> {

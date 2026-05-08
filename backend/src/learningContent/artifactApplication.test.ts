@@ -44,6 +44,7 @@ function makeRepo(overrides: Partial<ILearningContentRepo> = {}): ILearningConte
     putTopicDetails: vi.fn(async (input) => {
       validateTopicDetailsEnvelope(input.details);
     }),
+    getTopicContentStatuses: vi.fn(async () => []),
     getTopicCards: vi.fn(async () => []),
     upsertTopicCards: vi.fn(async (input) => {
       input.cards.forEach((card) => {
@@ -60,7 +61,7 @@ function makeRepo(overrides: Partial<ILearningContentRepo> = {}): ILearningConte
 }
 
 describe('applyArtifactToLearningContent', () => {
-  it('materializes topic theory into ready topic details', async () => {
+  it('materializes topic theory without marking study readiness', async () => {
     const repo = makeRepo();
 
     await applyArtifactToLearningContent({
@@ -83,7 +84,7 @@ describe('applyArtifactToLearningContent', () => {
       subjectId: 'math',
       topicId: 'limits',
       contentHash: 'cnt_theory',
-      status: 'ready',
+      status: 'unavailable',
       updatedByRunId: 'run-1',
       details: expect.objectContaining({ topicId: 'limits', title: 'Limits', coreConcept: 'Approach behavior' }),
     }));
@@ -93,7 +94,18 @@ describe('applyArtifactToLearningContent', () => {
     'topic-study-cards',
     'topic-expansion-cards',
   ] as const)('materializes deck-compatible %s and omits CLOZE cards from the deck read model', async (artifactKind) => {
-    const repo = makeRepo();
+    const repo = makeRepo({
+      getTopicDetails: vi.fn(async () => ({
+        deviceId: 'dev-1',
+        subjectId: 'math',
+        topicId: 'limits',
+        details: { topicId: 'limits', subjectId: 'math', title: 'Limits', coreConcept: 'Limits', theory: 'Theory', keyTakeaways: [] },
+        contentHash: 'cnt_details',
+        status: 'unavailable',
+        updatedByRunId: 'run-details',
+        updatedAt: '2026-05-08T00:00:00.000Z',
+      })),
+    });
 
     await applyArtifactToLearningContent({
       learningContent: repo,

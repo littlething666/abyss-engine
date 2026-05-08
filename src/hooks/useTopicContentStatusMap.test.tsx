@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ContentGenerationJob } from '@/types/contentGeneration';
-import type { TopicContentStatus } from '@/types/progression';
+import type { TopicContentStatus, TopicContentStatusRecord } from '@/types/topicContent';
 
 import { useContentGenerationStore } from '@/features/contentGeneration';
 import { useTopicContentStatusMap } from './useTopicContentStatusMap';
@@ -17,7 +17,9 @@ vi.mock('@/features/content', () => ({
   ],
 }));
 
-const queryResults: { data?: boolean }[] = [{ data: true }];
+const readyStatusRows: TopicContentStatusRecord[] = [{ subjectId: 'sub-1', topicId: 't-a', status: 'ready' }];
+const unavailableStatusRows: TopicContentStatusRecord[] = [{ subjectId: 'sub-1', topicId: 't-a', status: 'unavailable' }];
+const queryResults: { data?: TopicContentStatusRecord[] }[] = [{ data: readyStatusRows }];
 
 vi.mock('@tanstack/react-query', () => ({
   useQueries: () => queryResults,
@@ -47,7 +49,7 @@ describe('useTopicContentStatusMap', () => {
       abortControllers: {},
       pipelineAbortControllers: {},
     });
-    queryResults[0] = { data: true };
+    queryResults[0] = { data: readyStatusRows };
     lastMap = {};
     const el = document.createElement('div');
     document.body.appendChild(el);
@@ -62,7 +64,7 @@ describe('useTopicContentStatusMap', () => {
   });
 
   it("prefers 'generating' over 'ready' when a crystal content job is in-flight", () => {
-    queryResults[0] = { data: true };
+    queryResults[0] = { data: readyStatusRows };
     const job: ContentGenerationJob = {
       id: 'job-1',
       pipelineId: 'p1',
@@ -91,7 +93,7 @@ describe('useTopicContentStatusMap', () => {
   });
 
   it("ignores in-flight crystal-trial jobs for the topic's status", () => {
-    queryResults[0] = { data: false };
+    queryResults[0] = { data: unavailableStatusRows };
     const job: ContentGenerationJob = {
       id: 'trial-1',
       pipelineId: null,
@@ -120,7 +122,7 @@ describe('useTopicContentStatusMap', () => {
   });
 
   it("marks 'generating' for in-flight topic-expansion-cards jobs", () => {
-    queryResults[0] = { data: true };
+    queryResults[0] = { data: readyStatusRows };
     const job: ContentGenerationJob = {
       id: 'exp-1',
       pipelineId: null,

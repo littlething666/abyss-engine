@@ -140,7 +140,7 @@ _Avoid_: User profile, analytics profile, account
 
 ## Relationships
 
-- A **Published Subject** has exactly one persisted **Subject Graph**.
+- A **Published Subject** has exactly one persisted **Subject Graph** and stub Topic Details rows whose **Topic Content Status** starts as `unavailable`.
 - A generated **Subject** becomes a **Published Subject** only after **Subject Graph Generation** finishes both the **Topic Lattice** and **Prerequisite Edge** stages.
 - A **Subject Graph** contains many **Topics**.
 - A **Topic Lattice** becomes a **Subject Graph** after **Prerequisite Edges** are added and validated.
@@ -153,6 +153,7 @@ _Avoid_: User profile, analytics profile, account
 - **Unlock Points** unlock **Topics**; **Resonance Points** are earned but not spent.
 - **Topic Content** is produced by a **Topic Content Pipeline**.
 - A **Topic Content Pipeline** consists of one or more **Content Generation Jobs**.
+- **Topic Content Status** is the readiness interface for study: `ready` means theory plus at least one difficulty-1 study card are persisted; `generating` means an active Topic Content Pipeline is producing study content; `unavailable` means the Subject Graph may be visible but the Topic is not study-ready.
 - **Subject Graph Generation** produces a **Topic Lattice** before prerequisite wiring.
 - **Topic Expansion** adds study cards when crystal progression calls for more material.
 - A **Crystal Trial** gates progression toward a target **Crystal Level**.

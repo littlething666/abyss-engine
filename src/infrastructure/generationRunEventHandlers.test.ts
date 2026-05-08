@@ -105,6 +105,7 @@ function createMockDeckRepository(
       lastGeneratedSchemaVersion: 1,
     })),
     getTopicCards: vi.fn(async () => []),
+    getTopicContentStatuses: vi.fn(async () => []),
   };
 }
 

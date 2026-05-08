@@ -156,9 +156,58 @@ describe('Learning Content Store routes', () => {
     await expect(response.json()).resolves.toMatchObject({ error: 'not_found' });
   });
 
-  it('returns non-empty Topic cards and treats an empty card set as not found', async () => {
+  it('returns device-scoped Topic Content statuses for a published subject', async () => {
+    const { db, calls } = createFakeD1([
+      q(deviceRow(DEVICE_ID)),
+      q({
+        device_id: DEVICE_ID,
+        subject_id: 'math',
+        graph_json: JSON.stringify(validSubjectGraph),
+        content_hash: 'cnt_graph',
+        updated_by_run_id: 'run-graph',
+        updated_at: '2026-05-07T00:00:00Z',
+      }),
+      q([
+        { subject_id: 'math', topic_id: 'derivatives', status: 'ready', updated_at: '2026-05-07T00:00:02Z' },
+        { subject_id: 'math', topic_id: 'limits', status: 'unavailable', updated_at: '2026-05-07T00:00:01Z' },
+      ]),
+    ]);
+
+    const response = await fetchLearningContent('/v1/subjects/math/topics/statuses', db);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      topics: [
+        { subjectId: 'math', topicId: 'derivatives', status: 'ready', updatedAt: '2026-05-07T00:00:02Z' },
+        { subjectId: 'math', topicId: 'limits', status: 'unavailable', updatedAt: '2026-05-07T00:00:01Z' },
+      ],
+    });
+    expect(calls[1].args).toEqual([DEVICE_ID, 'math']);
+    expect(calls[2].args).toEqual([DEVICE_ID, 'math']);
+  });
+
+  it('returns 404 for Topic Content statuses when the Subject Graph is missing', async () => {
+    const { db } = createFakeD1([q(deviceRow(DEVICE_ID)), q(null, 0)]);
+
+    const response = await fetchLearningContent('/v1/subjects/math/topics/statuses', db);
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ error: 'not_found' });
+  });
+
+  it('returns Topic cards and treats an empty card set for a known topic as an empty collection', async () => {
     const { db: foundDb, calls } = createFakeD1([
       q(deviceRow(DEVICE_ID)),
+      q({
+        device_id: DEVICE_ID,
+        subject_id: 'math',
+        topic_id: 'limits',
+        details_json: JSON.stringify({ coreConcept: 'Limits describe approach.' }),
+        content_hash: 'cnt_details',
+        status: 'ready',
+        updated_by_run_id: 'run-topic',
+        updated_at: '2026-05-07T00:00:00Z',
+      }),
       q([
         {
           device_id: DEVICE_ID,
@@ -193,9 +242,28 @@ describe('Learning Content Store routes', () => {
       ],
     });
     expect(calls[1].args).toEqual([DEVICE_ID, 'math', 'limits']);
+    expect(calls[2].args).toEqual([DEVICE_ID, 'math', 'limits']);
 
-    const { db: missingDb } = createFakeD1([q(deviceRow(DEVICE_ID)), q([], 0)]);
-    const missing = await fetchLearningContent('/v1/subjects/math/topics/limits/cards', missingDb);
+    const { db: emptyDb } = createFakeD1([
+      q(deviceRow(DEVICE_ID)),
+      q({
+        device_id: DEVICE_ID,
+        subject_id: 'math',
+        topic_id: 'limits',
+        details_json: JSON.stringify({ coreConcept: 'Limits describe approach.' }),
+        content_hash: 'cnt_details',
+        status: 'unavailable',
+        updated_by_run_id: 'run-topic',
+        updated_at: '2026-05-07T00:00:00Z',
+      }),
+      q([], 0),
+    ]);
+    const empty = await fetchLearningContent('/v1/subjects/math/topics/limits/cards', emptyDb);
+    expect(empty.status).toBe(200);
+    await expect(empty.json()).resolves.toEqual({ cards: [] });
+
+    const { db: missingDb } = createFakeD1([q(deviceRow(DEVICE_ID)), q(null, 0)]);
+    const missing = await fetchLearningContent('/v1/subjects/math/topics/unknown/cards', missingDb);
     expect(missing.status).toBe(404);
     await expect(missing.json()).resolves.toMatchObject({ error: 'not_found' });
   });
@@ -292,17 +360,29 @@ describe('Learning Content Store routes', () => {
     {
       name: 'GET /v1/subjects/:subjectId/topics/:topicId/cards',
       path: '/v1/subjects/math/topics/limits/cards',
-      row: q([{
-        device_id: DEVICE_ID,
-        subject_id: 'math',
-        topic_id: 'limits',
-        card_id: 'card-1',
-        card_json: JSON.stringify({ id: 'other-card' }),
-        difficulty: 2,
-        source_artifact_kind: 'topic-study-cards',
-        created_by_run_id: 'run-cards',
-        created_at: '2026-05-07T00:00:00Z',
-      }]),
+      row: [
+        q({
+          device_id: DEVICE_ID,
+          subject_id: 'math',
+          topic_id: 'limits',
+          details_json: JSON.stringify({ coreConcept: 'Limits describe approach.' }),
+          content_hash: 'cnt_details',
+          status: 'ready',
+          updated_by_run_id: 'run-topic',
+          updated_at: '2026-05-07T00:00:00Z',
+        }),
+        q([{
+          device_id: DEVICE_ID,
+          subject_id: 'math',
+          topic_id: 'limits',
+          card_id: 'card-1',
+          card_json: JSON.stringify({ id: 'other-card' }),
+          difficulty: 2,
+          source_artifact_kind: 'topic-study-cards',
+          created_by_run_id: 'run-cards',
+          created_at: '2026-05-07T00:00:00Z',
+        }]),
+      ],
     },
     {
       name: 'GET /v1/subjects/:subjectId/topics/:topicId/trials/:targetLevel',
@@ -320,7 +400,8 @@ describe('Learning Content Store routes', () => {
       }),
     },
   ])('fails loudly with structured validation code for corrupted persisted rows: $name', async ({ path, row }) => {
-    const { db } = createFakeD1([q(deviceRow(DEVICE_ID)), row]);
+    const rows = Array.isArray(row) ? row : [row];
+    const { db } = createFakeD1([q(deviceRow(DEVICE_ID)), ...rows]);
 
     const response = await fetchLearningContent(path, db);
 

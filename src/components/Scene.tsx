@@ -24,6 +24,7 @@ import { topicRefKey } from '@/lib/topicRef'
 import { useTopicMetadata, type TopicMetadata } from '../features/content'
 import { Card, type TopicRef } from '../types/core'
 import { useTopicCardQueriesForActiveTopics } from '../hooks/useTopicCardQueries'
+import { useTopicContentStatusMap } from '../hooks/useTopicContentStatusMap'
 import { useSceneInvalidator } from '../hooks/useSceneInvalidator'
 import { useSelectedCrystalSpotlight } from '../hooks/useSelectedCrystalSpotlight'
 import { useCeremonyCameraDolly } from '../hooks/useCeremonyCameraDolly'
@@ -224,15 +225,16 @@ export const Scene: React.FC<SceneProps> = ({
     [activeCrystals],
   )
   const allTopicMetadata = useTopicMetadata(activeTopicRefs)
-  const { topicCardsByKey } = useTopicCardQueriesForActiveTopics(activeTopicRefs, allTopicMetadata)
+  const contentStatusByTopicKey = useTopicContentStatusMap()
+  const { topicCardsByKey } = useTopicCardQueriesForActiveTopics(activeTopicRefs, allTopicMetadata, contentStatusByTopicKey)
 
   const selectedTopicKey = selectedTopic ? topicRefKey(selectedTopic) : null
   const selectedTopicMetadata: TopicMetadata | undefined = selectedTopicKey
     ? allTopicMetadata[selectedTopicKey]
     : undefined
   const selectedTopicCards = useMemo(
-    () => (selectedTopicKey ? topicCardsByKey.get(selectedTopicKey) ?? [] : []),
-    [selectedTopicKey, topicCardsByKey],
+    () => (selectedTopicKey && contentStatusByTopicKey[selectedTopicKey] === 'ready' ? topicCardsByKey.get(selectedTopicKey) ?? [] : []),
+    [selectedTopicKey, topicCardsByKey, contentStatusByTopicKey],
   )
   const selectedTopicXp = useMemo(() => {
     if (!selectedTopic) return 0

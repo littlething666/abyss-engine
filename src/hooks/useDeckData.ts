@@ -55,11 +55,11 @@ export function useTopicDetails(subjectId: string, topicId: string): UseQueryRes
   });
 }
 
-export function useTopicCards(subjectId: string, topicId: string): UseQueryResult<Card[], Error> {
+export function useTopicCards(subjectId: string, topicId: string, enabled = true): UseQueryResult<Card[], Error> {
   return useQuery({
     queryKey: topicCardsQueryKey(subjectId, topicId),
     queryFn: async (): Promise<Card[]> => deckRepository.getTopicCards(subjectId, topicId),
     staleTime: DEFAULT_STALE_TIME,
-    enabled: Boolean(subjectId) && Boolean(topicId),
+    enabled: enabled && Boolean(subjectId) && Boolean(topicId),
   });
 }

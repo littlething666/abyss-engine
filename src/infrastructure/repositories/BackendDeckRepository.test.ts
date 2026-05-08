@@ -162,6 +162,34 @@ describe('BackendDeckRepository', () => {
     await expect(repo.getTopicCards('math/advanced', 'limits & continuity')).resolves.toEqual([card]);
   });
 
+  it('reads and strictly validates subject-level Topic Content statuses', async () => {
+    const http = makeHttp({
+      '/v1/subjects/math%2Fadvanced/topics/statuses': {
+        topics: [
+          { subjectId: 'math/advanced', topicId: 'limits', status: 'ready', updatedAt: '2026-05-08T00:00:00Z' },
+          { subjectId: 'math/advanced', topicId: 'derivatives', status: 'unavailable' },
+        ],
+      },
+    });
+
+    await expect(new BackendDeckRepository({ http }).getTopicContentStatuses('math/advanced')).resolves.toEqual([
+      { subjectId: 'math/advanced', topicId: 'limits', status: 'ready', updatedAt: '2026-05-08T00:00:00Z' },
+      { subjectId: 'math/advanced', topicId: 'derivatives', status: 'unavailable', updatedAt: undefined },
+    ]);
+  });
+
+  it('fails loudly when a Topic Content status value is malformed', async () => {
+    const http = makeHttp({
+      '/v1/subjects/math/topics/statuses': {
+        topics: [{ subjectId: 'math', topicId: 'limits', status: 'almost-ready' }],
+      },
+    });
+
+    await expect(new BackendDeckRepository({ http }).getTopicContentStatuses('math')).rejects.toThrow(
+      /status is invalid/,
+    );
+  });
+
   it('fails loudly when a topic card wrapper and embedded card disagree', async () => {
     const http = makeHttp({
       '/v1/subjects/math/topics/limits/cards': {

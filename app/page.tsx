@@ -54,6 +54,7 @@ import { useContentGenerationHydration } from '@/hooks/useContentGenerationHydra
 import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifecycle';
 import { cardRefKey, topicRefKey } from '@/lib/topicRef';
 import { useTopicCardQueriesForSubjectFilter } from '@/hooks/useTopicCardQueries';
+import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
 import { applyOpenTopicStudyEffect } from '@/hooks/openTopicStudyAdapter';
 import type { Card } from '@/types/core';
 import { toast } from '@/infrastructure/toast';
@@ -133,10 +134,12 @@ const HomeContent: React.FC = () => {
     [activeCrystals],
   );
   const allTopicMetadata = useTopicMetadata(activeTopicRefs);
+  const contentStatusByTopicKey = useTopicContentStatusMap();
   const { topicCardQueries, topicCardsByKey, queriedTopicRefs } = useTopicCardQueriesForSubjectFilter(
     activeTopicRefs,
     currentSubjectId,
     allTopicMetadata,
+    contentStatusByTopicKey,
   );
   // Aggregated due / total counts across every active topic on the board.
   // The per-topic `useDueCardsCount` hook cannot be called inside a

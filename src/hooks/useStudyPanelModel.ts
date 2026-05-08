@@ -10,6 +10,7 @@ import {
 } from '../features/progression';
 import { useTopicMetadata } from '../features/content';
 import { useTopicCards } from './useDeckData';
+import { useTopicContentStatusMap } from './useTopicContentStatusMap';
 import topicSystemPromptTemplate from '../prompts/topic-system.prompt';
 import { useStudySettingsStore } from '../store/studySettingsStore';
 import { TARGET_AUDIENCE_OPTIONS } from '../store/studySettingsStore';
@@ -120,6 +121,7 @@ export function useStudyPanelModel({
   const topicMetadata = useTopicMetadata(topicRefs);
 
   const metaKey = resolvedTopicRef ? topicRefKey(resolvedTopicRef) : '';
+  const contentStatusByTopicKey = useTopicContentStatusMap();
 
   const resolvedTopicTheory = useMemo(
     () => (metaKey ? topicMetadata[metaKey]?.theory || null : null),
@@ -144,8 +146,9 @@ export function useStudyPanelModel({
 
   const resolvedTopicId = resolvedTopicRef?.topicId ?? null;
 
-  const topicCardQuery = useTopicCards(resolvedSubjectId || '', resolvedTopicId || '');
-  const topicCards = topicCardQuery.data ?? [];
+  const selectedTopicContentStatus = metaKey ? contentStatusByTopicKey[metaKey] ?? 'unavailable' : 'unavailable';
+  const topicCardQuery = useTopicCards(resolvedSubjectId || '', resolvedTopicId || '', selectedTopicContentStatus === 'ready');
+  const topicCards = selectedTopicContentStatus === 'ready' ? topicCardQuery.data ?? [] : [];
   const activeCard = useMemo(
     () => resolveActiveCard(topicCards, currentSession?.currentCardId, currentCardId),
     [currentSession?.currentCardId, currentCardId, topicCards],

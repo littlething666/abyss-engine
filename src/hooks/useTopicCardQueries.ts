@@ -4,6 +4,7 @@ import { useQueries, type UseQueryResult } from '@tanstack/react-query';
 import { topicRefKey } from '@/lib/topicRef';
 import type { TopicMetadata } from '../features/content';
 import type { Card, TopicRef } from '../types/core';
+import type { TopicContentStatus } from '../types/topicContent';
 import { deckRepository } from '../infrastructure/di';
 import { topicCardsQueryKey } from './useDeckData';
 
@@ -38,6 +39,7 @@ export function getSubjectFilteredTopicRefs(
 function useTopicCardQueriesFromRefs(
   topicRefs: readonly TopicRef[],
   allTopicMetadata: Readonly<Record<string, TopicMetadata>>,
+  contentStatusByTopicKey: Readonly<Record<string, TopicContentStatus>>,
 ): TopicCardQueriesResult {
   const topicCardQueries = useQueries({
     queries: topicRefs.map((ref) => {
@@ -46,7 +48,7 @@ function useTopicCardQueriesFromRefs(
       return {
         queryKey: topicCardsQueryKey(subjectId, ref.topicId),
         queryFn: () => deckRepository.getTopicCards(subjectId, ref.topicId),
-        enabled: Boolean(subjectId),
+        enabled: Boolean(subjectId) && contentStatusByTopicKey[k] === 'ready',
         staleTime: Infinity,
       };
     }),
@@ -70,8 +72,9 @@ function useTopicCardQueriesFromRefs(
 export function useTopicCardQueriesForActiveTopics(
   topicRefs: readonly TopicRef[],
   allTopicMetadata: Readonly<Record<string, TopicMetadata>>,
+  contentStatusByTopicKey: Readonly<Record<string, TopicContentStatus>>,
 ): TopicCardQueriesResult {
-  return useTopicCardQueriesFromRefs(topicRefs, allTopicMetadata);
+  return useTopicCardQueriesFromRefs(topicRefs, allTopicMetadata, contentStatusByTopicKey);
 }
 
 /** Fetch deck cards only for topics in the current subject (or all topics when no subject is selected). */
@@ -79,11 +82,12 @@ export function useTopicCardQueriesForSubjectFilter(
   topicRefs: readonly TopicRef[],
   currentSubjectId: string | null,
   allTopicMetadata: Readonly<Record<string, TopicMetadata>>,
+  contentStatusByTopicKey: Readonly<Record<string, TopicContentStatus>>,
 ): TopicCardQueriesResult {
   const subjectFilteredTopicRefs = useMemo(
     () => getSubjectFilteredTopicRefs(topicRefs, currentSubjectId, allTopicMetadata),
     [topicRefs, currentSubjectId, allTopicMetadata],
   );
 
-  return useTopicCardQueriesFromRefs(subjectFilteredTopicRefs, allTopicMetadata);
+  return useTopicCardQueriesFromRefs(subjectFilteredTopicRefs, allTopicMetadata, contentStatusByTopicKey);
 }

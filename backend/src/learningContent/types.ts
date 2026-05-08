@@ -37,6 +37,13 @@ export interface TopicDetailsContent {
   updatedAt: string;
 }
 
+export interface TopicContentStatusRow {
+  subjectId: string;
+  topicId: string;
+  status: TopicContentStatus;
+  updatedAt: string;
+}
+
 export interface TopicCardContent {
   deviceId: string;
   subjectId: string;

@@ -4,11 +4,10 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { topicRefKey } from '@/lib/topicRef';
 import { useAllGraphs } from '@/features/content';
-import { topicStudyContentReady } from '@/features/contentGeneration';
 import { useContentGenerationStore } from '@/features/contentGeneration';
 import { deckRepository } from '@/infrastructure/di';
 import type { ContentGenerationJobKind } from '@/types/contentGeneration';
-import type { TopicContentStatus } from '@/types/progression';
+import type { TopicContentStatus, TopicContentStatusRecord } from '@/types/topicContent';
 
 const CRYSTAL_CONTENT_JOB_KINDS = new Set<ContentGenerationJobKind>([
   'topic-theory',
@@ -32,7 +31,11 @@ const EMPTY_TOPIC_CONTENT_STATUS_MAP: Readonly<Record<string, TopicContentStatus
 
 export type { TopicContentStatus };
 
-/** TanStack key for whether a topic has theory + difficulty-1 cards (study-ready). */
+export function topicContentStatusesQueryKey(subjectId: string) {
+  return ['content', 'topic-statuses', subjectId] as const;
+}
+
+/** @deprecated Topic readiness is now read at subject status granularity. */
 export function topicContentAvailabilityQueryKey(subjectId: string, topicId: string) {
   return ['content', 'topic-ready', subjectId, topicId] as const;
 }
@@ -83,17 +86,19 @@ export function useTopicContentStatusMap(): Record<string, TopicContentStatus> {
     return out;
   }, [allGraphs]);
 
+  const subjectIds = useMemo(() => {
+    const seen = new Set<string>();
+    for (const ref of topicRefs) {
+      if (ref.subjectId) seen.add(ref.subjectId);
+    }
+    return [...seen].sort();
+  }, [topicRefs]);
+
   const results = useQueries({
-    queries: topicRefs.map(({ subjectId, topicId }) => ({
-      queryKey: topicContentAvailabilityQueryKey(subjectId, topicId),
-      queryFn: async (): Promise<boolean> => {
-        const [details, cards] = await Promise.all([
-          deckRepository.getTopicDetails(subjectId, topicId),
-          deckRepository.getTopicCards(subjectId, topicId),
-        ]);
-        return topicStudyContentReady(details, cards);
-      },
-      enabled: Boolean(subjectId) && Boolean(topicId),
+    queries: subjectIds.map((subjectId) => ({
+      queryKey: topicContentStatusesQueryKey(subjectId),
+      queryFn: async (): Promise<TopicContentStatusRecord[]> => deckRepository.getTopicContentStatuses(subjectId),
+      enabled: Boolean(subjectId),
     })),
   });
 
@@ -135,18 +140,17 @@ export function useTopicContentStatusMap(): Record<string, TopicContentStatus> {
     EMPTY_TOPIC_CONTENT_STATUS_MAP,
   );
 
-  const next: Record<string, TopicContentStatus> = {};
-  for (let i = 0; i < topicRefs.length; i++) {
-    const t = topicRefs[i]!;
-    const r = results[i];
-    const key = topicRefKey(t);
-    if (activeJobKeySet.has(key)) {
-      next[key] = 'generating';
-    } else if (r?.data === true) {
-      next[key] = 'ready';
-    } else {
-      next[key] = 'unavailable';
+  const statusByKey = new Map<string, TopicContentStatus>();
+  for (const result of results) {
+    for (const row of result.data ?? []) {
+      statusByKey.set(topicRefKey({ subjectId: row.subjectId, topicId: row.topicId }), row.status);
     }
+  }
+
+  const next: Record<string, TopicContentStatus> = {};
+  for (const t of topicRefs) {
+    const key = topicRefKey(t);
+    next[key] = activeJobKeySet.has(key) ? 'generating' : statusByKey.get(key) ?? 'unavailable';
   }
 
   // Reuse the shared empty-map constant when there are no topics so

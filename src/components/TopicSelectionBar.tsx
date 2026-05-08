@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from '@/components/ui/particles-animation';
 import { useAllGraphs, useSubjects } from '@/features/content';
 import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
-import type { TopicContentStatus } from '@/types/progression';
+import type { TopicContentStatus } from '@/types/topicContent';
 import { topicRefKey } from '@/lib/topicRef';
 import {
   activeTopicContentGenerationLabel,
@@ -127,10 +127,10 @@ export default function TopicSelectionBar({
   // Content generation awareness
   const selectedTopicContentStatus: TopicContentStatus = useMemo(() => {
     if (!selectedTopic) {
-      return 'ready';
+      return 'unavailable';
     }
     const key = topicRefKey(selectedTopic);
-    return contentStatusMap[key] ?? 'ready';
+    return contentStatusMap[key] ?? 'unavailable';
   }, [selectedTopic, contentStatusMap]);
 
   const activeTopicContentGenLabel = useContentGenerationStore((s) => {
@@ -207,8 +207,8 @@ export default function TopicSelectionBar({
 
   const handleBeginStudySession: React.MouseEventHandler<HTMLButtonElement> = (event) => {
     stopPropagation(event);
-    if (!selectedCards?.length) {
-      console.warn(`[TopicSelectionBar] No cards available for topic ${selectedTopic.topicId}`);
+    if (selectedTopicContentStatus !== 'ready' || !selectedCards?.length) {
+      console.warn(`[TopicSelectionBar] No ready cards available for topic ${selectedTopic.topicId}`);
       return;
     }
     useCrystalContentCelebrationStore.getState().dismissPending(topicRefKey(selectedTopic));

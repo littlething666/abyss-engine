@@ -290,6 +290,67 @@ function requireString(value: unknown, label: string): string {
   return value;
 }
 
+async function setTopicContentStatus(
+  repos: ReturnType<typeof makeRepos>,
+  deviceId: string,
+  runId: string,
+  snapshot: Record<string, unknown>,
+  status: 'generating' | 'unavailable' | 'ready',
+): Promise<void> {
+  const subjectId = requireString(snapshot.subject_id, 'snapshot.subject_id');
+  const topicId = requireString(snapshot.topic_id, 'snapshot.topic_id');
+  const existing = await repos.learningContent.getTopicDetails(deviceId, subjectId, topicId);
+  if (!existing) return;
+  await repos.learningContent.putTopicDetails({
+    deviceId,
+    subjectId,
+    topicId,
+    details: existing.details,
+    contentHash: existing.contentHash,
+    status,
+    updatedByRunId: runId,
+  });
+}
+
+async function setTopicGeneratingIfStudyPipeline(
+  repos: ReturnType<typeof makeRepos>,
+  deviceId: string,
+  runId: string,
+  snapshot: Record<string, unknown>,
+): Promise<void> {
+  const stage = (snapshot.resume_from_stage as string | undefined) ?? (snapshot.stage as string | undefined) ?? 'full';
+  if (stage !== 'full' && stage !== 'study-cards' && stage !== 'mini-games') return;
+  const subjectId = requireString(snapshot.subject_id, 'snapshot.subject_id');
+  const topicId = requireString(snapshot.topic_id, 'snapshot.topic_id');
+  const existing = await repos.learningContent.getTopicDetails(deviceId, subjectId, topicId);
+  if (!existing || existing.status === 'ready') return;
+  await repos.learningContent.putTopicDetails({
+    deviceId,
+    subjectId,
+    topicId,
+    details: existing.details,
+    contentHash: existing.contentHash,
+    status: 'generating',
+    updatedByRunId: runId,
+  });
+}
+
+async function clearStaleGeneratingTopicStatus(
+  repos: ReturnType<typeof makeRepos>,
+  deviceId: string,
+  runId: string,
+  snapshot: Record<string, unknown>,
+): Promise<void> {
+  const subjectId = requireString(snapshot.subject_id, 'snapshot.subject_id');
+  const topicId = requireString(snapshot.topic_id, 'snapshot.topic_id');
+  const existing = await repos.learningContent.getTopicDetails(deviceId, subjectId, topicId);
+  if (!existing || existing.status !== 'generating') return;
+  const theory = typeof existing.details.theory === 'string' ? existing.details.theory.trim() : '';
+  const cards = await repos.learningContent.getTopicCards(deviceId, subjectId, topicId);
+  const hasDifficultyOneCard = cards.some((card) => card.difficulty === 1);
+  await setTopicContentStatus(repos, deviceId, runId, snapshot, theory && hasDifficultyOneCard ? 'ready' : 'unavailable');
+}
+
 function requireStringArray(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.trim().length === 0)) {
     throw new WorkflowFail('precondition:missing-topic', `${label} must be an array of non-empty strings`);
@@ -427,6 +488,9 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
 
       if (!planOutcome.ok) return;
       const { snapshot, inputHash: _inputHash, checkpoints } = planOutcome;
+      await step.do('mark-topic-content-generating', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+        await setTopicGeneratingIfStudyPipeline(repos, deviceId, runId, snapshot);
+      });
       const wantedStages = resolveWantedStages(snapshot, checkpoints);
       const bindParentArtifactHashes = snapshot.stage === 'full';
       let theoryArtifactId = checkpoints.find((c) => c.stage === 'theory')?.artifact_id ?? null;
@@ -603,9 +667,17 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
       });
     } catch (err) {
-      if (err instanceof WorkflowAbort) return;
+      if (err instanceof WorkflowAbort) {
+        const run = await repos.runs.load(runId);
+        await step.do('clear-topic-content-generating-after-cancel', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+          await clearStaleGeneratingTopicStatus(repos, deviceId, runId, run.snapshot_json as Record<string, unknown>);
+        });
+        return;
+      }
       const failure = classifyWorkflowTerminalError(err);
       await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+        const run = await repos.runs.load(runId);
+        await clearStaleGeneratingTopicStatus(repos, deviceId, runId, run.snapshot_json as Record<string, unknown>);
         await repos.runs.markFailed(runId, failure.code, failure.message);
         await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
           buildRunFailedEvent(failure.code, failure.message),

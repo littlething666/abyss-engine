@@ -19,6 +19,7 @@ import type {
   PutTopicDetailsInput,
   SubjectGraphContent,
   TopicCardContent,
+  TopicContentStatusRow,
   TopicDetailsContent,
   UpsertSubjectInput,
 } from './types';
@@ -86,6 +87,7 @@ export interface ILearningContentRepo {
   publishGeneratedSubjectGraph(input: PublishGeneratedSubjectGraphInput): Promise<void>;
   getTopicDetails(deviceId: string, subjectId: string, topicId: string): Promise<TopicDetailsContent | null>;
   putTopicDetails(input: PutTopicDetailsInput): Promise<void>;
+  getTopicContentStatuses(deviceId: string, subjectId: string): Promise<TopicContentStatusRow[]>;
   getTopicCards(deviceId: string, subjectId: string, topicId: string): Promise<TopicCardContent[]>;
   upsertTopicCards(input: PutTopicCardsInput): Promise<void>;
   getCrystalTrialSet(
@@ -342,6 +344,21 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
         now,
         now,
       ).run();
+    },
+
+    async getTopicContentStatuses(deviceId, subjectId) {
+      const { results } = await db.prepare(`
+        select subject_id, topic_id, status, updated_at
+        from topic_contents
+        where device_id = ? and subject_id = ?
+        order by topic_id asc
+      `).bind(deviceId, subjectId).all<Pick<TopicContentRow, 'subject_id' | 'topic_id' | 'status' | 'updated_at'>>();
+      return (results ?? []).map((row) => ({
+        subjectId: row.subject_id,
+        topicId: row.topic_id,
+        status: row.status,
+        updatedAt: row.updated_at,
+      }));
     },
 
     async getTopicCards(deviceId, subjectId, topicId) {

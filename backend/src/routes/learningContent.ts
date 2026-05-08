@@ -44,14 +44,26 @@ learningContent.get('/subjects/:subjectId/topics/:topicId/details', async (c) =>
   return c.json(details);
 });
 
+learningContent.get('/subjects/:subjectId/topics/statuses', async (c) => {
+  const repos = makeRepos(c.env);
+  const subjectId = c.req.param('subjectId');
+  const graph = await repos.learningContent.getSubjectGraph(c.get('deviceId'), subjectId);
+  if (!graph) {
+    return c.json(notFound(`Subject Graph not found for subject ${subjectId}`), 404);
+  }
+  const topics = await repos.learningContent.getTopicContentStatuses(c.get('deviceId'), subjectId);
+  return c.json({ topics });
+});
+
 learningContent.get('/subjects/:subjectId/topics/:topicId/cards', async (c) => {
   const repos = makeRepos(c.env);
   const subjectId = c.req.param('subjectId');
   const topicId = c.req.param('topicId');
-  const cards = await repos.learningContent.getTopicCards(c.get('deviceId'), subjectId, topicId);
-  if (cards.length === 0) {
-    return c.json(notFound(`Topic cards not found for subject ${subjectId}, topic ${topicId}`), 404);
+  const details = await repos.learningContent.getTopicDetails(c.get('deviceId'), subjectId, topicId);
+  if (!details) {
+    return c.json(notFound(`Topic Content details not found for subject ${subjectId}, topic ${topicId}`), 404);
   }
+  const cards = await repos.learningContent.getTopicCards(c.get('deviceId'), subjectId, topicId);
   return c.json({ cards });
 });
 

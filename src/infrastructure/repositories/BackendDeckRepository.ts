@@ -1,6 +1,8 @@
 import type { ApiClient } from '../http/apiClient';
 import type { Card, GeometryType, Subject, SubjectGraph, TopicDetails } from '../../types/core';
 import type { DeckContentSource, IDeckRepository, Manifest, ManifestOptions } from '../../types/repository';
+import type { TopicContentStatusRecord } from '../../types/topicContent';
+import { isTopicContentStatus } from '../../types/topicContent';
 
 interface BackendDeckRepositoryDeps {
   http: ApiClient;
@@ -33,6 +35,10 @@ interface BackendTopicDetailsResponse {
 
 interface BackendTopicCardsResponse {
   cards: BackendTopicCardRow[];
+}
+
+interface BackendTopicStatusesResponse {
+  topics: TopicContentStatusRecord[];
 }
 
 interface BackendTopicCardRow {
@@ -155,6 +161,31 @@ function requireDetailsResponse(value: unknown): BackendTopicDetailsResponse {
   return { details: requireRecord(record.details, 'Learning Content topic details response.details') };
 }
 
+function requireTopicStatusesResponse(value: unknown): BackendTopicStatusesResponse {
+  const record = requireRecord(value, 'Learning Content topic statuses response');
+  if (!Array.isArray(record.topics)) {
+    throw new Error('Learning Content topic statuses response.topics must be an array');
+  }
+  return {
+    topics: record.topics.map((topic, index) => {
+      const row = requireRecord(topic, `Learning Content topic statuses response.topics[${index}]`);
+      const status = row.status;
+      if (!isTopicContentStatus(status)) {
+        throw new Error(`Learning Content topic statuses response.topics[${index}].status is invalid`);
+      }
+      const updatedAt = row.updatedAt === undefined
+        ? undefined
+        : requireString(row.updatedAt, `Learning Content topic statuses response.topics[${index}].updatedAt`);
+      return {
+        subjectId: requireString(row.subjectId, `Learning Content topic statuses response.topics[${index}].subjectId`),
+        topicId: requireString(row.topicId, `Learning Content topic statuses response.topics[${index}].topicId`),
+        status,
+        updatedAt,
+      };
+    }),
+  };
+}
+
 function requireCardsResponse(value: unknown): BackendTopicCardsResponse {
   const record = requireRecord(value, 'Learning Content topic cards response');
   if (!Array.isArray(record.cards)) {
@@ -214,6 +245,13 @@ export class BackendDeckRepository implements IDeckRepository {
       ),
     );
     return payload.details as unknown as TopicDetails;
+  }
+
+  async getTopicContentStatuses(subjectId: string): Promise<TopicContentStatusRecord[]> {
+    const payload = requireTopicStatusesResponse(
+      await this.http.get<unknown>(`/v1/subjects/${pathSegment(subjectId)}/topics/statuses`),
+    );
+    return payload.topics;
   }
 
   async getTopicCards(subjectId: string, topicId: string): Promise<Card[]> {

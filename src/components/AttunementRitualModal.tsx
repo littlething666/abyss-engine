@@ -55,6 +55,7 @@ import { parseTopicRefKey, topicRefKey } from '@/lib/topicRef';
 import { useTopicMetadata } from '../features/content';
 import { deckRepository } from '../infrastructure/di';
 import { topicCardsQueryKey } from '../hooks/useDeckData';
+import { useTopicContentStatusMap } from '../hooks/useTopicContentStatusMap';
 import { Card } from '../types/core';
 
 const motionFadeInitial = { opacity: 0, scale: 0.95 };
@@ -105,6 +106,7 @@ export function AttunementRitualModal({
     return out;
   }, [activeCrystals]);
   const allTopicMetadata = useTopicMetadata(activeTopicRefs);
+  const contentStatusByTopicKey = useTopicContentStatusMap();
   const topicCardQueries = useQueries({
     queries: activeTopicRefs.map((ref) => {
       const k = topicRefKey(ref);
@@ -112,7 +114,7 @@ export function AttunementRitualModal({
       return {
         queryKey: topicCardsQueryKey(subjectId, ref.topicId),
         queryFn: () => deckRepository.getTopicCards(subjectId, ref.topicId),
-        enabled: Boolean(subjectId),
+        enabled: Boolean(subjectId) && contentStatusByTopicKey[k] === 'ready',
         staleTime: Infinity,
       };
     }),
@@ -128,8 +130,8 @@ export function AttunementRitualModal({
     return map;
   }, [activeTopicRefs, topicCardQueries]);
   const selectedTopicCards = useMemo(
-    () => (targetCrystal ? topicCardsByKey.get(targetCrystal) ?? [] : []),
-    [targetCrystal, topicCardsByKey],
+    () => (targetCrystal && contentStatusByTopicKey[targetCrystal] === 'ready' ? topicCardsByKey.get(targetCrystal) ?? [] : []),
+    [targetCrystal, topicCardsByKey, contentStatusByTopicKey],
   );
   const sectionBuffs = useMemo(() => ({
     biological: getCategoryBuffs('biological').map((definition) => BuffEngine.get().grantBuff(definition.id, 'biological')),
