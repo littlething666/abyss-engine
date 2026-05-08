@@ -2,12 +2,34 @@ import type { IRunsRepo } from '../../repositories/runsRepo';
 import type { TypedEventType } from '../../contracts/typedEvents';
 import type { ArtifactKind } from '../../contracts/generationContracts';
 
+export const WORKFLOW_STEP_RETRY_DELAY = '5 seconds';
+export const WORKFLOW_STORAGE_STEP_TIMEOUT = '30 seconds';
+export const WORKFLOW_TERMINAL_STEP_TIMEOUT = '15 seconds';
+
 export const WORKFLOW_LLM_STEP_RETRY = {
   retries: {
     limit: 2,
-    delay: '5 seconds',
+    delay: WORKFLOW_STEP_RETRY_DELAY,
     backoff: 'exponential',
   },
+} as const;
+
+export const WORKFLOW_STORAGE_STEP_RETRY = {
+  retries: {
+    limit: 2,
+    delay: WORKFLOW_STEP_RETRY_DELAY,
+    backoff: 'exponential',
+  },
+  timeout: WORKFLOW_STORAGE_STEP_TIMEOUT,
+} as const;
+
+export const WORKFLOW_TERMINAL_STEP_RETRY = {
+  retries: {
+    limit: 2,
+    delay: WORKFLOW_STEP_RETRY_DELAY,
+    backoff: 'exponential',
+  },
+  timeout: WORKFLOW_TERMINAL_STEP_TIMEOUT,
 } as const;
 
 export function workflowStatusEventKey(status: string, stage?: string): string {

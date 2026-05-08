@@ -15,6 +15,8 @@ import { callSubjectGraph } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import {
   WORKFLOW_LLM_STEP_RETRY,
+  WORKFLOW_STORAGE_STEP_RETRY,
+  WORKFLOW_TERMINAL_STEP_RETRY,
   appendWorkflowEventOnce,
   workflowArtifactReadyEventKey,
   workflowStageProgressEventKey,
@@ -26,6 +28,7 @@ import {
   type BackendGenerationJobKind,
   type ResolvedGenerationJobPolicy,
 } from '../generationPolicy';
+import { applyArtifactToLearningContent } from '../learningContent/artifactApplication';
 import {
   buildSubjectGraphEdgesMessages,
   buildSubjectGraphTopicsMessages,
@@ -54,14 +57,28 @@ import type { ArtifactKind } from '../contracts/generationContracts';
 // ---------------------------------------------------------------------------
 // Step return shapes
 // ---------------------------------------------------------------------------
+interface CachedArtifactResult {
+  artifactId: string;
+  contentHash: string;
+  inputHash: string;
+  schemaVersion: number;
+  storageKey: string;
+}
 interface PlanOutcomeOk {
   ok: true;
   snapshot: Record<string, unknown>;
   inputHash: string;
   checkpoints: Array<{ stage: string; artifact_id: string | null }>;
 }
-interface PlanOutcomeCached { ok: false }
+interface PlanOutcomeCached { ok: false; snapshot: Record<string, unknown>; cached: CachedArtifactResult }
 type PlanOutcome = PlanOutcomeOk | PlanOutcomeCached;
+
+function requireArtifactPayload(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new WorkflowFail('precondition:missing-topic', `${label} must be a JSON object`);
+  }
+  return value as Record<string, unknown>;
+}
 
 interface GenerateResult {
   text: string;
@@ -89,16 +106,18 @@ async function runStage(
   schemaVersion: number,
   exec: (generationPolicy: ResolvedGenerationJobPolicy) => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
 ): Promise<StageRunResult> {
-  await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('generating_stage', stage),
-    buildRunStatusEvent('generating_stage'),
-  );
-  await repos.stageCheckpoints.upsert({
-    runId,
-    stage,
-    status: 'generating',
-    inputHash: _inputHash,
-    attempt: 0,
-    startedAt: new Date().toISOString(),
+  await step.do(`start:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+    await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('generating_stage', stage),
+      buildRunStatusEvent('generating_stage'),
+    );
+    await repos.stageCheckpoints.upsert({
+      runId,
+      stage,
+      status: 'generating',
+      inputHash: _inputHash,
+      attempt: 0,
+      startedAt: new Date().toISOString(),
+    });
   });
 
   const generationPolicy = await resolveGenerationJobPolicy(deviceId, kind as BackendGenerationJobKind);
@@ -135,31 +154,49 @@ async function runStage(
     throw err;
   }
 
-  const _contentHash = await contentHash(result.parsedPayload);
-  const artifactId = await repos.artifacts.putStorage(
-    { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
-    _contentHash,
-    schemaVersion,
-    runId,
-  );
-
-  await repos.stageCheckpoints.markReady(runId, stage, artifactId);
-
-  if (result.usage) {
-    await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
-  }
-
-  await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey(kind, _inputHash),
-    buildArtifactReadyEvent({
-      artifactId,
-      kind,
-      contentHash: _contentHash,
-      inputHash: _inputHash,
+  const persisted = (await step.do(`persist:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async (): Promise<StageRunResult> => {
+    const _contentHash = await contentHash(result.parsedPayload);
+    const artifactId = await repos.artifacts.putStorage(
+      { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
+      _contentHash,
       schemaVersion,
-    }),
-  );
+      runId,
+    );
 
-  return { artifactId, contentHash: _contentHash, kind };
+    await repos.stageCheckpoints.markReady(runId, stage, artifactId);
+
+    if (result.usage) {
+      await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
+    }
+
+    return { artifactId, contentHash: _contentHash, kind };
+  })) as StageRunResult;
+
+  await step.do(`apply:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+    await applyArtifactToLearningContent({
+      learningContent: repos.learningContent,
+      deviceId,
+      runId,
+      artifactKind: kind,
+      payload: result.parsedPayload,
+      snapshot,
+      contentHash: persisted.contentHash,
+    });
+  });
+
+  await step.do(`artifact-ready:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+    await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey(kind, _inputHash),
+      buildArtifactReadyEvent({
+        artifactId: persisted.artifactId,
+        kind,
+        contentHash: persisted.contentHash,
+        inputHash: _inputHash,
+        schemaVersion,
+      }),
+    );
+  });
+
+  return persisted;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,10 +216,12 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
     const checkCancel = async (boundary: string) => {
       const reason = await repos.runs.cancelRequested(runId);
       if (reason) {
-        await repos.runs.markCancelled(runId);
-        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('cancelled'),
-          buildRunCancelledEvent(boundary, reason),
-        );
+        await step.do(`cancel:${boundary}`, WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+          await repos.runs.markCancelled(runId);
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('cancelled'),
+            buildRunCancelledEvent(boundary, reason),
+          );
+        });
         throw new WorkflowAbort('cancelled');
       }
     };
@@ -191,6 +230,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       // ---- 1. PLAN (no budget check — Phase 3.6 Step 4) ----
       await checkCancel('before-plan');
 
+      // @ts-expect-error Workflow Serializable cannot express JSON objects parsed from D1 snapshots.
       const planOutcome = (await step.do('plan', async (): Promise<PlanOutcome> => {
         await repos.runs.transition(runId, 'planning');
         await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('planning'),
@@ -203,19 +243,17 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
         const cached = await repos.artifacts.findCacheHit(deviceId, 'subject-graph-topics', _inputHash);
         if (cached) {
-          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey('subject-graph-topics', _inputHash),
-            buildArtifactReadyEvent({
+          return {
+            ok: false,
+            snapshot,
+            cached: {
               artifactId: cached.id,
-              kind: 'subject-graph-topics',
               contentHash: cached.content_hash,
               inputHash: _inputHash,
               schemaVersion: cached.schema_version,
-              fromCache: true,
-            }),
-          );
-          await repos.runs.markReady(runId);
-          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
-          return { ok: false };
+              storageKey: cached.storage_key,
+            },
+          };
         }
 
         const checkpoints = await repos.stageCheckpoints.byRun(runId);
@@ -227,7 +265,39 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
         };
       })) as PlanOutcome;
 
-      if (!planOutcome.ok) return;
+      if (!planOutcome.ok) {
+        const { snapshot, cached } = planOutcome;
+        await step.do('apply:subject-graph-topics:cache', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+          const payload = requireArtifactPayload(
+            await repos.artifacts.getStorage(cached.storageKey),
+            `cached subject-graph-topics artifact ${cached.artifactId}`,
+          );
+          await applyArtifactToLearningContent({
+            learningContent: repos.learningContent,
+            deviceId,
+            runId,
+            artifactKind: 'subject-graph-topics',
+            payload,
+            snapshot,
+            contentHash: cached.contentHash,
+          });
+        });
+        await step.do('ready:subject-graph-topics:cache', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey('subject-graph-topics', cached.inputHash),
+            buildArtifactReadyEvent({
+              artifactId: cached.artifactId,
+              kind: 'subject-graph-topics',
+              contentHash: cached.contentHash,
+              inputHash: cached.inputHash,
+              schemaVersion: cached.schemaVersion,
+              fromCache: true,
+            }),
+          );
+          await repos.runs.markReady(runId);
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
+        });
+        return;
+      }
       const { snapshot, inputHash: _inputHash, checkpoints } = planOutcome;
 
       const topicsSchemaVersion = (snapshot.schema_version as number) ?? subjectGraphTopicsSchemaVersion;
@@ -250,9 +320,11 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       const topicsCkp = checkpoints.find((c) => c.stage === 'topics');
       if (topicsCkp?.artifact_id || skipStageA) {
         const topicsProgressNote = skipStageA ? 'skipped (retry_stage=edges)' : 'resumed from checkpoint';
-        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStageProgressEventKey('topics', topicsProgressNote),
-          buildStageProgressEvent('topics', undefined, topicsProgressNote),
-        );
+        await step.do('progress:topics:checkpoint', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStageProgressEventKey('topics', topicsProgressNote),
+            buildStageProgressEvent('topics', undefined, topicsProgressNote),
+          );
+        });
 
         // When resuming from checkpoint or skipping Stage A, we MUST load
         // the Stage A artifact to extract lattice topic IDs for Stage B
@@ -344,16 +416,20 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       // 'topics', the caller only wants Stage A; skip Stage B entirely.
       const skipStageB = retryStage === 'topics';
       if (skipStageB) {
-        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStageProgressEventKey('edges', 'skipped (retry_stage=topics)'),
-          buildStageProgressEvent('edges', undefined, 'skipped (retry_stage=topics)'),
-        );
+        await step.do('progress:edges:skipped', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStageProgressEventKey('edges', 'skipped (retry_stage=topics)'),
+            buildStageProgressEvent('edges', undefined, 'skipped (retry_stage=topics)'),
+          );
+        });
       }
 
       const edgesCkp = checkpoints.find((c) => c.stage === 'edges');
       if (edgesCkp?.artifact_id) {
-        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStageProgressEventKey('edges', 'resumed from checkpoint'),
-          buildStageProgressEvent('edges', undefined, 'resumed from checkpoint'),
-        );
+        await step.do('progress:edges:checkpoint', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStageProgressEventKey('edges', 'resumed from checkpoint'),
+            buildStageProgressEvent('edges', undefined, 'resumed from checkpoint'),
+          );
+        });
       } else if (!skipStageB) {
         await checkCancel('before-edges');
 
@@ -395,22 +471,28 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       }
 
       // ---- 4. READY ----
-      await repos.runs.markReady(runId);
-      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
+      await step.do('ready', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+        await repos.runs.markReady(runId);
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
+      });
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
       if (err instanceof WorkflowFail) {
-        await repos.runs.markFailed(runId, err.code, err.message);
-        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
-          buildRunFailedEvent(err.code, err.message),
-        );
+        await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+          await repos.runs.markFailed(runId, err.code, err.message);
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
+            buildRunFailedEvent(err.code, err.message),
+          );
+        });
         throw toWorkflowRuntimeError(err);
       }
       const message = err instanceof Error ? err.message : String(err);
-      await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
-      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
-        buildRunFailedEvent('llm:upstream-5xx', message),
-      );
+      await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+        await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
+          buildRunFailedEvent('llm:upstream-5xx', message),
+        );
+      });
       throw err;
     }
   }

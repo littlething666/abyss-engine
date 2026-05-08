@@ -355,20 +355,20 @@ Exit:
 
 - Backend workflows contain no model fallback strings and no hard-coded provider-healing booleans.
 
-### PR-G — Backend artifact appliers write the Learning Content Store
+### PR-G — Backend artifact appliers write the Learning Content Store ✅ implementation landed / runtime proof pending
 
-Files: `backend/src/artifactAppliers/*`, workflow persist steps, tests.
+Files: `backend/src/learningContent/artifactApplication.ts`, workflow persist/apply/ready steps, tests.
 
-- After strict parse + semantic validation, apply artifacts into the Learning Content Store before `run.completed`.
-- Subject Graph Stage A writes graph nodes without edges; Stage B wires prerequisites into the same graph row.
-- Topic Theory writes `topic_contents`; study cards and mini-games upsert/append `topic_cards` as appropriate.
-- Topic Expansion appends cards with supersession checks.
-- Crystal Trial writes `crystal_trial_sets` and does not emit player-assessment completion.
-- Cache-hit runs must materialize cached artifacts into the Learning Content Store if the read model is missing.
+- ✅ After strict parse + semantic validation, workflows apply artifacts into the Learning Content Store before `run.completed`.
+- ✅ Subject Graph Stage A writes graph nodes without edges and seeds unavailable topic details; Stage B wires prerequisites into the same graph row.
+- ✅ Topic Theory writes ready `topic_contents`; study cards, mini-games, and Topic Expansion upsert `topic_cards` through the backend read model.
+- ✅ Crystal Trial writes `crystal_trial_sets` and does not emit player-assessment completion.
+- ✅ Cache-hit runs/stages materialize cached artifacts into the Learning Content Store before completion.
+- ⏳ Runtime replay/concurrency proof remains in the Cloudflare Workers Vitest pool, including stale Topic Expansion supersession under replay/concurrency. Also resolve the inherited CLOZE deck-read-model gap before deleting frontend appliers.
 
 Exit:
 
-- A close-tab/reopen after backend `ready` can render content from backend reads without local artifact application.
+- A close-tab/reopen after backend `ready` can render content from backend reads without local artifact application; prove this with Worker/runtime tests plus frontend durable-read coverage.
 
 ### PR-H — Delete frontend artifact appliers and local deck persistence authority
 

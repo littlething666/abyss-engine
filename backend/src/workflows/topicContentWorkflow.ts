@@ -15,6 +15,8 @@ import { callTopicContent } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import {
   WORKFLOW_LLM_STEP_RETRY,
+  WORKFLOW_STORAGE_STEP_RETRY,
+  WORKFLOW_TERMINAL_STEP_RETRY,
   appendWorkflowEventOnce,
   workflowArtifactReadyEventKey,
   workflowStatusEventKey,
@@ -31,6 +33,7 @@ import {
   buildTopicTheoryMessages,
 } from '../prompts/generationPrompts';
 import { topicContentStageInputHash } from './topicContentStageInputHash';
+import { applyArtifactToLearningContent } from '../learningContent/artifactApplication';
 import {
   inputHash,
   contentHash,
@@ -109,16 +112,18 @@ async function runStage(
   schemaVersion: number,
   exec: (generationPolicy: ResolvedGenerationJobPolicy) => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
 ): Promise<StageRunResult> {
-  await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('generating_stage', stage),
-    buildRunStatusEvent('generating_stage'),
-  );
-  await repos.stageCheckpoints.upsert({
-    runId,
-    stage,
-    status: 'generating',
-    inputHash: _inputHash,
-    attempt: 0,
-    startedAt: new Date().toISOString(),
+  await step.do(`start:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+    await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('generating_stage', stage),
+      buildRunStatusEvent('generating_stage'),
+    );
+    await repos.stageCheckpoints.upsert({
+      runId,
+      stage,
+      status: 'generating',
+      inputHash: _inputHash,
+      attempt: 0,
+      startedAt: new Date().toISOString(),
+    });
   });
 
   const generationPolicy = await resolveGenerationJobPolicy(deviceId, kind as BackendGenerationJobKind);
@@ -155,31 +160,49 @@ async function runStage(
     throw err;
   }
 
-  const _contentHash = await contentHash(result.parsedPayload);
-  const artifactId = await repos.artifacts.putStorage(
-    { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
-    _contentHash,
-    schemaVersion,
-    runId,
-  );
-
-  await repos.stageCheckpoints.markReady(runId, stage, artifactId);
-
-  if (result.usage) {
-    await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
-  }
-
-  await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey(kind, _inputHash),
-    buildArtifactReadyEvent({
-      artifactId,
-      kind,
-      contentHash: _contentHash,
-      inputHash: _inputHash,
+  const persisted = (await step.do(`persist:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async (): Promise<StageRunResult> => {
+    const _contentHash = await contentHash(result.parsedPayload);
+    const artifactId = await repos.artifacts.putStorage(
+      { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
+      _contentHash,
       schemaVersion,
-    }),
-  );
+      runId,
+    );
 
-  return { artifactId, contentHash: _contentHash, kind };
+    await repos.stageCheckpoints.markReady(runId, stage, artifactId);
+
+    if (result.usage) {
+      await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
+    }
+
+    return { artifactId, contentHash: _contentHash, kind };
+  })) as StageRunResult;
+
+  await step.do(`apply:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+    await applyArtifactToLearningContent({
+      learningContent: repos.learningContent,
+      deviceId,
+      runId,
+      artifactKind: kind,
+      payload: result.parsedPayload,
+      snapshot,
+      contentHash: persisted.contentHash,
+    });
+  });
+
+  await step.do(`artifact-ready:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+    await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey(kind, _inputHash),
+      buildArtifactReadyEvent({
+        artifactId: persisted.artifactId,
+        kind,
+        contentHash: persisted.contentHash,
+        inputHash: _inputHash,
+        schemaVersion,
+      }),
+    );
+  });
+
+  return persisted;
 }
 
 async function loadStageArtifactContentHash(
@@ -195,37 +218,57 @@ async function loadStageArtifactContentHash(
 }
 
 async function useCachedStage(
+  step: WorkflowStep,
   repos: ReturnType<typeof makeRepos>,
   runId: string,
   deviceId: string,
   stage: string,
   kind: ArtifactKind,
   stageInputHash: string,
+  snapshot: Record<string, unknown>,
 ): Promise<StageRunResult | null> {
   const cached = await repos.artifacts.findCacheHit(deviceId, kind, stageInputHash);
   if (!cached) return null;
 
-  const now = new Date().toISOString();
-  await repos.stageCheckpoints.upsert({
-    runId,
-    stage,
-    status: 'ready',
-    inputHash: stageInputHash,
-    attempt: 0,
-    artifactId: cached.id,
-    startedAt: now,
-    finishedAt: now,
-  });
-  await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey(kind, stageInputHash),
-    buildArtifactReadyEvent({
-      artifactId: cached.id,
-      kind,
+  await step.do(`apply-cache:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+    const payload = await repos.artifacts.getStorage(cached.storage_key);
+    if (!isRecord(payload)) {
+      throw new WorkflowFail('precondition:missing-topic', `cached ${kind} artifact ${cached.id} must be a JSON object`);
+    }
+    await applyArtifactToLearningContent({
+      learningContent: repos.learningContent,
+      deviceId,
+      runId,
+      artifactKind: kind,
+      payload,
+      snapshot,
       contentHash: cached.content_hash,
+    });
+  });
+
+  await step.do(`cache-ready:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+    const now = new Date().toISOString();
+    await repos.stageCheckpoints.upsert({
+      runId,
+      stage,
+      status: 'ready',
       inputHash: stageInputHash,
-      schemaVersion: cached.schema_version,
-      fromCache: true,
-    }),
-  );
+      attempt: 0,
+      artifactId: cached.id,
+      startedAt: now,
+      finishedAt: now,
+    });
+    await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey(kind, stageInputHash),
+      buildArtifactReadyEvent({
+        artifactId: cached.id,
+        kind,
+        contentHash: cached.content_hash,
+        inputHash: stageInputHash,
+        schemaVersion: cached.schema_version,
+        fromCache: true,
+      }),
+    );
+  });
 
   return { artifactId: cached.id, contentHash: cached.content_hash, kind };
 }
@@ -348,10 +391,12 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
     const checkCancel = async (boundary: string) => {
       const reason = await repos.runs.cancelRequested(runId);
       if (reason) {
-        await repos.runs.markCancelled(runId);
-        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('cancelled'),
-          buildRunCancelledEvent(boundary, reason),
-        );
+        await step.do(`cancel:${boundary}`, WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+          await repos.runs.markCancelled(runId);
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('cancelled'),
+            buildRunCancelledEvent(boundary, reason),
+          );
+        });
         throw new WorkflowAbort('cancelled');
       }
     };
@@ -401,7 +446,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         });
 
         const theoryResult = (await useCachedStage(
-          repos, runId, deviceId, 'theory', 'topic-theory', theoryInputHash,
+          step, repos, runId, deviceId, 'theory', 'topic-theory', theoryInputHash, snapshot,
         )) ?? await runStage(
           step, repos, runId, deviceId, 'theory', 'topic-theory',
           snapshot, theoryInputHash, theorySchemaVersion,
@@ -450,7 +495,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         });
 
         const studyCardsResult = (await useCachedStage(
-          repos, runId, deviceId, 'study-cards', 'topic-study-cards', studyCardsInputHash,
+          step, repos, runId, deviceId, 'study-cards', 'topic-study-cards', studyCardsInputHash, snapshot,
         )) ?? await runStage(
           step, repos, runId, deviceId, 'study-cards', 'topic-study-cards',
           snapshot, studyCardsInputHash, cardsSchemaVersion,
@@ -513,7 +558,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
             });
 
             return (await useCachedStage(
-              repos, runId, deviceId, miniStage, kind, miniGameInputHash,
+              step, repos, runId, deviceId, miniStage, kind, miniGameInputHash, snapshot,
             )) ?? await runStage(
               step, repos, runId, deviceId, miniStage, kind,
               snapshot, miniGameInputHash, schemaVersion,
@@ -552,22 +597,28 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
       }
 
       // ---- 5. READY ----
-      await repos.runs.markReady(runId);
-      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
+      await step.do('ready', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+        await repos.runs.markReady(runId);
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
+      });
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
       if (err instanceof WorkflowFail) {
-        await repos.runs.markFailed(runId, err.code, err.message);
-        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
-          buildRunFailedEvent(err.code, err.message),
-        );
+        await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+          await repos.runs.markFailed(runId, err.code, err.message);
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
+            buildRunFailedEvent(err.code, err.message),
+          );
+        });
         throw toWorkflowRuntimeError(err);
       }
       const message = err instanceof Error ? err.message : String(err);
-      await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
-      await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
-        buildRunFailedEvent('llm:upstream-5xx', message),
-      );
+      await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+        await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
+        await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
+          buildRunFailedEvent('llm:upstream-5xx', message),
+        );
+      });
       throw err;
     }
   }

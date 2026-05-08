@@ -100,7 +100,7 @@ abyss/{deviceId}/{kind}/{runId}/raw-repair.json
 
 Workflows can persist step state and recover across failures, but the UI should not depend on Workflow internals as the user-facing state store. Mirror meaningful state transitions into D1 `events`.
 
-Workflow steps must be granular and idempotent. Avoid side effects outside `step.do`; steps may retry or workflow engine execution may restart. Persisted run events use D1-level semantic idempotency: `events.semantic_key` is unique per `run_id`, and Workflow code emits deterministic semantic keys for status, stage-progress, artifact-ready, and terminal events through `appendOnce` / `appendTypedOnce`. Extend that same semantic-idempotency pattern to artifact writes, checkpoints, Learning Content Store application, and token accounting as those side effects move fully behind named Workflow steps.
+Workflow steps must be granular and idempotent. Avoid side effects outside `step.do`; steps may retry or workflow engine execution may restart. Persisted run events use D1-level semantic idempotency: `events.semantic_key` is unique per `run_id`, and Workflow code emits deterministic semantic keys for status, stage-progress, artifact-ready, and terminal events through `appendOnce` / `appendTypedOnce`. Artifact writes, checkpoints, Learning Content Store application, cache-hit materialization, token accounting, and terminal writes now sit behind named Workflow steps; new side effects must follow the same deterministic-step and natural-upsert/idempotency posture and be covered by Cloudflare runtime replay tests.
 
 ## Bottom Line
 
