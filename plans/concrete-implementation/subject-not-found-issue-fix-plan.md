@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-08
 
-Status: partially implemented in backend workflow/Learning Content publication path on 2026-05-08. The core root-cause fix is implemented, but the full plan remains open until the follow-up proof matrix items below are completed.
+Status: backend workflow/Learning Content publication path implemented on 2026-05-08, and the frontend durable-mode read/write authority mismatch has been fixed. The original backend missing-subject failure is fixed, and durable subject-graph artifacts are no longer applied to IndexedDB by the frontend. The plan remains open only for broader proof-matrix/runtime coverage and retry verification.
 
 ## Implementation Record
 
@@ -16,6 +16,9 @@ Completed work:
 - Incremental `subject-graph-topics` / `subject-graph-edges` Learning Content appliers now fail loudly; subject graph artifacts must use the complete publisher.
 - Workflow terminal failure handling now recognizes serialized `WorkflowFail` values and preserves structured codes/messages across workflow step boundaries.
 - Updated/added tests around complete subject graph publication and serialized workflow failure detection.
+- Frontend durable subject-graph `artifact.ready` handling is now progress-only: it does not fetch artifacts, does not apply `SubjectGraphApplier`, does not write IndexedDB graphs, and does not invalidate canonical content queries before backend publication.
+- Frontend subject-graph `run.completed` now invokes a narrow backend-publication invalidation seam for manifest + graph query keys and emits `subject-graph:generated` independently of local artifact application.
+- Legacy frontend `SubjectGraphApplier` and its tests were removed; subject-graph artifacts have no frontend/local Learning Content applier in the current unpublished app.
 
 Validation performed:
 
@@ -29,7 +32,6 @@ Remaining before this plan can be deleted:
 
 - Add explicit end-to-end/runtime tests for the full proof matrix: new subject publish, Stage A success + Stage B failure invisibility, regeneration failure preserving the old graph, Stage A cache hit continuing to Stage B, retry of the old missing-subject failure, WorkflowFail serialization, and device isolation.
 - Verify retry planning for failed subject-graph runs replays the corrected lifecycle without requiring manual subject seeding, including parent/child lineage coverage.
-- Audit frontend sync/read posture so manifest refresh and IndexedDB hydration rely on `run.completed`, not Stage A artifact readiness, and no frontend fallback creates subjects locally.
 - Decide whether stronger D1 transactional guarantees are needed beyond the current batched publication method.
 
 ## Decision Summary
@@ -43,18 +45,36 @@ Accepted answers locked into this plan:
 3. **Learning Content remains device-scoped.** All reads/writes remain filtered by `device_id`; later auth migration tightens the same boundary to user identity.
 4. **Subject metadata is backend-published from the accepted generation input and final graph.** See [Subject metadata contract](#subject-metadata-contract).
 5. **Retries must repair the missing-subject class by replaying the corrected lifecycle.** Retrying a failed run or submitting a new run must not require manual D1 seeding.
+6. **`artifact.ready` is not Learning Content readiness for subject graphs.** In durable subject-graph runs, only `run.completed` implies manifest/graph routes may be refetched as published Learning Content.
 
 ## Root Cause
 
-The durable `subject-graph` workflow persists the Stage A `subject-graph-topics` artifact and then immediately calls `applyArtifactToLearningContent()` for `subject-graph-topics`. That applier calls `requireSubject()` before writing the graph.
+### Original backend root cause — fixed in the current implementation record
 
-For a new device and new subject id, no `subjects` row exists yet, so Stage A generation succeeds but materialization fails with:
+The durable `subject-graph` workflow persisted the Stage A `subject-graph-topics` artifact and then immediately called `applyArtifactToLearningContent()` for `subject-graph-topics`. That applier called `requireSubject()` before writing the graph.
+
+For a new device and new subject id, no `subjects` row existed yet, so Stage A generation succeeded but materialization failed with:
 
 ```txt
 WorkflowFail: Learning Content subject not found: game-theory
 ```
 
-The row is then misclassified as `llm:upstream-5xx` because `WorkflowFail` is not reliably preserved across nested Workflow step boundaries.
+The row was then misclassified as `llm:upstream-5xx` because `WorkflowFail` was not reliably preserved across nested Workflow step boundaries.
+
+### Remaining frontend read-model root cause — open
+
+The backend now intentionally writes `subjects` + `subject_graphs` only in `publish:subject-graph:complete`, after both Stage A and Stage B artifacts are stored and after both `artifact.ready` events have been appended. Therefore `GET /v1/library/manifest` and `GET /v1/subjects/:subjectId/graph` are expected to return 404 / omit the subject until `publishCompleteSubjectGraphToLearningContent()` succeeds and `run.completed` is emitted.
+
+Durable-mode frontend composition contradicts that lifecycle:
+
+1. `createDeckRepository()` selects `BackendDeckRepository` when durable runs are enabled, so `useSubjectGraph()` reads the graph over HTTP from `/v1/subjects/:subjectId/graph`.
+2. Before PR 7, `generationRunEventHandlers` treated subject-graph `artifact.ready` events as locally applicable content and called `SubjectGraphApplier`.
+3. The removed `SubjectGraphApplier.applyTopics()` wrote partial graphs to IndexedDB through `deckWriter.upsertGraph()`.
+4. `deckContentWriter.upsertGraph()` emitted `subject:updated`, and `pubSubClient` invalidated `['content', 'subject', subjectId, 'graph']`.
+5. TanStack Query immediately refetched through `BackendDeckRepository`, before backend publication existed, and received the expected 404.
+6. This is now fixed: durable subject-graph `artifact.ready` events are progress-only, frontend IndexedDB graph application has been removed, and manifest/graph invalidation happens only after subject-graph `run.completed`.
+
+This was not a device-id issue and not evidence that D1 publication failed. It was a split-brain read/write model: subject-graph artifacts were being written to IndexedDB as if IndexedDB were the active read model, while canonical subject graph reads were already backend-owned.
 
 ## Non-Goals
 
@@ -75,6 +95,7 @@ POST /v1/runs { kind: 'subject-graph', intent.stage: 'topics' }
   -> publish step assembles the complete Subject Graph
   -> publish step writes Subject + Subject Graph + topic detail stubs atomically/idempotently
   -> run.completed is emitted only after publication succeeds
+  -> frontend invalidates/refetches manifest + graph queries
   -> manifest/graph/topic routes can now expose the subject
 ```
 
@@ -315,23 +336,72 @@ Rules:
 4. If the parent failure was the old `Learning Content subject not found` issue, the retry should succeed without manual subject seeding.
 5. Do not mutate the parent run row; keep lineage through `parent_run_id`.
 
-### PR 7 — Frontend sync/read posture
+### PR 7 — Fix durable-mode frontend read/write authority mismatch
 
-Files:
+Root-cause decision: when durable subject-graph generation is enabled, the backend Learning Content Store is the only canonical read/write model for generated subjects. Browser IndexedDB may cache backend-published content later, but it must not become an implicit staging store for subject-graph artifacts and must not invalidate canonical content queries before `run.completed`.
+
+Status: implemented. Durable subject-graph artifacts are not frontend-applied; the legacy `SubjectGraphApplier` was removed.
+
+Files changed:
 
 ```txt
-src/infrastructure/repositories/BackendDeckRepository.ts
-src/features/contentGeneration/generationClient.ts
 src/infrastructure/generationRunEventHandlers.ts
-src/hooks/useContentGenerationHydration.ts
+src/infrastructure/generationRunEventHandlers.test.ts
+src/infrastructure/pubsub.ts
+src/infrastructure/pubsub.test.ts
+src/infrastructure/wireGenerationClient.ts
+src/features/generationContracts/artifacts/applier.ts
+src/features/subjectGeneration/index.ts
 ```
 
-Checks:
+Implementation notes:
 
-1. The client treats run progress/SSE as progress only, not as proof that Learning Content is readable.
-2. Subject manifest refresh occurs after `run.completed`, not after Stage A `artifact.ready`.
-3. Local IndexedDB, if still present as a temporary read cache, syncs only backend-published complete subjects.
-4. No frontend fallback creates the subject locally when backend reads 404 during generation.
+1. **Durable subject-graph artifact application to IndexedDB is removed.**
+   - `generationRunEventHandlers` treats `subject-graph-topics` and `subject-graph-edges` `artifact.ready` events as progress/artifact availability only.
+   - Those events still advance the durable event cursor so SSE replay remains idempotent.
+   - Topic-content, topic-expansion, mini-game, and Crystal Trial artifact application remain unchanged while those pipelines still rely on local artifact materialization.
+
+2. **Subject-graph content invalidation moved to `run.completed`.**
+   - On subject-graph `run.completed`, `PubSubClient.publishBackendSubjectGraph(subjectId)` invalidates backend-published content:
+     - `['content', 'subjects']` / manifest keys;
+     - `['content', 'subject', subjectId, 'graph']`;
+     - `['content', 'subject', 'graphs']`.
+   - This invalidation occurs after the terminal event because the backend workflow emits `run.completed` only after `publish:subject-graph:complete` succeeds.
+   - Graph queries are not invalidated by subject-graph Stage A/B `artifact.ready`.
+
+3. **Product completion events no longer depend on local subject-graph artifact writes.**
+   - Subject-graph `run.completed` emits `subject-graph:generated` even though no local subject-graph artifact was applied.
+   - Replay idempotency is keyed by the durable cursor / terminal event seq.
+
+4. **`SubjectGraphApplier` is deleted.**
+   - No frontend/local applier exists for subject-graph artifacts in the current unpublished app.
+   - The fix explicitly does not make any frontend applier read IndexedDB while `BackendDeckRepository` reads HTTP.
+
+5. **Do not add 404 backoff/retry as the primary fix.**
+   - A 404 before publication is correct backend behavior.
+   - Query retry/backoff would only hide the artifact-ready invalidation bug and normalize probabilistic recovery.
+   - If a UI needs to show generation progress, read the run/SSE state or artifact metadata, not the Learning Content graph route.
+
+6. **Do not implement local-first graph reads for this lifecycle unless the product decision changes.**
+   - Local-first reads would expose partial Stage A content and contradict the locked “No partial subject availability” decision.
+   - If partial preview is later desired, build a separate preview model/key/surface that is explicitly not Learning Content and cannot satisfy `useSubjectGraph()`.
+
+7. **`buildApplyContext()` no longer carries subject-graph Stage A state.**
+   - `subjectGraphLatticeContentHash` was removed from the frontend artifact apply context because Stage B artifacts are no longer locally applied.
+   - Regression coverage asserts Stage A + Stage B `artifact.ready` events do not call `getSubjectGraph()` before `run.completed`, and backend content refresh occurs only after completion.
+
+8. **Rehydrate only publication-complete subject graphs.**
+   - `useContentGenerationHydration` may observe active durable subject-graph runs for progress/failure events, but it must not replay subject-graph artifact application into IndexedDB.
+   - Recently completed runs may trigger the same `run.completed` content invalidation if their terminal seq was not yet processed.
+
+Tests:
+
+1. Implemented: `generationRunEventHandlers` proves subject-graph `artifact.ready` does not call `client.getArtifact()`, does not apply a graph artifact, does not call `deckRepository.getSubjectGraph()`, and does not publish/invalidate backend content.
+2. Implemented: `generationRunEventHandlers` proves subject-graph `run.completed` invalidates/publishes backend graph readiness and emits `subject-graph:generated` once across replay.
+3. Implemented: `generationRunEventHandlers` proves Stage A + Stage B artifact-ready progress does not call `getSubjectGraph()` before completion.
+4. Implemented: `pubsub` proves backend-published subject graph invalidation uses `subject-graph:published`, not generic local `subject:updated` semantics.
+5. Remaining: hydration-specific coverage for active and recently completed durable subject-graph runs.
+6. Remaining: E2E/runtime browser-path proof that no frontend `GET /v1/subjects/:subjectId/graph` is triggered by Stage A artifact readiness and the first intended graph refetch occurs after `run.completed`.
 
 ## Runtime Proof Matrix
 
@@ -344,6 +414,7 @@ Checks:
 | Retry old missing-subject failure | Child run publishes without manual subject seed. |
 | WorkflowFail across `step.do` | Run row keeps original structured failure code. |
 | Device isolation | Same `subjectId` under another `deviceId` is neither read nor mutated. |
+| Durable frontend mid-run | Stage A/Stage B `artifact.ready` events do not invalidate or refetch canonical graph queries; backend graph refetch occurs after `run.completed` and returns 200. |
 
 ## Rollout Order
 
@@ -353,13 +424,13 @@ Checks:
 4. Fix Stage A cache behavior.
 5. Add workflow failure classification across all workflows.
 6. Prove retry behavior for failed subject-graph runs.
-7. Update frontend refresh/sync behavior to rely on `run.completed` for Learning Content reads.
+7. Done: fix durable frontend subject-graph event handling so `artifact.ready` is progress-only and only `run.completed` invalidates backend Learning Content reads.
 
 ## Compliance, Risk & Drift Assessment
 
 ### Misalignment Check
 
-Current code contradicts the locked domain decision by applying Stage A topics to the Learning Content Store before prerequisite wiring and by requiring a pre-existing subject for a workflow that is supposed to create one. No requested decision contradicts `AGENTS.md`; the fix strengthens backend source-of-truth and fail-loud boundaries.
+The original backend contradiction was Stage A publication into the Learning Content Store before prerequisite wiring. The frontend contradiction, where durable subject-graph `artifact.ready` drove local IndexedDB graph writes and canonical query invalidation before backend publication, is now fixed. No requested decision contradicts `AGENTS.md`; the updated fix strengthens backend source-of-truth, feature/infrastructure boundaries, and fail-loud semantics.
 
 ### Architectural Risk
 
@@ -370,6 +441,8 @@ Current code contradicts the locked domain decision by applying Stage A topics t
 | Regeneration can overwrite ready content with partial content. | High | Do not write visible graph rows until complete replacement publish; gate reads if staging rows are introduced. |
 | Cache-hit semantics currently complete Stage A-only runs. | High | Rewrite subject-graph cache path to continue to Stage B. |
 | Failure-code classifier could mask unexpected errors if too broad. | Medium | Preserve explicit `WorkflowFail` only by class/shape; classify unknowns separately from LLM provider failures. |
+| Durable frontend previously wrote partial subject graphs to IndexedDB while reading canonical graphs over HTTP. | Mitigated | Subject-graph artifact application was removed from durable frontend handling; backend manifest/graph keys invalidate only after `run.completed`. |
+| Completion events previously depended on `newArtifactsApplied`; removing local subject-graph artifact application could suppress product events. | Mitigated | Subject-graph completion now has a publication-complete path keyed to `run.completed` + durable cursor idempotency. |
 
 ### Prompt Drift Prevention
 
@@ -381,4 +454,6 @@ This plan must not normalize:
 - icon-name repair maps;
 - probabilistic recovery after malformed artifacts;
 - generic `llm:upstream-5xx` classification for non-LLM preconditions;
-- cross-device subject lookup to compensate for missing local device rows.
+- cross-device subject lookup to compensate for missing local device rows;
+- query retry/backoff or local-first reads as a substitute for fixing subject-graph artifact-ready invalidation;
+- using IndexedDB partial Stage A graphs to satisfy canonical durable `useSubjectGraph()` reads.

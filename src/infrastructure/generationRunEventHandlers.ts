@@ -15,8 +15,8 @@
  *   exclusively the player-assessment surface.
  * - Topic Expansion supersession MUST suppress player-facing failure
  *   copy.
- * - Subject Graph Stage B MUST NOT apply before Stage A's contentHash
- *   is recorded.
+ * - Durable subject-graph artifacts MUST NOT be frontend-applied; they are
+ *   progress-only until backend publication at `run.completed`.
  *
  * ## When this runs
  *
@@ -46,8 +46,8 @@ import type { TopicLattice, TopicLatticeNode } from '@/types/topicLattice';
 import type { GenerationClient } from '@/features/contentGeneration';
 import type { TopicContentApplier } from '@/features/contentGeneration/appliers/topicContentApplier';
 import type { TopicExpansionApplier } from '@/features/contentGeneration/appliers/topicExpansionApplier';
-import type { SubjectGraphApplier } from '@/features/subjectGeneration/appliers/subjectGraphApplier';
 import type { CrystalTrialApplier } from '@/features/crystalTrial/appliers/crystalTrialApplier';
+import type { PubSubClient } from './pubsub';
 
 // ---------------------------------------------------------------------------
 // Dependencies
@@ -58,7 +58,6 @@ export interface GenerationRunEventHandlersDeps {
   appliers: {
     topicContent: TopicContentApplier;
     topicExpansion: TopicExpansionApplier;
-    subjectGraph: SubjectGraphApplier;
     crystalTrial: CrystalTrialApplier;
   };
   eventBus: AppEventBus;
@@ -66,6 +65,7 @@ export interface GenerationRunEventHandlersDeps {
   /** Phase 3.6 Step 2: Durable per-run event cursor so rehydration survives browser reloads. */
   cursorStore: RunEventCursorStore;
   deckRepository: IDeckRepository;
+  contentPublication: Pick<PubSubClient, 'publishBackendSubjectGraph'>;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,8 +80,9 @@ export interface GenerationRunEventHandlers {
    *
    * The handler:
    * 1. Opens the RunEvent stream via `client.observe(runId)`.
-   * 2. For each `artifact.ready`: fetches the artifact, applies via the
-   *    appropriate applier (idempotent by `contentHash`).
+   * 2. For locally materialized artifact kinds: fetches the artifact and
+   *    applies via the appropriate applier (idempotent by `contentHash`).
+   *    Durable subject-graph artifacts are progress-only and are not fetched.
    * 3. For terminal events: fires legacy `AppEventBus` events matching
    *    today's runner emissions so `eventBusHandlers.ts` listeners
    *    (mentor triggers, telemetry, HUD) continue to work.
@@ -170,21 +171,6 @@ function buildApplyContext(
     ctx.topicExpansionTargetLevel = runInput.nextLevel;
   }
 
-  // Subject graph Stage B requires Stage A lattice hash.
-  // The lattice_artifact_content_hash is available from the edges snapshot.
-  if (runInput.pipelineKind === 'subject-graph' && runInput.stage === 'edges') {
-    const snap = runInput.snapshot;
-    if (
-      snap &&
-      typeof snap === 'object' &&
-      'lattice_artifact_content_hash' in snap
-    ) {
-      ctx.subjectGraphLatticeContentHash = (
-        snap as { lattice_artifact_content_hash: string }
-      ).lattice_artifact_content_hash;
-    }
-  }
-
   return ctx;
 }
 
@@ -206,7 +192,7 @@ function pickApplier(
       return appliers.topicExpansion;
     case 'subject-graph-topics':
     case 'subject-graph-edges':
-      return appliers.subjectGraph;
+      return null;
     case 'crystal-trial':
       return appliers.crystalTrial;
     default:
@@ -451,7 +437,7 @@ function isSubjectGraphValidationCode(code: string): boolean {
 export function createGenerationRunEventHandlers(
   deps: GenerationRunEventHandlersDeps,
 ): GenerationRunEventHandlers {
-  const { client, appliers, eventBus, dedupeStore, cursorStore, deckRepository } = deps;
+  const { client, appliers, eventBus, dedupeStore, cursorStore, deckRepository, contentPublication } = deps;
   const activeRuns = new Set<string>();
   let stopped = false;
 
@@ -490,15 +476,28 @@ export function createGenerationRunEventHandlers(
       // Phase 3.6 Step 2: seed startSeq from the durable cursor so SSE
       // replays only unprocessed events after a browser reload.
       const startSeq = await cursorStore.get(runId);
+      let lastProcessedSeq = startSeq;
       let newArtifactsApplied = false;
 
       for await (const event of client.observe(runId, startSeq)) {
         if (stopped) break;
+        if (event.seq <= lastProcessedSeq) continue;
 
         switch (event.type) {
           // ── artifact.ready: apply via applier ──────────────────
           case 'artifact.ready': {
             const { artifactId, kind } = event.body;
+            const isDurableSubjectGraphArtifact =
+              runInput.pipelineKind === 'subject-graph' &&
+              (kind === 'subject-graph-topics' || kind === 'subject-graph-edges');
+
+            if (isDurableSubjectGraphArtifact) {
+              // Durable subject-graph artifacts are progress signals only.
+              // The backend publishes Learning Content atomically after both
+              // stages, and canonical frontend reads are HTTP-backed.
+              break;
+            }
+
             const applier = pickApplier(kind, appliers);
             if (!applier) {
               throw new Error(
@@ -514,7 +513,7 @@ export function createGenerationRunEventHandlers(
             );
 
             if (!result.applied) {
-              // suppressed: duplicate, superseded, missing-stage-a, or invalid
+              // suppressed: duplicate, superseded, or invalid
               if (result.reason === 'superseded') {
                 // Superseded expansion — silence, per Plan v3 policy.
                 // The winning run will emit the completion event.
@@ -527,10 +526,11 @@ export function createGenerationRunEventHandlers(
 
           // ── run.completed: fire legacy completion event ────────
           case 'run.completed': {
-            // Phase 3.6 Step 2: legacy completion events are product-facing
-            // artifact-application events. Replays that apply nothing must not
-            // refire them, even when no durable cursor existed at startup.
-            if (!newArtifactsApplied) {
+            // Phase 3.6 Step 2: most legacy completion events are
+            // product-facing artifact-application events. Durable subject-graph
+            // completion is different: backend publication, not local artifact
+            // application, is the content-readiness boundary.
+            if (!newArtifactsApplied && runInput.pipelineKind !== 'subject-graph') {
               break;
             }
             switch (runInput.pipelineKind) {
@@ -550,6 +550,7 @@ export function createGenerationRunEventHandlers(
                 );
                 break;
               case 'subject-graph':
+                contentPublication.publishBackendSubjectGraph(runInput.subjectId);
                 await emitSubjectGraphGenerated(
                   eventBus,
                   runInput as Extract<RunInput, { pipelineKind: 'subject-graph' }>,
@@ -670,6 +671,7 @@ export function createGenerationRunEventHandlers(
         }
 
         await trackSeq(runId, event.seq);
+        lastProcessedSeq = Math.max(lastProcessedSeq, event.seq);
       }
     } finally {
       activeRuns.delete(runId);

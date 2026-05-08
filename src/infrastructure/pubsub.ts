@@ -9,6 +9,7 @@ export const PUB_SUB_EVENT_TYPES = [
   'topic:updated',
   'topic-cards:updated',
   'subject:updated',
+  'subject-graph:published',
 ] as const;
 
 export type PubSubEventType = (typeof PUB_SUB_EVENT_TYPES)[number];
@@ -55,6 +56,13 @@ export class PubSubClient {
 
   bindQueryClient(queryClient: QueryClient): void {
     this.queryClient = queryClient;
+  }
+
+  publishBackendSubjectGraph(subjectId: string): void {
+    if (!subjectId.trim()) {
+      throw new Error('[PubSubClient] subject graph publication requires subjectId');
+    }
+    this.emit({ type: 'subject-graph:published', subjectId });
   }
 
   emit(message: PubSubMessage): void {
@@ -104,6 +112,14 @@ export class PubSubClient {
           this.queryClient.invalidateQueries({ queryKey: ['content', 'subject'] });
         }
         this.queryClient.invalidateQueries({ queryKey: ['content', 'subjects'] });
+        return;
+      }
+      case 'subject-graph:published': {
+        const subjectId = message.subjectId ?? '';
+        if (!subjectId) return;
+        this.queryClient.invalidateQueries({ queryKey: ['content', 'subjects'] });
+        this.queryClient.invalidateQueries({ queryKey: ['content', 'subject', subjectId, 'graph'] });
+        this.queryClient.invalidateQueries({ queryKey: ['content', 'subject', 'graphs'] });
         return;
       }
       default:

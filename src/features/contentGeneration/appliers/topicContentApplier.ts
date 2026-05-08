@@ -128,7 +128,7 @@ async function applyTheory(
   artifact: ArtifactEnvelope<'topic-theory'>,
   ctx: ArtifactApplyContext,
   deps: TopicContentApplierDeps,
-): Promise<{ applied: boolean; reason?: 'duplicate' | 'superseded' | 'missing-stage-a' | 'invalid' }> {
+): Promise<{ applied: boolean; reason?: 'duplicate' | 'superseded' | 'invalid' }> {
   if (artifact.kind !== 'inline') {
     return { applied: false, reason: 'invalid' };
   }
@@ -162,7 +162,7 @@ async function applyStudyCards(
   artifact: ArtifactEnvelope<'topic-study-cards'>,
   ctx: ArtifactApplyContext,
   deps: TopicContentApplierDeps,
-): Promise<{ applied: boolean; reason?: 'duplicate' | 'superseded' | 'missing-stage-a' | 'invalid' }> {
+): Promise<{ applied: boolean; reason?: 'duplicate' | 'superseded' | 'invalid' }> {
   if (artifact.kind !== 'inline') {
     return { applied: false, reason: 'invalid' };
   }
@@ -197,7 +197,7 @@ async function applyMiniGame(
   >,
   ctx: ArtifactApplyContext,
   deps: TopicContentApplierDeps,
-): Promise<{ applied: boolean; reason?: 'duplicate' | 'superseded' | 'missing-stage-a' | 'invalid' }> {
+): Promise<{ applied: boolean; reason?: 'duplicate' | 'superseded' | 'invalid' }> {
   if (artifact.kind !== 'inline') {
     return { applied: false, reason: 'invalid' };
   }

@@ -42,4 +42,26 @@ describe('PubSubClient content invalidation', () => {
       queryKey: ['content', 'topic-ready', 's1', 't1'],
     });
   });
+
+  it('invalidates backend-published subject graph read keys without local subject:updated semantics', () => {
+    const publishedHandler = vi.fn();
+    const subjectUpdatedHandler = vi.fn();
+    client.on('subject-graph:published', publishedHandler);
+    client.on('subject:updated', subjectUpdatedHandler);
+
+    client.publishBackendSubjectGraph('s1');
+
+    expect(publishedHandler).toHaveBeenCalledWith({ type: 'subject-graph:published', subjectId: 's1' });
+    expect(subjectUpdatedHandler).not.toHaveBeenCalled();
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(3);
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['content', 'subjects'],
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['content', 'subject', 's1', 'graph'],
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['content', 'subject', 'graphs'],
+    });
+  });
 });

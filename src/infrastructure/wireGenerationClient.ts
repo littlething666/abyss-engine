@@ -11,9 +11,6 @@ import {
   createTopicExpansionApplier,
 } from '@/features/contentGeneration/appliers/topicExpansionApplier';
 import {
-  createSubjectGraphApplier,
-} from '@/features/subjectGeneration/appliers/subjectGraphApplier';
-import {
   createCrystalTrialApplier,
 } from '@/features/crystalTrial/appliers/crystalTrialApplier';
 import {
@@ -26,6 +23,7 @@ import {
   type GenerationRunEventHandlers,
 } from '@/infrastructure/generationRunEventHandlers';
 import { appEventBus } from '@/infrastructure/eventBus';
+import { pubSubClient } from '@/infrastructure/pubsub';
 import { deckRepository, deckWriter } from '@/infrastructure/di';
 import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
 import { DurableGenerationRunRepository } from '@/infrastructure/repositories/DurableGenerationRunRepository';
@@ -162,13 +160,13 @@ export function ensureGenerationClientRegistered(): GenerationClient {
     appliers: {
       topicContent: createTopicContentApplier({ deckWriter, deckRepository }),
       topicExpansion: createTopicExpansionApplier({ deckWriter }),
-      subjectGraph: createSubjectGraphApplier({ deckWriter, deckRepository }),
       crystalTrial: createCrystalTrialApplier(),
     },
     eventBus: appEventBus,
     dedupeStore: appliedArtifactsStore,
     cursorStore: runEventCursorStore,
     deckRepository,
+    contentPublication: pubSubClient,
   });
 
   wired = true;

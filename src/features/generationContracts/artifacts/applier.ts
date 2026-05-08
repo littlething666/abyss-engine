@@ -11,8 +11,8 @@
  * - Crystal Trial applier MUST NOT emit `crystal-trial:completed`.
  * - Topic Expansion applier MUST suppress player-facing failure copy
  *   for superseded expansions (returns `reason: 'superseded'`).
- * - Subject Graph Stage B MUST NOT apply before Stage A's `contentHash`
- *   is applied (returns `reason: 'missing-stage-a'`).
+ * - Subject Graph artifacts are not frontend-applied in durable mode; the
+ *   backend publishes complete Learning Content at `run.completed`.
  */
 
 import type { ArtifactEnvelope, ArtifactKind } from './types';
@@ -40,12 +40,6 @@ export interface ArtifactApplyContext {
    * same topic (see `AppliedArtifactsStore.getLatestTopicExpansionScope`).
    */
   topicExpansionTargetLevel?: number;
-  /**
-   * Subject graph Stage B: Stage A lattice `contentHash` for this run (matches
-   * `SubjectGraphEdgesRunInputSnapshot.lattice_artifact_content_hash`). Stage B
-   * applies only after that hash is present in the dedupe store.
-   */
-  subjectGraphLatticeContentHash?: string;
 }
 
 /** Optional row metadata when recording an applied artifact (Dexie-backed store). */
@@ -92,8 +86,8 @@ export interface AppliedArtifactsStore {
  * literal or a union for composite appliers that dispatch internally.
  *
  * Returns `{ applied: false, reason }` when the artifact was skipped
- * (duplicate, superseded, missing Stage A). The composition root
- * uses `reason` to decide whether to fire legacy events.
+ * (duplicate, superseded, or invalid). The composition root uses `reason`
+ * to decide whether to fire legacy events.
  */
 export interface ArtifactApplier<K extends ArtifactKind = ArtifactKind> {
   kind: K;
@@ -102,6 +96,6 @@ export interface ArtifactApplier<K extends ArtifactKind = ArtifactKind> {
     context: ArtifactApplyContext,
   ): Promise<{
     applied: boolean;
-    reason?: 'duplicate' | 'superseded' | 'missing-stage-a' | 'invalid';
+    reason?: 'duplicate' | 'superseded' | 'invalid';
   }>;
 }

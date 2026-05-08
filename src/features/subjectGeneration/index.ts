@@ -10,9 +10,6 @@ export { resolveStrategy } from './strategies/strategyResolver';
 export { getVisibleTopicIds } from '@/features/progression/policies/topicUnlocking';
 export type { GenerationDependencies } from './orchestrator/types';
 
-// Phase 0.5 step 5 — Artifact Appliers
-export {
-  createSubjectGraphApplier,
-  type SubjectGraphApplier,
-  type SubjectGraphApplierDeps,
-} from './appliers/subjectGraphApplier';
+// Subject-graph artifacts are backend-staged and published as complete
+// Learning Content on durable `run.completed`; no frontend graph applier is
+// exported.

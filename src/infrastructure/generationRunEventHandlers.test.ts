@@ -5,7 +5,6 @@
  * - Happy-path artifact application + legacy event emission per pipeline kind.
  * - crystal-trial:completed is NEVER emitted from question generation.
  * - Superseded expansion silence (no player-facing event).
- * - Subject Graph Stage B without Stage A (missing-stage-a) stays silent.
  * - Duplicate artifact idempotency.
  * - Run failure event routing (validation vs generic).
  * - Cancel/supersession event routing.
@@ -30,9 +29,9 @@ import type {
   TopicContentApplier,
 } from '@/features/contentGeneration';
 import type { TopicExpansionApplier } from '@/features/contentGeneration/appliers/topicExpansionApplier';
-import type { SubjectGraphApplier } from '@/features/subjectGeneration/appliers/subjectGraphApplier';
 import type { CrystalTrialApplier } from '@/features/crystalTrial/appliers/crystalTrialApplier';
 import type { IDeckRepository, RunInput, RunSnapshot } from '@/types/repository';
+import type { PubSubClient } from './pubsub';
 import type { RunInputSnapshot } from '@/features/generationContracts';
 
 // ---------------------------------------------------------------------------
@@ -354,7 +353,7 @@ function evt(
 /** Create a mock applier that always applies successfully. */
 function createMockApplier(
   kind: string,
-  applyResult?: { applied: boolean; reason?: 'duplicate' | 'superseded' | 'missing-stage-a' | 'invalid' },
+  applyResult?: { applied: boolean; reason?: 'duplicate' | 'superseded' | 'invalid' },
 ): ArtifactApplier {
   return {
     kind: kind as ArtifactApplier['kind'],
@@ -374,8 +373,8 @@ describe('generationRunEventHandlers', () => {
   let mockClient: GenerationClient;
   let tfApplier: ArtifactApplier;
   let teApplier: ArtifactApplier;
-  let sgApplier: ArtifactApplier;
   let ctApplier: ArtifactApplier;
+  let contentPublication: Pick<PubSubClient, 'publishBackendSubjectGraph'>;
 
   beforeEach(() => {
     mockEventBus = createMockEventBus();
@@ -385,8 +384,8 @@ describe('generationRunEventHandlers', () => {
     });
     tfApplier = createMockApplier('topic-theory');
     teApplier = createMockApplier('topic-expansion-cards');
-    sgApplier = createMockApplier('subject-graph-topics');
     ctApplier = createMockApplier('crystal-trial');
+    contentPublication = { publishBackendSubjectGraph: vi.fn() };
   });
 
   function buildDeps(
@@ -403,13 +402,13 @@ describe('generationRunEventHandlers', () => {
       appliers: {
         topicContent: tfApplier as TopicContentApplier,
         topicExpansion: teApplier as TopicExpansionApplier,
-        subjectGraph: sgApplier as SubjectGraphApplier,
         crystalTrial: ctApplier as CrystalTrialApplier,
       },
       eventBus: overrides.eventBus ?? mockEventBus.bus,
       dedupeStore: mockDedupe,
       cursorStore: createMockCursorStore(),
       deckRepository: mockDeck,
+      contentPublication,
     };
   }
 
@@ -583,7 +582,7 @@ describe('generationRunEventHandlers', () => {
 
   // ── Subject Graph happy path ──────────────────────────────────
 
-  it('applies subject-graph-topics artifact and emits subject-graph:generated', async () => {
+  it('treats durable subject-graph artifact.ready as progress and emits completion after run.completed', async () => {
     const input = subjectGraphInput('topics');
     const runId = 'run-sg-1';
 
@@ -603,7 +602,9 @@ describe('generationRunEventHandlers', () => {
 
     await handlers.observeRun(runId, input);
 
-    expect(sgApplier.apply).toHaveBeenCalled();
+    expect(mockClient.getArtifact).not.toHaveBeenCalled();
+    expect(contentPublication.publishBackendSubjectGraph).toHaveBeenCalledTimes(1);
+    expect(contentPublication.publishBackendSubjectGraph).toHaveBeenCalledWith('subj-1');
 
     const generatedEvent = mockEventBus.emitted.find(
       (e) => e.event === 'subject-graph:generated',
@@ -613,6 +614,70 @@ describe('generationRunEventHandlers', () => {
       subjectId: 'subj-1',
       boundModel: 'test-model',
     });
+
+    handlers.stop();
+  });
+
+  it('does not fetch, apply, write, or publish on durable subject-graph artifact.ready', async () => {
+    const input = subjectGraphInput('topics');
+    const runId = 'run-sg-progress-only';
+
+    const client = createMockGenerationClient({
+      artifacts: new Map([
+        ['art-sg-a', artifactEnvelope({ id: 'art-sg-a', kind: 'subject-graph-topics', contentHash: 'cnt_sg_a' })],
+        ['art-sg-b', artifactEnvelope({ id: 'art-sg-b', kind: 'subject-graph-edges', contentHash: 'cnt_sg_b' })],
+      ]),
+      activeRuns: [[
+        evt(runId, 1, { type: 'run.queued' }),
+        evt(runId, 2, { type: 'artifact.ready', body: { artifactId: 'art-sg-a', kind: 'subject-graph-topics', contentHash: 'cnt_sg_a', schemaVersion: 1, inputHash: 'inp_sg', subjectId: 'subj-1' } }),
+        evt(runId, 3, { type: 'artifact.ready', body: { artifactId: 'art-sg-b', kind: 'subject-graph-edges', contentHash: 'cnt_sg_b', schemaVersion: 1, inputHash: 'inp_sg', subjectId: 'subj-1' } }),
+      ]],
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'subject-graph', status: 'running', inputHash: 'inp_sg', createdAt: 1000, snapshotJson: input.snapshot, jobs: [] }]]),
+    });
+
+    const cursorStore = createMockCursorStore();
+    const handlers = createGenerationRunEventHandlers({
+      ...buildDeps({ client }),
+      cursorStore,
+    });
+
+    await handlers.observeRun(runId, input);
+
+    expect(client.getArtifact).not.toHaveBeenCalled();
+    expect(mockDeck.getSubjectGraph).not.toHaveBeenCalled();
+    expect(contentPublication.publishBackendSubjectGraph).not.toHaveBeenCalled();
+    expect(mockEventBus.emitted.some((e) => e.event === 'subject-graph:generated')).toBe(false);
+    expect(await cursorStore.get(runId)).toBe(3);
+
+    handlers.stop();
+  });
+
+  it('keeps durable subject-graph run.completed idempotent across replay', async () => {
+    const input = subjectGraphInput('topics');
+    const runId = 'run-sg-replay';
+    const cursorStore = createMockCursorStore();
+
+    const client = createMockGenerationClient({
+      activeRuns: [[
+        evt(runId, 1, { type: 'artifact.ready', body: { artifactId: 'art-sg-a', kind: 'subject-graph-topics', contentHash: 'cnt_sg_a', schemaVersion: 1, inputHash: 'inp_sg', subjectId: 'subj-1' } }),
+        evt(runId, 2, { type: 'artifact.ready', body: { artifactId: 'art-sg-b', kind: 'subject-graph-edges', contentHash: 'cnt_sg_b', schemaVersion: 1, inputHash: 'inp_sg', subjectId: 'subj-1' } }),
+        evt(runId, 3, { type: 'run.completed' }),
+      ]],
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'subject-graph', status: 'applied-local', inputHash: 'inp_sg', createdAt: 1000, startedAt: 1000, finishedAt: 4000, snapshotJson: input.snapshot, jobs: [] }]]),
+    });
+
+    const handlers = createGenerationRunEventHandlers({
+      ...buildDeps({ client }),
+      cursorStore,
+    });
+
+    await handlers.observeRun(runId, input);
+    await handlers.observeRun(runId, input);
+
+    expect(contentPublication.publishBackendSubjectGraph).toHaveBeenCalledTimes(1);
+    expect(mockEventBus.emitted.filter((e) => e.event === 'subject-graph:generated')).toHaveLength(1);
+    expect(client.getArtifact).not.toHaveBeenCalled();
+    expect(await cursorStore.get(runId)).toBe(3);
 
     handlers.stop();
   });
@@ -788,13 +853,13 @@ describe('generationRunEventHandlers', () => {
       appliers: {
         topicContent: dupeApplier as TopicContentApplier,
         topicExpansion: teApplier as TopicExpansionApplier,
-        subjectGraph: sgApplier as SubjectGraphApplier,
         crystalTrial: ctApplier as CrystalTrialApplier,
       },
       eventBus: mockEventBus.bus,
       dedupeStore: dedupeWithHash,
       cursorStore: createMockCursorStore(),
       deckRepository: mockDeck,
+      contentPublication,
     });
 
     await handlers.observeRun(runId, input);
@@ -853,53 +918,6 @@ describe('generationRunEventHandlers', () => {
     // After stop, new observations should not be started
     await handlers.observeRun('run-stop-2', input);
     // No error thrown, just a no-op
-  });
-
-  // ── Missing Stage A for subject-graph edges ───────────────────
-
-  it('subject-graph stage-b with missing-stage-a returns reason from applier', async () => {
-    const input = subjectGraphInput('edges');
-    const runId = 'run-sg-b-no-a';
-    const CONTENT_HASH = 'cnt_sg_b1';
-
-    const applierResult = { applied: false, reason: 'missing-stage-a' as const };
-    const sgApplierSpy = createMockApplier('subject-graph-topics', applierResult);
-
-    const client = createMockGenerationClient({
-      artifacts: new Map([['art-sg-b-1', artifactEnvelope({ id: 'art-sg-b-1', kind: 'subject-graph-edges', contentHash: CONTENT_HASH })]]),
-      activeRuns: [[
-        evt(runId, 1, { type: 'run.queued' }),
-        evt(runId, 2, { type: 'artifact.ready', body: { artifactId: 'art-sg-b-1', kind: 'subject-graph-edges', contentHash: CONTENT_HASH, schemaVersion: 1, inputHash: 'inp_sg_b', subjectId: 'subj-1' } }),
-        evt(runId, 3, { type: 'run.completed' }),
-      ]],
-      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'subject-graph', status: 'applied-local', inputHash: 'inp_sg_b', createdAt: 1000, startedAt: 1000, finishedAt: 2000, snapshotJson: input.snapshot, jobs: [] }]]),
-    });
-
-    const handlers = createGenerationRunEventHandlers({
-      client,
-      appliers: {
-        topicContent: tfApplier as TopicContentApplier,
-        topicExpansion: teApplier as TopicExpansionApplier,
-        subjectGraph: sgApplierSpy as SubjectGraphApplier,
-        crystalTrial: ctApplier as CrystalTrialApplier,
-      },
-      eventBus: mockEventBus.bus,
-      dedupeStore: mockDedupe,
-      cursorStore: createMockCursorStore(),
-      deckRepository: mockDeck,
-    });
-
-    await handlers.observeRun(runId, input);
-
-    expect(sgApplierSpy.apply).toHaveBeenCalled();
-    // Missing Stage A means no local Subject Graph artifact was applied, so
-    // the legacy generated event must not fire.
-    const generatedEvent = mockEventBus.emitted.find(
-      (e) => e.event === 'subject-graph:generated',
-    );
-    expect(generatedEvent).toBeUndefined();
-
-    handlers.stop();
   });
 
   // ── Unknown artifact kind ─────────────────────────────────────
