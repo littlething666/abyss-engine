@@ -1,7 +1,7 @@
 import { WorkflowFail } from '../lib/workflowErrors';
 import { contentHash as computeContentHash, type ArtifactKind } from '../contracts/generationContracts';
 import type { ILearningContentRepo } from './learningContentRepo';
-import type { JsonObject, LearningContentSubject, PutTopicCardInput, TopicDetailsContent } from './types';
+import type { JsonObject, PutTopicCardInput, TopicDetailsContent } from './types';
 
 const TOPIC_CARD_ARTIFACT_KINDS = new Set<ArtifactKind>([
   'topic-study-cards',
@@ -19,6 +19,17 @@ export interface ApplyArtifactToLearningContentInput {
   payload: Record<string, unknown>;
   snapshot: Record<string, unknown>;
   contentHash: string;
+}
+
+export interface PublishCompleteSubjectGraphInput {
+  learningContent: ILearningContentRepo;
+  deviceId: string;
+  runId: string;
+  snapshot: Record<string, unknown>;
+  topicsPayload: Record<string, unknown>;
+  edgesPayload: Record<string, unknown>;
+  topicsContentHash: string;
+  edgesContentHash: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -41,18 +52,18 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
+function requireStringValue(value: unknown, label: string): string {
+  if (typeof value !== 'string') {
+    throw new WorkflowFail('precondition:missing-topic', `${label} must be a string`);
+  }
+  return value;
+}
+
 function requirePositiveInteger(value: unknown, label: string): number {
   if (!Number.isInteger(value) || (value as number) <= 0) {
     throw new WorkflowFail('precondition:missing-topic', `${label} must be a positive integer`);
   }
   return value as number;
-}
-
-async function requireSubject(repo: ILearningContentRepo, deviceId: string, subjectId: string): Promise<LearningContentSubject> {
-  const manifest = await repo.getManifest(deviceId);
-  const subject = manifest.subjects.find((row) => row.subjectId === subjectId);
-  if (!subject) throw new WorkflowFail('precondition:missing-topic', `Learning Content subject not found: ${subjectId}`);
-  return subject;
 }
 
 function snapshotSubjectId(snapshot: Record<string, unknown>): string {
@@ -63,8 +74,12 @@ function snapshotTopicId(snapshot: Record<string, unknown>): string {
   return requireString(snapshot.topic_id, 'snapshot.topic_id');
 }
 
-function graphTitleFromSubject(subject: LearningContentSubject): string {
-  return subject.title;
+function checklistFromSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
+  return requireRecord(snapshot.checklist, 'snapshot.checklist');
+}
+
+function strategyBriefFromSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
+  return requireRecord(snapshot.strategy_brief, 'snapshot.strategy_brief');
 }
 
 function topicDetailsFromTheory(
@@ -222,48 +237,48 @@ async function applyCrystalTrial(input: ApplyArtifactToLearningContentInput): Pr
   });
 }
 
-async function applySubjectGraphTopics(input: ApplyArtifactToLearningContentInput): Promise<void> {
-  const subjectId = snapshotSubjectId(input.snapshot);
-  const subject = await requireSubject(input.learningContent, input.deviceId, subjectId);
-  const existing = await input.learningContent.getSubjectGraph(input.deviceId, subjectId);
-  const existingGraph = isRecord(existing?.graph) ? existing.graph : undefined;
-  const existingNodes = Array.isArray(existingGraph?.nodes) ? existingGraph.nodes.filter(isRecord) : [];
-  const topics = input.payload.topics;
+function nodesFromTopics(topicsPayload: Record<string, unknown>, edgesPayload: Record<string, unknown>): JsonObject[] {
+  const topics = topicsPayload.topics;
   if (!Array.isArray(topics) || topics.length === 0) {
     throw new WorkflowFail('validation:semantic-subject-graph', 'subject-graph-topics.topics must be a non-empty array');
   }
-  const newNodes = topics.map((topic, index) => {
+  const edges = edgesPayload.edges;
+  if (!Array.isArray(edges)) {
+    throw new WorkflowFail('validation:semantic-subject-graph', 'subject-graph-edges.edges must be an array');
+  }
+
+  return topics.map((topic, index) => {
     const row = requireRecord(topic, `subject-graph-topics.topics[${index}]`);
+    const topicId = requireString(row.topicId, `subject-graph-topics.topics[${index}].topicId`);
+    const prerequisites = edges
+      .filter((edge): edge is Record<string, unknown> => isRecord(edge) && edge.target === topicId)
+      .map((edge) => ({
+        topicId: requireString(edge.source, 'subject-graph-edges.edges[].source'),
+        minLevel: edge.minLevel === undefined ? 1 : requirePositiveInteger(edge.minLevel, 'subject-graph-edges.edges[].minLevel'),
+      }));
     return {
-      topicId: requireString(row.topicId, `subject-graph-topics.topics[${index}].topicId`),
+      topicId,
       title: requireString(row.title, `subject-graph-topics.topics[${index}].title`),
       iconName: requireString(row.iconName, `subject-graph-topics.topics[${index}].iconName`),
       tier: requirePositiveInteger(row.tier, `subject-graph-topics.topics[${index}].tier`),
-      prerequisites: [],
+      prerequisites,
       learningObjective: requireString(row.learningObjective, `subject-graph-topics.topics[${index}].learningObjective`),
     };
   });
-  const newTopicIds = new Set(newNodes.map((node) => node.topicId));
-  const nodes = existingNodes.filter((node) => typeof node.topicId === 'string' && !newTopicIds.has(node.topicId));
-  nodes.push(...newNodes);
-  const maxTier = Math.max(...nodes.map((node) => Number.isInteger(node.tier) ? node.tier as number : 1), 1);
-  const graph: JsonObject = {
-    subjectId,
-    title: optionalString(existingGraph?.title) ?? graphTitleFromSubject(subject),
-    themeId: optionalString(existingGraph?.themeId) ?? 'default',
-    maxTier,
-    nodes,
-  };
+}
 
-  await input.learningContent.putSubjectGraph({
-    deviceId: input.deviceId,
-    subjectId,
-    graph,
-    contentHash: input.contentHash,
-    updatedByRunId: input.runId,
-  });
+export async function publishCompleteSubjectGraphToLearningContent(input: PublishCompleteSubjectGraphInput): Promise<void> {
+  const subjectId = snapshotSubjectId(input.snapshot);
+  const checklist = checklistFromSnapshot(input.snapshot);
+  const strategy = strategyBriefFromSnapshot(input.snapshot);
+  const title = requireString(checklist.topic_name, 'snapshot.checklist.topic_name');
+  const description = requireString(strategy.audience_brief, 'snapshot.strategy_brief.audience_brief');
+  const nodes = nodesFromTopics(input.topicsPayload, input.edgesPayload);
+  const maxTier = Math.max(...nodes.map((node) => node.tier as number), 1);
+  const graph: JsonObject = { subjectId, title, themeId: 'default', maxTier, nodes };
+  const topicIds = nodes.map((node) => requireString(node.topicId, 'subject graph nodes[].topicId'));
 
-  await Promise.all(newNodes.map(async (node) => {
+  const topicDetails = await Promise.all(nodes.map(async (node) => {
     const details: JsonObject = {
       topicId: node.topicId,
       title: node.title,
@@ -272,56 +287,59 @@ async function applySubjectGraphTopics(input: ApplyArtifactToLearningContentInpu
       theory: '',
       keyTakeaways: [],
     };
-    await input.learningContent.putTopicDetails({
+    return {
       deviceId: input.deviceId,
       subjectId,
-      topicId: node.topicId,
+      topicId: node.topicId as string,
       details,
       contentHash: await computeContentHash(details),
-      status: 'unavailable',
+      status: 'unavailable' as const,
       updatedByRunId: input.runId,
-    });
+    };
   }));
-}
 
-async function applySubjectGraphEdges(input: ApplyArtifactToLearningContentInput): Promise<void> {
-  const subjectId = snapshotSubjectId(input.snapshot);
-  const existing = await input.learningContent.getSubjectGraph(input.deviceId, subjectId);
-  if (!existing || !isRecord(existing.graph)) {
-    throw new WorkflowFail('precondition:missing-topic', `Learning Content subject graph not found before applying edges: ${subjectId}`);
-  }
-  const nodes = existing.graph.nodes;
-  if (!Array.isArray(nodes) || nodes.some((node) => !isRecord(node))) {
-    throw new WorkflowFail('precondition:missing-topic', `Learning Content subject graph ${subjectId}.nodes must be an array of objects`);
-  }
-  const edges = input.payload.edges;
-  if (!Array.isArray(edges)) {
-    throw new WorkflowFail('validation:semantic-subject-graph', 'subject-graph-edges.edges must be an array');
-  }
-
-  const graph: JsonObject = {
-    ...existing.graph,
-    nodes: nodes.map((node) => {
-      const topicId = requireString((node as Record<string, unknown>).topicId, `subject graph ${subjectId}.nodes[].topicId`);
-      const prerequisites = edges
-        .filter((edge): edge is Record<string, unknown> => isRecord(edge) && edge.target === topicId)
-        .map((edge) => {
-          const source = requireString(edge.source, 'subject-graph-edges.edges[].source');
-          return {
-            topicId: source,
-            minLevel: edge.minLevel === undefined ? 1 : requirePositiveInteger(edge.minLevel, 'subject-graph-edges.edges[].minLevel'),
-          };
-        });
-      return { ...node, prerequisites };
-    }),
-  };
-
-  await input.learningContent.putSubjectGraph({
-    deviceId: input.deviceId,
-    subjectId,
-    graph,
-    contentHash: input.contentHash,
-    updatedByRunId: input.runId,
+  await input.learningContent.publishGeneratedSubjectGraph({
+    subject: {
+      deviceId: input.deviceId,
+      subjectId,
+      title,
+      contentSource: 'generated',
+      createdByRunId: input.runId,
+      metadata: {
+        subject: {
+          description,
+          color: '#6366f1',
+          geometry: { gridTile: 'box' },
+          topicIds,
+          metadata: {
+            checklist,
+            strategy: {
+              graph: {
+                totalTiers: requirePositiveInteger(strategy.total_tiers, 'snapshot.strategy_brief.total_tiers'),
+                topicsPerTier: requirePositiveInteger(strategy.topics_per_tier, 'snapshot.strategy_brief.topics_per_tier'),
+                audienceBrief: description,
+                domainBrief: requireString(strategy.domain_brief, 'snapshot.strategy_brief.domain_brief'),
+                focusConstraints: requireStringValue(strategy.focus_constraints, 'snapshot.strategy_brief.focus_constraints'),
+              },
+            },
+            generation: {
+              createdByRunId: input.runId,
+              sourceArtifactKinds: ['subject-graph-topics', 'subject-graph-edges'],
+              topicsContentHash: input.topicsContentHash,
+              edgesContentHash: input.edgesContentHash,
+            },
+          },
+        },
+      },
+    },
+    graph: {
+      deviceId: input.deviceId,
+      subjectId,
+      graph,
+      contentHash: await computeContentHash(graph),
+      updatedByRunId: input.runId,
+    },
+    topicDetails,
   });
 }
 
@@ -338,13 +356,11 @@ export async function applyArtifactToLearningContent(input: ApplyArtifactToLearn
     await applyCrystalTrial(input);
     return;
   }
-  if (input.artifactKind === 'subject-graph-topics') {
-    await applySubjectGraphTopics(input);
-    return;
-  }
-  if (input.artifactKind === 'subject-graph-edges') {
-    await applySubjectGraphEdges(input);
-    return;
+  if (input.artifactKind === 'subject-graph-topics' || input.artifactKind === 'subject-graph-edges') {
+    throw new WorkflowFail(
+      'state:unexpected-workflow-error',
+      `${input.artifactKind} must be published via publishCompleteSubjectGraphToLearningContent`,
+    );
   }
 
   throw new WorkflowFail('validation:semantic-topic-content', `unsupported artifact kind: ${String(input.artifactKind)}`);

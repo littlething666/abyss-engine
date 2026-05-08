@@ -2,6 +2,36 @@
 
 Last updated: 2026-05-08
 
+Status: partially implemented in backend workflow/Learning Content publication path on 2026-05-08. The core root-cause fix is implemented, but the full plan remains open until the follow-up proof matrix items below are completed.
+
+## Implementation Record
+
+Completed work:
+
+- Stage A Topic Lattice generation now persists/checkpoints artifacts only and no longer calls Learning Content application for `subject-graph-topics`.
+- Stage A cache hits now load the cached lattice, mark artifact readiness/checkpoint state idempotently, and continue to Stage B instead of completing the run.
+- Stage B input hashing includes the Stage A lattice content hash.
+- `publishCompleteSubjectGraphToLearningContent()` now assembles and publishes the complete generated Subject, Subject Graph, and unavailable topic-detail stubs after both Stage A and Stage B artifacts are present.
+- `ILearningContentRepo.publishGeneratedSubjectGraph()` batches generated Subject, Subject Graph, and topic stub writes behind one publication seam.
+- Incremental `subject-graph-topics` / `subject-graph-edges` Learning Content appliers now fail loudly; subject graph artifacts must use the complete publisher.
+- Workflow terminal failure handling now recognizes serialized `WorkflowFail` values and preserves structured codes/messages across workflow step boundaries.
+- Updated/added tests around complete subject graph publication and serialized workflow failure detection.
+
+Validation performed:
+
+```txt
+pnpm --filter abyss-durable-orchestrator typecheck
+pnpm --filter abyss-durable-orchestrator test
+pnpm --filter abyss-durable-orchestrator test:runtime
+```
+
+Remaining before this plan can be deleted:
+
+- Add explicit end-to-end/runtime tests for the full proof matrix: new subject publish, Stage A success + Stage B failure invisibility, regeneration failure preserving the old graph, Stage A cache hit continuing to Stage B, retry of the old missing-subject failure, WorkflowFail serialization, and device isolation.
+- Verify retry planning for failed subject-graph runs replays the corrected lifecycle without requiring manual subject seeding, including parent/child lineage coverage.
+- Audit frontend sync/read posture so manifest refresh and IndexedDB hydration rely on `run.completed`, not Stage A artifact readiness, and no frontend fallback creates subjects locally.
+- Decide whether stronger D1 transactional guarantees are needed beyond the current batched publication method.
+
 ## Decision Summary
 
 Subject Graph Generation is a backend-owned create-and-publish workflow. A new subject is **not** available to the client until the backend has generated both the Stage A Topic Lattice and the Stage B Prerequisite Edges, validated them, and published a complete Subject + Subject Graph + topic stubs into the Learning Content Store.

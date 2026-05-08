@@ -11,7 +11,7 @@
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
-import { WorkflowFail, WorkflowAbort, toWorkflowRuntimeError } from '../lib/workflowErrors';
+import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { callTopicExpansion } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import {
@@ -23,6 +23,7 @@ import {
   workflowStatusEventKey,
   workflowTerminalEventKey,
 } from './shared/workflowDurability';
+import { classifyWorkflowTerminalError } from './shared/workflowFailureClassification';
 import { resolveGenerationJobPolicy } from '../generationPolicy';
 import { buildTopicExpansionMessages } from '../prompts/generationPrompts';
 import { applyArtifactToLearningContent } from '../learningContent/artifactApplication';
@@ -301,23 +302,14 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
       });
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
-      if (err instanceof WorkflowFail) {
-        await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
-          await repos.runs.markFailed(runId, err.code, err.message);
-          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
-            buildRunFailedEvent(err.code, err.message),
-          );
-        });
-        throw toWorkflowRuntimeError(err);
-      }
-      const message = err instanceof Error ? err.message : String(err);
+      const failure = classifyWorkflowTerminalError(err);
       await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
-        await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
+        await repos.runs.markFailed(runId, failure.code, failure.message);
         await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
-          buildRunFailedEvent('llm:upstream-5xx', message),
+          buildRunFailedEvent(failure.code, failure.message),
         );
       });
-      throw err;
+      throw failure.runtimeError;
     }
   }
 }

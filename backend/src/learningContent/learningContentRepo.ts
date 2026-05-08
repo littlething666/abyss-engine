@@ -13,6 +13,7 @@ import type {
   LearningContentManifest,
   LearningContentSubject,
   PutCrystalTrialSetInput,
+  PublishGeneratedSubjectGraphInput,
   PutSubjectGraphInput,
   PutTopicCardsInput,
   PutTopicDetailsInput,
@@ -82,6 +83,7 @@ export interface ILearningContentRepo {
   upsertSubject(input: UpsertSubjectInput): Promise<void>;
   getSubjectGraph(deviceId: string, subjectId: string): Promise<SubjectGraphContent | null>;
   putSubjectGraph(input: PutSubjectGraphInput): Promise<void>;
+  publishGeneratedSubjectGraph(input: PublishGeneratedSubjectGraphInput): Promise<void>;
   getTopicDetails(deviceId: string, subjectId: string, topicId: string): Promise<TopicDetailsContent | null>;
   putTopicDetails(input: PutTopicDetailsInput): Promise<void>;
   getTopicCards(deviceId: string, subjectId: string, topicId: string): Promise<TopicCardContent[]>;
@@ -230,6 +232,81 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
         now,
         now,
       ).run();
+    },
+
+    async publishGeneratedSubjectGraph(input) {
+      const metadata = validateSubjectMetadataEnvelope(input.subject.metadata ?? {});
+      const graph = validateSubjectGraphEnvelope(input.graph.graph);
+      const topicDetails = input.topicDetails.map((row) => ({
+        ...row,
+        details: validateTopicDetailsEnvelope(row.details),
+      }));
+      requireNonEmptyRows(topicDetails, 'publishGeneratedSubjectGraph.topicDetails');
+
+      const now = nowIso();
+      await db.batch([
+        db.prepare(`
+          insert into subjects (
+            device_id, subject_id, title, metadata_json, content_source,
+            created_by_run_id, created_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?)
+          on conflict(device_id, subject_id) do update set
+            title = excluded.title,
+            metadata_json = excluded.metadata_json,
+            content_source = excluded.content_source,
+            created_by_run_id = excluded.created_by_run_id,
+            updated_at = excluded.updated_at
+        `).bind(
+          input.subject.deviceId,
+          input.subject.subjectId,
+          input.subject.title,
+          stringifyJson(metadata, 'subjects.metadata_json'),
+          input.subject.contentSource,
+          input.subject.createdByRunId ?? null,
+          now,
+          now,
+        ),
+        db.prepare(`
+          insert into subject_graphs (
+            device_id, subject_id, graph_json, content_hash, updated_by_run_id, created_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?)
+          on conflict(device_id, subject_id) do update set
+            graph_json = excluded.graph_json,
+            content_hash = excluded.content_hash,
+            updated_by_run_id = excluded.updated_by_run_id,
+            updated_at = excluded.updated_at
+        `).bind(
+          input.graph.deviceId,
+          input.graph.subjectId,
+          stringifyJson(graph, 'subject_graphs.graph_json'),
+          input.graph.contentHash,
+          input.graph.updatedByRunId,
+          now,
+          now,
+        ),
+        ...topicDetails.map((row) => db.prepare(`
+          insert into topic_contents (
+            device_id, subject_id, topic_id, details_json, content_hash,
+            status, updated_by_run_id, created_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          on conflict(device_id, subject_id, topic_id) do update set
+            details_json = excluded.details_json,
+            content_hash = excluded.content_hash,
+            status = excluded.status,
+            updated_by_run_id = excluded.updated_by_run_id,
+            updated_at = excluded.updated_at
+        `).bind(
+          row.deviceId,
+          row.subjectId,
+          row.topicId,
+          stringifyJson(row.details, 'topic_contents.details_json'),
+          row.contentHash,
+          row.status,
+          row.updatedByRunId,
+          now,
+          now,
+        )),
+      ]);
     },
 
     async getTopicDetails(deviceId, subjectId, topicId) {

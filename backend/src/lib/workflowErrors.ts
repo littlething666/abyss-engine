@@ -45,6 +45,18 @@ export function isNonRetryableWorkflowFailCode(code: string): boolean {
   return NON_RETRYABLE_WORKFLOW_FAIL_PREFIXES.some((prefix) => code.startsWith(prefix));
 }
 
+export function isWorkflowFailLike(err: unknown): err is { name?: string; code: string; message: string } {
+  if (err instanceof WorkflowFail) return true;
+  if (typeof err !== 'object' || err === null) return false;
+  const value = err as Record<string, unknown>;
+  return (value.name === 'WorkflowFail' || typeof value.code === 'string')
+    && typeof value.code === 'string'
+    && value.code.length > 0
+    && typeof value.message === 'string'
+    && value.message.length > 0
+    && isNonRetryableWorkflowFailCode(value.code);
+}
+
 export function toWorkflowRuntimeError(error: WorkflowFail): Error {
   if (!isNonRetryableWorkflowFailCode(error.code)) return error;
   return new NonRetryableError(`${error.code}: ${error.message}`, error.name);

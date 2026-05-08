@@ -10,7 +10,7 @@
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
-import { WorkflowFail, WorkflowAbort, toWorkflowRuntimeError } from '../lib/workflowErrors';
+import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { callSubjectGraph } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
 import {
@@ -23,12 +23,13 @@ import {
   workflowStatusEventKey,
   workflowTerminalEventKey,
 } from './shared/workflowDurability';
+import { classifyWorkflowTerminalError } from './shared/workflowFailureClassification';
 import {
   resolveGenerationJobPolicy,
   type BackendGenerationJobKind,
   type ResolvedGenerationJobPolicy,
 } from '../generationPolicy';
-import { applyArtifactToLearningContent } from '../learningContent/artifactApplication';
+import { publishCompleteSubjectGraphToLearningContent } from '../learningContent/artifactApplication';
 import {
   buildSubjectGraphEdgesMessages,
   buildSubjectGraphTopicsMessages,
@@ -70,7 +71,7 @@ interface PlanOutcomeOk {
   inputHash: string;
   checkpoints: Array<{ stage: string; artifact_id: string | null }>;
 }
-interface PlanOutcomeCached { ok: false; snapshot: Record<string, unknown>; cached: CachedArtifactResult }
+interface PlanOutcomeCached { ok: false; snapshot: Record<string, unknown>; cached: CachedArtifactResult; checkpoints: Array<{ stage: string; artifact_id: string | null }> }
 type PlanOutcome = PlanOutcomeOk | PlanOutcomeCached;
 
 function requireArtifactPayload(value: unknown, label: string): Record<string, unknown> {
@@ -92,6 +93,7 @@ interface StageRunResult {
   artifactId: string;
   contentHash: string;
   kind: ArtifactKind;
+  payload: Record<string, unknown>;
 }
 
 async function runStage(
@@ -154,7 +156,7 @@ async function runStage(
     throw err;
   }
 
-  const persisted = (await step.do(`persist:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async (): Promise<StageRunResult> => {
+  const persisted = (await step.do(`persist:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async (): Promise<Omit<StageRunResult, 'payload'>> => {
     const _contentHash = await contentHash(result.parsedPayload);
     const artifactId = await repos.artifacts.putStorage(
       { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
@@ -170,19 +172,7 @@ async function runStage(
     }
 
     return { artifactId, contentHash: _contentHash, kind };
-  })) as StageRunResult;
-
-  await step.do(`apply:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
-    await applyArtifactToLearningContent({
-      learningContent: repos.learningContent,
-      deviceId,
-      runId,
-      artifactKind: kind,
-      payload: result.parsedPayload,
-      snapshot,
-      contentHash: persisted.contentHash,
-    });
-  });
+  })) as Omit<StageRunResult, 'payload'>;
 
   await step.do(`artifact-ready:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
     await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey(kind, _inputHash),
@@ -196,7 +186,7 @@ async function runStage(
     );
   });
 
-  return persisted;
+  return { ...persisted, payload: result.parsedPayload };
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +231,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
         const snapshot = run.snapshot_json as Record<string, unknown>;
         const _inputHash = await inputHash(snapshot);
 
+        const checkpoints = await repos.stageCheckpoints.byRun(runId);
         const cached = await repos.artifacts.findCacheHit(deviceId, 'subject-graph-topics', _inputHash);
         if (cached) {
           return {
@@ -253,10 +244,10 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
               schemaVersion: cached.schema_version,
               storageKey: cached.storage_key,
             },
+            checkpoints: checkpoints.map((c) => ({ stage: c.stage, artifact_id: c.artifact_id })),
           };
         }
 
-        const checkpoints = await repos.stageCheckpoints.byRun(runId);
         return {
           ok: true,
           snapshot,
@@ -265,24 +256,26 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
         };
       })) as PlanOutcome;
 
+      let cachedTopics: (CachedArtifactResult & { payload: Record<string, unknown> }) | undefined;
       if (!planOutcome.ok) {
-        const { snapshot, cached } = planOutcome;
-        await step.do('apply:subject-graph-topics:cache', WORKFLOW_STORAGE_STEP_RETRY, async () => {
-          const payload = requireArtifactPayload(
+        const { cached } = planOutcome;
+        cachedTopics = {
+          ...cached,
+          payload: requireArtifactPayload(
             await repos.artifacts.getStorage(cached.storageKey),
             `cached subject-graph-topics artifact ${cached.artifactId}`,
-          );
-          await applyArtifactToLearningContent({
-            learningContent: repos.learningContent,
-            deviceId,
+          ),
+        };
+        await step.do('ready:subject-graph-topics:cache', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+          await repos.stageCheckpoints.upsert({
             runId,
-            artifactKind: 'subject-graph-topics',
-            payload,
-            snapshot,
-            contentHash: cached.contentHash,
+            stage: 'topics',
+            status: 'ready',
+            inputHash: cached.inputHash,
+            artifactId: cached.artifactId,
+            attempt: 0,
+            startedAt: new Date().toISOString(),
           });
-        });
-        await step.do('ready:subject-graph-topics:cache', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
           await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey('subject-graph-topics', cached.inputHash),
             buildArtifactReadyEvent({
               artifactId: cached.artifactId,
@@ -293,12 +286,11 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
               fromCache: true,
             }),
           );
-          await repos.runs.markReady(runId);
-          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
         });
-        return;
       }
-      const { snapshot, inputHash: _inputHash, checkpoints } = planOutcome;
+      const snapshot = planOutcome.snapshot;
+      const _inputHash = planOutcome.ok ? planOutcome.inputHash : planOutcome.cached.inputHash;
+      const checkpoints = planOutcome.checkpoints;
 
       const topicsSchemaVersion = (snapshot.schema_version as number) ?? subjectGraphTopicsSchemaVersion;
       const edgesSchemaVersion = (snapshot.schema_version as number) ?? subjectGraphEdgesSchemaVersion;
@@ -313,12 +305,21 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       let latticeArtifactContentHash = typeof snapshot.lattice_artifact_content_hash === 'string'
         ? snapshot.lattice_artifact_content_hash
         : undefined;
+      let topicsPayload: Record<string, unknown> | undefined = cachedTopics?.payload;
+      let topicsContentHash: string | undefined = cachedTopics?.contentHash;
+      if (cachedTopics?.payload.topics && Array.isArray(cachedTopics.payload.topics)) {
+        latticeTopics = cachedTopics.payload.topics as SubjectGraphTopicPromptTopic[];
+        latticeTopicIds = latticeTopics.map((t) => t.topicId);
+        latticeArtifactContentHash = cachedTopics.contentHash;
+      }
+      let edgesPayload: Record<string, unknown> | undefined;
+      let edgesContentHash: string | undefined;
 
       const retryStage = snapshot.retry_stage as string | undefined;
       const skipStageA = retryStage === 'edges';
 
       const topicsCkp = checkpoints.find((c) => c.stage === 'topics');
-      if (topicsCkp?.artifact_id || skipStageA) {
+      if ((topicsCkp?.artifact_id && !cachedTopics) || skipStageA) {
         const topicsProgressNote = skipStageA ? 'skipped (retry_stage=edges)' : 'resumed from checkpoint';
         await step.do('progress:topics:checkpoint', WORKFLOW_STORAGE_STEP_RETRY, async () => {
           await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStageProgressEventKey('topics', topicsProgressNote),
@@ -348,13 +349,14 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
               throw new Error(`artifact row not found for ${artifactId}`);
             }
             latticeArtifactContentHash = stageARow.content_hash;
-            const stageAPayload = await repos.artifacts.getStorage(stageARow.storage_key);
-            if (
-              stageAPayload &&
-              typeof stageAPayload === 'object' &&
-              Array.isArray((stageAPayload as Record<string, unknown>).topics)
-            ) {
-              latticeTopics = (stageAPayload as Record<string, unknown>).topics as SubjectGraphTopicPromptTopic[];
+            topicsContentHash = stageARow.content_hash;
+            const stageAPayload = requireArtifactPayload(
+              await repos.artifacts.getStorage(stageARow.storage_key),
+              `subject-graph Stage A artifact ${artifactId}`,
+            );
+            topicsPayload = stageAPayload;
+            if (Array.isArray(stageAPayload.topics)) {
+              latticeTopics = stageAPayload.topics as SubjectGraphTopicPromptTopic[];
               latticeTopicIds = latticeTopics.map((t) => t.topicId);
             }
           } catch (err) {
@@ -409,6 +411,8 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
           },
         );
         latticeArtifactContentHash = topicsResult.contentHash;
+        topicsContentHash = topicsResult.contentHash;
+        topicsPayload = topicsResult.payload;
       }
 
       // ---- 3. STAGE B: PREREQUISITE EDGES ----
@@ -423,6 +427,10 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
         });
       }
 
+      const edgesInputHash = await inputHash({
+        ...snapshot,
+        lattice_artifact_content_hash: latticeArtifactContentHash,
+      });
       const edgesCkp = checkpoints.find((c) => c.stage === 'edges');
       if (edgesCkp?.artifact_id) {
         await step.do('progress:edges:checkpoint', WORKFLOW_STORAGE_STEP_RETRY, async () => {
@@ -430,14 +438,23 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
             buildStageProgressEvent('edges', undefined, 'resumed from checkpoint'),
           );
         });
+        const stageBRow = await repos.artifacts.get(edgesCkp.artifact_id);
+        if (!stageBRow) {
+          throw new WorkflowFail('precondition:missing-topic', `subject-graph publish: edges artifact row not found for ${edgesCkp.artifact_id}`);
+        }
+        edgesContentHash = stageBRow.content_hash;
+        edgesPayload = requireArtifactPayload(
+          await repos.artifacts.getStorage(stageBRow.storage_key),
+          `subject-graph Stage B artifact ${edgesCkp.artifact_id}`,
+        );
       } else if (!skipStageB) {
         await checkCancel('before-edges');
 
         const edgesResponseFormat = jsonSchemaResponseFormat('subject-graph-edges');
 
-        await runStage(
+        const edgesResult = await runStage(
           step, repos, runId, deviceId, 'edges', 'subject-graph-edges',
-          snapshot, _inputHash, edgesSchemaVersion,
+          snapshot, edgesInputHash, edgesSchemaVersion,
           async (generationPolicy) => {
             const raw = await callSubjectGraph(
               {
@@ -468,32 +485,45 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
             return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
           },
         );
+        edgesContentHash = edgesResult.contentHash;
+        edgesPayload = edgesResult.payload;
       }
 
-      // ---- 4. READY ----
+      if (skipStageB) {
+        throw new WorkflowFail('state:unexpected-workflow-error', 'subject-graph topics-only completion is prohibited; Stage B and final publication are required');
+      }
+      if (!topicsPayload || !topicsContentHash || !edgesPayload || !edgesContentHash) {
+        throw new WorkflowFail('precondition:missing-topic', 'subject-graph publish requires both Stage A topics and Stage B edges artifacts');
+      }
+
+      // ---- 4. PUBLISH + READY ----
+      await step.do('publish:subject-graph:complete', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+        await publishCompleteSubjectGraphToLearningContent({
+          learningContent: repos.learningContent,
+          deviceId,
+          runId,
+          snapshot,
+          topicsPayload,
+          edgesPayload,
+          topicsContentHash,
+          edgesContentHash,
+        });
+      });
+
       await step.do('ready', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
         await repos.runs.markReady(runId);
         await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
       });
     } catch (err) {
       if (err instanceof WorkflowAbort) return;
-      if (err instanceof WorkflowFail) {
-        await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
-          await repos.runs.markFailed(runId, err.code, err.message);
-          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
-            buildRunFailedEvent(err.code, err.message),
-          );
-        });
-        throw toWorkflowRuntimeError(err);
-      }
-      const message = err instanceof Error ? err.message : String(err);
+      const failure = classifyWorkflowTerminalError(err);
       await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
-        await repos.runs.markFailed(runId, 'llm:upstream-5xx', message);
+        await repos.runs.markFailed(runId, failure.code, failure.message);
         await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
-          buildRunFailedEvent('llm:upstream-5xx', message),
+          buildRunFailedEvent(failure.code, failure.message),
         );
       });
-      throw err;
+      throw failure.runtimeError;
     }
   }
 }

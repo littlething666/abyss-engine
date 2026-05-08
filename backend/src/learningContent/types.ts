@@ -88,6 +88,12 @@ export interface PutTopicDetailsInput {
   updatedByRunId: string;
 }
 
+export interface PublishGeneratedSubjectGraphInput {
+  subject: UpsertSubjectInput;
+  graph: PutSubjectGraphInput;
+  topicDetails: PutTopicDetailsInput[];
+}
+
 export interface PutTopicCardInput {
   cardId: string;
   card: JsonObject;

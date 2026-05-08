@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyArtifactToLearningContent } from './artifactApplication';
+import { applyArtifactToLearningContent, publishCompleteSubjectGraphToLearningContent } from './artifactApplication';
 import type { ILearningContentRepo } from './learningContentRepo';
 import type { LearningContentManifest } from './types';
 import {
@@ -35,6 +35,10 @@ function makeRepo(overrides: Partial<ILearningContentRepo> = {}): ILearningConte
     getSubjectGraph: vi.fn(async () => null),
     putSubjectGraph: vi.fn(async (input) => {
       validateSubjectGraphEnvelope(input.graph);
+    }),
+    publishGeneratedSubjectGraph: vi.fn(async (input) => {
+      validateSubjectGraphEnvelope(input.graph.graph);
+      input.topicDetails.forEach((row) => validateTopicDetailsEnvelope(row.details));
     }),
     getTopicDetails: vi.fn(async () => null),
     putTopicDetails: vi.fn(async (input) => {
@@ -170,46 +174,51 @@ describe('applyArtifactToLearningContent', () => {
     });
   });
 
-  it('materializes subject graph topics and then prerequisite edges', async () => {
-    const putSubjectGraph = vi.fn(async () => undefined);
-    const putTopicDetails = vi.fn(async () => undefined);
+  it('publishes a complete generated subject graph only after topics and prerequisite edges are available', async () => {
+    const publishGeneratedSubjectGraph = vi.fn(async () => undefined);
     let graph: Record<string, unknown> | null = null;
     const repo = makeRepo({
-      putSubjectGraph: vi.fn(async (input) => {
-        validateSubjectGraphEnvelope(input.graph);
-        graph = input.graph;
-        await putSubjectGraph(input);
+      publishGeneratedSubjectGraph: vi.fn(async (input) => {
+        validateSubjectGraphEnvelope(input.graph.graph);
+        graph = input.graph.graph;
+        await publishGeneratedSubjectGraph(input);
       }),
-      getSubjectGraph: vi.fn(async () => graph ? {
-        deviceId: 'dev-1', subjectId: 'math', graph, contentHash: 'cnt_graph', updatedByRunId: 'run-1', updatedAt: 'now',
-      } : null),
-      putTopicDetails,
     });
 
-    await applyArtifactToLearningContent({
+    await publishCompleteSubjectGraphToLearningContent({
       learningContent: repo,
       deviceId: 'dev-1',
       runId: 'run-1',
-      artifactKind: 'subject-graph-topics',
-      snapshot: { subject_id: 'math' },
-      contentHash: 'cnt_topics',
-      payload: { topics: [
+      snapshot: {
+        subject_id: 'math',
+        checklist: { topic_name: 'Mathematics' },
+        strategy_brief: {
+          total_tiers: 2,
+          topics_per_tier: 1,
+          audience_brief: 'Math subject',
+          domain_brief: 'Calculus foundations',
+          focus_constraints: 'Beginner friendly',
+        },
+      },
+      topicsContentHash: 'cnt_topics',
+      edgesContentHash: 'cnt_edges',
+      topicsPayload: { topics: [
         { topicId: 'limits', title: 'Limits', iconName: 'sigma', tier: 1, learningObjective: 'Understand limits' },
         { topicId: 'derivatives', title: 'Derivatives', iconName: 'function-square', tier: 2, learningObjective: 'Understand derivatives' },
       ] },
+      edgesPayload: { edges: [{ source: 'limits', target: 'derivatives', minLevel: 2 }] },
     });
 
-    await applyArtifactToLearningContent({
-      learningContent: repo,
-      deviceId: 'dev-1',
-      runId: 'run-1',
-      artifactKind: 'subject-graph-edges',
-      snapshot: { subject_id: 'math' },
-      contentHash: 'cnt_edges',
-      payload: { edges: [{ source: 'limits', target: 'derivatives', minLevel: 2 }] },
-    });
-
-    expect(putSubjectGraph).toHaveBeenCalledTimes(2);
+    expect(publishGeneratedSubjectGraph).toHaveBeenCalledWith(expect.objectContaining({
+      subject: expect.objectContaining({
+        deviceId: 'dev-1',
+        subjectId: 'math',
+        title: 'Mathematics',
+        contentSource: 'generated',
+        createdByRunId: 'run-1',
+      }),
+    }));
+    expect(publishGeneratedSubjectGraph).toHaveBeenCalledTimes(1);
     expect(graph).toMatchObject({
       subjectId: 'math',
       title: 'Mathematics',
@@ -218,6 +227,6 @@ describe('applyArtifactToLearningContent', () => {
         expect.objectContaining({ topicId: 'derivatives', prerequisites: [{ topicId: 'limits', minLevel: 2 }] }),
       ],
     });
-    expect(putTopicDetails).toHaveBeenCalledTimes(2);
+    expect(publishGeneratedSubjectGraph.mock.calls[0]?.[0].topicDetails).toHaveLength(2);
   });
 });

@@ -106,6 +106,14 @@ Workflow steps must be granular and idempotent. Avoid side effects outside `step
 
 Subject Graph Generation is a backend-owned create-and-publish workflow. The Topic Lattice stage may persist durable artifacts and checkpoints, but it must not publish a client-visible Subject or partial Subject Graph. Learning Content Store reads expose generated subjects only after the backend has completed prerequisite-edge wiring and published a complete Subject, Subject Graph, and topic stubs. A Stage A lattice cache hit can resume generation, but it cannot be treated as a completed subject-graph run. Regenerating an existing subject keeps the previously published graph visible until the replacement graph publish step succeeds. This decision is recorded in [ADR 0001](./adr/0001-subject-graph-publication-boundary.md).
 
+Implemented behavior:
+
+- Stage A `subject-graph-topics` artifacts are stored in R2 and checkpointed in D1 only.
+- Stage B `subject-graph-edges` generation is required before run completion and final Learning Content publication.
+- The complete publication step owns generated Subject creation, final Subject Graph write, and unavailable topic-detail stub creation.
+- The publication repository method batches the generated Subject, Subject Graph, and topic stubs so client reads do not observe a Stage-A-only graph.
+- Subject Graph run completion is emitted only after complete publication succeeds.
+
 Learning Content ownership remains scoped by `device_id` for anonymous devices. Future authentication tightens this same read/write boundary to user identity; it must not introduce cross-device subject lookup as a recovery mechanism for missing rows.
 
 ## Bottom Line

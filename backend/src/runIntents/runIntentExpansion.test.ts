@@ -96,6 +96,7 @@ function repo(): ILearningContentRepo {
       },
     }),
     putSubjectGraph: async () => undefined,
+    publishGeneratedSubjectGraph: async () => undefined,
     getTopicDetails: async () => topicDetails(),
     putTopicDetails: async () => undefined,
     getTopicCards: async () => topicCards(),

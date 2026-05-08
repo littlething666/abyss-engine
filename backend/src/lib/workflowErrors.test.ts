@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WorkflowFail, isNonRetryableWorkflowFailCode, toWorkflowRuntimeError } from './workflowErrors';
+import { WorkflowFail, isNonRetryableWorkflowFailCode, isWorkflowFailLike, toWorkflowRuntimeError } from './workflowErrors';
 
 describe('workflow terminal error mapping', () => {
   it('classifies configuration, precondition, parse, and semantic validation failures as non-retryable', () => {
@@ -19,5 +19,10 @@ describe('workflow terminal error mapping', () => {
     const runtimeError = toWorkflowRuntimeError(new WorkflowFail('config:invalid', 'missing OPENROUTER_API_KEY'));
     expect(runtimeError.name).toBe('WorkflowFail');
     expect(runtimeError.message).toBe('config:invalid: missing OPENROUTER_API_KEY');
+  });
+
+  it('recognizes serialized WorkflowFail values returned across workflow step boundaries', () => {
+    expect(isWorkflowFailLike({ name: 'WorkflowFail', code: 'precondition:missing-topic', message: 'Learning Content subject not found: game-theory' })).toBe(true);
+    expect(isWorkflowFailLike({ name: 'Error', code: 'llm:upstream-5xx', message: 'provider failed' })).toBe(false);
   });
 });
