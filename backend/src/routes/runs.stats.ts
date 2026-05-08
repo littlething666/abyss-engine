@@ -14,6 +14,7 @@
 
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
+import { validateFailureStatsQuery } from './validation';
 import type { Env } from '../env';
 import type { PipelineKind } from '../repositories/types';
 
@@ -38,13 +39,22 @@ const stats = new Hono<{ Bindings: Env; Variables: { deviceId: string } }>();
 
 stats.get('/stats', async (c) => {
   const deviceId = c.get('deviceId');
+  const query = validateFailureStatsQuery({
+    days: c.req.query('days'),
+    pipelineKind: c.req.query('pipelineKind'),
+    model: c.req.query('model'),
+    failureCode: c.req.query('failureCode'),
+  });
+  if (!query.ok) {
+    return c.json(query.failure, 400);
+  }
+  const {
+    days,
+    pipelineKind: pipelineFilter,
+    model: modelFilter,
+    failureCode: codeFilter,
+  } = query.value;
   const repos = makeRepos(c.env);
-
-  const rawDays = parseInt(c.req.query('days') ?? '7', 10);
-  const days = isNaN(rawDays) ? 7 : Math.min(Math.max(rawDays, 1), 90);
-  const pipelineFilter = c.req.query('pipelineKind') as PipelineKind | undefined;
-  const modelFilter = c.req.query('model') as string | undefined;
-  const codeFilter = c.req.query('failureCode') as string | undefined;
 
   // Compute the window start.
   const now = new Date();

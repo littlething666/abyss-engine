@@ -18,6 +18,7 @@ The previous ordering is still broadly correct, with these updates from the late
 10. **Backend artifact materialization is now wired into durable workflows.** `backend/src/learningContent/artifactApplication.ts` applies validated artifacts to the D1 Learning Content Store for Subject Graph topics/edges, Topic Theory, Topic cards/mini-games/expansion, and Crystal Trial sets. Workflows now run artifact writes, checkpoint writes, token accounting, cache-hit materialization, Learning Content application, artifact-ready events, cancellation/failure writes, and terminal completion/failure/cancellation writes inside named `step.do` boundaries before `run.completed`.
 11. **OpenRouter Worker request construction is now canonicalized.** `backend/src/llm/openrouterClient.ts` exposes shared `callOpenRouterChat({ jobKind, modelId, messages, responseFormat, providerHealingRequested, temperature })`; Crystal Trial, Topic Expansion, Subject Graph, and Topic Content adapters now delegate to it. The helper preserves strict `json_schema`, backend-policy-owned response healing, token usage accounting, no streaming, no `json_object` fallback, and fail-loud validation of malformed OpenRouter response/usage wrappers.
 12. **Backend route validation has a first shared schema seam.** `backend/src/routes/validation.ts` now owns Zod-backed validation for `POST /v1/runs` intent envelopes, `GET /v1/runs` list filters, retry bodies, and Crystal Trial read route params/query. Invalid retry JSON no longer falls through as an empty retry request, run-list filters fail before D1 query construction, client-built snapshots remain rejected at the Worker boundary, and Crystal Trial malformed route inputs use one structured boundary error shape.
+13. **Backend route validation has been extended across additional framework edges.** The same Zod seam now validates run path ids for get/cancel/retry, SSE resume cursors (`Last-Event-ID` / `lastSeq`), artifact read ids, and failure-stats filters before repository calls. `/v1/runs/stats` is mounted before the catch-all run-id route so stats requests cannot be misrouted through `GET /v1/runs/:id`.
 
 ## Completed to date
 
@@ -45,11 +46,17 @@ The previous ordering is still broadly correct, with these updates from the late
 - Backend Learning Content artifact applier (`backend/src/learningContent/artifactApplication.ts`) with tests for theory details, study-card materialization, Crystal Trial sets, and Subject Graph topics/edges.
 - Durable Workflow side-effect step split: artifact/cache materialization, stage checkpoint writes, D1/R2 artifact writes, token accounting, `artifact.ready`, cancellation, failure, and terminal ready writes now execute inside named `step.do` boundaries. Single-stage Crystal Trial and Topic Expansion now keep model call + strict parse + semantic validation in one retryable generation step, with persistence/application in separate idempotent storage steps.
 - Shared Worker OpenRouter chat helper (`callOpenRouterChat`) now owns canonical request construction for all four pipeline adapters, with tests pinning strict JSON Schema, response-healing plugin shape, temperature handling, token usage, absence of streaming/job metadata leakage, and fail-loud provider wrapper validation.
-- Shared backend route validation seam (`backend/src/routes/validation.ts`) with Zod-backed tests for run submission envelopes, run list filters, retry bodies, and Crystal Trial read params/query. Route tests prove invalid list filters, client-built snapshots, and malformed retry JSON stop before run lookup/workflow dispatch.
+- Shared backend route validation seam (`backend/src/routes/validation.ts`) with Zod-backed tests for run submission envelopes, run list filters, retry bodies, Crystal Trial read params/query, run path ids, SSE resume cursors, artifact ids, and failure-stats filters. Route tests prove malformed inputs stop before run lookup/workflow dispatch/artifact lookup/stats D1 scans, and that `/v1/runs/stats` routes to the stats handler rather than the generic run-id handler.
 
 ## Recommended next steps
 
 The code-review findings are compatible with `plans/durable-workflow-orchestration.md` when treated as **durability and framework-edge hardening**, not as a change in orchestration strategy. Keep Cloudflare Workflows + Hono + D1/R2. Do not introduce Durable Objects as a replacement orchestrator, do not replace the typed event/status contracts, and do not add downstream parser recovery.
+
+### Remaining recommended follow-ups in order of priority (remove items as they are completed)
+
+ 1. Add real Cloudflare runtime tests for replay/concurrency/idempotency.
+ 2. Continue validation hardening for generation-policy config parsing and Learning Content Store JSON envelopes.
+ 3. After runtime proof, proceed toward durable-only routing and local-runner/settings legacy deletion.
 
 ### Critical fixes to eliminate now
 
@@ -81,9 +88,9 @@ The code-review findings are compatible with `plans/durable-workflow-orchestrati
    - Replace custom CORS plumbing with `hono/cors` only if production defaults, per-request env origin resolution, durable headers, and documented rejection behavior remain exact.
    - Replace manual SSE stream formatting with `streamSSE()` / `writeSSE()` while preserving the domain polling/replay contract: `Last-Event-ID`, `seq > lastSeq`, keepalives, terminal close, and client disconnect cleanup.
 
-2. **Standardize backend request/config validation — started**
-   - `backend/src/routes/validation.ts` now covers `POST /v1/runs` intent bodies, retry bodies, run list filters, and Crystal Trial read params/query with Zod-backed boundary validation.
-   - **Remaining:** extend the same seam/posture to additional route params and bodies (retry route path ownership checks, stats/list filters if they grow, artifact route inputs), generation policy config parsing where not already strict, Learning Content Store JSON envelopes, and any future OpenRouter wrapper fields. Validation must continue to fail loudly at the boundary, not normalize ambiguous input downstream.
+2. **Standardize backend request/config validation — in progress**
+   - `backend/src/routes/validation.ts` now covers `POST /v1/runs` intent bodies, retry bodies, run list filters, Crystal Trial read params/query, run path ids for get/cancel/retry, SSE resume cursors, artifact read ids, and failure-stats filters with Zod-backed boundary validation.
+   - **Remaining:** extend the same seam/posture to any newly added route params and bodies, generation policy config parsing where not already strict, Learning Content Store JSON envelopes, and any future OpenRouter wrapper fields. Validation must continue to fail loudly at the boundary, not normalize ambiguous input downstream.
 
 3. **Collapse duplicated OpenRouter request construction without hiding policy — completed**
    - Per-pipeline typed adapters remain, but now route through shared `callOpenRouterChat({ jobKind, modelId, messages, responseFormat, providerHealingRequested, temperature })`.

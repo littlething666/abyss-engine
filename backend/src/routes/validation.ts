@@ -35,6 +35,19 @@ const exactNonEmptyQueryString = z
   .min(1)
   .refine((value) => value.trim() === value, 'must not contain leading or trailing whitespace');
 
+const eventSequenceParam = z
+  .string()
+  .regex(/^\d+$/, 'must be a non-negative integer')
+  .transform((value) => Number(value))
+  .refine((value) => Number.isSafeInteger(value) && value >= 0, 'must be a non-negative integer');
+
+const statsDaysQuerySchema = z
+  .string()
+  .regex(/^\d+$/, 'must be an integer between 1 and 90')
+  .transform((value) => Number(value))
+  .refine((value) => Number.isSafeInteger(value) && value >= 1 && value <= 90, 'must be an integer between 1 and 90')
+  .optional();
+
 const optionalRouteQueryString = z
   .string()
   .min(1)
@@ -73,6 +86,38 @@ const crystalTrialReadSchema = z.strictObject({
   cardPoolHash: exactNonEmptyQueryString,
 });
 
+const runIdRouteSchema = z.strictObject({
+  runId: exactNonEmptyQueryString,
+});
+
+const artifactReadSchema = z.strictObject({
+  artifactId: exactNonEmptyQueryString,
+});
+
+const runEventsReadSchema = z.strictObject({
+  runId: exactNonEmptyQueryString,
+  lastEventId: eventSequenceParam.optional(),
+  lastSeq: eventSequenceParam.optional(),
+}).refine(
+  (value) => value.lastEventId === undefined || value.lastSeq === undefined || value.lastEventId === value.lastSeq,
+  { path: ['lastSeq'], message: 'must match Last-Event-ID when both resume cursors are provided' },
+).transform((value) => ({
+  runId: value.runId,
+  lastSeq: value.lastEventId ?? value.lastSeq ?? 0,
+}));
+
+const failureStatsQuerySchema = z.strictObject({
+  days: statsDaysQuerySchema,
+  pipelineKind: pipelineKindSchema.optional(),
+  model: optionalRouteQueryString,
+  failureCode: optionalRouteQueryString,
+}).transform((value) => ({
+  days: value.days ?? 7,
+  pipelineKind: value.pipelineKind,
+  model: value.model,
+  failureCode: value.failureCode,
+}));
+
 export interface ValidationFailure {
   code: string;
   message: string;
@@ -96,6 +141,26 @@ export interface ValidatedCrystalTrialReadInput {
   topicId: string;
   targetLevel: number;
   cardPoolHash: string;
+}
+
+export interface ValidatedRunIdRouteInput {
+  runId: string;
+}
+
+export interface ValidatedArtifactReadInput {
+  artifactId: string;
+}
+
+export interface ValidatedRunEventsReadInput {
+  runId: string;
+  lastSeq: number;
+}
+
+export interface ValidatedFailureStatsQuery {
+  days: number;
+  pipelineKind?: PipelineKind;
+  model?: string;
+  failureCode?: string;
 }
 
 export type ValidationResult<T> =
@@ -177,5 +242,37 @@ export function validateCrystalTrialReadInput(input: Record<string, string | und
     crystalTrialReadSchema.safeParse(input),
     'parse:invalid-route-input',
     'invalid Crystal Trial route input',
+  );
+}
+
+export function validateRunIdRouteInput(input: Record<string, string | undefined>): ValidationResult<ValidatedRunIdRouteInput> {
+  return fromSafeParse(
+    runIdRouteSchema.safeParse(input),
+    'parse:invalid-route-input',
+    'invalid run route input',
+  );
+}
+
+export function validateRunEventsReadInput(input: Record<string, string | undefined>): ValidationResult<ValidatedRunEventsReadInput> {
+  return fromSafeParse(
+    runEventsReadSchema.safeParse(input),
+    'parse:invalid-route-input',
+    'invalid run events route input',
+  );
+}
+
+export function validateArtifactReadInput(input: Record<string, string | undefined>): ValidationResult<ValidatedArtifactReadInput> {
+  return fromSafeParse(
+    artifactReadSchema.safeParse(input),
+    'parse:invalid-route-input',
+    'invalid artifact route input',
+  );
+}
+
+export function validateFailureStatsQuery(input: Record<string, string | undefined>): ValidationResult<ValidatedFailureStatsQuery> {
+  return fromSafeParse(
+    failureStatsQuerySchema.safeParse(input),
+    'parse:invalid-query',
+    'invalid failure stats query',
   );
 }

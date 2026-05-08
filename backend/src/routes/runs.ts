@@ -16,6 +16,7 @@ import { expandRunIntent, assertNoForbiddenPolicyFields } from '../runIntents/ru
 import { buildRetryRunSnapshot } from './retryPlanning';
 import {
   validateRetryBody,
+  validateRunIdRouteInput,
   validateRunsListQuery,
   validateSubmitRunBody,
 } from './validation';
@@ -286,7 +287,11 @@ runs.get('/', async (c) => {
  */
 runs.get('/:id', async (c) => {
   const deviceId = c.get('deviceId');
-  const runId = c.req.param('id');
+  const input = validateRunIdRouteInput({ runId: c.req.param('id') });
+  if (!input.ok) {
+    return c.json(input.failure, 400);
+  }
+  const { runId } = input.value;
   const repos = makeRepos(c.env);
 
   const run = await repos.runs.load(runId);
@@ -308,7 +313,11 @@ runs.get('/:id', async (c) => {
  */
 runs.post('/:id/cancel', async (c) => {
   const deviceId = c.get('deviceId');
-  const runId = c.req.param('id');
+  const input = validateRunIdRouteInput({ runId: c.req.param('id') });
+  if (!input.ok) {
+    return c.json(input.failure, 400);
+  }
+  const { runId } = input.value;
   const repos = makeRepos(c.env);
 
   const run = await repos.runs.load(runId);
@@ -343,7 +352,11 @@ runs.post('/:id/cancel', async (c) => {
  */
 runs.post('/:id/retry', async (c) => {
   const deviceId = c.get('deviceId');
-  const runId = c.req.param('id');
+  const input = validateRunIdRouteInput({ runId: c.req.param('id') });
+  if (!input.ok) {
+    return c.json(input.failure, 400);
+  }
+  const { runId } = input.value;
   const repos = makeRepos(c.env);
 
   // Parse optional { stage?, jobId? } body. Invalid JSON fails at the boundary;

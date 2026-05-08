@@ -47,9 +47,9 @@ v1.use('*', deviceIdMiddleware);
 // GET /v1/runs, GET /v1/runs/:id, POST /v1/runs/:id/cancel, etc. skip it.
 v1.post('/runs', idempotencyMiddleware);
 
+v1.route('/runs', stats);
 v1.route('/runs', runs);
 v1.route('/runs', runEvents);
-v1.route('/runs', stats);
 v1.route('/', learningContent);
 v1.route('/artifacts', artifacts);
 

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  validateArtifactReadInput,
   validateCrystalTrialReadInput,
+  validateFailureStatsQuery,
   validateRetryBody,
+  validateRunEventsReadInput,
+  validateRunIdRouteInput,
   validateRunsListQuery,
   validateSubmitRunBody,
 } from './validation';
@@ -59,6 +63,52 @@ describe('route validation seam', () => {
     expect(wrongType.ok).toBe(false);
     if (!wrongType.ok) {
       expect(wrongType.failure.message).toContain('stage');
+    }
+  });
+
+  it('validates run, event-stream, artifact, and stats route inputs before repositories run', () => {
+    expect(validateRunIdRouteInput({ runId: 'run-1' })).toEqual({
+      ok: true,
+      value: { runId: 'run-1' },
+    });
+
+    const badRunId = validateRunIdRouteInput({ runId: ' run-1' });
+    expect(badRunId.ok).toBe(false);
+    if (!badRunId.ok) {
+      expect(badRunId.failure.code).toBe('parse:invalid-route-input');
+      expect(badRunId.failure.message).toContain('runId');
+    }
+
+    expect(validateRunEventsReadInput({ runId: 'run-1', lastEventId: '3' })).toEqual({
+      ok: true,
+      value: { runId: 'run-1', lastSeq: 3 },
+    });
+    expect(validateRunEventsReadInput({ runId: 'run-1', lastSeq: '0' })).toEqual({
+      ok: true,
+      value: { runId: 'run-1', lastSeq: 0 },
+    });
+
+    const mismatchedCursor = validateRunEventsReadInput({ runId: 'run-1', lastEventId: '3', lastSeq: '2' });
+    expect(mismatchedCursor.ok).toBe(false);
+    if (!mismatchedCursor.ok) {
+      expect(mismatchedCursor.failure.message).toContain('lastSeq');
+    }
+
+    expect(validateArtifactReadInput({ artifactId: 'artifact-1' })).toEqual({
+      ok: true,
+      value: { artifactId: 'artifact-1' },
+    });
+
+    expect(validateFailureStatsQuery({ days: '30', pipelineKind: 'topic-content', model: 'model-a' })).toEqual({
+      ok: true,
+      value: { days: 30, pipelineKind: 'topic-content', model: 'model-a', failureCode: undefined },
+    });
+
+    const invalidDays = validateFailureStatsQuery({ days: '91' });
+    expect(invalidDays.ok).toBe(false);
+    if (!invalidDays.ok) {
+      expect(invalidDays.failure.code).toBe('parse:invalid-query');
+      expect(invalidDays.failure.message).toContain('days');
     }
   });
 

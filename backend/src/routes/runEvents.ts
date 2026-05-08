@@ -12,6 +12,7 @@
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
 import { dbStatusToTransport, ACTIVE_TRANSPORT_STATUSES } from '../contracts/statusMapper';
+import { validateRunEventsReadInput } from './validation';
 import type { Env } from '../env';
 
 /** Poll + keepalive interval for active runs (ms). */
@@ -22,19 +23,6 @@ const MAX_POLL_CYCLES = 120;
 
 const runEvents = new Hono<{ Bindings: Env; Variables: { deviceId: string } }>();
 
-function parseResumeSeq(c: {
-  req: {
-    header: (name: string) => string | undefined;
-    query: (name: string) => string | undefined;
-  };
-}): number {
-  const headerVal = c.req.header('last-event-id')?.trim();
-  const queryVal = c.req.query('lastSeq')?.trim();
-  const raw = headerVal || queryVal || '0';
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n >= 0 ? n : 0;
-}
-
 /** Check if a DB status represents a terminal (non-active) run. */
 function isTerminalStatus(dbStatus: string): boolean {
   return !ACTIVE_TRANSPORT_STATUSES.includes(dbStatusToTransport(dbStatus));
@@ -42,7 +30,15 @@ function isTerminalStatus(dbStatus: string): boolean {
 
 runEvents.get('/:id/events', async (c) => {
   const deviceId = c.get('deviceId');
-  const runId = c.req.param('id');
+  const input = validateRunEventsReadInput({
+    runId: c.req.param('id'),
+    lastEventId: c.req.header('last-event-id'),
+    lastSeq: c.req.query('lastSeq'),
+  });
+  if (!input.ok) {
+    return c.json(input.failure, 400);
+  }
+  const { runId, lastSeq } = input.value;
   const repos = makeRepos(c.env);
 
   // Verify the run belongs to this device.
@@ -56,7 +52,6 @@ runEvents.get('/:id/events', async (c) => {
     return c.json({ error: 'not_found' }, 404);
   }
 
-  const lastSeq = parseResumeSeq(c);
   const encoder = new TextEncoder();
 
   // Phase 3.6: scoped to the route handler so cancel() can clean up.

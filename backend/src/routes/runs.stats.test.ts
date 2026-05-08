@@ -219,7 +219,7 @@ describe('failure stats aggregation (Phase 3)', () => {
 
   it('passes days through to windowDays field', () => {
     // The inline function passes days through as-is.
-    // The route handler clamps days 1-90 (tested via integration).
+    // The route-validation seam accepts only days 1-90 before this aggregation runs.
     const r0 = aggregateFailures([], undefined, 0);
     expect(r0.windowDays).toBe(0);
     const r100 = aggregateFailures([], undefined, 100);

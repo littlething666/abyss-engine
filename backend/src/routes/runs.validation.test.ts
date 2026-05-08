@@ -68,6 +68,23 @@ describe('run route validation', () => {
     expect(calls[0].sql).toContain('insert into devices');
   });
 
+  it('rejects malformed run route ids before run lookup', async () => {
+    const { db, calls } = createFakeD1([q(deviceRow())]);
+
+    const response = await app.fetch(
+      new Request('https://fakehost/v1/runs/%20', { headers: headers() }),
+      env(db),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'parse:invalid-route-input',
+      message: expect.stringContaining('runId'),
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain('insert into devices');
+  });
+
   it('rejects malformed retry JSON instead of retrying with empty options', async () => {
     const { db, calls } = createFakeD1([q(deviceRow())]);
 
@@ -84,6 +101,74 @@ describe('run route validation', () => {
     await expect(response.json()).resolves.toEqual({
       code: 'invalid_json_body',
       message: 'retry body must be valid JSON when provided',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain('insert into devices');
+  });
+
+  it('rejects malformed SSE resume cursors before run lookup', async () => {
+    const { db, calls } = createFakeD1([q(deviceRow())]);
+
+    const response = await app.fetch(
+      new Request('https://fakehost/v1/runs/run-1/events?lastSeq=abc', { headers: headers() }),
+      env(db),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'parse:invalid-route-input',
+      message: expect.stringContaining('lastSeq'),
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain('insert into devices');
+  });
+
+  it('rejects malformed artifact route ids before artifact lookup', async () => {
+    const { db, calls } = createFakeD1([q(deviceRow())]);
+
+    const response = await app.fetch(
+      new Request('https://fakehost/v1/artifacts/%20', { headers: headers() }),
+      env(db),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'parse:invalid-route-input',
+      message: expect.stringContaining('artifactId'),
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain('insert into devices');
+  });
+
+  it('routes valid stats requests to the stats handler instead of the run-id handler', async () => {
+    const { db, calls } = createFakeD1([q(deviceRow()), q([])]);
+
+    const response = await app.fetch(
+      new Request('https://fakehost/v1/runs/stats?days=7', { headers: headers() }),
+      env(db),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      windowDays: 7,
+      pipelines: [],
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[1].sql).toContain('select * from runs where created_at >= ?');
+  });
+
+  it('rejects malformed stats filters before D1 window scans', async () => {
+    const { db, calls } = createFakeD1([q(deviceRow())]);
+
+    const response = await app.fetch(
+      new Request('https://fakehost/v1/runs/stats?days=100&pipelineKind=unknown', { headers: headers() }),
+      env(db),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'parse:invalid-query',
+      message: expect.stringContaining('days'),
     });
     expect(calls).toHaveLength(1);
     expect(calls[0].sql).toContain('insert into devices');
