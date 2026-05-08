@@ -1,4 +1,12 @@
 import { nowIso, parseJsonObject, stringifyJson } from '../repositories/d1';
+import {
+  validateCrystalTrialQuestionsEnvelope,
+  validateSubjectGraphEnvelope,
+  validateSubjectMetadataEnvelope,
+  validateTopicCardEnvelope,
+  validateTopicCardRowInvariants,
+  validateTopicDetailsEnvelope,
+} from './envelopeValidation';
 import type {
   CrystalTrialSetContent,
   JsonObject,
@@ -93,7 +101,7 @@ function subjectFromRow(row: SubjectRow): LearningContentSubject {
     deviceId: row.device_id,
     subjectId: row.subject_id,
     title: row.title,
-    metadata: parseJsonObject(row.metadata_json, 'subjects.metadata_json') as JsonObject,
+    metadata: validateSubjectMetadataEnvelope(parseJsonObject(row.metadata_json, 'subjects.metadata_json')),
     contentSource: row.content_source,
     createdByRunId: row.created_by_run_id,
     createdAt: row.created_at,
@@ -105,7 +113,7 @@ function subjectGraphFromRow(row: SubjectGraphRow): SubjectGraphContent {
   return {
     deviceId: row.device_id,
     subjectId: row.subject_id,
-    graph: parseJsonObject(row.graph_json, 'subject_graphs.graph_json'),
+    graph: validateSubjectGraphEnvelope(parseJsonObject(row.graph_json, 'subject_graphs.graph_json')),
     contentHash: row.content_hash,
     updatedByRunId: row.updated_by_run_id,
     updatedAt: row.updated_at,
@@ -117,7 +125,7 @@ function topicDetailsFromRow(row: TopicContentRow): TopicDetailsContent {
     deviceId: row.device_id,
     subjectId: row.subject_id,
     topicId: row.topic_id,
-    details: parseJsonObject(row.details_json, 'topic_contents.details_json'),
+    details: validateTopicDetailsEnvelope(parseJsonObject(row.details_json, 'topic_contents.details_json')),
     contentHash: row.content_hash,
     status: row.status,
     updatedByRunId: row.updated_by_run_id,
@@ -126,12 +134,13 @@ function topicDetailsFromRow(row: TopicContentRow): TopicDetailsContent {
 }
 
 function topicCardFromRow(row: TopicCardRow): TopicCardContent {
+  validateTopicCardRowInvariants(row.difficulty, row.source_artifact_kind);
   return {
     deviceId: row.device_id,
     subjectId: row.subject_id,
     topicId: row.topic_id,
     cardId: row.card_id,
-    card: parseJsonObject(row.card_json, 'topic_cards.card_json'),
+    card: validateTopicCardEnvelope(parseJsonObject(row.card_json, 'topic_cards.card_json'), row.card_id),
     difficulty: row.difficulty,
     sourceArtifactKind: row.source_artifact_kind,
     createdByRunId: row.created_by_run_id,
@@ -146,53 +155,11 @@ function crystalTrialSetFromRow(row: CrystalTrialSetRow): CrystalTrialSetContent
     topicId: row.topic_id,
     targetLevel: row.target_level,
     cardPoolHash: row.card_pool_hash,
-    questions: parseJsonObject(row.questions_json, 'crystal_trial_sets.questions_json'),
+    questions: validateCrystalTrialQuestionsEnvelope(parseJsonObject(row.questions_json, 'crystal_trial_sets.questions_json')),
     contentHash: row.content_hash,
     createdByRunId: row.created_by_run_id,
     createdAt: row.created_at,
   };
-}
-
-const SUBJECT_GEOMETRY_TYPES = new Set(['box', 'cylinder', 'sphere', 'octahedron', 'plane']);
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function requireNonEmptyString(value: unknown, path: string): void {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`${path} must be a non-empty string`);
-  }
-}
-
-function requireOptionalTopicIds(value: unknown, path: string): void {
-  if (value === undefined) return;
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.trim().length === 0)) {
-    throw new Error(`${path} must be an array of non-empty strings when present`);
-  }
-}
-
-function requireSubjectManifestEnvelope(metadata: JsonObject): void {
-  if (!isJsonObject(metadata.subject)) {
-    throw new Error('subjects.metadata_json.subject must be a JSON object');
-  }
-
-  const subject = metadata.subject;
-  requireNonEmptyString(subject.description, 'subjects.metadata_json.subject.description');
-  requireNonEmptyString(subject.color, 'subjects.metadata_json.subject.color');
-
-  if (!isJsonObject(subject.geometry)) {
-    throw new Error('subjects.metadata_json.subject.geometry must be a JSON object');
-  }
-  requireNonEmptyString(subject.geometry.gridTile, 'subjects.metadata_json.subject.geometry.gridTile');
-  if (!SUBJECT_GEOMETRY_TYPES.has(subject.geometry.gridTile as string)) {
-    throw new Error(`subjects.metadata_json.subject.geometry.gridTile must be one of ${[...SUBJECT_GEOMETRY_TYPES].join(', ')}`);
-  }
-
-  requireOptionalTopicIds(subject.topicIds, 'subjects.metadata_json.subject.topicIds');
-  if (subject.metadata !== undefined && !isJsonObject(subject.metadata)) {
-    throw new Error('subjects.metadata_json.subject.metadata must be a JSON object when present');
-  }
 }
 
 function requireNonEmptyRows(rows: readonly unknown[], operation: string): void {
@@ -209,8 +176,7 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
     },
 
     async upsertSubject(input) {
-      const metadata = input.metadata ?? {};
-      requireSubjectManifestEnvelope(metadata);
+      const metadata = validateSubjectMetadataEnvelope(input.metadata ?? {});
 
       const now = nowIso();
       await db.prepare(`
@@ -244,6 +210,7 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
     },
 
     async putSubjectGraph(input) {
+      const graph = validateSubjectGraphEnvelope(input.graph);
       const now = nowIso();
       await db.prepare(`
         insert into subject_graphs (
@@ -257,7 +224,7 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
       `).bind(
         input.deviceId,
         input.subjectId,
-        stringifyJson(input.graph, 'subject_graphs.graph_json'),
+        stringifyJson(graph, 'subject_graphs.graph_json'),
         input.contentHash,
         input.updatedByRunId,
         now,
@@ -274,6 +241,7 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
     },
 
     async putTopicDetails(input) {
+      const details = validateTopicDetailsEnvelope(input.details);
       const now = nowIso();
       await db.prepare(`
         insert into topic_contents (
@@ -290,7 +258,7 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
         input.deviceId,
         input.subjectId,
         input.topicId,
-        stringifyJson(input.details, 'topic_contents.details_json'),
+        stringifyJson(details, 'topic_contents.details_json'),
         input.contentHash,
         input.status,
         input.updatedByRunId,
@@ -310,8 +278,12 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
 
     async upsertTopicCards(input) {
       requireNonEmptyRows(input.cards, 'upsertTopicCards');
+      const cards = input.cards.map((card) => {
+        validateTopicCardRowInvariants(card.difficulty, card.sourceArtifactKind);
+        return { ...card, card: validateTopicCardEnvelope(card.card, card.cardId) };
+      });
       const now = nowIso();
-      await db.batch(input.cards.map((card) => db.prepare(`
+      await db.batch(cards.map((card) => db.prepare(`
         insert into topic_cards (
           device_id, subject_id, topic_id, card_id, card_json, difficulty,
           source_artifact_kind, created_by_run_id, created_at
@@ -344,6 +316,7 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
     },
 
     async putCrystalTrialSet(input) {
+      const questions = validateCrystalTrialQuestionsEnvelope(input.questions);
       const now = nowIso();
       await db.prepare(`
         insert into crystal_trial_sets (
@@ -360,7 +333,7 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
         input.topicId,
         input.targetLevel,
         input.cardPoolHash,
-        stringifyJson(input.questions, 'crystal_trial_sets.questions_json'),
+        stringifyJson(questions, 'crystal_trial_sets.questions_json'),
         input.contentHash,
         input.createdByRunId,
         now,

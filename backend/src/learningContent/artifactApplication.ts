@@ -307,7 +307,10 @@ async function applySubjectGraphEdges(input: ApplyArtifactToLearningContentInput
         .filter((edge): edge is Record<string, unknown> => isRecord(edge) && edge.target === topicId)
         .map((edge) => {
           const source = requireString(edge.source, 'subject-graph-edges.edges[].source');
-          return edge.minLevel === undefined ? source : { topicId: source, minLevel: requirePositiveInteger(edge.minLevel, 'subject-graph-edges.edges[].minLevel') };
+          return {
+            topicId: source,
+            minLevel: edge.minLevel === undefined ? 1 : requirePositiveInteger(edge.minLevel, 'subject-graph-edges.edges[].minLevel'),
+          };
         });
       return { ...node, prerequisites };
     }),

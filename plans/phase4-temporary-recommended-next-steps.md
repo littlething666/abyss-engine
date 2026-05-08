@@ -21,6 +21,7 @@ The previous ordering is still broadly correct, with these updates from the late
 13. **Backend route validation has been extended across additional framework edges.** The same Zod seam now validates run path ids for get/cancel/retry, SSE resume cursors (`Last-Event-ID` / `lastSeq`), artifact read ids, and failure-stats filters before repository calls. `/v1/runs/stats` is mounted before the catch-all run-id route so stats requests cannot be misrouted through `GET /v1/runs/:id`.
 14. **Cloudflare runtime test harness and first D1 proofs have landed.** `backend/vitest.runtime.config.ts` runs `src/runtimeTests/**/*.runtime.test.ts` through `@cloudflare/vitest-pool-workers` against the Worker entrypoint and wrangler bindings. Runtime tests now reset/apply `backend/d1/reset.sql` + `backend/d1/init.sql`, prove real-D1 `atomicSubmitRun` same-key concurrency/idempotency/budget rollback behavior, and prove semantic-keyed event idempotency under concurrent `appendTypedOnce` calls.
 15. **Generation-policy parsing is schema-backed.** `parseGenerationPolicy` now uses the Zod-backed `generationPolicySchema`, still fails with `WorkflowFail('config:invalid')`, normalizes trimmed model IDs, requires the exact nine backend job kinds, rejects unknown fields/nested extras/non-OpenRouter models/non-finite temperatures, and adds `parseGenerationPolicyJson` for backend-owned JSON overrides with no default fallback after invalid config.
+16. **Learning Content Store JSON envelope validation is centralized and enforced at repository boundaries.** `backend/src/learningContent/envelopeSchemas.ts` / `envelopeValidation.ts` now validate subject metadata, subject graphs, topic details, topic card wrappers/invariants, source artifact kinds, and Crystal Trial question wrappers before D1 writes and after D1 JSON reads. Corrupted persisted Learning Content rows now fail through routes as structured `validation:lcs-envelope` errors instead of returning partial/default-compatible payloads. Artifact application tests now run materialized outputs for all currently applied artifact kinds through those LCS validators.
 
 ## Completed to date
 
@@ -51,6 +52,7 @@ The previous ordering is still broadly correct, with these updates from the late
 - Shared backend route validation seam (`backend/src/routes/validation.ts`) with Zod-backed tests for run submission envelopes, run list filters, retry bodies, Crystal Trial read params/query, run path ids, SSE resume cursors, artifact ids, and failure-stats filters. Route tests prove malformed inputs stop before run lookup/workflow dispatch/artifact lookup/stats D1 scans, and that `/v1/runs/stats` routes to the stats handler rather than the generic run-id handler.
 - Cloudflare runtime test harness (`backend/vitest.runtime.config.ts`, `pnpm --filter abyss-durable-orchestrator test:runtime`) with real local D1 schema reset/init helpers and runtime tests for `atomicSubmitRun` concurrency/idempotency/budget rollback plus semantic-keyed event idempotency.
 - Zod-backed backend generation-policy parser and JSON parser with tests for strict job-key coverage, model ID constraints, temperature constraints, nested extra keys, invalid JSON, blank JSON, normalized hashes, and no fallback after invalid backend override.
+- Centralized Learning Content Store envelope schemas and validation at D1 repository read/write boundaries, including route tests proving corrupted persisted manifest, graph, details, cards, and Crystal Trial rows fail loudly with structured `validation:lcs-envelope` errors, plus artifact-application lockstep tests for all materialized artifact kinds.
 
 ## Recommended next steps
 
@@ -59,8 +61,7 @@ The code-review findings are compatible with `plans/durable-workflow-orchestrati
 ### Remaining recommended follow-ups in order of priority (remove items as they are completed)
 
  1. Continue real Cloudflare runtime tests beyond the landed D1/event proofs: Worker route dispatch failure/retry, R2 artifact write/read behavior, Workflow retry/replay faults, cancellation/cache-hit/supersession boundaries.
- 2. Continue validation hardening for Learning Content Store JSON envelopes (generation-policy config parsing is now schema-backed).
- 3. After runtime proof, proceed toward durable-only routing and local-runner/settings legacy deletion.
+ 2. After runtime proof, proceed toward durable-only routing and local-runner/settings legacy deletion.
 
 ### Critical fixes to eliminate now
 
@@ -95,7 +96,7 @@ The code-review findings are compatible with `plans/durable-workflow-orchestrati
 2. **Standardize backend request/config validation — in progress**
    - `backend/src/routes/validation.ts` now covers `POST /v1/runs` intent bodies, retry bodies, run list filters, Crystal Trial read params/query, run path ids for get/cancel/retry, SSE resume cursors, artifact read ids, and failure-stats filters with Zod-backed boundary validation.
    - Generation policy config parsing is now schema-backed and strict, with a backend-owned JSON parser that never falls back to defaults after an invalid override.
-   - **Remaining:** extend the same seam/posture to any newly added route params and bodies, Learning Content Store JSON envelopes, and any future OpenRouter wrapper fields. Validation must continue to fail loudly at the boundary, not normalize ambiguous input downstream.
+   - Learning Content Store JSON envelopes are now Zod-backed at repository read/write boundaries, corrupted-row routes fail with structured `validation:lcs-envelope` errors, and artifact appliers are tested in lockstep against those validators for every currently materialized artifact kind. **Remaining:** keep the same validation posture for any future route params/bodies or OpenRouter wrapper fields. Validation must continue to fail loudly at the boundary, not normalize ambiguous input downstream.
 
 3. **Collapse duplicated OpenRouter request construction without hiding policy — completed**
    - Per-pipeline typed adapters remain, but now route through shared `callOpenRouterChat({ jobKind, modelId, messages, responseFormat, providerHealingRequested, temperature })`.

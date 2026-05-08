@@ -6,6 +6,16 @@ import type { Env } from '../env';
 const DEVICE_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_DEVICE_ID = '00000000-0000-0000-0000-000000000002';
 
+const validSubjectMetadata = {
+  subject: { description: 'Math fundamentals', color: '#38bdf8', geometry: { gridTile: 'sphere' } },
+};
+
+const validSubjectGraph = {
+  subjectId: 'math',
+  title: 'Mathematics',
+  nodes: [{ topicId: 'limits', title: 'Limits', iconName: 'Sigma', tier: 1, prerequisites: [] }],
+};
+
 function deviceRow(deviceId: string) {
   return { id: deviceId, created_at: '2026-05-07T00:00:00Z', last_seen_at: '2026-05-07T00:00:00Z' };
 }
@@ -42,7 +52,7 @@ describe('Learning Content Store routes', () => {
           device_id: DEVICE_ID,
           subject_id: 'math',
           title: 'Mathematics',
-          metadata_json: JSON.stringify({ themeId: 'blue' }),
+          metadata_json: JSON.stringify(validSubjectMetadata),
           content_source: 'generated',
           created_by_run_id: 'run-1',
           created_at: '2026-05-07T00:00:00Z',
@@ -60,7 +70,7 @@ describe('Learning Content Store routes', () => {
           deviceId: DEVICE_ID,
           subjectId: 'math',
           title: 'Mathematics',
-          metadata: { themeId: 'blue' },
+          metadata: validSubjectMetadata,
           contentSource: 'generated',
           createdByRunId: 'run-1',
           createdAt: '2026-05-07T00:00:00Z',
@@ -77,7 +87,7 @@ describe('Learning Content Store routes', () => {
       q({
         device_id: DEVICE_ID,
         subject_id: 'math',
-        graph_json: JSON.stringify({ nodes: [{ id: 'limits' }], edges: [] }),
+        graph_json: JSON.stringify(validSubjectGraph),
         content_hash: 'cnt_graph',
         updated_by_run_id: 'run-graph',
         updated_at: '2026-05-07T00:00:00Z',
@@ -90,7 +100,7 @@ describe('Learning Content Store routes', () => {
     await expect(response.json()).resolves.toMatchObject({
       deviceId: DEVICE_ID,
       subjectId: 'math',
-      graph: { nodes: [{ id: 'limits' }], edges: [] },
+      graph: validSubjectGraph,
       contentHash: 'cnt_graph',
     });
     expect(calls[1].args).toEqual([DEVICE_ID, 'math']);
@@ -236,6 +246,86 @@ describe('Learning Content Store routes', () => {
       code: 'parse:invalid-route-input',
       message: expect.stringContaining('targetLevel'),
     });
+  });
+
+  it.each([
+    {
+      name: 'GET /v1/library/manifest',
+      path: '/v1/library/manifest',
+      row: q([{
+        device_id: DEVICE_ID,
+        subject_id: 'math',
+        title: 'Mathematics',
+        metadata_json: JSON.stringify({ themeId: 'blue' }),
+        content_source: 'generated',
+        created_by_run_id: 'run-1',
+        created_at: '2026-05-07T00:00:00Z',
+        updated_at: '2026-05-07T00:00:00Z',
+      }]),
+    },
+    {
+      name: 'GET /v1/subjects/:subjectId/graph',
+      path: '/v1/subjects/math/graph',
+      row: q({
+        device_id: DEVICE_ID,
+        subject_id: 'math',
+        graph_json: JSON.stringify({ nodes: [{ id: 'limits' }] }),
+        content_hash: 'cnt_graph',
+        updated_by_run_id: 'run-graph',
+        updated_at: '2026-05-07T00:00:00Z',
+      }),
+    },
+    {
+      name: 'GET /v1/subjects/:subjectId/topics/:topicId/details',
+      path: '/v1/subjects/math/topics/limits/details',
+      row: q({
+        device_id: DEVICE_ID,
+        subject_id: 'math',
+        topic_id: 'limits',
+        details_json: JSON.stringify({ topicId: '' }),
+        content_hash: 'cnt_details',
+        status: 'ready',
+        updated_by_run_id: 'run-topic',
+        updated_at: '2026-05-07T00:00:00Z',
+      }),
+    },
+    {
+      name: 'GET /v1/subjects/:subjectId/topics/:topicId/cards',
+      path: '/v1/subjects/math/topics/limits/cards',
+      row: q([{
+        device_id: DEVICE_ID,
+        subject_id: 'math',
+        topic_id: 'limits',
+        card_id: 'card-1',
+        card_json: JSON.stringify({ id: 'other-card' }),
+        difficulty: 2,
+        source_artifact_kind: 'topic-study-cards',
+        created_by_run_id: 'run-cards',
+        created_at: '2026-05-07T00:00:00Z',
+      }]),
+    },
+    {
+      name: 'GET /v1/subjects/:subjectId/topics/:topicId/trials/:targetLevel',
+      path: '/v1/subjects/math/topics/limits/trials/3?cardPoolHash=pool-1',
+      row: q({
+        device_id: DEVICE_ID,
+        subject_id: 'math',
+        topic_id: 'limits',
+        target_level: 3,
+        card_pool_hash: 'pool-1',
+        questions_json: JSON.stringify({ items: [] }),
+        content_hash: 'cnt_trial',
+        created_by_run_id: 'run-trial',
+        created_at: '2026-05-07T00:00:00Z',
+      }),
+    },
+  ])('fails loudly with structured validation code for corrupted persisted rows: $name', async ({ path, row }) => {
+    const { db } = createFakeD1([q(deviceRow(DEVICE_ID)), row]);
+
+    const response = await fetchLearningContent(path, db);
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({ error: 'validation:lcs-envelope' });
   });
 
   it('returns 404 for missing Crystal Trial sets', async () => {

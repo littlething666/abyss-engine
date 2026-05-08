@@ -2,13 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { createLearningContentRepo } from './learningContentRepo';
 import { createFakeD1, q, qErr } from '../testStubs/fakeD1';
 
+const validSubjectMetadata = {
+  subject: { description: 'Math fundamentals', color: '#38bdf8', geometry: { gridTile: 'sphere' } },
+};
+
+const validSubjectGraph = {
+  subjectId: 'math',
+  title: 'Mathematics',
+  nodes: [{ topicId: 'limits', title: 'Limits', iconName: 'Sigma', tier: 1, prerequisites: [] }],
+};
+
 describe('createLearningContentRepo', () => {
   it('loads a per-device manifest from D1 subjects', async () => {
     const { db, calls } = createFakeD1([q([
-      { device_id: 'dev-1', subject_id: 'math', title: 'Mathematics', metadata_json: JSON.stringify({ themeId: 'blue' }), content_source: 'generated', created_by_run_id: 'run-1', created_at: '2026-05-07T00:00:00Z', updated_at: '2026-05-07T00:00:00Z' },
+      { device_id: 'dev-1', subject_id: 'math', title: 'Mathematics', metadata_json: JSON.stringify(validSubjectMetadata), content_source: 'generated', created_by_run_id: 'run-1', created_at: '2026-05-07T00:00:00Z', updated_at: '2026-05-07T00:00:00Z' },
     ])]);
     await expect(createLearningContentRepo(db).getManifest('dev-1')).resolves.toEqual({
-      subjects: [{ deviceId: 'dev-1', subjectId: 'math', title: 'Mathematics', metadata: { themeId: 'blue' }, contentSource: 'generated', createdByRunId: 'run-1', createdAt: '2026-05-07T00:00:00Z', updatedAt: '2026-05-07T00:00:00Z' }],
+      subjects: [{ deviceId: 'dev-1', subjectId: 'math', title: 'Mathematics', metadata: validSubjectMetadata, contentSource: 'generated', createdByRunId: 'run-1', createdAt: '2026-05-07T00:00:00Z', updatedAt: '2026-05-07T00:00:00Z' }],
     });
     expect(calls[0].args).toContain('dev-1');
   });
@@ -39,19 +49,20 @@ describe('createLearningContentRepo', () => {
         contentSource: 'manual',
         createdByRunId: null,
       }),
-    ).rejects.toThrow('subjects.metadata_json.subject must be a JSON object');
+    ).rejects.toThrow('invalid Learning Content Store subjects.metadata_json');
   });
 
   it('reads and writes subject graphs scoped by device and subject', async () => {
     const { db, calls } = createFakeD1([
-      q({ device_id: 'dev-1', subject_id: 'math', graph_json: JSON.stringify({ nodes: [] }), content_hash: 'cnt_graph', updated_by_run_id: 'run-1', updated_at: '2026-05-07T00:00:00Z' }),
+      q({ device_id: 'dev-1', subject_id: 'math', graph_json: JSON.stringify(validSubjectGraph), content_hash: 'cnt_graph', updated_by_run_id: 'run-1', updated_at: '2026-05-07T00:00:00Z' }),
       q(null),
     ]);
     const repo = createLearningContentRepo(db);
-    await expect(repo.getSubjectGraph('dev-1', 'math')).resolves.toMatchObject({ deviceId: 'dev-1', subjectId: 'math', graph: { nodes: [] }, contentHash: 'cnt_graph' });
-    await repo.putSubjectGraph({ deviceId: 'dev-1', subjectId: 'math', graph: { nodes: [{ id: 'n1' }] }, contentHash: 'cnt_next', updatedByRunId: 'run-2' });
+    await expect(repo.getSubjectGraph('dev-1', 'math')).resolves.toMatchObject({ deviceId: 'dev-1', subjectId: 'math', graph: validSubjectGraph, contentHash: 'cnt_graph' });
+    const nextGraph = { ...validSubjectGraph, nodes: [{ topicId: 'n1', title: 'Node 1', iconName: 'Sigma', tier: 1, prerequisites: [] }] };
+    await repo.putSubjectGraph({ deviceId: 'dev-1', subjectId: 'math', graph: nextGraph, contentHash: 'cnt_next', updatedByRunId: 'run-2' });
     expect(calls[0].args).toEqual(['dev-1', 'math']);
-    expect(calls[1].args).toEqual(expect.arrayContaining(['dev-1', 'math', JSON.stringify({ nodes: [{ id: 'n1' }] }), 'cnt_next', 'run-2']));
+    expect(calls[1].args).toEqual(expect.arrayContaining(['dev-1', 'math', JSON.stringify(nextGraph), 'cnt_next', 'run-2']));
   });
 
   it('returns null for missing topic details and propagates D1 errors loudly', async () => {

@@ -16,6 +16,7 @@ import { runEvents } from './routes/runEvents';
 import { artifacts } from './routes/artifacts';
 import { learningContent } from './routes/learningContent';
 import { stats } from './routes/runs.stats';
+import { WorkflowFail } from './lib/workflowErrors';
 
 export { CrystalTrialWorkflow } from './workflows/crystalTrialWorkflow';
 export { TopicExpansionWorkflow } from './workflows/topicExpansionWorkflow';
@@ -54,6 +55,13 @@ v1.route('/', learningContent);
 v1.route('/artifacts', artifacts);
 
 app.route('/v1', v1);
+
+app.onError((error, c) => {
+  if (error instanceof WorkflowFail) {
+    return c.json({ error: error.code, message: error.message }, 500);
+  }
+  throw error;
+});
 
 // ---------------------------------------------------------------------------
 // Catch-all 404

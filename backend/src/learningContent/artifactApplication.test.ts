@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { applyArtifactToLearningContent } from './artifactApplication';
 import type { ILearningContentRepo } from './learningContentRepo';
 import type { LearningContentManifest } from './types';
+import {
+  validateCrystalTrialQuestionsEnvelope,
+  validateSubjectGraphEnvelope,
+  validateTopicCardEnvelope,
+  validateTopicCardRowInvariants,
+  validateTopicDetailsEnvelope,
+} from './envelopeValidation';
 
 function makeRepo(overrides: Partial<ILearningContentRepo> = {}): ILearningContentRepo {
   const manifest: LearningContentManifest = {
@@ -26,13 +33,24 @@ function makeRepo(overrides: Partial<ILearningContentRepo> = {}): ILearningConte
     getManifest: vi.fn(async () => manifest),
     upsertSubject: vi.fn(async () => undefined),
     getSubjectGraph: vi.fn(async () => null),
-    putSubjectGraph: vi.fn(async () => undefined),
+    putSubjectGraph: vi.fn(async (input) => {
+      validateSubjectGraphEnvelope(input.graph);
+    }),
     getTopicDetails: vi.fn(async () => null),
-    putTopicDetails: vi.fn(async () => undefined),
+    putTopicDetails: vi.fn(async (input) => {
+      validateTopicDetailsEnvelope(input.details);
+    }),
     getTopicCards: vi.fn(async () => []),
-    upsertTopicCards: vi.fn(async () => undefined),
+    upsertTopicCards: vi.fn(async (input) => {
+      input.cards.forEach((card) => {
+        validateTopicCardRowInvariants(card.difficulty, card.sourceArtifactKind);
+        validateTopicCardEnvelope(card.card, card.cardId);
+      });
+    }),
     getCrystalTrialSet: vi.fn(async () => null),
-    putCrystalTrialSet: vi.fn(async () => undefined),
+    putCrystalTrialSet: vi.fn(async (input) => {
+      validateCrystalTrialQuestionsEnvelope(input.questions);
+    }),
     ...overrides,
   };
 }
@@ -67,14 +85,17 @@ describe('applyArtifactToLearningContent', () => {
     }));
   });
 
-  it('materializes deck-compatible study cards and omits CLOZE cards from the deck read model', async () => {
+  it.each([
+    'topic-study-cards',
+    'topic-expansion-cards',
+  ] as const)('materializes deck-compatible %s and omits CLOZE cards from the deck read model', async (artifactKind) => {
     const repo = makeRepo();
 
     await applyArtifactToLearningContent({
       learningContent: repo,
       deviceId: 'dev-1',
       runId: 'run-1',
-      artifactKind: 'topic-study-cards',
+      artifactKind,
       snapshot: { subject_id: 'math', topic_id: 'limits' },
       contentHash: 'cnt_cards',
       payload: {
@@ -92,10 +113,36 @@ describe('applyArtifactToLearningContent', () => {
       topicId: 'limits',
       createdByRunId: 'run-1',
       cards: [
-        expect.objectContaining({ cardId: 'flash-1', difficulty: 1, sourceArtifactKind: 'topic-study-cards' }),
-        expect.objectContaining({ cardId: 'mc-1', difficulty: 2, sourceArtifactKind: 'topic-study-cards' }),
+        expect.objectContaining({ cardId: 'flash-1', difficulty: 1, sourceArtifactKind: artifactKind }),
+        expect.objectContaining({ cardId: 'mc-1', difficulty: 2, sourceArtifactKind: artifactKind }),
       ],
     });
+  });
+
+  it.each([
+    'topic-mini-game-category-sort',
+    'topic-mini-game-sequence-build',
+    'topic-mini-game-match-pairs',
+  ] as const)('materializes %s mini-game cards accepted by LCS schemas', async (artifactKind) => {
+    const repo = makeRepo();
+
+    await applyArtifactToLearningContent({
+      learningContent: repo,
+      deviceId: 'dev-1',
+      runId: 'run-1',
+      artifactKind,
+      snapshot: { subject_id: 'math', topic_id: 'limits' },
+      contentHash: 'cnt_game',
+      payload: {
+        cards: [
+          { id: 'game-1', topicId: 'limits', difficulty: 2, content: { gameType: 'category-sort', prompt: 'Sort them.' } },
+        ],
+      },
+    });
+
+    expect(repo.upsertTopicCards).toHaveBeenCalledWith(expect.objectContaining({
+      cards: [expect.objectContaining({ cardId: 'game-1', difficulty: 2, sourceArtifactKind: artifactKind })],
+    }));
   });
 
   it('materializes crystal trial sets under the snapshot target level and card-pool hash', async () => {
@@ -129,6 +176,7 @@ describe('applyArtifactToLearningContent', () => {
     let graph: Record<string, unknown> | null = null;
     const repo = makeRepo({
       putSubjectGraph: vi.fn(async (input) => {
+        validateSubjectGraphEnvelope(input.graph);
         graph = input.graph;
         await putSubjectGraph(input);
       }),
