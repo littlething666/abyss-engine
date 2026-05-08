@@ -66,7 +66,7 @@ describe('tracer', () => {
       deviceId: 'dev-001',
       pipelineKind: 'topic-content',
       stage: 'theory',
-      model: 'openrouter/google/gemini-2.5-flash',
+      model: 'google/gemini-2.5-flash',
       inputHash: 'inp_def456',
       providerHealingRequested: false,
     });
@@ -93,7 +93,7 @@ describe('tracer', () => {
       deviceId: 'dev-001',
       pipelineKind: 'subject-graph',
       stage: 'edges',
-      model: 'openrouter/google/gemini-2.5-flash',
+      model: 'google/gemini-2.5-flash',
       inputHash: 'inp_ghi789',
       providerHealingRequested: true,
     });

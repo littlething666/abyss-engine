@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-const ROOT = process.cwd();
+function resolveBackendRoot(): string {
+  const cwd = process.cwd();
+  if (existsSync(join(cwd, 'wrangler.toml'))) return cwd;
+  if (existsSync(join(cwd, 'backend', 'wrangler.toml'))) return join(cwd, 'backend');
+  throw new Error(`cloudflareNativeBoundary.test: cannot locate backend/wrangler.toml from cwd=${cwd}`);
+}
+
+const BACKEND_ROOT = resolveBackendRoot();
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -23,9 +30,9 @@ function read(paths: string[]): string {
 describe('Cloudflare-native backend boundary', () => {
   it('keeps active backend code free of retired hosted-database SDK and object-storage paths', () => {
     const active = read([
-      ...walk(join(ROOT, 'src')).filter((path) => !path.endsWith('cloudflareNativeBoundary.test.ts')),
-      join(ROOT, 'package.json'),
-      join(ROOT, 'wrangler.toml'),
+      ...walk(join(BACKEND_ROOT, 'src')).filter((path) => !path.endsWith('cloudflareNativeBoundary.test.ts')),
+      join(BACKEND_ROOT, 'package.json'),
+      join(BACKEND_ROOT, 'wrangler.toml'),
     ]);
 
     const forbidden = [
@@ -40,9 +47,9 @@ describe('Cloudflare-native backend boundary', () => {
 
   it('does not restore retired settings tables or coordination bindings for v1', () => {
     const active = read([
-      ...walk(join(ROOT, 'src')).filter((path) => !path.endsWith('cloudflareNativeBoundary.test.ts')),
-      join(ROOT, 'wrangler.toml'),
-      ...walk(join(ROOT, 'd1')),
+      ...walk(join(BACKEND_ROOT, 'src')).filter((path) => !path.endsWith('cloudflareNativeBoundary.test.ts')),
+      join(BACKEND_ROOT, 'wrangler.toml'),
+      ...walk(join(BACKEND_ROOT, 'd1')),
     ]);
 
     const forbidden = [
@@ -55,7 +62,10 @@ describe('Cloudflare-native backend boundary', () => {
   });
 
   it('keeps numbered backend migrations empty before release', () => {
-    const migrationFiles = readdirSync(join(ROOT, 'migrations')).filter((name) => name.endsWith('.sql'));
+    const migrationsDir = join(BACKEND_ROOT, 'migrations');
+    const migrationFiles = existsSync(migrationsDir)
+      ? readdirSync(migrationsDir).filter((name) => name.endsWith('.sql'))
+      : [];
     expect(migrationFiles).toEqual([]);
   });
 });

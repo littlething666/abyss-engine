@@ -20,7 +20,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/**/*.spec.ts', 'workers/**/*.test.ts', 'backend/**/*.test.ts'],
-    exclude: ['**/node_modules/**', '**/e2e/**'],
+    exclude: ['**/node_modules/**', '**/e2e/**', 'backend/src/runtimeTests/**/*.runtime.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -41,6 +41,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
       '@contracts': path.resolve(__dirname, './src/features/generationContracts'),
       'cloudflare:workers': path.resolve(__dirname, './backend/src/testStubs/cloudflareWorkers.ts'),
+      'cloudflare:workflows': path.resolve(__dirname, './backend/src/testStubs/cloudflareWorkflows.ts'),
     },
   },
 });

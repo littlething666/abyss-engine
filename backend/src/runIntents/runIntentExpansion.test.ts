@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_GENERATION_POLICY } from '../generationPolicy/defaultPolicy';
 import { assertNoForbiddenPolicyFields, expandRunIntent } from './runIntentExpansion';
 import type { ILearningContentRepo } from '../learningContent/learningContentRepo';
 import type { LearningContentSubject, TopicCardContent, TopicDetailsContent } from '../learningContent/types';
@@ -137,7 +138,7 @@ describe('expandRunIntent', () => {
       existing_card_ids: ['card-1'],
       provider_healing_requested: true,
     });
-    expect(expanded.snapshot.model_id).toMatch(/^openrouter\//);
+    expect(expanded.snapshot.model_id).toBe(DEFAULT_GENERATION_POLICY.jobs['topic-expansion-cards'].modelId);
     expect(expanded.snapshot.generation_policy_hash).toMatch(/^gpol_[0-9a-f]{64}$/);
   });
 

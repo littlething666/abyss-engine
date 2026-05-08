@@ -18,7 +18,8 @@ const PIPELINE_KIND_VALUES = [
   'subject-graph',
 ] as const satisfies readonly PipelineKind[];
 
-const RUN_LIST_STATUS_VALUES = ['active', 'recent'] as const;
+/** Mirrors `RunListQuery.status` in shared contracts (`src/types/repository.ts`). */
+const RUN_LIST_STATUS_VALUES = ['active', 'recent', 'all'] as const;
 
 const pipelineKindSchema = z.enum(PIPELINE_KIND_VALUES);
 
@@ -129,7 +130,7 @@ export interface ValidatedSubmitRunBody {
 }
 
 export interface ValidatedRunsListQuery {
-  status?: 'active' | 'recent';
+  status?: 'active' | 'recent' | 'all';
   kind?: PipelineKind;
   subjectId?: string;
   topicId?: string;

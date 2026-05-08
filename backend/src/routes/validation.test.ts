@@ -33,6 +33,11 @@ describe('route validation seam', () => {
       value: { status: 'recent', kind: 'crystal-trial', limit: 15 },
     });
 
+    expect(validateRunsListQuery({ status: 'all', limit: '100' })).toEqual({
+      ok: true,
+      value: { status: 'all', limit: 100 },
+    });
+
     const invalidStatus = validateRunsListQuery({ status: 'ready' });
     expect(invalidStatus.ok).toBe(false);
     if (!invalidStatus.ok) {

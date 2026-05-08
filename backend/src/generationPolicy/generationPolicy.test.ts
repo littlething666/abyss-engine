@@ -79,22 +79,28 @@ describe('parseGenerationPolicy', () => {
   });
 
   it('rejects non-finite and non-number temperatures', () => {
-    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/model', temperature: NaN })));
-    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/model', temperature: Infinity })));
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'test-org/test-model', temperature: NaN })));
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'test-org/test-model', temperature: Infinity })));
     expectConfigInvalid(() =>
-      parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/model', temperature: '0.2' })),
+      parseGenerationPolicy(withTheoryJob({ modelId: 'test-org/test-model', temperature: '0.2' })),
     );
   });
 
-  it('rejects model IDs with whitespace, controls, or unsupported providers', () => {
-    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/model extra' })));
-    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/mo\ndel' })));
-    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'anthropic/claude-sonnet' })));
+  it('accepts canonical OpenRouter model ids (provider/model)', () => {
+    const policy = clonePolicy();
+    policy.jobs['topic-theory'] = { modelId: 'anthropic/claude-3.5-sonnet' };
+    expect(parseGenerationPolicy(policy).jobs['topic-theory'].modelId).toBe('anthropic/claude-3.5-sonnet');
+  });
+
+  it('rejects model IDs with whitespace, controls, or missing provider slash', () => {
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'test-org/test-model extra' })));
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'test-org/test-mo\ndel' })));
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'single-segment-model-id' })));
   });
 
   it('rejects extra nested keys under jobs and responseHealing', () => {
     expectConfigInvalid(() =>
-      parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/model', unsupported: true })),
+      parseGenerationPolicy(withTheoryJob({ modelId: 'test-org/test-model', unsupported: true })),
     );
 
     expectConfigInvalid(() =>
@@ -113,7 +119,7 @@ describe('parseGenerationPolicy', () => {
     expectConfigInvalid(() => parseGenerationPolicyJson('null', 'GENERATION_POLICY_JSON'));
     expectConfigInvalid(() =>
       parseGenerationPolicyJson(
-        JSON.stringify({ ...clonePolicy(), jobs: { ...clonePolicy().jobs, unknown: { modelId: 'openrouter/a/b' } } }),
+        JSON.stringify({ ...clonePolicy(), jobs: { ...clonePolicy().jobs, unknown: { modelId: 'vendor/model-id' } } }),
         'GENERATION_POLICY_JSON',
       ),
     );
@@ -149,7 +155,7 @@ describe('resolveGenerationJobPolicy', () => {
       ...DEFAULT_GENERATION_POLICY,
       jobs: {
         ...DEFAULT_GENERATION_POLICY.jobs,
-        'crystal-trial': { modelId: 'openrouter/anthropic/claude-sonnet-4.5' },
+        'crystal-trial': { modelId: 'anthropic/claude-sonnet-4.5' },
       },
     });
 

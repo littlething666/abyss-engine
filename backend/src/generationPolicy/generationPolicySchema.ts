@@ -3,12 +3,13 @@ import { BACKEND_GENERATION_JOB_KINDS } from './types';
 
 export const generationJobPolicySchema = z
   .object({
+    /** OpenRouter chat model id: `provider/model` (e.g. `google/gemini-2.5-flash`). Provider field is `openrouter`. */
     modelId: z
       .string()
       .trim()
       .min(1)
       .max(256)
-      .regex(/^openrouter\/[^\s/]+\/[^\s]+$/),
+      .regex(/^[^\s/]+\/[^\s]+$/),
     temperature: z.number().finite().min(0).max(2).optional(),
   })
   .strict();

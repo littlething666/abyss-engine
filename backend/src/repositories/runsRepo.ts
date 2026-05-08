@@ -240,6 +240,7 @@ export function createRunsRepo(db: D1Database): IRunsRepo {
       const binds: unknown[] = [deviceId];
       let order = 'created_at desc';
 
+      // `active` / `recent` narrow lifecycle; `all` or omitted → full device history (created_at desc).
       if (opts.status === 'active') {
         clauses.push("status in ('queued','planning','generating_stage','parsing','validating','persisting')");
       } else if (opts.status === 'recent') {

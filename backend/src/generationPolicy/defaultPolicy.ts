@@ -1,6 +1,6 @@
 import type { BackendGenerationJobKind, GenerationPolicy } from './types';
 
-const DEFAULT_OPENROUTER_PIPELINE_MODEL = 'openrouter/google/gemini-2.5-flash';
+const DEFAULT_OPENROUTER_PIPELINE_MODEL = 'google/gemini-2.5-flash';
 
 const DEFAULT_JOB_POLICY: Record<BackendGenerationJobKind, { modelId: string; temperature?: number }> = {
   'subject-graph-topics': { modelId: DEFAULT_OPENROUTER_PIPELINE_MODEL, temperature: 0.2 },

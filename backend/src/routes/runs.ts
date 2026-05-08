@@ -253,8 +253,9 @@ runs.post('/', async (c) => {
 /**
  * GET /v1/runs — list runs for the authenticated device.
  *
- * Phase 3.6 Step 2: `?status=active` excludes terminal `ready` runs.
- * Only truly in-flight runs (queued → persisting) are returned.
+ * Phase 3.6 Step 2: `?status=active` excludes terminal `ready` runs (in-flight only).
+ * `?status=recent` lists terminal runs by finished time; `?status=all` lists both,
+ * ordered by `created_at` desc (matches `RunListQuery` in `repository.ts`).
  */
 runs.get('/', async (c) => {
   const deviceId = c.get('deviceId');

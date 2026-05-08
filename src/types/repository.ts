@@ -217,7 +217,7 @@ export interface JobSnapshot {
   /** Set when this job is a retry of an earlier job in the same lineage. */
   retryOf?: string;
   inputHash: string;
-  /** Resolved model id at job start (e.g. `'openrouter/qwen/qwen3-...'`). */
+  /** Resolved model id at job start (OpenRouter `provider/model`, e.g. `'google/gemini-2.5-flash'`). */
   model: string;
   /** Free-form metadata bag (`providerHealingRequested`, `structuredOutputMode`, etc.). */
   metadata?: Record<string, unknown>;

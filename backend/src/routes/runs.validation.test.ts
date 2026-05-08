@@ -47,6 +47,21 @@ describe('run route validation', () => {
     expect(calls[0].sql).toContain('insert into devices');
   });
 
+  it('accepts status=all on GET /v1/runs (observeRun hydration)', async () => {
+    const { db, calls } = createFakeD1([q(deviceRow()), q([])]);
+
+    const response = await app.fetch(
+      new Request('https://fakehost/v1/runs?status=all&limit=100', { headers: headers() }),
+      env(db),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ runs: [] });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].sql).toContain('insert into devices');
+    expect(calls[1].sql.toLowerCase()).toContain('select * from runs');
+  });
+
   it('rejects client-built snapshots at POST /v1/runs', async () => {
     const { db, calls } = createFakeD1([q(deviceRow())]);
 

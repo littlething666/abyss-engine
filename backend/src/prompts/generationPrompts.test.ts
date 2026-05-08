@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -39,6 +40,8 @@ describe('backend generation prompt modules', () => {
     expect(messages).toHaveLength(2);
     expect(messages[0].content).toContain('Total topics required: 12');
     expect(messages[0].content).toContain('vectors and matrices');
+    expect(messages[0].content).toContain('Allowed topic iconName values:');
+    expect(messages[0].content).toContain('chart-line');
     expect(messages[1].content).toContain('emphasize geometry');
   });
 
@@ -143,7 +146,7 @@ describe('backend generation prompt modules', () => {
 
 describe('backend workflow prompt boundary', () => {
   it('keeps durable workflow prompt construction behind backend prompt modules', () => {
-    const workflowDir = join(process.cwd(), 'src/workflows');
+    const workflowDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'workflows');
     const workflowSources = readdirSync(workflowDir)
       .filter((file) => file.endsWith('Workflow.ts'))
       .map((file) => readFileSync(join(workflowDir, file), 'utf8'));

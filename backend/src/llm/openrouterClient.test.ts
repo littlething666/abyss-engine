@@ -27,7 +27,7 @@ function makeResponseFormat(name: string, schema: Record<string, unknown>) {
 }
 
 const testArgs = {
-  modelId: 'openrouter/google/gemini-2.5-flash',
+  modelId: 'google/gemini-2.5-flash',
   messages: [{ role: 'user', content: 'Generate trial questions.' }],
   responseFormat: makeResponseFormat('crystal_trial', { type: 'object', properties: { questions: { type: 'array' } } }),
   providerHealingRequested: true,
@@ -199,7 +199,7 @@ describe('callCrystalTrial', () => {
 // ── Phase 2: Topic Expansion caller ──────────────────────────────
 describe('callTopicExpansion', () => {
   const expansionArgs = {
-    modelId: 'openrouter/google/gemini-2.5-flash',
+    modelId: 'google/gemini-2.5-flash',
     messages: [{ role: 'user', content: 'Generate expansion cards.' }],
     responseFormat: makeResponseFormat('topic_expansion', { type: 'object', properties: { cards: { type: 'array' } } }),
     providerHealingRequested: true,
@@ -239,7 +239,7 @@ describe('callTopicExpansion', () => {
 // ── Phase 2: Subject Graph caller ──────────────────────────────────
 describe('callSubjectGraph', () => {
   const sgArgs = {
-    modelId: 'openrouter/google/gemini-2.5-flash',
+    modelId: 'google/gemini-2.5-flash',
     messages: [{ role: 'user', content: 'Generate topic lattice.' }],
     responseFormat: makeResponseFormat('subject_graph', { type: 'object', properties: { topics: { type: 'array' } } }),
     providerHealingRequested: true,
@@ -276,7 +276,7 @@ describe('callSubjectGraph', () => {
 // ── Phase 2: Topic Content caller ──────────────────────────────────
 describe('callTopicContent', () => {
   const tcArgs = {
-    modelId: 'openrouter/google/gemini-2.5-flash',
+    modelId: 'google/gemini-2.5-flash',
     messages: [{ role: 'user', content: 'Generate theory.' }],
     responseFormat: makeResponseFormat('topic_content_theory', { type: 'object', properties: { coreConcept: { type: 'string' } } }),
     providerHealingRequested: true,

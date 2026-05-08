@@ -4,6 +4,9 @@
 #   OPENROUTER_API_KEY      — OpenRouter API key for LLM calls
 # D1/R2:
 #   Create/bind the database and bucket named below before deployment.
+#   R2 (matches [[r2_buckets]] bucket_name): pnpm r2:bucket:create
+#   Verify: pnpm r2:bucket:info | pnpm r2:buckets:list
+#   From repo root: pnpm backend:r2:bucket:create (same for :info / :list).
 
 name = "abyss-durable-orchestrator"
 main = "src/index.ts"

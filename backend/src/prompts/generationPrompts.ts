@@ -1,4 +1,7 @@
-import type { MiniGamePipelineKind } from '../contracts/generationContracts';
+import {
+  SEMANTIC_TOPIC_ICON_NAMES_ALLOWLIST,
+  type MiniGamePipelineKind,
+} from '../contracts/generationContracts';
 
 export type PromptMessage = { role: 'system' | 'user'; content: string };
 
@@ -101,6 +104,13 @@ export function buildSubjectGraphTopicsMessages(snapshot: Record<string, unknown
     `Total topics required: ${totalTiers * topicsPerTier}`,
     '',
     'Each topic must have topicId, title, iconName, tier, and learningObjective. Use stable kebab-case topicId values.',
+    '',
+    'Topic iconName rules:',
+    '- Each topic iconName must be copied verbatim from the allowed list below (exact spelling and hyphenation).',
+    '- Do not invent Lucide icon names or pick variants that are not listed.',
+    '',
+    'Allowed topic iconName values:',
+    formatList([...SEMANTIC_TOPIC_ICON_NAMES_ALLOWLIST]),
   ].join('\n');
 
   return [
