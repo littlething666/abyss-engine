@@ -30,6 +30,7 @@ After Phase 4:
 6. **Cloudflare infrastructure split is locked.** Workflows own durable execution, D1 owns queryable run/job/event/usage/artifact metadata state, R2 owns artifact/checkpoint blobs, and Durable Objects are optional coordination infrastructure only. See `docs/infrastructure-decisions.md`.
 7. **R2 stores artifact bodies and checkpoints.** Supabase Storage is not part of the Phase 4 target. D1 keeps the `artifacts` metadata/cache index; JSON artifact envelopes and stage checkpoints live in R2.
 8. **Backend generation settings are removed.** Pipeline model policy and response healing are backend-owned policy, not persisted device settings. If future product settings need backend persistence, D1 is their queryable store; generation-pipeline policy stays backend configuration.
+9. **Subject Graph Generation publishes only complete subjects.** The backend creates generated subjects, but Learning Content Store reads must not expose a new or replacement subject until both Topic Lattice generation and Prerequisite Edge wiring complete and the final Subject Graph is published. Stage A lattice artifacts/checkpoints are durable workflow state, not partial Learning Content publication.
 
 ## Compliance, Risk & Drift Assessment
 

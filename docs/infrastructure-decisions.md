@@ -102,6 +102,12 @@ Workflows can persist step state and recover across failures, but the UI should 
 
 Workflow steps must be granular and idempotent. Avoid side effects outside `step.do`; steps may retry or workflow engine execution may restart. Persisted run events use D1-level semantic idempotency: `events.semantic_key` is unique per `run_id`, and Workflow code emits deterministic semantic keys for status, stage-progress, artifact-ready, and terminal events through `appendOnce` / `appendTypedOnce`. Artifact writes, checkpoints, Learning Content Store application, cache-hit materialization, token accounting, and terminal writes now sit behind named Workflow steps; new side effects must follow the same deterministic-step and natural-upsert/idempotency posture and be covered by Cloudflare runtime replay tests.
 
+## Learning Content Publication Boundary
+
+Subject Graph Generation is a backend-owned create-and-publish workflow. The Topic Lattice stage may persist durable artifacts and checkpoints, but it must not publish a client-visible Subject or partial Subject Graph. Learning Content Store reads expose generated subjects only after the backend has completed prerequisite-edge wiring and published a complete Subject, Subject Graph, and topic stubs. A Stage A lattice cache hit can resume generation, but it cannot be treated as a completed subject-graph run. Regenerating an existing subject keeps the previously published graph visible until the replacement graph publish step succeeds. This decision is recorded in [ADR 0001](./adr/0001-subject-graph-publication-boundary.md).
+
+Learning Content ownership remains scoped by `device_id` for anonymous devices. Future authentication tightens this same read/write boundary to user identity; it must not introduce cross-device subject lookup as a recovery mechanism for missing rows.
+
 ## Bottom Line
 
 Do not choose between Durable Objects and R2. They solve different problems:
