@@ -1,6 +1,6 @@
 import type { AtomicSubmitRunInput } from '../repositories/runsRepo';
 
-export const RUNTIME_DEVICE_ID = 'runtime-device-0001';
+export const RUNTIME_DEVICE_ID = '00000000-0000-4000-8000-000000000001';
 
 export async function seedRuntimeDevice(db: D1Database, deviceId = RUNTIME_DEVICE_ID): Promise<void> {
   const now = new Date().toISOString();
