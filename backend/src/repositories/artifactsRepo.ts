@@ -31,6 +31,7 @@ export interface IArtifactsRepo {
   putStorage(input: ArtifactStoragePayload, contentHash: string, schemaVersion: number, runId: string): Promise<string>;
   getStorage(storageKey: string): Promise<unknown>;
   get(artifactId: string): Promise<ArtifactRow | null>;
+  byRun(runId: string): Promise<ArtifactRow[]>;
 }
 
 export function createArtifactsRepo(db: D1Database, objectStore?: ArtifactObjectStore): IArtifactsRepo {
@@ -99,6 +100,13 @@ export function createArtifactsRepo(db: D1Database, objectStore?: ArtifactObject
 
     async get(artifactId) {
       return await db.prepare('select * from artifacts where id = ?').bind(artifactId).first<ArtifactRow>();
+    },
+
+    async byRun(runId) {
+      const { results } = await db.prepare(`
+        select * from artifacts where created_by_run_id = ? order by created_at asc
+      `).bind(runId).all<ArtifactRow>();
+      return results ?? [];
     },
   };
 }

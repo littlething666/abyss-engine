@@ -1,3 +1,25 @@
+## Implementation status — 2026-05-08
+
+Completed in backend Phase 4 observability pass:
+
+- Enabled Cloudflare Workers Logs in `backend/wrangler.toml` via `[observability]`.
+- Added shared structured JSON logging (`backend/src/observability/logger.ts`) and replaced ad hoc prefixed console logs in backend routes, middleware, budget guard, SSE, tracer, and workflow utility paths.
+- Changed LLM tracing to emit `llm.call.start` and `llm.call.end` JSON log objects with queryable `runId`, `deviceId`, `pipelineKind`, `stage`, `traceId`, model/policy/schema/input metadata, duration, status, error fields, and token counts.
+- Split Crystal Trial and Topic Expansion provider-call timing from parse/validate timing by using separate Workflow steps (`generate`, `parse`, `validate`) instead of `generate:validated`.
+- Added `observedStep` helper for future workflow step instrumentation.
+- Added D1 job-span recording for LLM stages. Staged workflows (`subject-graph`, `topic-content`) link `stage_checkpoints.job_id` and mark checkpoints failed on staged LLM failure.
+- Added redacted R2 failure debug bundle writing and call sites in workflow terminal failure blocks.
+- Added `GET /v1/runs/:id/debug` for same-device D1-backed operator debugging.
+- Updated repository seams for run jobs, artifact metadata by run, and checkpoint job linkage.
+
+Remaining follow-ups:
+
+- Generalize separate provider/parse/validate spans in `subject-graph` and `topic-content`; their `runStage` helpers still wrap provider, parse, and semantic validation inside one `generate:<stage>` Workflow step for replay simplicity.
+- Expand `observedStep` usage beyond the helper definition once step-noise budgets and dashboard naming are settled.
+- Add environment-specific production sampling (`[env.production.observability]`) after deployment traffic characteristics are known.
+- Add privileged/local-only access to R2 debug bundle bodies if needed; the current endpoint exposes only redacted D1 data and the bundle key.
+- Add dashboards/alerts around `pipelineKind`, `stage`, `errorCode`, `model`, `generationPolicyHash`, and stuck active runs.
+
 ## Review summary
 
 The backend already has a strong durability base for observability: `runs`, `jobs`, `events`, `stage_checkpoints`, `artifacts`, and `usage_counters` are present in D1; R2 is explicitly intended for artifacts/checkpoints/raw model outputs/replay bundles; workflows append typed run events; SSE can replay and live-tail persisted events; and there is an existing LLM tracer that emits JSON-ish traces to console.

@@ -14,6 +14,7 @@
  */
 
 import type { PipelineKind } from '../repositories/types';
+import { createLogger } from './logger';
 
 // ---------------------------------------------------------------------------
 // Trace event types
@@ -73,12 +74,12 @@ export interface LlmCallStart {
 
 /**
  * Tracer factory. Returns an object that starts a trace and then finalizes
- * it with success or failure. Traces are always emitted to console.log as
- * structured JSON.
+ * it with success or failure. Traces are always emitted through the shared
+ * logger as structured JSON objects.
  */
 export function createTracer() {
   function startTrace(start: LlmCallStart): LlmCallTrace {
-    return {
+    const trace: LlmCallTrace = {
       traceId: crypto.randomUUID(),
       runId: start.runId,
       deviceId: start.deviceId,
@@ -98,6 +99,24 @@ export function createTracer() {
       usage: null,
       durationMs: null,
     };
+
+    createLogger({
+      traceId: trace.traceId,
+      runId: trace.runId,
+      deviceId: trace.deviceId,
+      pipelineKind: trace.pipelineKind,
+      stage: trace.stage,
+    }).info('llm.call.start', {
+      model: trace.model,
+      generationPolicyHash: trace.generationPolicyHash,
+      promptVersion: trace.promptVersion,
+      schemaVersion: trace.schemaVersion,
+      inputHash: trace.inputHash,
+      providerHealingRequested: trace.providerHealingRequested,
+      startedAt: trace.startedAt,
+    });
+
+    return trace;
   }
 
   function finalizeTrace(trace: LlmCallTrace, success: boolean, opts?: {
@@ -119,9 +138,30 @@ export function createTracer() {
       };
     }
 
-    // Emit as structured JSON to stdout (Cloudflare logpush / tail workflow target).
-    // Prefix with [llm-trace] for easy filtering in log dashboards.
-    console.log(`[llm-trace] ${JSON.stringify(trace)}`);
+    createLogger({
+      traceId: trace.traceId,
+      runId: trace.runId,
+      deviceId: trace.deviceId,
+      pipelineKind: trace.pipelineKind,
+      stage: trace.stage,
+    }).info('llm.call.end', {
+      model: trace.model,
+      generationPolicyHash: trace.generationPolicyHash,
+      promptVersion: trace.promptVersion,
+      schemaVersion: trace.schemaVersion,
+      inputHash: trace.inputHash,
+      providerHealingRequested: trace.providerHealingRequested,
+      startedAt: trace.startedAt,
+      finishedAt: trace.finishedAt,
+      success: trace.success,
+      errorCode: trace.errorCode,
+      errorMessage: trace.errorMessage,
+      usage: trace.usage,
+      durationMs: trace.durationMs,
+      tokensIn: trace.usage?.promptTokens ?? null,
+      tokensOut: trace.usage?.completionTokens ?? null,
+      totalTokens: trace.usage?.totalTokens ?? null,
+    });
   }
 
   return { startTrace, finalizeTrace };

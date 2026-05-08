@@ -13,7 +13,7 @@ import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:work
 import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { callTopicExpansion } from '../llm/openrouterClient';
-import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
+import { traceLlmCall, recordTokensRobust, recordLlmJob } from './shared/workflowObservability';
 import {
   WORKFLOW_LLM_STEP_RETRY,
   WORKFLOW_STORAGE_STEP_RETRY,
@@ -43,6 +43,8 @@ import {
   buildRunCancelledEvent,
 } from '../contracts/typedEvents';
 import type { Env } from '../env';
+import { createLogger } from '../observability/logger';
+import { writeRunDebugBundle } from '../observability/debugBundle';
 
 // ---------------------------------------------------------------------------
 // Step return shapes
@@ -89,11 +91,14 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
   ): Promise<void> {
     const { runId, deviceId } = event.payload;
     const repos = makeRepos(this.env);
+    const logger = createLogger({ runId, deviceId, pipelineKind: 'topic-expansion', workflowName: 'topic-expansion-workflow' });
+    logger.info('workflow.start');
 
     const checkCancel = async (boundary: string) => {
       const reason = await repos.runs.cancelRequested(runId);
       if (reason) {
         await step.do(`cancel:${boundary}`, WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+          logger.info('workflow.terminal.cancelled', { stage: boundary, reason });
           await repos.runs.markCancelled(runId);
           await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('cancelled'),
             buildRunCancelledEvent(boundary, reason),
@@ -165,6 +170,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
             }),
           );
           await repos.runs.markReady(runId);
+          logger.info('workflow.terminal.ready');
           await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
         });
         return;
@@ -192,17 +198,16 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
 
       let genResult: ValidatedGenerateResult;
       try {
-        genResult = (await step.do(
-          'generate:validated',
+        const raw = (await step.do(
+          'generate',
           WORKFLOW_LLM_STEP_RETRY,
-          // @ts-expect-error parsed JSON payload is serializable at runtime but typed as Record<string, unknown>.
-          async (): Promise<ValidatedGenerateResult> => {
+          async (): Promise<GenerateResult> => {
             await repos.runs.transition(runId, 'generating_stage');
             await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('generating_stage', 'generate'),
               buildRunStatusEvent('generating_stage'),
             );
 
-            const raw = await callTopicExpansion(
+            return await callTopicExpansion(
               {
                 modelId: generationPolicy.modelId,
                 messages: buildTopicExpansionMessages(snapshot),
@@ -211,39 +216,48 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
               },
               this.env,
             );
-
-            await repos.runs.transition(runId, 'parsing');
-            await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('parsing', 'parse'),
-              buildRunStatusEvent('parsing'),
-            );
-            const parseResult = strictParseArtifact('topic-expansion-cards', raw.text);
-            if (!parseResult.ok) {
-              throw new WorkflowFail(parseResult.failureCode, parseResult.message);
-            }
-
-            await repos.runs.transition(runId, 'validating');
-            await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('validating', 'validate'),
-              buildRunStatusEvent('validating'),
-            );
-            const existingStems = Array.isArray(snapshot.existing_concept_stems)
-              ? (snapshot.existing_concept_stems as string[])
-              : undefined;
-            const ctx = existingStems ? { existingConceptStems: existingStems } : undefined;
-            const result = semanticValidateArtifact('topic-expansion-cards', parseResult.payload, ctx);
-            if (!result.ok) {
-              throw new WorkflowFail(result.failureCode, result.message ?? 'semantic validation failed');
-            }
-
-            return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
           },
-        )) as ValidatedGenerateResult;
-        llmTrace.finalizeSuccess(genResult.usage);
+        )) as GenerateResult;
+        const trace = llmTrace.finalizeSuccess(raw.usage);
+        await recordLlmJob({ repos, runId, pipelineKind: 'topic-expansion', stage: 'generate', inputHash: _inputHash, model: generationPolicy.modelId, status: 'success', trace });
+
+        // @ts-expect-error Workflow Serializable cannot express validated JSON payloads typed as unknown.
+        const parseResult = (await step.do('parse', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+          await repos.runs.transition(runId, 'parsing');
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('parsing', 'parse'),
+            buildRunStatusEvent('parsing'),
+          );
+          const parsedResult = strictParseArtifact('topic-expansion-cards', raw.text);
+          if (!parsedResult.ok) {
+            throw new WorkflowFail(parsedResult.failureCode, parsedResult.message);
+          }
+          return parsedResult;
+        })) as { ok: true; payload: unknown };
+
+        // @ts-expect-error Workflow Serializable cannot express validated JSON payloads typed as Record<string, unknown>.
+        const parsedPayload = (await step.do('validate', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+          await repos.runs.transition(runId, 'validating');
+          await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('validating', 'validate'),
+            buildRunStatusEvent('validating'),
+          );
+          const existingStems = Array.isArray(snapshot.existing_concept_stems)
+            ? (snapshot.existing_concept_stems as string[])
+            : undefined;
+          const ctx = existingStems ? { existingConceptStems: existingStems } : undefined;
+          const result = semanticValidateArtifact('topic-expansion-cards', parseResult.payload, ctx);
+          if (!result.ok) {
+            throw new WorkflowFail(result.failureCode, result.message ?? 'semantic validation failed');
+          }
+          return parseResult.payload as Record<string, unknown>;
+        })) as Record<string, unknown>;
+
+        genResult = { ...raw, parsedPayload };
       } catch (err) {
-        if (err instanceof WorkflowFail) {
-          llmTrace.finalizeFailure(err.code, err.message);
-        } else {
+        if (!llmTrace.trace.finishedAt) {
+          const code = err instanceof WorkflowFail ? err.code : 'llm:upstream-5xx';
           const msg = err instanceof Error ? err.message : String(err);
-          llmTrace.finalizeFailure('llm:upstream-5xx', msg);
+          const trace = llmTrace.finalizeFailure(code, msg);
+          await recordLlmJob({ repos, runId, pipelineKind: 'topic-expansion', stage: 'generate', inputHash: _inputHash, model: generationPolicy.modelId, status: 'failed', trace, errorCode: code, errorMessage: msg });
         }
         throw err;
       }
@@ -298,6 +312,7 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
           }),
         );
         await repos.runs.markReady(runId);
+        logger.info('workflow.terminal.ready');
         await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
       });
     } catch (err) {
@@ -305,6 +320,8 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
       const failure = classifyWorkflowTerminalError(err);
       await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
         await repos.runs.markFailed(runId, failure.code, failure.message);
+        logger.error('workflow.terminal.failed', { errorCode: failure.code, errorMessage: failure.message });
+        await writeRunDebugBundle({ env: this.env, repos, runId, deviceId, failure, logger });
         await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
           buildRunFailedEvent(failure.code, failure.message),
         );

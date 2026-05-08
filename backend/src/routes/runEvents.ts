@@ -14,6 +14,7 @@ import { makeRepos } from '../repositories';
 import { dbStatusToTransport, ACTIVE_TRANSPORT_STATUSES } from '../contracts/statusMapper';
 import { validateRunEventsReadInput } from './validation';
 import type { Env } from '../env';
+import { createLogger, errorFields } from '../observability/logger';
 
 /** Poll + keepalive interval for active runs (ms). */
 const POLL_INTERVAL_MS = 2000;
@@ -40,6 +41,7 @@ runEvents.get('/:id/events', async (c) => {
   }
   const { runId, lastSeq } = input.value;
   const repos = makeRepos(c.env);
+  const logger = createLogger({ deviceId, runId });
 
   // Verify the run belongs to this device.
   let run;
@@ -98,7 +100,7 @@ runEvents.get('/:id/events', async (c) => {
             }
           }
         } catch (err) {
-          console.error(`[runEvents] replay error for ${runId}:`, err);
+          logger.error('run_events.replay.failure', errorFields(err));
         }
 
         // ── 2. Check if the run is already terminal ──
@@ -155,7 +157,7 @@ runEvents.get('/:id/events', async (c) => {
               return;
             }
           } catch (err) {
-            console.error(`[runEvents] poll error for ${runId}:`, err);
+            logger.error('run_events.poll.failure', errorFields(err));
             // Don't close on transient errors — keep trying.
           }
         };
@@ -179,7 +181,7 @@ runEvents.get('/:id/events', async (c) => {
         void poll();
 
       } catch (err) {
-        console.error(`[runEvents] stream error for ${runId}:`, err);
+        logger.error('run_events.stream.failure', errorFields(err));
         if (!closed) {
           try {
             controller.error(err);

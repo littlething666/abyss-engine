@@ -12,7 +12,7 @@ import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:work
 import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
 import { callSubjectGraph } from '../llm/openrouterClient';
-import { traceLlmCall, recordTokensRobust } from './shared/workflowObservability';
+import { traceLlmCall, recordTokensRobust, recordLlmJob } from './shared/workflowObservability';
 import {
   WORKFLOW_LLM_STEP_RETRY,
   WORKFLOW_STORAGE_STEP_RETRY,
@@ -54,6 +54,8 @@ import {
 } from '../contracts/typedEvents';
 import type { Env } from '../env';
 import type { ArtifactKind } from '../contracts/generationContracts';
+import { createLogger } from '../observability/logger';
+import { writeRunDebugBundle } from '../observability/debugBundle';
 
 // ---------------------------------------------------------------------------
 // Step return shapes
@@ -145,14 +147,24 @@ async function runStage(
       // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
       () => exec(generationPolicy),
     )) as GenerateResult & { parsedPayload: Record<string, unknown> };
-    llmTrace.finalizeSuccess(result.usage);
-  } catch (err) {
-    if (err instanceof WorkflowFail) {
-      llmTrace.finalizeFailure(err.code, err.message);
-    } else {
-      const msg = err instanceof Error ? err.message : String(err);
-      llmTrace.finalizeFailure('llm:upstream-5xx', msg);
+    const trace = llmTrace.finalizeSuccess(result.usage);
+    const jobId = await recordLlmJob({ repos, runId, pipelineKind: 'subject-graph', stage, inputHash: _inputHash, model: generationPolicy.modelId, status: 'success', trace });
+    if (jobId) {
+      await repos.stageCheckpoints.linkJob(runId, stage, jobId);
     }
+  } catch (err) {
+    const code = err instanceof WorkflowFail ? err.code : 'llm:upstream-5xx';
+    const msg = err instanceof Error ? err.message : String(err);
+    const trace = llmTrace.finalizeFailure(code, msg);
+    const jobId = await recordLlmJob({ repos, runId, pipelineKind: 'subject-graph', stage, inputHash: _inputHash, model: generationPolicy.modelId, status: 'failed', trace, errorCode: code, errorMessage: msg });
+    if (jobId) {
+      await repos.stageCheckpoints.linkJob(runId, stage, jobId).catch(() => undefined);
+    }
+    await repos.stageCheckpoints.markFailed(runId, stage, code, msg).catch((checkpointErr) => {
+      createLogger({ runId, deviceId, pipelineKind: 'subject-graph', stage }).warn('stage_checkpoint.mark_failed.failed', {
+        errorMessage: checkpointErr instanceof Error ? checkpointErr.message : String(checkpointErr),
+      });
+    });
     throw err;
   }
 
@@ -202,11 +214,14 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
   ): Promise<void> {
     const { runId, deviceId } = event.payload;
     const repos = makeRepos(this.env);
+    const logger = createLogger({ runId, deviceId, pipelineKind: 'subject-graph', workflowName: 'subject-graph-workflow' });
+    logger.info('workflow.start');
 
     const checkCancel = async (boundary: string) => {
       const reason = await repos.runs.cancelRequested(runId);
       if (reason) {
         await step.do(`cancel:${boundary}`, WORKFLOW_TERMINAL_STEP_RETRY, async () => {
+          logger.info('workflow.terminal.cancelled', { stage: boundary, reason });
           await repos.runs.markCancelled(runId);
           await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('cancelled'),
             buildRunCancelledEvent(boundary, reason),
@@ -512,6 +527,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
 
       await step.do('ready', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
         await repos.runs.markReady(runId);
+        logger.info('workflow.terminal.ready');
         await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('completed'), buildRunCompletedEvent());
       });
     } catch (err) {
@@ -519,6 +535,8 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
       const failure = classifyWorkflowTerminalError(err);
       await step.do('fail', WORKFLOW_TERMINAL_STEP_RETRY, async () => {
         await repos.runs.markFailed(runId, failure.code, failure.message);
+        logger.error('workflow.terminal.failed', { errorCode: failure.code, errorMessage: failure.message });
+        await writeRunDebugBundle({ env: this.env, repos, runId, deviceId, failure, logger });
         await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowTerminalEventKey('failed'),
           buildRunFailedEvent(failure.code, failure.message),
         );

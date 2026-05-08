@@ -71,6 +71,7 @@ export interface IRunsRepo {
   ): Promise<EventRow>;
   eventsAfter(runId: string, deviceId: string, lastSeq: number): Promise<EventRow[]>;
   insertJob(job: Omit<JobRow, 'id'>): Promise<JobRow>;
+  jobsByRun(runId: string): Promise<JobRow[]>;
 }
 
 function runFromRow(row: RawRunRow): RunRow {
@@ -427,6 +428,13 @@ export function createRunsRepo(db: D1Database): IRunsRepo {
       ).first<RawJobRow>();
       if (!row) throw new Error('D1 runs.insertJob: failed to return job row');
       return jobFromRow(row);
+    },
+
+    async jobsByRun(runId) {
+      const { results } = await db.prepare(`
+        select * from jobs where run_id = ? order by started_at asc, stage asc
+      `).bind(runId).all<RawJobRow>();
+      return (results ?? []).map(jobFromRow);
     },
   };
 }

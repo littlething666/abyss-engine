@@ -7,6 +7,7 @@
 
 import { utcDay } from '../repositories/usageCountersRepo';
 import type { PipelineKind } from '../repositories/types';
+import { createLogger, errorFields } from '../observability/logger';
 
 export const PIPELINE_BUDGET_CAPS: Record<
   PipelineKind,
@@ -61,7 +62,7 @@ export async function assertBelowDailyCap(
       message: `daily ${kind} run or token cap exceeded`,
     };
   } catch (err) {
-    console.error('[budgetGuard] D1 budget reservation failed:', err);
+    createLogger({ deviceId, pipelineKind: kind }).error('budget.reservation.failed', errorFields(err));
     return {
       ok: false,
       code: 'budget:over-cap',

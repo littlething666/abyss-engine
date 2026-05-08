@@ -102,6 +102,20 @@ Workflows can persist step state and recover across failures, but the UI should 
 
 Workflow steps must be granular and idempotent. Avoid side effects outside `step.do`; steps may retry or workflow engine execution may restart. Persisted run events use D1-level semantic idempotency: `events.semantic_key` is unique per `run_id`, and Workflow code emits deterministic semantic keys for status, stage-progress, artifact-ready, and terminal events through `appendOnce` / `appendTypedOnce`. Artifact writes, checkpoints, Learning Content Store application, cache-hit materialization, token accounting, and terminal writes now sit behind named Workflow steps; new side effects must follow the same deterministic-step and natural-upsert/idempotency posture and be covered by Cloudflare runtime replay tests.
 
+## Observability Boundary
+
+Workers Logs ingestion is enabled in `backend/wrangler.toml` through `[observability]`. Backend logs use `backend/src/observability/logger.ts` and emit JSON objects with stable fields (`event`, `runId`, `deviceId`, `pipelineKind`, `stage`, `traceId`, `spanId`, `errorCode`, `durationMs`, token counts) instead of prefixed strings. The canonical correlation key remains `runId`; `traceId` identifies individual LLM calls and `spanId` identifies internal observed steps.
+
+Operational observability is intentionally separate from product-visible run events:
+
+- D1 `events` remain the user-facing lifecycle stream consumed by SSE.
+- Workers Logs carry high-cardinality operational events such as `run.submit.*`, `workflow.*`, `llm.call.*`, token-accounting failures, and SSE polling failures.
+- D1 `jobs` now records LLM-stage spans with trace id, model, policy hash, prompt/schema versions, token usage, duration, and failure metadata.
+- D1 `stage_checkpoints` links to generated jobs for staged workflows and is marked failed when a staged LLM generation fails.
+- R2 stores redacted failure debug bundles at `debug-runs/{runId}/bundle.json`; raw prompts/model outputs are not included by default.
+
+`GET /v1/runs/:id/debug` returns a redacted, D1-backed debug view for the owning `X-Abyss-Device`: run metadata, events, checkpoints, jobs, artifact metadata, and the expected debug-bundle key. It does not return raw prompts or model outputs.
+
 ## Learning Content Publication Boundary
 
 Subject Graph Generation is a backend-owned create-and-publish workflow. The Topic Lattice stage may persist durable artifacts and checkpoints, but it must not publish a client-visible Subject or partial Subject Graph. Learning Content Store reads expose generated subjects only after the backend has completed prerequisite-edge wiring and published a complete Subject, Subject Graph, and topic stubs. A Stage A lattice cache hit can resume generation, but it cannot be treated as a completed subject-graph run. Regenerating an existing subject keeps the previously published graph visible until the replacement graph publish step succeeds. This decision is recorded in [ADR 0001](./adr/0001-subject-graph-publication-boundary.md).

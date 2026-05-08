@@ -33,6 +33,7 @@ import type { Env } from '../env';
 import type { PipelineKind } from '../repositories/types';
 import { applyArtifactToLearningContent } from '../learningContent/artifactApplication';
 import { WorkflowFail } from '../lib/workflowErrors';
+import { createLogger, errorFields } from '../observability/logger';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -81,6 +82,8 @@ async function dispatchWorkflow(
   deviceId: string,
   env: Env,
 ): Promise<{ ok: boolean; error?: string }> {
+  const logger = createLogger({ runId, deviceId, pipelineKind: kind });
+  logger.info('run.submit.dispatch_start');
   try {
     switch (kind) {
       case 'crystal-trial':
@@ -96,10 +99,11 @@ async function dispatchWorkflow(
         await env.TOPIC_CONTENT_WORKFLOW.create({ id: runId, params: { runId, deviceId } });
         break;
     }
+    logger.info('run.submit.dispatch_success');
     return { ok: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[runs] failed to create workflow for run ${runId} (kind=${kind}):`, err);
+    logger.error('run.submit.dispatch_failed', errorFields(err));
     return { ok: false, error: message };
   }
 }
@@ -120,6 +124,7 @@ const runs = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotenc
 runs.post('/', async (c) => {
   const deviceId = c.get('deviceId');
   const idempotencyKey = c.get('idempotencyKey');
+  const logger = createLogger({ deviceId });
   if (!idempotencyKey) {
     return c.json({ error: 'missing_header', message: 'Idempotency-Key header is required' }, 400);
   }
@@ -146,6 +151,7 @@ runs.post('/', async (c) => {
     return c.json(intentBody.failure, 400);
   }
   const { kind, intent } = intentBody.value;
+  logger.info('run.submit.start', { pipelineKind: kind });
 
   // 2. Supersedes-Key is only valid for topic-expansion.
   const supersedesKey = getSupersedesKey(c.req.raw);
@@ -178,6 +184,7 @@ runs.post('/', async (c) => {
   const cached = artifactKind
     ? await repos.artifacts.findCacheHit(deviceId, artifactKind, hash)
     : null;
+  logger.info(cached ? 'run.submit.cache_hit' : 'run.submit.cache_miss', { pipelineKind: kind, inputHash: hash, artifactKind });
 
   // 6. Handle supersession BEFORE D1 run creation (best-effort — if it
   //    fails the new run still gets created).
@@ -221,6 +228,7 @@ runs.post('/', async (c) => {
   if (!newRunId) {
     return c.json({ code: 'config:invalid', message: 'D1 run submission did not return a run id' }, 500);
   }
+  logger.child({ runId: newRunId, pipelineKind: kind }).info('run.submit.created', { status: cached ? 'ready' : 'queued' });
 
   // 8. Emit events.
   if (cached) {
@@ -311,6 +319,40 @@ runs.get('/', async (c) => {
   }));
 
   return c.json({ runs: mapped });
+});
+
+/**
+ * GET /v1/runs/:id/debug — redacted operator/debug view for the owning device.
+ */
+runs.get('/:id/debug', async (c) => {
+  const deviceId = c.get('deviceId');
+  const input = validateRunIdRouteInput({ runId: c.req.param('id') });
+  if (!input.ok) {
+    return c.json(input.failure, 400);
+  }
+  const { runId } = input.value;
+  const repos = makeRepos(c.env);
+
+  const run = await repos.runs.load(runId);
+  if (run.device_id !== deviceId) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+
+  const [events, stageCheckpoints, jobs, artifactMetadata] = await Promise.all([
+    repos.runs.eventsAfter(runId, deviceId, -1),
+    repos.stageCheckpoints.byRun(runId),
+    repos.runs.jobsByRun(runId),
+    repos.artifacts.byRun(runId),
+  ]);
+
+  return c.json({
+    run: { ...run, status: dbStatusToTransport(run.status) },
+    events,
+    stageCheckpoints,
+    jobs,
+    artifactMetadata,
+    debugBundleKey: `debug-runs/${runId}/bundle.json`,
+  });
 });
 
 /**

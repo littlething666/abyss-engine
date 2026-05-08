@@ -20,6 +20,7 @@ export interface IStageCheckpointsRepo {
   }): Promise<StageCheckpointRow>;
   markReady(runId: string, stage: string, artifactId: string): Promise<void>;
   markFailed(runId: string, stage: string, errorCode: string, errorMessage: string): Promise<void>;
+  linkJob(runId: string, stage: string, jobId: string): Promise<void>;
 }
 
 function changes(result: unknown): number {
@@ -88,6 +89,17 @@ export function createStageCheckpointsRepo(db: D1Database): IStageCheckpointsRep
       `).bind(errorCode, errorMessage, nowIso(), runId, stage).run();
       if (changes(result) === 0) {
         throw new Error(`D1 stageCheckpoints.markFailed: missing checkpoint ${runId}/${stage}`);
+      }
+    },
+
+    async linkJob(runId, stage, jobId) {
+      const result = await db.prepare(`
+        update stage_checkpoints
+        set job_id = ?
+        where run_id = ? and stage = ?
+      `).bind(jobId, runId, stage).run();
+      if (changes(result) === 0) {
+        throw new Error(`D1 stageCheckpoints.linkJob: missing checkpoint ${runId}/${stage}`);
       }
     },
   };

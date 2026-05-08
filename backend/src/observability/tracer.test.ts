@@ -12,9 +12,8 @@ describe('tracer', () => {
     traces = [];
     vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
       const msg = args[0];
-      if (typeof msg === 'string' && msg.startsWith('[llm-trace]')) {
-        const json = msg.slice('[llm-trace] '.length);
-        traces.push(JSON.parse(json) as LlmCallTrace);
+      if (typeof msg === 'object' && msg !== null && (msg as { event?: string }).event === 'llm.call.end') {
+        traces.push(msg as LlmCallTrace);
       }
     });
   });
