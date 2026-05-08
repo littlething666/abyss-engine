@@ -12,10 +12,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { TieredTopic, TopicUnlockStatus } from '@/features/progression';
-import {
-  activeTopicContentGenerationLabel,
-  useContentGenerationStore,
-} from '@/features/contentGeneration';
 import { useTopicDetails } from '@/hooks/useDeckData';
 
 import { TopicIcon } from './topicIcons/TopicIcon';
@@ -49,10 +45,6 @@ export function TopicDetailsPopup({
   const contentStatus = topic.contentStatus;
   const isContentReady = contentStatus === 'ready';
   const isContentGenerating = contentStatus === 'generating';
-  const activeJobLabel = useContentGenerationStore((s) => {
-    if (!isOpen) return null;
-    return activeTopicContentGenerationLabel(s, topic.subjectId, topic.id);
-  });
   const detailsQuery = useTopicDetails(topic.subjectId, topic.id);
   const syllabus = detailsQuery.data?.coreQuestionsByDifficulty;
 
@@ -76,13 +68,7 @@ export function TopicDetailsPopup({
         <div className="min-h-0 overflow-y-auto">
           <p className="text-muted-foreground mb-4 text-sm">{topic.description}</p>
 
-          {activeJobLabel ? (
-            <p className="text-primary mb-3 text-sm font-medium" role="status">
-              Synthesizing knowledge: {activeJobLabel}
-            </p>
-          ) : null}
-
-          {isContentGenerating && !activeJobLabel ? (
+          {isContentGenerating ? (
             <p className="text-primary mb-3 text-sm font-medium" role="status">
               ⏳ Content generation in progress…
             </p>

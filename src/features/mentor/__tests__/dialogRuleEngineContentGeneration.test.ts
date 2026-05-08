@@ -41,7 +41,7 @@ describe('Phase A trigger priorities (locked)', () => {
 });
 
 describe('topic-content:generation-failed', () => {
-  it('builds a single concern message with open-generation-hud + dismiss CTAs', () => {
+  it('builds a single concern message with a dismiss CTA', () => {
     const plan = evaluateTrigger(
       'topic-content:generation-failed',
       { topicLabel: 'Topology', subjectId: 'subj-topology', topicId: 't1' },
@@ -54,8 +54,8 @@ describe('topic-content:generation-failed', () => {
     expect(msg.id).toBe('topic-content-generation-failed');
     expect(msg.mood).toBe('concern');
     const choiceIds = msg.choices?.map((c) => c.id) ?? [];
-    expect(choiceIds).toEqual(['open-generation-hud', 'dismiss']);
-    expect(msg.choices?.[0].effect).toEqual({ kind: 'open_generation_hud' });
+    expect(choiceIds).toEqual(['dismiss']);
+    expect(msg.choices?.[0].effect).toBeUndefined();
   });
 
   it('interpolates topicLabel into the variant text', () => {
@@ -76,7 +76,7 @@ describe('topic-content:generation-failed', () => {
 });
 
 describe('topic-expansion:generation-failed', () => {
-  it('interpolates level into the copy and exposes generation HUD CTA', () => {
+  it('interpolates level into the copy and exposes a dismiss CTA', () => {
     const plan = evaluateTrigger(
       'topic-expansion:generation-failed',
       { topicLabel: 'Topology', level: 2 },
@@ -85,12 +85,12 @@ describe('topic-expansion:generation-failed', () => {
     expect(plan).not.toBeNull();
     expect(plan!.priority).toBe(84);
     expect(plan!.messages[0].text).toContain('level 2');
-    expect(plan!.messages[0].choices?.[0].effect).toEqual({ kind: 'open_generation_hud' });
+    expect(plan!.messages[0].choices?.map((c) => c.id)).toEqual(['dismiss']);
   });
 });
 
 describe('crystal-trial:generation-failed', () => {
-  it('builds a concern message at priority 83 with the standard CTAs', () => {
+  it('builds a concern message at priority 83 with a dismiss CTA', () => {
     const plan = evaluateTrigger(
       'crystal-trial:generation-failed',
       { topicLabel: 'Topology' },
@@ -99,15 +99,12 @@ describe('crystal-trial:generation-failed', () => {
     expect(plan).not.toBeNull();
     expect(plan!.priority).toBe(83);
     expect(plan!.messages[0].mood).toBe('concern');
-    expect(plan!.messages[0].choices?.map((c) => c.id)).toEqual([
-      'open-generation-hud',
-      'dismiss',
-    ]);
+    expect(plan!.messages[0].choices?.map((c) => c.id)).toEqual(['dismiss']);
   });
 });
 
 describe('content-generation:retry-failed', () => {
-  it('uses jobLabel in the copy and routes to the generation HUD', () => {
+  it('uses jobLabel in the copy and exposes a dismiss CTA', () => {
     const plan = evaluateTrigger(
       'content-generation:retry-failed',
       { jobLabel: 'Theory — Topology' },
@@ -116,7 +113,7 @@ describe('content-generation:retry-failed', () => {
     expect(plan).not.toBeNull();
     expect(plan!.priority).toBe(85);
     expect(plan!.messages[0].text).toContain('Theory — Topology');
-    expect(plan!.messages[0].choices?.[0].effect).toEqual({ kind: 'open_generation_hud' });
+    expect(plan!.messages[0].choices?.map((c) => c.id)).toEqual(['dismiss']);
   });
 });
 

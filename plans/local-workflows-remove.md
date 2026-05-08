@@ -1,6 +1,6 @@
 # Local Workflows Removal Plan
 
-Status: in progress (2026-05-08). PR 1 core, PR 2 runtime intent submission, and PR 3 durable-only routing are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and retry routing no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. 2026-05-08 review update: the remaining plan no longer migrates `GenerationProgressHud` into a durable projection; it deletes the HUD, frontend run-log/read-cache, abort/retry controls, and store-backed generation attention because run execution and logging are backend-owned. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 7 local runners are deleted.
+Status: in progress (2026-05-08). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, and PR 4 HUD/UI removal are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and retry routing no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, and store-backed topic-status/mentor UI reads have been removed from runtime UI. 2026-05-08 review update: the remaining plan no longer migrates `GenerationProgressHud` into a durable projection; it deletes the remaining frontend run-log/read-cache, abort/retry controls, and store-backed generation attention because run execution and logging are backend-owned. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 7 local runners are deleted.
 
 ## Goal
 
@@ -257,7 +257,19 @@ Still pending under later PRs:
 
 ### PR 4 — Remove GenerationProgressHud and frontend generation-log UI
 
-**Recommended next task:** durable routing is now unconditional. Do **not** project backend runs into `GenerationProgressHud`; remove the HUD and any runtime UI dependence on frontend job/pipeline state. Keep `contentGenerationStore` only as a temporary local-runner compile dependency until PR 7 deletes the local runners.
+**Status (2026-05-08): complete for runtime HUD/UI removal.**
+
+Completed:
+- Deleted `src/components/GenerationProgressHud.tsx`, removed its `app/page.tsx` mount, and removed the “Background generation” quick action.
+- Removed generation-progress state/actions from `src/store/uiStore.ts` and updated UI-store tests.
+- Removed `useContentGenerationLifecycle()` from `app/page.tsx` and deleted the navigation-abort lifecycle hook.
+- Removed `useContentGenerationStore` runtime UI reads from `useTopicContentStatusMap`, `TopicSelectionBar`, `TopicDetailsPopup`, `DiscoveryModal`, `useMentorEntryContext`, `MentorBubble`, and `MentorDialogOverlay`.
+- Changed topic readiness to use backend Learning Content Store `Topic Content Status` rows only; `generating` is no longer synthesized from local active jobs.
+- Removed mentor CTAs/copy that route players to a generation HUD; failure dialogs now dismiss while backend run diagnostics own details/retry.
+
+Still pending under later PRs:
+- `useContentGenerationHydration()` still hydrates the temporary frontend generation store/log shapes and should be removed with the run-log/read-cache deletion in PR 5/7.
+- `contentGenerationStore`, local runner modules, abort-reason types used by local runners, retry helpers, and `generationAttentionSurface` remain as local-runner compile dependencies until PR 7 deletion.
 
 **Files:**
 - `src/components/GenerationProgressHud.tsx` (delete)
@@ -285,8 +297,8 @@ Still pending under later PRs:
 
 **Exit checks:**
 - `rg "GenerationProgressHud|isGenerationProgressOpen|openGenerationProgress|setGenerationProgressOpen|Background generation|generation HUD" src app tests` has no runtime references.
-- `rg "useContentGenerationStore" src/components src/hooks app` has no runtime UI references except temporary local-runner tests scheduled for PR 7.
-- Topic Content Status still shows `generating` from backend Learning Content Store rows after a topic-content run is submitted.
+- `rg "useContentGenerationStore" src/components src/hooks app` has no runtime UI references except `useContentGenerationHydration()` (temporary run-log/store hydration scheduled for PR 5/7) and test mocks.
+- Topic Content Status now shows `generating` only from backend Learning Content Store rows after a topic-content run is submitted.
 
 ### PR 5 — Convert durable observation into content-refresh consumption
 

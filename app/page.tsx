@@ -32,10 +32,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ListTree, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
 
 import StatsOverlay from '@/components/StatsOverlay';
-import { GenerationProgressHud } from '@/components/GenerationProgressHud';
 import { IncrementalSubjectModal } from '@/components/IncrementalSubjectModal';
 import { AttunementRitualModal } from '@/components/AttunementRitualModal';
 import DiscoveryModal from '@/components/DiscoveryModal';
@@ -51,7 +50,6 @@ import { tryEnqueueMentorEntry } from '@/features/mentor';
 import { useMentorEntryContext } from '@/hooks/useMentorEntryContext';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useContentGenerationHydration } from '@/hooks/useContentGenerationHydration';
-import { useContentGenerationLifecycle } from '@/hooks/useContentGenerationLifecycle';
 import { cardRefKey, topicRefKey } from '@/lib/topicRef';
 import { useTopicCardQueriesForSubjectFilter } from '@/hooks/useTopicCardQueries';
 import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
@@ -77,7 +75,6 @@ const HomeContent: React.FC = () => {
   const isDesktop = useMediaQuery('(min-width: 768px)');
 
   useContentGenerationHydration();
-  useContentGenerationLifecycle();
   const initializedRef = useRef(false);
 
   const [sceneOverlayMounted, setSceneOverlayMounted] = useState(() => !skipSceneLoadingOverlay);
@@ -179,7 +176,6 @@ const HomeContent: React.FC = () => {
   const closeStudyTimeline = useUIStore((state) => state.closeStudyTimeline);
   const selectTopic = useUIStore((state) => state.selectTopic);
   const openStudyPanel = useUIStore((state) => state.openStudyPanel);
-  const openGenerationProgress = useUIStore((state) => state.openGenerationProgress);
 
   // Fix #7: cooldown clock unification. `useRitualCooldownClock`
   // centralizes the wall-clock interval, the modal-open freeze, and
@@ -302,10 +298,6 @@ const HomeContent: React.FC = () => {
   const handleQuickActionWisdomAltar = useCallback(() => { openDiscoveryModal(); }, [openDiscoveryModal]);
   const handleQuickActionCommandPalette = useCallback(() => { setIsCommandPaletteOpen(true); }, []);
   const handleQuickActionSettings = useCallback(() => { openGlobalSettings(); }, [openGlobalSettings]);
-  const handleQuickActionGenerationProgress = useCallback(
-    () => { openGenerationProgress(); },
-    [openGenerationProgress],
-  );
   const handleCreateSubjectFromHud = useCallback(() => { setIsIncrementalSubjectOpen(true); }, []);
   // Discovery's empty-state CTA closes Discovery before opening
   // IncrementalSubjectModal so the two surfaces never stack. The mentor's
@@ -414,13 +406,6 @@ const HomeContent: React.FC = () => {
             <DropdownMenuItem onClick={handleQuickActionWisdomAltar}>
               🏛️ Wisdom Altar
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={handleQuickActionGenerationProgress}
-              data-testid="quick-action-generation-progress"
-            >
-              <ListTree className="size-3.5 shrink-0 opacity-70" aria-hidden />
-              Background generation
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={handleQuickActionMentor} data-testid="quick-action-mentor">
               🗣️ Mentor
             </DropdownMenuItem>
@@ -487,8 +472,6 @@ const HomeContent: React.FC = () => {
       <CrystalTrialModal />
 
       <MentorDialogOverlay onOpenTopicStudy={handleOpenTopicStudyFromMentor} />
-
-      <GenerationProgressHud showTrigger={false} />
     </div>
   );
 }

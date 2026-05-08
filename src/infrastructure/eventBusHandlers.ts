@@ -285,9 +285,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
   disposers.push(appEventBus.on('subject-graph:generation-failed', (e) => {
     // Phase D: the failure toast is gone. The mentor failure dialog
-    // (priority 82) carries the player-facing surface; the rule engine
-    // always exposes an `open_generation_hud` choice so the player can
-    // jump to retry controls.
+    // (priority 82) carries the player-facing surface; backend run
+    // diagnostics own retry and failure details.
     handleMentorTrigger('subject:generation-failed', {
       subjectName: e.subjectName,
       stage: e.stage,
@@ -562,7 +561,7 @@ if (!g.__abyssEventBusHandlersRegistered) {
   disposers.push(appEventBus.on('topic-content:generation-completed', (e) => {
     // Only the full-pipeline success surfaces the topic-ready prod.
     // Partial-stage successes (theory / study-cards / mini-games) are
-    // progress signals owned by the generation HUD; surfacing them as
+    // progress signals owned by backend run observation; surfacing them as
     // mentor dialogs would create noise the player cannot act on.
     if (e.stage !== 'full') return;
     handleMentorTrigger('topic-content:generation-ready', {

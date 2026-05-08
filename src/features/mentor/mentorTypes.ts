@@ -21,7 +21,6 @@ export type MentorEffect =
       kind: 'open_discovery';
       subjectId?: string | '__all_floors__';
     }
-  | { kind: 'open_generation_hud' }
   // open_topic_study is the topic-ready CTA: opens the study panel for a
   // specific (subjectId, topicId) once the topic content pipeline has
   // produced study-ready material. The presentation/composition adapter

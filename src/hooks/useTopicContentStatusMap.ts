@@ -1,23 +1,9 @@
 import { useQueries } from '@tanstack/react-query';
 import { useMemo, useRef } from 'react';
-import { useShallow } from 'zustand/react/shallow';
-
 import { topicRefKey } from '@/lib/topicRef';
 import { useAllGraphs } from '@/features/content';
-import { useContentGenerationStore } from '@/features/contentGeneration';
 import { deckRepository } from '@/infrastructure/di';
-import type { ContentGenerationJobKind } from '@/types/contentGeneration';
 import type { TopicContentStatus, TopicContentStatusRecord } from '@/types/topicContent';
-
-const CRYSTAL_CONTENT_JOB_KINDS = new Set<ContentGenerationJobKind>([
-  'topic-theory',
-  'topic-study-cards',
-  'topic-mini-games',
-  'topic-mini-game-category-sort',
-  'topic-mini-game-sequence-build',
-  'topic-mini-game-match-pairs',
-  'topic-expansion-cards',
-]);
 
 /**
  * Fix #6: shared empty-map constant. Returning the same empty object
@@ -61,10 +47,9 @@ function topicContentStatusMapsEqual(
 
 /**
  * For every node in loaded graphs, the content status for that topic:
- * - `'ready'`: IndexedDB has theory + at least one difficulty-1 card
- * - `'generating'`: a topic content / expansion LLM job is in-flight for this topic
- *   (excludes e.g. Crystal Trial jobs so the crystal clock stays content-specific)
- * - `'unavailable'`: no content and no active generation
+ * - `'ready'`: Learning Content Store has theory + at least one difficulty-1 card
+ * - `'generating'`: backend Topic Content Status says content generation is in progress
+ * - `'unavailable'`: no published content is available
  *
  * Keyed by `topicRefKey` (`subjectId::topicId`).
  *
@@ -102,33 +87,6 @@ export function useTopicContentStatusMap(): Record<string, TopicContentStatus> {
     })),
   });
 
-  // Extract only active job keys from the content generation store to minimize re-renders.
-  const activeJobKeys = useContentGenerationStore(
-    useShallow((state) => {
-      const keys: string[] = [];
-      for (const j of Object.values(state.jobs)) {
-        if (!CRYSTAL_CONTENT_JOB_KINDS.has(j.kind)) {
-          continue;
-        }
-        if (
-          j.status === 'pending' ||
-          j.status === 'streaming' ||
-          j.status === 'parsing' ||
-          j.status === 'saving'
-        ) {
-          const subjectId = j.subjectId;
-          const topicId = j.topicId;
-          if (!subjectId || !topicId) {
-            continue;
-          }
-          keys.push(topicRefKey({ subjectId, topicId }));
-        }
-      }
-      return keys;
-    }),
-  );
-
-  const activeJobKeySet = useMemo(() => new Set(activeJobKeys), [activeJobKeys]);
 
   // Identity-cache the derived map. `useQueries` returns a fresh outer
   // array on every render even when each query is reference-stable, so
@@ -150,7 +108,7 @@ export function useTopicContentStatusMap(): Record<string, TopicContentStatus> {
   const next: Record<string, TopicContentStatus> = {};
   for (const t of topicRefs) {
     const key = topicRefKey(t);
-    next[key] = activeJobKeySet.has(key) ? 'generating' : statusByKey.get(key) ?? 'unavailable';
+    next[key] = statusByKey.get(key) ?? 'unavailable';
   }
 
   // Reuse the shared empty-map constant when there are no topics so

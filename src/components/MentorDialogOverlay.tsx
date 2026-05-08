@@ -6,10 +6,8 @@ import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { telemetry } from '@/features/telemetry';
-import { useContentGenerationStore } from '@/features/contentGeneration';
 import { useMentorStore } from '@/features/mentor/mentorStore';
 import type { DialogPlan, MentorEffect, MentorMessage, MentorMood } from '@/features/mentor/mentorTypes';
-import { isMentorGenerationFailureTrigger } from '@/features/mentor/mentorFailureTriggers';
 import { useMentorSpeech } from '@/features/mentor/useMentorSpeech';
 import { MENTOR_VOICE_ID } from '@/features/mentor/mentorVoice';
 import {
@@ -58,8 +56,8 @@ export interface MentorDialogOverlayProps {
  * Renders the mentor dialog when one is active. Subscribes to `mentorStore`:
  * if `currentDialog` is null and the queue has items, pops the head. Telemetry,
  * typewriter reveal, Web Speech narration, choice routing, and the
- * `open_discovery` / `open_generation_hud` / `open_topic_study` / `dismiss`
- * effects all live here. Mounted near the other modals in `app/page.tsx`.
+ * `open_discovery` / `open_topic_study` / `dismiss` effects all live here.
+ * Mounted near the other modals in `app/page.tsx`.
  */
 export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayProps = {}) {
   const queueLen = useMentorStore((s) => s.dialogQueue.length);
@@ -67,13 +65,12 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
   const openCurrentFromQueue = useMentorStore((s) => s.openCurrentFromQueue);
   const dismissCurrent = useMentorStore((s) => s.dismissCurrent);
   const markSeen = useMentorStore((s) => s.markSeen);
-  const acknowledgeFailureKey = useContentGenerationStore((s) => s.acknowledgeFailureKey);
   const setNarrationEnabled = useMentorStore((s) => s.setNarrationEnabled);
   const setPlayerName = useMentorStore((s) => s.setPlayerName);
   // Two distinct gates:
   //  - `isAnyModalOpen` blocks AUTO-OPEN of queued dialogs while ANY blocking
   //    modal is on screen (discovery, study panel, ritual, study timeline,
-  //    crystal trial, generation progress, global settings). Phase C
+  //    crystal trial, global settings). Phase C
   //    generalization — keeps background queued plans from interrupting
   //    modal flows the player chose to enter.
   //  - `isStudyPanelOpen` still drives render / typewriter / speech / auto-
@@ -111,15 +108,9 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
         outcome,
       });
       startedAtRef.current = null;
-      if (isMentorGenerationFailureTrigger(plan.trigger)) {
-        const failureKey = plan.payload.failureKey;
-        if (typeof failureKey === 'string' && failureKey.length > 0) {
-          acknowledgeFailureKey(failureKey);
-        }
-      }
       dismissCurrent();
     },
-    [acknowledgeFailureKey, cancel, dismissCurrent],
+    [cancel, dismissCurrent],
   );
 
   // Phase E: hoisted into a useCallback so it can close over the
@@ -148,15 +139,6 @@ export function MentorDialogOverlay({ onOpenTopicStudy }: MentorDialogOverlayPro
           } else {
             openWithScope();
           }
-          return;
-        }
-        case 'open_generation_hud': {
-          if (activePlan) {
-            finalizePlanCompletion(activePlan, 'choice');
-          } else {
-            mentor.dismissCurrent();
-          }
-          ui.openGenerationProgress();
           return;
         }
         case 'open_topic_study': {

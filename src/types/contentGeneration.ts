@@ -72,7 +72,7 @@ export interface ContentGenerationJob {
    * - `nextLevel` (number) — for expansion jobs, the crystal level that triggered expansion.
    * - `provider` (object) — normalized provider metadata such as usage, citations, or annotations.
    * - `grounding` (object) — accepted source counts, optional authoritative-primary flag, and source snapshots.
-   * - `abortReason` (object) — typed {@link import('./contentGenerationAbort').ContentGenerationAbortReason} when status is `aborted`.
+   * - `abortReason` (object) — typed abort metadata when status is `aborted`.
    * - `qualityReport` (object) — card validation counts, duplicate rates, and grounding coverage.
    * - `validationFailures` (array) — detailed card-level validation failures surfaced in the HUD.
    * - `debugBundle` (object) — allowlisted `PipelineFailureDebugBundle` when a job fails.

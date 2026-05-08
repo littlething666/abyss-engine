@@ -1,4 +1,3 @@
-import type { GenerationAttentionPrimaryFailure } from '@/features/contentGeneration';
 import type { MentorIconName } from '@/types/core';
 import type { MentorMood } from './mentorTypes';
 
@@ -80,14 +79,14 @@ export interface SelectMentorBubbleVisualInput {
    * the phase glyph (`compass` for topics, `network` for edges).
    */
   subjectGraphActivePhase: 'topics' | 'edges' | null;
-  primaryFailure: GenerationAttentionPrimaryFailure | null;
+  hasPrimaryFailure: boolean;
 }
 
 /**
  * Pure visual resolution for the mentor bubble.
  *
  * Resolution rules (locked):
- *   1. `primaryFailure !== null` -> `triangle-alert`, ring/glyph color
+ *   1. `hasPrimaryFailure` -> `triangle-alert`, ring/glyph color
  *      `#ff5d5d`, +10% base scale, fixed ring opacity (anti-flicker).
  *   2. else `mood !== null` -> mood-glyph, color `MOOD_COLOR[mood]`.
  *   3. else `subjectGraphActivePhase !== null` -> phase glyph (compass/network),
@@ -100,8 +99,8 @@ export interface SelectMentorBubbleVisualInput {
 export function selectMentorBubbleVisual(
   input: SelectMentorBubbleVisualInput,
 ): MentorBubbleVisual {
-  const { mood, hasMentorActivity, subjectGraphActivePhase, primaryFailure } = input;
-  const isAlert = primaryFailure !== null;
+  const { mood, hasMentorActivity, subjectGraphActivePhase, hasPrimaryFailure } = input;
+  const isAlert = hasPrimaryFailure;
   const isActive =
     isAlert || hasMentorActivity || subjectGraphActivePhase !== null;
 

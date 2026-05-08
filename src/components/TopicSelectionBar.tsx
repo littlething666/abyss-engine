@@ -9,11 +9,7 @@ import { useAllGraphs, useSubjects } from '@/features/content';
 import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
 import type { TopicContentStatus } from '@/types/topicContent';
 import { topicRefKey } from '@/lib/topicRef';
-import {
-  activeTopicContentGenerationLabel,
-  triggerTopicGenerationPipeline,
-  useContentGenerationStore,
-} from '@/features/contentGeneration';
+import { triggerTopicGenerationPipeline } from '@/features/contentGeneration';
 import {
   crystalGardenOrchestrator,
   getXpToNextBandThreshold,
@@ -133,13 +129,7 @@ export default function TopicSelectionBar({
     return contentStatusMap[key] ?? 'unavailable';
   }, [selectedTopic, contentStatusMap]);
 
-  const activeTopicContentGenLabel = useContentGenerationStore((s) => {
-    if (!selectedTopic) return null;
-    return activeTopicContentGenerationLabel(s, selectedTopic.subjectId, selectedTopic.topicId);
-  });
-
-  const isTopicStudyContentGenerating =
-    selectedTopicContentStatus === 'generating' || activeTopicContentGenLabel !== null;
+  const isTopicStudyContentGenerating = selectedTopicContentStatus === 'generating';
 
   const celebrationLookupKey = selectedTopic ? topicRefKey(selectedTopic) : '';
   const isCelebrationPendingForTopic = useCrystalContentCelebrationStore((s) =>
@@ -259,15 +249,13 @@ export default function TopicSelectionBar({
   // Determine the primary action button in the action area.
   const renderPrimaryAction = () => {
     if (isTopicStudyContentGenerating) {
-      // Replace Play with generation status label.
-      const label = activeTopicContentGenLabel ?? 'Generating…';
       return (
         <span
           className="inline-flex shrink-0 items-center gap-1 text-[10px] leading-tight text-primary"
           role="status"
         >
           <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
-          <span className="max-w-[6rem] truncate">{label}</span>
+          <span className="max-w-[6rem] truncate">Generating…</span>
         </span>
       );
     }

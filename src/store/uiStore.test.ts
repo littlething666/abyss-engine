@@ -16,7 +16,6 @@ describe('uiStore timeline modal state', () => {
       isStudyPanelOpen: false,
       isRitualModalOpen: false,
       isStudyTimelineOpen: false,
-      isGenerationProgressOpen: false,
       selectedTopic: null,
       isCurrentCardFlipped: false,
     });
@@ -46,24 +45,4 @@ describe('uiStore timeline modal state', () => {
     });
   });
 
-  it('opens and closes generation progress through store actions', () => {
-    withReset(() => {
-      uiStore.getState().openGenerationProgress();
-      expect(uiStore.getState().isGenerationProgressOpen).toBe(true);
-      expect(selectIsAnyModalOpen(uiStore.getState())).toBe(true);
-
-      uiStore.getState().closeGenerationProgress();
-      expect(uiStore.getState().isGenerationProgressOpen).toBe(false);
-    });
-  });
-
-  it('supports controlled generation progress open state', () => {
-    withReset(() => {
-      uiStore.getState().setGenerationProgressOpen(true);
-      expect(uiStore.getState().isGenerationProgressOpen).toBe(true);
-
-      uiStore.getState().setGenerationProgressOpen(false);
-      expect(uiStore.getState().isGenerationProgressOpen).toBe(false);
-    });
-  });
 });
