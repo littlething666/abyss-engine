@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { callCrystalTrial, callTopicExpansion, callSubjectGraph, callTopicContent } from '../llm/openrouterClient';
+import { callOpenRouterChat, callCrystalTrial, callTopicExpansion, callSubjectGraph, callTopicContent } from '../llm/openrouterClient';
 import type { Env } from '../env';
 
 const originalFetch = globalThis.fetch;
@@ -41,6 +41,53 @@ function mockFetch(status: number, body: unknown) {
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
   });
 }
+
+describe('callOpenRouterChat', () => {
+  it('builds the canonical shared request body without leaking jobKind', async () => {
+    mockFetch(200, {
+      choices: [{ message: { content: '{}' } }],
+      usage: null,
+    });
+
+    await callOpenRouterChat({ ...testArgs, jobKind: 'subject-graph', temperature: 0.25 }, testEnv);
+
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(fetchCall[1].body);
+    expect(body.model).toBe(testArgs.modelId);
+    expect(body.messages).toEqual(testArgs.messages);
+    expect(body.response_format).toEqual(testArgs.responseFormat);
+    expect(body.plugins).toEqual([{ id: 'response-healing' }]);
+    expect(body.usage).toEqual({ include: true });
+    expect(body.temperature).toBe(0.25);
+    expect(body.jobKind).toBeUndefined();
+    expect(body.stream).toBeUndefined();
+  });
+
+  it('fails loudly when the OpenRouter response wrapper is malformed', async () => {
+    mockFetch(200, { choices: null });
+
+    await expect(
+      callOpenRouterChat({ ...testArgs, jobKind: 'crystal-trial' }, testEnv),
+    ).rejects.toMatchObject({
+      code: 'parse:zod-shape',
+      message: 'invalid OpenRouter response wrapper for crystal-trial',
+    });
+  });
+
+  it('fails loudly when OpenRouter usage accounting is malformed', async () => {
+    mockFetch(200, {
+      choices: [{ message: { content: '{}' } }],
+      usage: { prompt_tokens: 1, completion_tokens: '2', total_tokens: 3 },
+    });
+
+    await expect(
+      callOpenRouterChat({ ...testArgs, jobKind: 'topic-content' }, testEnv),
+    ).rejects.toMatchObject({
+      code: 'parse:zod-shape',
+      message: 'invalid OpenRouter usage wrapper for topic-content',
+    });
+  });
+});
 
 describe('callCrystalTrial', () => {
   it('returns text and usage on success', async () => {
