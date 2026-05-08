@@ -1,5 +1,5 @@
 export { DEFAULT_GENERATION_POLICY } from './defaultPolicy';
-export { parseGenerationPolicy } from './parseGenerationPolicy';
+export { parseGenerationPolicy, parseGenerationPolicyJson } from './parseGenerationPolicy';
 export {
   generationPolicyHash,
   isBackendGenerationJobKind,

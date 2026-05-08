@@ -5,6 +5,7 @@ import {
   DEFAULT_GENERATION_POLICY,
   generationPolicyHash,
   parseGenerationPolicy,
+  parseGenerationPolicyJson,
   resolveGenerationJobPolicy,
   type GenerationPolicy,
 } from './index';
@@ -24,6 +25,16 @@ function policyWith(overrides: Partial<GenerationPolicy>): GenerationPolicy {
     ...DEFAULT_GENERATION_POLICY,
     ...overrides,
   } as GenerationPolicy;
+}
+
+function clonePolicy(): GenerationPolicy {
+  return JSON.parse(JSON.stringify(DEFAULT_GENERATION_POLICY)) as GenerationPolicy;
+}
+
+function withTheoryJob(job: unknown): unknown {
+  const policy = clonePolicy() as unknown as { jobs: Record<string, unknown> };
+  policy.jobs['topic-theory'] = job;
+  return policy;
 }
 
 describe('parseGenerationPolicy', () => {
@@ -63,18 +74,57 @@ describe('parseGenerationPolicy', () => {
   });
 
   it('rejects malformed model and temperature entries', () => {
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: '' })));
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'x', temperature: 9 })));
+  });
+
+  it('rejects non-finite and non-number temperatures', () => {
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/model', temperature: NaN })));
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/model', temperature: Infinity })));
     expectConfigInvalid(() =>
-      parseGenerationPolicy({
-        ...DEFAULT_GENERATION_POLICY,
-        jobs: { ...DEFAULT_GENERATION_POLICY.jobs, 'topic-theory': { modelId: '' } },
-      }),
+      parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/model', temperature: '0.2' })),
+    );
+  });
+
+  it('rejects model IDs with whitespace, controls, or unsupported providers', () => {
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/model extra' })));
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/mo\ndel' })));
+    expectConfigInvalid(() => parseGenerationPolicy(withTheoryJob({ modelId: 'anthropic/claude-sonnet' })));
+  });
+
+  it('rejects extra nested keys under jobs and responseHealing', () => {
+    expectConfigInvalid(() =>
+      parseGenerationPolicy(withTheoryJob({ modelId: 'openrouter/test/model', unsupported: true })),
     );
 
     expectConfigInvalid(() =>
       parseGenerationPolicy({
-        ...DEFAULT_GENERATION_POLICY,
-        jobs: { ...DEFAULT_GENERATION_POLICY.jobs, 'topic-theory': { modelId: 'x', temperature: 9 } },
+        ...clonePolicy(),
+        responseHealing: { enabled: true, mode: 'always' },
       }),
+    );
+  });
+
+  it('rejects invalid generation policy JSON strings without default fallback', () => {
+    expectConfigInvalid(() => parseGenerationPolicyJson('', 'GENERATION_POLICY_JSON'));
+    expectConfigInvalid(() => parseGenerationPolicyJson('   ', 'GENERATION_POLICY_JSON'));
+    expectConfigInvalid(() => parseGenerationPolicyJson('{not-json}', 'GENERATION_POLICY_JSON'));
+    expectConfigInvalid(() => parseGenerationPolicyJson('[]', 'GENERATION_POLICY_JSON'));
+    expectConfigInvalid(() => parseGenerationPolicyJson('null', 'GENERATION_POLICY_JSON'));
+    expectConfigInvalid(() =>
+      parseGenerationPolicyJson(
+        JSON.stringify({ ...clonePolicy(), jobs: { ...clonePolicy().jobs, unknown: { modelId: 'openrouter/a/b' } } }),
+        'GENERATION_POLICY_JSON',
+      ),
+    );
+  });
+
+  it('keeps generation policy hash stable after normalized parsing', async () => {
+    const raw = clonePolicy();
+    raw.jobs['topic-theory'] = { modelId: `  ${DEFAULT_GENERATION_POLICY.jobs['topic-theory'].modelId}  ` };
+
+    await expect(generationPolicyHash(parseGenerationPolicy(raw))).resolves.toBe(
+      await generationPolicyHash(DEFAULT_GENERATION_POLICY),
     );
   });
 });

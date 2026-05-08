@@ -19,6 +19,8 @@ The previous ordering is still broadly correct, with these updates from the late
 11. **OpenRouter Worker request construction is now canonicalized.** `backend/src/llm/openrouterClient.ts` exposes shared `callOpenRouterChat({ jobKind, modelId, messages, responseFormat, providerHealingRequested, temperature })`; Crystal Trial, Topic Expansion, Subject Graph, and Topic Content adapters now delegate to it. The helper preserves strict `json_schema`, backend-policy-owned response healing, token usage accounting, no streaming, no `json_object` fallback, and fail-loud validation of malformed OpenRouter response/usage wrappers.
 12. **Backend route validation has a first shared schema seam.** `backend/src/routes/validation.ts` now owns Zod-backed validation for `POST /v1/runs` intent envelopes, `GET /v1/runs` list filters, retry bodies, and Crystal Trial read route params/query. Invalid retry JSON no longer falls through as an empty retry request, run-list filters fail before D1 query construction, client-built snapshots remain rejected at the Worker boundary, and Crystal Trial malformed route inputs use one structured boundary error shape.
 13. **Backend route validation has been extended across additional framework edges.** The same Zod seam now validates run path ids for get/cancel/retry, SSE resume cursors (`Last-Event-ID` / `lastSeq`), artifact read ids, and failure-stats filters before repository calls. `/v1/runs/stats` is mounted before the catch-all run-id route so stats requests cannot be misrouted through `GET /v1/runs/:id`.
+14. **Cloudflare runtime test harness and first D1 proofs have landed.** `backend/vitest.runtime.config.ts` runs `src/runtimeTests/**/*.runtime.test.ts` through `@cloudflare/vitest-pool-workers` against the Worker entrypoint and wrangler bindings. Runtime tests now reset/apply `backend/d1/reset.sql` + `backend/d1/init.sql`, prove real-D1 `atomicSubmitRun` same-key concurrency/idempotency/budget rollback behavior, and prove semantic-keyed event idempotency under concurrent `appendTypedOnce` calls.
+15. **Generation-policy parsing is schema-backed.** `parseGenerationPolicy` now uses the Zod-backed `generationPolicySchema`, still fails with `WorkflowFail('config:invalid')`, normalizes trimmed model IDs, requires the exact nine backend job kinds, rejects unknown fields/nested extras/non-OpenRouter models/non-finite temperatures, and adds `parseGenerationPolicyJson` for backend-owned JSON overrides with no default fallback after invalid config.
 
 ## Completed to date
 
@@ -47,6 +49,8 @@ The previous ordering is still broadly correct, with these updates from the late
 - Durable Workflow side-effect step split: artifact/cache materialization, stage checkpoint writes, D1/R2 artifact writes, token accounting, `artifact.ready`, cancellation, failure, and terminal ready writes now execute inside named `step.do` boundaries. Single-stage Crystal Trial and Topic Expansion now keep model call + strict parse + semantic validation in one retryable generation step, with persistence/application in separate idempotent storage steps.
 - Shared Worker OpenRouter chat helper (`callOpenRouterChat`) now owns canonical request construction for all four pipeline adapters, with tests pinning strict JSON Schema, response-healing plugin shape, temperature handling, token usage, absence of streaming/job metadata leakage, and fail-loud provider wrapper validation.
 - Shared backend route validation seam (`backend/src/routes/validation.ts`) with Zod-backed tests for run submission envelopes, run list filters, retry bodies, Crystal Trial read params/query, run path ids, SSE resume cursors, artifact ids, and failure-stats filters. Route tests prove malformed inputs stop before run lookup/workflow dispatch/artifact lookup/stats D1 scans, and that `/v1/runs/stats` routes to the stats handler rather than the generic run-id handler.
+- Cloudflare runtime test harness (`backend/vitest.runtime.config.ts`, `pnpm --filter abyss-durable-orchestrator test:runtime`) with real local D1 schema reset/init helpers and runtime tests for `atomicSubmitRun` concurrency/idempotency/budget rollback plus semantic-keyed event idempotency.
+- Zod-backed backend generation-policy parser and JSON parser with tests for strict job-key coverage, model ID constraints, temperature constraints, nested extra keys, invalid JSON, blank JSON, normalized hashes, and no fallback after invalid backend override.
 
 ## Recommended next steps
 
@@ -54,8 +58,8 @@ The code-review findings are compatible with `plans/durable-workflow-orchestrati
 
 ### Remaining recommended follow-ups in order of priority (remove items as they are completed)
 
- 1. Add real Cloudflare runtime tests for replay/concurrency/idempotency.
- 2. Continue validation hardening for generation-policy config parsing and Learning Content Store JSON envelopes.
+ 1. Continue real Cloudflare runtime tests beyond the landed D1/event proofs: Worker route dispatch failure/retry, R2 artifact write/read behavior, Workflow retry/replay faults, cancellation/cache-hit/supersession boundaries.
+ 2. Continue validation hardening for Learning Content Store JSON envelopes (generation-policy config parsing is now schema-backed).
  3. After runtime proof, proceed toward durable-only routing and local-runner/settings legacy deletion.
 
 ### Critical fixes to eliminate now
@@ -73,8 +77,8 @@ The code-review findings are compatible with `plans/durable-workflow-orchestrati
    - Application shares the idempotency model above through deterministic Workflow step names, D1 read-model upserts, artifact cache unique keys, and semantic event keys. **Remaining:** Cloudflare runtime replay/concurrency tests, stale Topic Expansion supersession proof under replay/concurrency, plus a follow-up product decision for the existing CLOZE-to-deck read-model gap inherited from frontend appliers.
 
 3. **Add real Cloudflare runtime integration tests for durability-critical paths**
-   - Add `@cloudflare/vitest-pool-workers` coverage for Workflow step retry/replay behavior, duplicate event prevention, R2 artifact writes/reads, D1 transaction semantics, cancellation before/after stage boundaries, cache-hit materialization, retry child runs, and dispatch failure/no-orphan-queued behavior.
-   - Cover `atomicSubmitRun` against real/local D1, not only `fakeD1`: idempotency hit does not reserve budget twice, budget failure releases the temporary idempotency record, run creation and idempotency record roll back together, same-key concurrency returns one run, and ready cache hits behave consistently.
+   - `@cloudflare/vitest-pool-workers` harness is in place, with real/local D1 coverage for duplicate event prevention and the core `atomicSubmitRun` transaction/idempotency behavior: idempotency hit does not reserve budget twice, budget failure releases the temporary idempotency record, run creation and idempotency record roll back together, and same-key concurrency returns one run.
+   - **Remaining:** Workflow step retry/replay behavior, R2 artifact writes/reads, cancellation before/after stage boundaries, cache-hit materialization/ready-cache behavior, retry child runs, and dispatch failure/no-orphan-queued behavior.
 
 4. **Only then delete local runner / settings legacy**
    - Remove frontend snapshot construction/model settings once durable-only routing is ready; current local-runner compatibility still builds snapshots before the durable adapter converts them to intents.
@@ -90,7 +94,8 @@ The code-review findings are compatible with `plans/durable-workflow-orchestrati
 
 2. **Standardize backend request/config validation — in progress**
    - `backend/src/routes/validation.ts` now covers `POST /v1/runs` intent bodies, retry bodies, run list filters, Crystal Trial read params/query, run path ids for get/cancel/retry, SSE resume cursors, artifact read ids, and failure-stats filters with Zod-backed boundary validation.
-   - **Remaining:** extend the same seam/posture to any newly added route params and bodies, generation policy config parsing where not already strict, Learning Content Store JSON envelopes, and any future OpenRouter wrapper fields. Validation must continue to fail loudly at the boundary, not normalize ambiguous input downstream.
+   - Generation policy config parsing is now schema-backed and strict, with a backend-owned JSON parser that never falls back to defaults after an invalid override.
+   - **Remaining:** extend the same seam/posture to any newly added route params and bodies, Learning Content Store JSON envelopes, and any future OpenRouter wrapper fields. Validation must continue to fail loudly at the boundary, not normalize ambiguous input downstream.
 
 3. **Collapse duplicated OpenRouter request construction without hiding policy — completed**
    - Per-pipeline typed adapters remain, but now route through shared `callOpenRouterChat({ jobKind, modelId, messages, responseFormat, providerHealingRequested, temperature })`.

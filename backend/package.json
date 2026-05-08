@@ -13,6 +13,7 @@
     "generate:types": "wrangler types ./worker-configuration.d.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:runtime": "vitest run --config vitest.runtime.config.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
