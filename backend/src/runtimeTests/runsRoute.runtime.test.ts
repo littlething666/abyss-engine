@@ -1,8 +1,11 @@
 import { env } from 'cloudflare:workers';
 import app from '../index';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { inputHash, contentHash } from '../contracts/generationContracts';
+import { makeRepos } from '../repositories';
+import { expandRunIntent } from '../runIntents/runIntentExpansion';
 import { scalar } from './runtimeAssertions';
-import { RUNTIME_DEVICE_ID, seedRuntimeDevice } from './runtimeFixtures';
+import { RUNTIME_DEVICE_ID, buildAtomicSubmitInput, seedRuntimeDevice } from './runtimeFixtures';
 import { resetRuntimeDb } from './setupRuntimeDb';
 
 function headers(extra: Record<string, string> = {}): Headers {
@@ -67,6 +70,10 @@ async function seedFailedParentRun(runId: string): Promise<void> {
 }
 
 describe('runtime Worker run routes', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(async () => {
     await resetRuntimeDb(env.GENERATION_DB);
     await seedRuntimeDevice(env.GENERATION_DB);
@@ -150,6 +157,101 @@ describe('runtime Worker run routes', () => {
     expect(row?.cancel_reason).toBeNull();
     expect(row?.finished_at).toBe(now);
     expect(await scalar(env.GENERATION_DB, 'select count(*) as value from events where run_id = ?', runId)).toBe(0);
+  });
+
+  it('cache-hit submit materializes Learning Content before terminal completion without workflow dispatch', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
+    const repos = makeRepos(env);
+    const seedRun = await repos.runs.atomicSubmitRun(buildAtomicSubmitInput({
+      idempotencyKey: 'idem-runtime-cache-seed',
+      inputHash: 'ih-runtime-cache-seed',
+      status: 'ready',
+      subjectId: 'runtime-subject',
+      topicId: 'runtime-topic',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    }));
+    if (!seedRun.runId) throw new Error('failed to seed cache-hit parent run');
+
+    await repos.learningContent.upsertSubject({
+      deviceId: RUNTIME_DEVICE_ID,
+      subjectId: 'runtime-subject',
+      title: 'Runtime Subject',
+      metadata: { subject: { description: 'Runtime cache subject', color: '#38bdf8', geometry: { gridTile: 'sphere' } } },
+      contentSource: 'generated',
+      createdByRunId: seedRun.runId,
+    });
+    await repos.learningContent.putSubjectGraph({
+      deviceId: RUNTIME_DEVICE_ID,
+      subjectId: 'runtime-subject',
+      graph: {
+        subjectId: 'runtime-subject',
+        title: 'Runtime Subject',
+        nodes: [{ topicId: 'runtime-topic', title: 'Runtime Topic', iconName: 'Sigma', tier: 1, prerequisites: [] }],
+      },
+      contentHash: 'cnt-runtime-graph',
+      updatedByRunId: seedRun.runId,
+    });
+    await repos.learningContent.upsertTopicCards({
+      deviceId: RUNTIME_DEVICE_ID,
+      subjectId: 'runtime-subject',
+      topicId: 'runtime-topic',
+      cards: [{
+        cardId: 'runtime-card-1',
+        card: { id: 'runtime-card-1', type: 'FLASHCARD', difficulty: 2, content: { front: 'F', back: 'B' } },
+        difficulty: 2,
+        sourceArtifactKind: 'topic-study-cards',
+      }],
+      createdByRunId: seedRun.runId,
+    });
+
+    const intent = { subjectId: 'runtime-subject', topicId: 'runtime-topic', currentLevel: 1 };
+    const expanded = await expandRunIntent({
+      deviceId: RUNTIME_DEVICE_ID,
+      kind: 'crystal-trial',
+      intent,
+      learningContent: repos.learningContent,
+      now: () => new Date(),
+    });
+    const artifactInputHash = await inputHash(expanded.snapshot);
+    const payload = { questions: [{ id: 'q-cache', prompt: 'Cached?', answers: ['yes'] }] };
+    const artifactContentHash = await contentHash(payload);
+    await repos.artifacts.putStorage({
+      deviceId: RUNTIME_DEVICE_ID,
+      kind: 'crystal-trial',
+      inputHash: artifactInputHash,
+      payload,
+    }, artifactContentHash, 1, seedRun.runId);
+
+    const response = await app.fetch(new Request('https://runtime.test/v1/runs', {
+      method: 'POST',
+      headers: headers({ 'idempotency-key': 'idem-runtime-cache-hit' }),
+      body: JSON.stringify({ kind: 'crystal-trial', intent }),
+    }), runtimeEnvWithWorkflow({
+      async create() {
+        throw new Error('workflow must not dispatch for a cache hit');
+      },
+    }));
+
+    expect(response.status).toBe(201);
+    const body = await response.json() as { runId: string };
+    const trial = await repos.learningContent.getCrystalTrialSet(
+      RUNTIME_DEVICE_ID,
+      'runtime-subject',
+      'runtime-topic',
+      2,
+      String(expanded.snapshot.card_pool_hash),
+    );
+    expect(trial?.questions).toEqual(payload);
+    expect(trial?.createdByRunId).toBe(body.runId);
+
+    const events = await env.GENERATION_DB.prepare(
+      'select type from events where run_id = ? order by seq asc',
+    ).bind(body.runId).all<{ type: string }>();
+    expect(events.results.map((event) => event.type)).toEqual(['artifact.ready', 'run.completed']);
+    expect(await scalar(env.GENERATION_DB, "select count(*) as value from events where run_id = ? and type = 'artifact.ready' and payload_json like '%true%'", body.runId))
+      .toBe(1);
   });
 
   it('POST /v1/runs/:id/retry creates a child run with parent lineage', async () => {

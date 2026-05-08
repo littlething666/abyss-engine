@@ -11,7 +11,7 @@
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
 import { assertBelowDailyCap, PIPELINE_BUDGET_CAPS } from '../budget/budgetGuard';
-import { inputHash } from '../contracts/generationContracts';
+import { inputHash, type ArtifactKind } from '../contracts/generationContracts';
 import { expandRunIntent, assertNoForbiddenPolicyFields } from '../runIntents/runIntentExpansion';
 import { buildRetryRunSnapshot } from './retryPlanning';
 import {
@@ -31,6 +31,8 @@ import {
 import { dbStatusToTransport } from '../contracts/statusMapper';
 import type { Env } from '../env';
 import type { PipelineKind } from '../repositories/types';
+import { applyArtifactToLearningContent } from '../learningContent/artifactApplication';
+import { WorkflowFail } from '../lib/workflowErrors';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -41,17 +43,32 @@ function getSupersedesKey(req: Request): string | undefined {
   return val.trim();
 }
 
-function cacheArtifactKind(kind: PipelineKind, snapshot: Record<string, unknown>): string | null {
+function cacheArtifactKind(kind: PipelineKind, snapshot: Record<string, unknown>): ArtifactKind | null {
   switch (kind) {
     case 'crystal-trial': return 'crystal-trial';
     case 'topic-expansion': return 'topic-expansion-cards';
     case 'subject-graph': return snapshot.pipeline_kind === 'subject-graph-topics' ? 'subject-graph-topics' : null;
     case 'topic-content': {
       if (snapshot.stage === 'full') return null;
-      const pipelineKind = snapshot.pipeline_kind;
-      return typeof pipelineKind === 'string' ? pipelineKind : null;
+      switch (snapshot.pipeline_kind) {
+        case 'topic-theory':
+        case 'topic-study-cards':
+        case 'topic-mini-game-category-sort':
+        case 'topic-mini-game-sequence-build':
+        case 'topic-mini-game-match-pairs':
+          return snapshot.pipeline_kind;
+        default:
+          return null;
+      }
     }
   }
+}
+
+function requireArtifactPayloadObject(payload: unknown, storageKey: string): Record<string, unknown> {
+  if (typeof payload === 'object' && payload !== null && !Array.isArray(payload)) {
+    return payload as Record<string, unknown>;
+  }
+  throw new WorkflowFail('validation:lcs-envelope', `cached artifact ${storageKey} must be a JSON object before Learning Content materialization`);
 }
 
 /**
@@ -207,6 +224,19 @@ runs.post('/', async (c) => {
 
   // 8. Emit events.
   if (cached) {
+    if (!artifactKind) {
+      throw new WorkflowFail('config:invalid', `cache hit ${cached.id} has no artifact kind for run kind ${kind}`);
+    }
+    const payload = await repos.artifacts.getStorage(cached.storage_key);
+    await applyArtifactToLearningContent({
+      learningContent: repos.learningContent,
+      deviceId,
+      runId: newRunId,
+      artifactKind,
+      payload: requireArtifactPayloadObject(payload, cached.storage_key),
+      snapshot: snapshotRecord,
+      contentHash: cached.content_hash,
+    });
     await repos.runs.appendTyped(newRunId, deviceId,
       buildArtifactReadyEvent({
         artifactId: cached.id,
