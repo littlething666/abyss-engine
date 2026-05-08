@@ -4,7 +4,7 @@ import { deckDb, topicCompositeKey, type DeckSubjectRow } from '../deckDb/deckDb
 import type { IDeckRepository, Manifest, ManifestOptions } from '../../types/repository';
 import type { Card, Subject, SubjectGraph, TopicDetails } from '../../types/core';
 import type { TopicContentStatusRecord } from '../../types/topicContent';
-import { topicStudyContentReady } from '../../features/contentGeneration';
+import { topicStudyContentReady } from '../../features/contentGeneration/topicStudyContentReady';
 
 export class IndexedDbDeckRepository implements IDeckRepository {
   async getManifest(options: ManifestOptions = {}): Promise<Manifest> {
