@@ -1,6 +1,6 @@
 # Local Workflows Removal Plan
 
-Status: draft implementation plan after codebase review (2026-05-08).
+Status: in progress (2026-05-08). PR 1 core is implemented: intent-only frontend submission types exist, `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 2 entry paths and PR 7 local runners are deleted.
 
 ## Goal
 
@@ -88,6 +88,19 @@ Move generation to durable-only routing and delete the local-runner/settings leg
 ## Implementation Plan
 
 ### PR 1 — Introduce intent-only frontend submission interface
+
+**Status (2026-05-08): complete for the central client/durable adapter seam; follow-up guard tests still recommended.**
+
+Completed:
+- Added `GenerationRunIntent` / `SubmitGenerationRunInput` in `src/types/repository.ts`.
+- Changed `GenerationClient.start*()` to accept compact intents and generate `crypto.randomUUID()` idempotency keys when none are supplied.
+- Removed generation snapshot builders and `inputHash` imports from `src/features/contentGeneration/generationClient.ts`.
+- Changed `DurableGenerationRunRepository.submitRun()` to post `{ kind, intent }`; direct intent inputs are forwarded without snapshots or model/policy fields.
+- Updated `generationClient` unit tests for intent-only submission and UUID idempotency.
+
+Still pending under later PRs:
+- Convert runtime callers away from `prepare*RunInput()` so the low-level `submitRun()` no longer needs the temporary `RunInput` compatibility path.
+- Add a repository boundary guard forbidding frontend runtime imports of snapshot builders / `inputHash` outside shared contracts/tests.
 
 **Files:**
 - `src/types/repository.ts`

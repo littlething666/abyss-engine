@@ -24,9 +24,11 @@ import type { ArtifactEnvelope, RunEvent, RunStatus } from '@/features/generatio
 import type {
   CancelReason,
   IGenerationRunRepository,
+  GenerationRunIntent,
   RunInput,
   RunListQuery,
   RunSnapshot,
+  SubmitGenerationRunInput,
 } from '@/types/repository';
 import type { ApiClient } from '../http/apiClient';
 import { openSseStream } from '../http/sseClient';
@@ -227,6 +229,15 @@ function miniGameTypeFromSnapshot(
  * client-built snapshots or generation-policy fields; the Worker expands this
  * compact intent against its Learning Content Store and backend policy.
  */
+function isLegacyRunInput(input: SubmitGenerationRunInput): input is RunInput {
+  return 'pipelineKind' in input;
+}
+
+function generationIntentToSubmitIntent(input: GenerationRunIntent): Record<string, unknown> {
+  const { kind: _kind, ...intent } = input;
+  return intent;
+}
+
 export function runInputToSubmitIntent(input: RunInput): Record<string, unknown> {
   switch (input.pipelineKind) {
     case 'topic-content': {
@@ -283,13 +294,16 @@ export class DurableGenerationRunRepository implements IGenerationRunRepository 
   }
 
   async submitRun(
-    input: RunInput,
+    input: SubmitGenerationRunInput,
     idempotencyKey: string,
   ): Promise<{ runId: string }> {
-    // All four pipeline kinds are supported in Phase 2.
+    const kind = isLegacyRunInput(input) ? input.pipelineKind : input.kind;
+    const intent = isLegacyRunInput(input)
+      ? runInputToSubmitIntent(input)
+      : generationIntentToSubmitIntent(input);
     const body: Record<string, unknown> = {
-      kind: input.pipelineKind,
-      intent: runInputToSubmitIntent(input),
+      kind,
+      intent,
     };
 
     const headers: Record<string, string> = {
@@ -297,9 +311,9 @@ export class DurableGenerationRunRepository implements IGenerationRunRepository 
     };
 
     // Topic Expansion forwards Supersedes-Key for server-side supersession.
-    if (input.pipelineKind === 'topic-expansion') {
-      const teInput = input as Extract<RunInput, { pipelineKind: 'topic-expansion' }>;
-      const supersedesKey = `te-supersedes:${teInput.subjectId}:${teInput.topicId}`;
+    if (kind === 'topic-expansion') {
+      const teIntent = intent as { subjectId: string; topicId: string };
+      const supersedesKey = `te-supersedes:${teIntent.subjectId}:${teIntent.topicId}`;
       headers['supersedes-key'] = supersedesKey;
     }
 

@@ -5,9 +5,10 @@
  * job statuses must throw, not silently default to `queued`.
  */
 
-import { describe, expect, it } from 'vitest';
-import { mapWorkerJobStatus, runInputToSubmitIntent } from './DurableGenerationRunRepository';
+import { describe, expect, it, vi } from 'vitest';
+import { DurableGenerationRunRepository, mapWorkerJobStatus, runInputToSubmitIntent } from './DurableGenerationRunRepository';
 import type { RunInput } from '@/types/repository';
+import type { ApiClient } from '../http/apiClient';
 
 describe('mapWorkerJobStatus (strict transport decoding)', () => {
   it('maps known statuses correctly', () => {
@@ -29,6 +30,59 @@ describe('mapWorkerJobStatus (strict transport decoding)', () => {
     expect(() => mapWorkerJobStatus('')).toThrow(/unknown job status/);
     expect(() => mapWorkerJobStatus('IN_PROGRESS')).toThrow(
       /unknown job status/,
+    );
+  });
+});
+
+describe('DurableGenerationRunRepository.submitRun', () => {
+  it('posts direct generation intents as { kind, intent } without snapshots or policy fields', async () => {
+    const post = vi.fn().mockResolvedValue({ runId: 'run-1' });
+    const repo = new DurableGenerationRunRepository({
+      deviceId: 'dev-1',
+      http: { baseUrl: 'https://worker.test', post } as unknown as ApiClient,
+    });
+
+    await repo.submitRun(
+      { kind: 'topic-content', subjectId: 'math', topicId: 'limits', stage: 'theory' },
+      'idem-1',
+    );
+
+    expect(post).toHaveBeenCalledWith(
+      '/v1/runs',
+      {
+        kind: 'topic-content',
+        intent: { subjectId: 'math', topicId: 'limits', stage: 'theory' },
+      },
+      { headers: { 'idempotency-key': 'idem-1' } },
+    );
+    expect(JSON.stringify(post.mock.calls[0]![1])).not.toContain('snapshot');
+    expect(JSON.stringify(post.mock.calls[0]![1])).not.toContain('model');
+  });
+
+  it('adds deterministic supersession headers for topic expansion intents', async () => {
+    const post = vi.fn().mockResolvedValue({ runId: 'run-1' });
+    const repo = new DurableGenerationRunRepository({
+      deviceId: 'dev-1',
+      http: { baseUrl: 'https://worker.test', post } as unknown as ApiClient,
+    });
+
+    await repo.submitRun(
+      { kind: 'topic-expansion', subjectId: 'math', topicId: 'limits', nextLevel: 2 },
+      'idem-2',
+    );
+
+    expect(post).toHaveBeenCalledWith(
+      '/v1/runs',
+      {
+        kind: 'topic-expansion',
+        intent: { subjectId: 'math', topicId: 'limits', nextLevel: 2 },
+      },
+      {
+        headers: {
+          'idempotency-key': 'idem-2',
+          'supersedes-key': 'te-supersedes:math:limits',
+        },
+      },
     );
   });
 });

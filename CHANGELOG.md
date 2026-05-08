@@ -11,3 +11,4 @@
 - Removed Supabase Storage from the artifact path in favor of Cloudflare R2 and documented backend generation settings as backend-owned policy, not persisted device settings.
 - Added backend Learning Content read routes and a frontend `BackendDeckRepository` adapter, wired for durable backend mode through infrastructure-only HTTP seams.
 - Added backend-owned durable prompt modules and moved workflow prompt construction out of inline workflow code.
+- Started local-workflow removal by introducing intent-only frontend generation submissions: `GenerationClient` no longer builds snapshots or hashes inputs, and the durable adapter posts `{ kind, intent }` bodies without client policy fields.

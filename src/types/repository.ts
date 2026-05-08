@@ -1,4 +1,5 @@
 import type { Card, MiniGameType, Subject, SubjectGraph, TopicDetails } from './core';
+import type { StudyChecklist } from './studyChecklist';
 import type { TopicPipelineRetryContext } from './contentGeneration';
 import type { TopicContentStatusRecord } from './topicContent';
 import type {
@@ -132,6 +133,46 @@ export type PipelineKind =
  *   copy MUST be suppressed for this reason.
  */
 export type CancelReason = 'user' | 'superseded';
+
+export type TopicContentGenerationStage = 'theory' | 'study-cards' | 'mini-games' | 'full';
+
+export type GenerationRunIntent =
+  | {
+      kind: 'topic-content';
+      subjectId: string;
+      topicId: string;
+      stage: TopicContentGenerationStage;
+      miniGameType?: MiniGameType;
+    }
+  | {
+      kind: 'topic-expansion';
+      subjectId: string;
+      topicId: string;
+      nextLevel: 1 | 2 | 3;
+    }
+  | {
+      kind: 'subject-graph';
+      subjectId: string;
+      stage: 'topics';
+      checklist: StudyChecklist;
+      /** Temporary until backend owns checklist→strategy resolution. */
+      strategyBrief?: Record<string, unknown>;
+    }
+  | {
+      kind: 'subject-graph';
+      subjectId: string;
+      stage: 'edges';
+      latticeArtifactContentHash: string;
+    }
+  | {
+      kind: 'crystal-trial';
+      subjectId: string;
+      topicId: string;
+      currentLevel: number;
+      targetLevel?: number;
+    };
+
+export type SubmitGenerationRunInput = GenerationRunIntent | RunInput;
 
 /**
  * Topic Content Pipeline snapshot variant. The pipeline runs as one durable
@@ -283,7 +324,7 @@ export interface IGenerationRunRepository {
    *   - Durable adapter: server-side `(device_id, idempotency_key)`
    *     uniqueness, identical re-submits return the existing `runId`.
    */
-  submitRun(input: RunInput, idempotencyKey: string): Promise<{ runId: string }>;
+  submitRun(input: SubmitGenerationRunInput, idempotencyKey: string): Promise<{ runId: string }>;
 
   /** Read the latest known run state (snapshot + per-job rows). */
   getRun(runId: string): Promise<RunSnapshot>;
