@@ -1,4 +1,11 @@
-import { ConsoleMessage, expect, Locator, Page } from '@playwright/test';
+import {
+  expect,
+  type BrowserContext,
+  type ConsoleMessage,
+  type Locator,
+  type Page,
+  type Route,
+} from '@playwright/test';
 
 /**
  * Focused E2E helpers used by current specs.
@@ -6,6 +13,85 @@ import { ConsoleMessage, expect, Locator, Page } from '@playwright/test';
 
 /** Home path that disables the WebGPU gate overlay so Playwright can reach the shell (see `app/page.tsx`). */
 export const E2E_HOME_PATH = '/?e2e=1';
+
+/**
+ * Deterministic durable Worker base URL used by Playwright. The route mock
+ * below owns this URL; no local Cloudflare Worker process is required for boot
+ * and shell tests that do not explicitly exercise durable execution.
+ */
+export const E2E_DURABLE_GENERATION_WORKER_URL =
+  'http://127.0.0.1:3000/__abyss-e2e-durable-generation';
+
+const E2E_DURABLE_GENERATION_PATH_PREFIX =
+  new URL(E2E_DURABLE_GENERATION_WORKER_URL).pathname;
+
+const routedDurableGenerationContexts = new WeakSet<BrowserContext>();
+
+function normaliseDurableWorkerPath(url: URL): string {
+  if (url.pathname.startsWith(E2E_DURABLE_GENERATION_PATH_PREFIX)) {
+    return url.pathname.slice(E2E_DURABLE_GENERATION_PATH_PREFIX.length) || '/';
+  }
+  return url.pathname;
+}
+
+async function fulfillJson(route: Route, status: number, body: unknown): Promise<void> {
+  await route.fulfill({
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Install a narrow durable Worker mock for tests whose purpose is app-shell
+ * behaviour, not backend workflow execution. It returns empty run lists so
+ * mount-time durable hydration has a deterministic backend boundary.
+ */
+export async function installDurableGenerationWorkerMock(page: Page): Promise<void> {
+  const context = page.context();
+  if (routedDurableGenerationContexts.has(context)) return;
+  routedDurableGenerationContexts.add(context);
+
+  let runSequence = 0;
+
+  await context.route(
+    /^(?:https?:\/\/(?:127\.0\.0\.1:3000\/__abyss-e2e-durable-generation|localhost:8787|127\.0\.0\.1:8787))(?:\/|$)/,
+    async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const path = normaliseDurableWorkerPath(url);
+
+      if (request.method() === 'GET' && path === '/health') {
+        await fulfillJson(route, 200, { ok: true });
+        return;
+      }
+
+      if (request.method() === 'GET' && path === '/v1/runs') {
+        await fulfillJson(route, 200, { runs: [] });
+        return;
+      }
+
+      if (request.method() === 'POST' && path === '/v1/runs') {
+        runSequence += 1;
+        await fulfillJson(route, 200, { runId: `e2e-run-${runSequence}` });
+        return;
+      }
+
+      if (request.method() === 'GET' && /^\/v1\/runs\/[^/]+\/events$/.test(path)) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: ': e2e empty durable stream\n\n',
+        });
+        return;
+      }
+
+      await fulfillJson(route, 404, {
+        error: `Unhandled e2e durable Worker route: ${request.method()} ${path}`,
+      });
+    },
+  );
+}
 
 /**
  * Wait for the page to be fully loaded with client-side hydration.

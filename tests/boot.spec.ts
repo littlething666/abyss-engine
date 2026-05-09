@@ -6,6 +6,7 @@ import {
   expectWebGPUAvailable,
   openCommandPaletteFromQuickActions,
   E2E_HOME_PATH,
+  installDurableGenerationWorkerMock,
 } from './utils/test-helpers';
 
 /**
@@ -17,6 +18,7 @@ import {
 
 test.describe('Boot Test', () => {
   test('should load the app with all UI elements and no critical errors', async ({ page }) => {
+    await installDurableGenerationWorkerMock(page);
     const { errors, stop } = startConsoleErrorCapture(page);
 
     // Navigate to the home page
