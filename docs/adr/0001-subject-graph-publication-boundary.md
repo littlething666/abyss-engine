@@ -13,6 +13,8 @@ Subject Graph Generation creates generated Subjects through a staged backend wor
 
 The Learning Content Store is the product read model for generated Subjects and Subject Graphs. Client reads and sync must not observe a partial curriculum graph, and regeneration must not hide a previously valid graph until a complete replacement is ready.
 
+ADR 0003 makes backend generation authoritative.
+
 ## Decision
 
 Subject Graph Generation publishes only a complete Subject Graph.
@@ -28,6 +30,7 @@ The Topic Lattice stage may persist durable artifacts and checkpoints, but it mu
 - Stage B generation is required before run completion and final Learning Content publication.
 - Regenerating an existing subject keeps the previously published graph visible until the replacement graph publish step succeeds.
 - Device-scoped Learning Content remains isolated by `device_id`; future auth migration tightens the same ownership boundary to user identity.
+- This ADR remains valid only as a backend publication-boundary decision. Any broader generation-ownership rule belongs in ADR 0003.
 
 ## Implementation Notes
 

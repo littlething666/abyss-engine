@@ -38,6 +38,8 @@ The following work is complete and should not remain as active plan tasks:
 - Browser pipeline model/provider/response-healing settings removal.
 - Backend-owned Subject Graph strategy expansion.
 - Backend-resolved current Crystal Trial question-set read path.
+- Consolidation of durable infrastructure and generation-ownership decisions into ADRs.
+- Removal of duplicate infrastructure decision and historical-planning decision files as active sources.
 
 Historical implementation logs are available in Git history. Keep this file focused on remaining executable work.
 
@@ -64,7 +66,8 @@ Add repository-wide guards for these invariants:
 - No pipeline model/healing settings return to browser settings.
 - `POST /v1/runs` rejects snapshots and policy fields.
 - Runtime components/hooks do not import `ApiClient`, `DurableGenerationRunRepository`, or SSE primitives directly.
-- No hosted Supabase migration/storage target, R2-as-database pattern, or Durable-Objects-as-workflow-engine pattern returns.
+- No frontend retry/cancel UI, frontend generation logs, or local runner state returns; backend owns retry/cancel decisions.
+- No hosted Supabase migration/storage target, R2-as-database pattern, Durable-Objects-as-workflow-engine pattern, `docs/infrastructure-decisions.md`, or separate historical-plan archive returns.
 
 ### 3. Verification
 
@@ -85,24 +88,6 @@ Manually verify:
 4. Confirm Crystal Trial questions load from backend current-set reads.
 5. Confirm no browser IndexedDB/localStorage generation-log, generated-question, artifact-application, or card-pool-hash writes occur.
 6. Confirm no `crystal-trial:completed` assessment event fires from question-generation success.
-
-## Questions / Recommended Answers
-
-### Q1. Should `docs/infrastructure-decisions.md` stay?
-
-Recommended answer: keep it only as a superseded pointer to ADRs for discoverability. Do not add new decisions there.
-
-### Q2. Should deleted historical plans be preserved somewhere?
-
-Recommended answer: no separate archive file. Git history already preserves them, and duplicate planning documents caused drift. Keep this plan as the only active plan.
-
-### Q3. Should future retry/cancel UI return after HUD deletion?
-
-Recommended answer: only as a backend-run consumer with explicit run IDs and backend diagnostics. Do not resurrect frontend generation logs or local runner state.
-
-### Q4. Should frontend prompt/parser modules survive if used only by tests?
-
-Recommended answer: only if they are testing shared contracts that remain intentionally supported. Otherwise delete them and move coverage to backend/shared contract tests.
 
 ## Close Criteria
 

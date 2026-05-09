@@ -29,6 +29,16 @@ Worker / Hono API
   └─ Workflows: durable pipeline execution
 ```
 
+## Decision Record Ownership
+
+`docs/infrastructure-decisions.md` is removed. Durable infrastructure decisions live in ADRs instead of in a separate pointer or summary file:
+
+- ADR 0002 owns durable infrastructure, persistence, storage, workflow, observability, and Cloudflare-native target-stack decisions.
+- ADR 0003 owns backend-authoritative generation, browser-boundary, retry/cancel ownership, and prompt/parser cleanup decisions.
+- ADR 0001 owns the narrower Subject Graph complete-publication boundary under the backend-authoritative model.
+
+Do not create a separate archive for deleted historical plans. Git history already preserves removed plans and superseded prose, and keeping duplicate planning documents creates decision drift.
+
 ## Consequences
 
 - Workflows own durable multi-step execution, retry, sleep, and persisted step state.
@@ -37,6 +47,7 @@ Worker / Hono API
 - Worker/Hono routes are the only browser-facing backend seam; the browser never talks directly to D1 or R2.
 - Durable Objects may be added later for strict per-device serialization, per-run live fanout, low-latency sequence allocation, or hot state with durable recovery, but they must not replace D1 or Workflows.
 - Do not add hosted Supabase migration history or Supabase Storage buckets to the target architecture.
+- Do not reintroduce `docs/infrastructure-decisions.md`, separate historical-plan archives, or durable infrastructure summary files as decision sources. New accepted decisions must be added to ADRs.
 
 ## Workflow and Event Rules
 

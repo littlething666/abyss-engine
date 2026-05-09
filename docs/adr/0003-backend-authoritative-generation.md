@@ -9,6 +9,8 @@ The generation system originally included browser-owned execution paths: fronten
 
 Phase 4 moves generation to durable-only routing and makes the backend responsible for execution, generation policy, snapshot expansion, prompt construction, validation, persistence, and generated Learning Content publication.
 
+Historical plans and frontend tests also legacy modules that were useful only during the browser-owned generation era. Keeping those modules as test-only anchors risks treating deleted frontend responsibilities as supported product contracts.
+
 ## Decision
 
 Generation is backend-authoritative.
@@ -37,6 +39,8 @@ The browser must not:
 8. Durable run observation in the browser is a content-refresh and product-notification consumer: it may invalidate/refetch backend reads and emit compatibility notifications, but it must not fetch artifacts and locally apply them as source-of-truth writes.
 9. Crystal Trial generated questions are read through backend current-set routes. Browser state owns only player attempt, answer, cooldown, score, and progression state.
 10. Destructive reset is allowed before release: old browser IndexedDB/localStorage generation data, local runners, frontend generation logs, frontend artifact appliers, and pipeline settings do not require migration.
+11. Retry and cancel decisions are backend-owned. Do not resurrect frontend retry/cancel UI, frontend generation logs, or local runner state. Future user-visible status surfaces, if any, must consume backend run state without owning retry/cancel policy.
+12. Frontend prompt/parser modules may remain only when they test or enforce shared contracts that are intentionally supported. If a prompt/parser module exists only to keep deleted frontend generation behavior alive in tests, delete it and move required coverage to backend or shared contract tests.
 
 ## Consequences
 
@@ -46,11 +50,16 @@ The browser must not:
 - `NEXT_PUBLIC_DURABLE_RUNS*` routing flags are deleted; durable routing is unconditional when the Worker URL is configured.
 - Pipeline model/provider/healing settings are removed from browser settings. Study-explanation settings may remain separate.
 - Browser generated-content storage is not authoritative. Backend Learning Content Store reads drive UI readiness and content rendering.
-- Failure diagnostics and retry belong to backend run/debug surfaces or explicit future backend-run consumers, not a frontend generation HUD.
+- Failure diagnostics, retry, and cancel policy belong to backend run/debug surfaces, not a frontend generation HUD.
+- Test-only frontend prompt/parser coverage must not preserve unsupported runtime contracts. Keep shared-contract tests, backend prompt/parser tests, and explicit boundary guards instead.
 
-## Open Follow-up
+## Remaining Cleanup Policy
 
-The remaining cleanup is mechanical, not architectural: delete or quarantine any leftover frontend-only prompt/parser modules and add final boundary guards to prevent reintroducing local workflow seams.
+The remaining cleanup is mechanical, not architectural:
+
+- Delete or quarantine leftover frontend-only prompt/parser modules.
+- Keep modules only when they enforce shared contracts that remain intentionally supported.
+- Add final boundary guards to prevent reintroducing local workflow seams, frontend generation logs, frontend artifact appliers, snapshot runtime submission, browser generation settings, or navigation abort.
 
 ## Related
 
