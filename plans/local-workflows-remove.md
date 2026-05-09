@@ -1,6 +1,6 @@
 # Local Workflows Removal Plan
 
-Status: in progress (2026-05-09). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, PR 4 HUD/UI removal, the first PR 5 durable-observation cutovers, PR 6 browser settings removal, and PR 7 local-runner/log-store deletion are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and runtime generation entry paths no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, store-backed topic-status/mentor UI reads, frontend generation log repository/store, HUD retry routing, local in-tab generation runners, frontend artifact appliers, local artifact capture, and legacy `RunInput` submit compatibility have been removed. Durable run observation no longer fetches artifacts or invokes frontend topic-content/topic-expansion/crystal-trial appliers; terminal durable events now publish query invalidations for backend-owned Learning Content Store reads. `useContentGenerationHydration()` now skips browser generation-log hydration and reattaches durable observation using compact intents derived from Worker run snapshots, failing loudly on malformed Worker snapshot contracts instead of rebuilding frontend `RunInput`. Browser Global Settings now exposes only study explanation model/provider bindings; generation pipeline model selection and `openRouterResponseHealing` local state are removed, and pipeline surfaces fail loudly if legacy code tries to resolve them through study settings. 2026-05-09 review update: the remaining work is backend subject strategy ownership (PR 8), Crystal Trial backend-resolved read consumption, cleanup of shared artifact-applier contracts/prompt-parser remnants where no backend import requires them, and final documentation/drift guards (PR 9).
+Status: in progress (2026-05-09). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, PR 4 HUD/UI removal, the first PR 5 durable-observation cutovers, PR 6 browser settings removal, PR 7 local-runner/log-store deletion, and PR 8 backend Subject Graph strategy ownership are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and runtime generation entry paths no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, store-backed topic-status/mentor UI reads, frontend generation log repository/store, HUD retry routing, local in-tab generation runners, frontend artifact appliers, local artifact capture, and legacy `RunInput` submit compatibility have been removed. Durable run observation no longer fetches artifacts or invokes frontend topic-content/topic-expansion/crystal-trial appliers; terminal durable events now publish query invalidations for backend-owned Learning Content Store reads. Subject Graph Generation topic-stage intents now carry checklist-only browser input; the Worker rejects client `strategyBrief` and derives the canonical strategy brief server-side before snapshot expansion. `useContentGenerationHydration()` now skips browser generation-log hydration and reattaches durable observation using compact intents derived from Worker run snapshots, failing loudly on malformed Worker snapshot contracts instead of rebuilding frontend `RunInput`. Browser Global Settings now exposes only study explanation model/provider bindings; generation pipeline model selection and `openRouterResponseHealing` local state are removed, and pipeline surfaces fail loudly if legacy code tries to resolve them through study settings. 2026-05-09 review update: the remaining work is Crystal Trial backend-resolved read consumption, cleanup of shared artifact-applier contracts/prompt-parser remnants where no backend import requires them, and final documentation/drift guards (PR 9).
 
 ## Goal
 
@@ -409,19 +409,27 @@ Remaining follow-ups:
 
 ### PR 8 — Backend intent cleanup for subject strategy ownership
 
+**Status (2026-05-09): complete.**
+
+Completed:
+- Added a backend-owned Subject Graph strategy resolver used by Worker run-intent expansion.
+- Removed the temporary `strategyBrief` field from the frontend `GenerationRunIntent` type.
+- Changed Subject Graph topic-stage expansion to accept checklist-only client intents, map the checklist into the canonical snapshot shape, and derive `strategy_brief` on the backend.
+- Added tests proving checklist-only expansion and HTTP rejection of client-provided `strategyBrief`.
+
 **Files:**
 - `backend/src/runIntents/runIntentExpansion.ts`
 - backend run-intent tests
 - shared/domain strategy module location if moved
 
 **Steps:**
-1. Change subject graph topics intent validation to require only `subjectId`, `stage: 'topics'`, and `checklist`.
-2. Move or duplicate `resolveStrategy(checklist)` into a backend-owned module, or promote strategy resolution to a shared pure contract module with no frontend/runtime dependencies.
-3. Reject `strategyBrief` from client intents if backend owns it fully.
-4. Keep the existing forbidden policy field checks.
+1. Change subject graph topics intent validation to require only `subjectId`, `stage: 'topics'`, and `checklist`. **Done 2026-05-09.**
+2. Move or duplicate `resolveStrategy(checklist)` into a backend-owned module, or promote strategy resolution to a shared pure contract module with no frontend/runtime dependencies. **Done 2026-05-09 via `backend/src/runIntents/subjectGraphStrategy.ts`.**
+3. Reject `strategyBrief` from client intents if backend owns it fully. **Done 2026-05-09.**
+4. Keep the existing forbidden policy field checks. **Done.**
 
 **Exit checks:**
-- Browser subject generation intent contains no snapshot-like strategy fields unless explicitly retained by decision.
+- Browser subject generation intent contains no snapshot-like strategy fields.
 - Backend tests prove checklist-only intent expands to the same snapshot shape.
 
 ### PR 9 — Documentation and drift guards

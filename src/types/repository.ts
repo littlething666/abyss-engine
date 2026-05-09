@@ -140,8 +140,6 @@ export type GenerationRunIntent =
       subjectId: string;
       stage: 'topics';
       checklist: StudyChecklist;
-      /** Temporary until backend owns checklist→strategy resolution. */
-      strategyBrief?: Record<string, unknown>;
     }
   | {
       kind: 'subject-graph';

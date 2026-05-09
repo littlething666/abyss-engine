@@ -118,6 +118,65 @@ describe('assertNoForbiddenPolicyFields', () => {
 });
 
 describe('expandRunIntent', () => {
+  it('expands subject graph topics intent from checklist and backend-owned strategy', async () => {
+    const expanded = await expandRunIntent({
+      deviceId: DEVICE_ID,
+      kind: 'subject-graph',
+      intent: {
+        subjectId: 'math',
+        stage: 'topics',
+        checklist: {
+          topicName: 'Calculus',
+          studyGoal: 'exam-prep',
+          priorKnowledge: 'beginner',
+          learningStyle: 'theory-heavy',
+          focusAreas: 'Limits before derivatives',
+        },
+      },
+      learningContent: repo(),
+      now: () => NOW,
+    });
+
+    expect(expanded).toMatchObject({ kind: 'subject-graph', subjectId: 'math', topicId: null });
+    expect(expanded.snapshot).toMatchObject({
+      pipeline_kind: 'subject-graph-topics',
+      subject_id: 'math',
+      captured_at: NOW.toISOString(),
+      checklist: {
+        topic_name: 'Calculus',
+        study_goal: 'exam-prep',
+        prior_knowledge: 'beginner',
+        learning_style: 'theory-heavy',
+        focus_areas: 'Limits before derivatives',
+      },
+      strategy_brief: {
+        total_tiers: 3,
+        topics_per_tier: 5,
+        domain_brief: 'Calculus',
+        focus_constraints: 'Limits before derivatives',
+      },
+      provider_healing_requested: true,
+    });
+    const strategyBrief = expanded.snapshot.strategy_brief as Record<string, unknown>;
+    expect(String(strategyBrief.audience_brief)).toContain('Structure supports exam-style recall');
+    expect(expanded.snapshot.model_id).toBe(DEFAULT_GENERATION_POLICY.jobs['subject-graph-topics'].modelId);
+  });
+
+  it('rejects client-provided subject graph strategy briefs', async () => {
+    await expect(expandRunIntent({
+      deviceId: DEVICE_ID,
+      kind: 'subject-graph',
+      intent: {
+        subjectId: 'math',
+        stage: 'topics',
+        checklist: { topicName: 'Calculus' },
+        strategyBrief: { total_tiers: 99 },
+      },
+      learningContent: repo(),
+      now: () => NOW,
+    })).rejects.toThrow('intent.strategyBrief is not accepted');
+  });
+
   it('expands topic expansion intent from Learning Content rows and backend policy', async () => {
     const expanded = await expandRunIntent({
       deviceId: DEVICE_ID,

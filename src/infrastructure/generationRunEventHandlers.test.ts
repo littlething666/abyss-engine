@@ -215,13 +215,6 @@ function subjectGraphInput(
       subjectId: 'subj-1',
       stage: 'topics',
       checklist: { topicName: 'Test Subject' },
-      strategyBrief: {
-        total_tiers: 3,
-        topics_per_tier: 4,
-        audience_brief: 'beginners',
-        domain_brief: 'testing',
-        focus_constraints: '',
-      },
     };
   }
   return {

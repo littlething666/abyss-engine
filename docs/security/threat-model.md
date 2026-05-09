@@ -140,9 +140,9 @@ Abyss Engine v1 deploys a server-side durable generation orchestrator that persi
 **Mitigation:**
 - Idempotency enforcement is per-device (`(device_id, idempotency_key)` unique constraint).
 - 24-hour TTL — stale keys create fresh runs, not duplicates.
-- Key derivation includes `input_hash`, making it content-bound, not reusable across different inputs.
+- New browser submissions use UUID-based idempotency keys and are scoped per device; retries use backend retry routes instead of reconstructing submit bodies.
 
-**Residual risk:** An attacker who knows a device's UUID and a recent idempotency key could replay it within 24h to trigger a cache-hit response. No new LLM calls are made. Acceptable.
+**Residual risk:** An attacker who knows a device's UUID and a recent idempotency key could replay it within 24h and receive the same run response. D1 idempotency prevents duplicate run creation for that key. Acceptable.
 
 ## Dependency threat model
 

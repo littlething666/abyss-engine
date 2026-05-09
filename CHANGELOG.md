@@ -18,3 +18,4 @@
 - Removed browser generation-log hydration from `useContentGenerationHydration`; mount-time durable observation now uses compact intents derived from Worker snapshots and fails loudly on malformed Worker snapshot contracts.
 - Removed browser-owned generation pipeline settings from Global Settings and `studySettingsStore`; only study explanation surfaces keep model/provider bindings, while durable generation model and response-healing policy are backend-owned.
 - Deleted local generation runners, frontend generation log/store state, HUD retry helpers, local artifact appliers, artifact-dedupe IndexedDB storage, and legacy `RunInput` submit compatibility; durable observation now keeps only a narrow run-event cursor store.
+- Moved Subject Graph Generation strategy ownership to the backend: browser topic-stage intents are checklist-only, while the Worker derives `strategy_brief` and rejects client-provided strategy payloads.

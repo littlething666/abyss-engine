@@ -83,6 +83,35 @@ describe('run route validation', () => {
     expect(calls[0].sql).toContain('insert into devices');
   });
 
+  it('rejects client-provided subject graph strategy at POST /v1/runs', async () => {
+    const { db, calls } = createFakeD1([q(deviceRow())]);
+
+    const response = await app.fetch(
+      new Request('https://fakehost/v1/runs', {
+        method: 'POST',
+        headers: headers({ 'idempotency-key': 'idem-subject-strategy' }),
+        body: JSON.stringify({
+          kind: 'subject-graph',
+          intent: {
+            subjectId: 'calculus',
+            stage: 'topics',
+            checklist: { topicName: 'Calculus' },
+            strategyBrief: { total_tiers: 3 },
+          },
+        }),
+      }),
+      env(db),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'config:invalid-intent',
+      message: expect.stringContaining('intent.strategyBrief is not accepted'),
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain('insert into devices');
+  });
+
   it('rejects malformed run route ids before run lookup', async () => {
     const { db, calls } = createFakeD1([q(deviceRow())]);
 

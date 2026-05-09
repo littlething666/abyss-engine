@@ -23,15 +23,10 @@ const subjectGraphTopicsIntent = {
     subjectId: 'runtime-subject',
     stage: 'topics',
     checklist: {
-      topic_name: 'Runtime Algebra',
-      study_goal: 'Learn runtime-safe equations',
-    },
-    strategyBrief: {
-      total_tiers: 2,
-      topics_per_tier: 2,
-      audience_brief: 'Runtime integration learner',
-      domain_brief: 'Algebra basics',
-      focus_constraints: '',
+      topicName: 'Runtime Algebra',
+      studyGoal: 'exam-prep',
+      priorKnowledge: 'beginner',
+      focusAreas: 'Learn runtime-safe equations',
     },
   },
 };

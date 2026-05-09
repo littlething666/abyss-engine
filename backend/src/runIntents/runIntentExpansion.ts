@@ -20,6 +20,13 @@ import {
   type RunInputSnapshot,
 } from '../contracts/generationContracts';
 import { resolveGenerationJobPolicy, type BackendGenerationJobKind } from '../generationPolicy';
+import {
+  resolveSubjectGraphStrategyBrief,
+  type LearningStyle,
+  type PriorKnowledge,
+  type StudyGoal,
+  type SubjectGraphStudyChecklist,
+} from './subjectGraphStrategy';
 import type { ILearningContentRepo } from '../learningContent/learningContentRepo';
 import type { JsonObject, LearningContentSubject, TopicCardContent, TopicDetailsContent } from '../learningContent/types';
 import type { PipelineKind } from '../repositories/types';
@@ -55,6 +62,10 @@ const MINI_GAME_SCHEMA_VERSION_BY_TYPE = {
 type TopicContentStage = 'theory' | 'study-cards' | 'mini-games' | 'full';
 type SubjectGraphStage = 'topics' | 'edges';
 type MiniGameType = keyof typeof MINI_GAME_PIPELINE_BY_TYPE;
+
+const STUDY_GOALS = new Set<StudyGoal>(['curiosity', 'exam-prep', 'career-switch', 'refresh']);
+const PRIOR_KNOWLEDGE_LEVELS = new Set<PriorKnowledge>(['none', 'beginner', 'intermediate', 'advanced']);
+const LEARNING_STYLES = new Set<LearningStyle>(['balanced', 'theory-heavy', 'practice-heavy']);
 
 export interface IntentExpandedRun {
   kind: PipelineKind;
@@ -125,6 +136,50 @@ function requireNonNegativeInteger(value: unknown, label: string): number {
 function optionalString(value: unknown, label: string): string | undefined {
   if (value === undefined) return undefined;
   return requireString(value, label);
+}
+
+function optionalEnum<T extends string>(
+  value: unknown,
+  label: string,
+  allowed: ReadonlySet<T>,
+): T | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && allowed.has(value as T)) return value as T;
+  throw new Error(`${label} must be one of ${Array.from(allowed).join(', ')}`);
+}
+
+function requireSubjectGraphChecklist(value: unknown, label: string): SubjectGraphStudyChecklist {
+  const checklist = requireRecord(value, label);
+  const studyGoal = optionalEnum(checklist.studyGoal, `${label}.studyGoal`, STUDY_GOALS);
+  const priorKnowledge = optionalEnum(checklist.priorKnowledge, `${label}.priorKnowledge`, PRIOR_KNOWLEDGE_LEVELS);
+  const learningStyle = optionalEnum(checklist.learningStyle, `${label}.learningStyle`, LEARNING_STYLES);
+  if (checklist.focusAreas !== undefined && typeof checklist.focusAreas !== 'string') {
+    throw new Error(`${label}.focusAreas must be a string when present`);
+  }
+
+  return {
+    topicName: requireString(checklist.topicName, `${label}.topicName`),
+    ...(studyGoal ? { studyGoal } : {}),
+    ...(priorKnowledge ? { priorKnowledge } : {}),
+    ...(learningStyle ? { learningStyle } : {}),
+    ...(checklist.focusAreas !== undefined ? { focusAreas: checklist.focusAreas } : {}),
+  };
+}
+
+function subjectGraphSnapshotChecklist(checklist: SubjectGraphStudyChecklist): {
+  topic_name: string;
+  study_goal?: string;
+  prior_knowledge?: string;
+  learning_style?: string;
+  focus_areas?: string;
+} {
+  return {
+    topic_name: checklist.topicName,
+    ...(checklist.studyGoal ? { study_goal: checklist.studyGoal } : {}),
+    ...(checklist.priorKnowledge ? { prior_knowledge: checklist.priorKnowledge } : {}),
+    ...(checklist.learningStyle ? { learning_style: checklist.learningStyle } : {}),
+    ...(checklist.focusAreas !== undefined ? { focus_areas: checklist.focusAreas } : {}),
+  };
 }
 
 function requireStage(value: unknown, label: string): TopicContentStage {
@@ -443,28 +498,18 @@ async function expandSubjectGraphIntent(deps: ExpandRunIntentDeps): Promise<Inte
     return { kind: deps.kind, snapshot, subjectId, topicId: null };
   }
 
-  const checklist = requireRecord(intent.checklist, 'intent.checklist');
-  const strategyBrief = requireRecord(intent.strategyBrief, 'intent.strategyBrief');
+  if (Object.hasOwn(intent, 'strategyBrief')) {
+    throw new Error('intent.strategyBrief is not accepted; Subject Graph Generation strategy is backend-owned');
+  }
+  const checklist = requireSubjectGraphChecklist(intent.checklist, 'intent.checklist');
   const snapshot = await withBackendPolicy(deviceId, 'subject-graph-topics', (modelId) => buildSubjectGraphTopicsSnapshot({
     subjectId,
     schemaVersion: subjectGraphTopicsSchemaVersion,
     promptTemplateVersion: PROMPT_TEMPLATE_VERSION,
     modelId,
     capturedAt,
-    checklist: {
-      topic_name: requireString(checklist.topic_name, 'intent.checklist.topic_name'),
-      study_goal: optionalString(checklist.study_goal, 'intent.checklist.study_goal'),
-      prior_knowledge: optionalString(checklist.prior_knowledge, 'intent.checklist.prior_knowledge'),
-      learning_style: optionalString(checklist.learning_style, 'intent.checklist.learning_style'),
-      focus_areas: optionalString(checklist.focus_areas, 'intent.checklist.focus_areas'),
-    },
-    strategyBrief: {
-      total_tiers: requirePositiveInteger(strategyBrief.total_tiers, 'intent.strategyBrief.total_tiers'),
-      topics_per_tier: requirePositiveInteger(strategyBrief.topics_per_tier, 'intent.strategyBrief.topics_per_tier'),
-      audience_brief: requireString(strategyBrief.audience_brief, 'intent.strategyBrief.audience_brief'),
-      domain_brief: requireString(strategyBrief.domain_brief, 'intent.strategyBrief.domain_brief'),
-      focus_constraints: typeof strategyBrief.focus_constraints === 'string' ? strategyBrief.focus_constraints : '',
-    },
+    checklist: subjectGraphSnapshotChecklist(checklist),
+    strategyBrief: resolveSubjectGraphStrategyBrief(checklist),
   }));
   return { kind: deps.kind, snapshot, subjectId, topicId: null };
 }

@@ -14,7 +14,7 @@ Phase 4 completes the Durable Workflow Orchestration program by making the backe
 After Phase 4:
 
 - the browser submits **generation intents**, not execution snapshots with model/provider policy;
-- the backend expands intents into canonical `RunInputSnapshot`s;
+- the backend expands intents into canonical `RunInputSnapshot`s, including checklist-derived Subject Graph Generation strategy;
 - model choice, prompt construction, response-healing posture, strict parsing, semantic validation, retries, idempotency, budget accounting, and artifact persistence live behind backend seams;
 - generated Subjects, Subject Graphs, Topic Content, study cards, and Crystal Trial question sets persist in the backend **Learning Content Store**;
 - the frontend reads learning content from backend repositories and observes run events for UI state only;
@@ -22,7 +22,7 @@ After Phase 4:
 
 ## Accepted Product/Architecture Decisions
 
-1. **Backend owns pipeline model choice.** Pipeline model IDs are resolved from backend generation policy. Frontend study-explanation surfaces may keep their own local settings for now, but Subject Graph Generation, Topic Content Pipeline, Topic Expansion, and Crystal Trial generation cannot read `studySettingsStore` model bindings.
+1. **Backend owns pipeline model choice and Subject Graph strategy expansion.** Pipeline model IDs are resolved from backend generation policy. Subject Graph Generation topic-stage intents carry checklist-only browser input; the Worker derives the canonical strategy brief before snapshot hashing. Frontend study-explanation surfaces may keep their own local settings for now, but Subject Graph Generation, Topic Content Pipeline, Topic Expansion, and Crystal Trial generation cannot read `studySettingsStore` model bindings.
 2. **Response healing is not user-toggleable.** The OpenRouter `response-healing` plugin is a backend generation-policy decision. Phase 4 v1 keeps it enabled in backend defaults and records `providerHealingRequested` in run/job metadata. There is no browser setting and no localStorage migration.
 3. **Full backend learning-content persistence lands now.** The browser no longer owns generated deck persistence. Durable workflows write validated artifacts into backend learning-content tables before `run.completed` is emitted.
 4. **Destructive reset is allowed.** Do not preserve old IndexedDB/localStorage generation data. Do not write compatibility adapters for old snapshots/settings.
@@ -95,8 +95,8 @@ Add these backend modules and keep their interfaces deep and narrow:
   - exposes repository methods used by routes, workflow intent expansion, and backend artifact appliers.
 - `backend/src/runIntents/`
   - validates browser-submitted generation intents;
-  - expands intents into canonical backend `RunInputSnapshot`s using Learning Content Store reads and generation policy;
-  - rejects any client-supplied model/provider/healing fields.
+  - expands intents into canonical backend `RunInputSnapshot`s using Learning Content Store reads, backend-owned Subject Graph strategy resolution, and generation policy;
+  - rejects any client-supplied model/provider/healing fields or Subject Graph `strategyBrief`.
 - `backend/src/prompts/`
   - owns pipeline prompt construction for all four pipeline kinds;
   - uses source data from snapshots and prompt-template versions from backend constants.
@@ -185,7 +185,8 @@ Change `POST /v1/runs` from snapshot submission to intent submission:
 Allowed intent shapes:
 
 - Subject Graph Generation:
-  - `{ subjectId, checklist }`
+  - `{ subjectId, stage: 'topics', checklist }` for Topic Lattice generation; the Worker derives `strategy_brief` from the checklist and rejects client `strategyBrief`.
+  - `{ subjectId, stage: 'edges', latticeArtifactContentHash }` for Prerequisite Edge generation.
 - Topic Content Pipeline:
   - `{ subjectId, topicId, stage?: 'theory' | 'study-cards' | 'mini-games' | 'full', forceRegenerate?: boolean }`
 - Topic Expansion:
