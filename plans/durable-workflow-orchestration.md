@@ -40,6 +40,8 @@ The following work is complete and should not remain as active plan tasks:
 - Backend-resolved current Crystal Trial question-set read path.
 - Consolidation of durable infrastructure and generation-ownership decisions into ADRs.
 - Removal of duplicate infrastructure decision and historical-planning decision files as active sources.
+- Decoupled `loadTheoryPayloadFromTopicDetails()` from deprecated permissive parser types; pipeline reconstruction now owns its persisted Learning Content payload shape.
+- Expanded durable generation boundary tests for backend/pipeline parser seams, deleted frontend generation surfaces, durable routing flags, navigation abort reasons, intent-only frontend submission, frontend snapshot/hash import drift, and retired infrastructure decision files.
 
 Historical implementation logs are available in Git history. Keep this file focused on remaining executable work.
 
@@ -50,24 +52,28 @@ Historical implementation logs are available in Git history. Keep this file focu
 - Audit `src/features/contentGeneration/messages/**`, `src/features/contentGeneration/parsers/**`, and Subject Graph local prompt/parser remnants.
 - Delete frontend-only permissive pipeline parser/prompt modules that no backend/shared test or supported read-model validation still imports.
 - Keep the documented Subject Graph Stage B deterministic edge-repair exception only where still required by backend workflow code.
-- Add or update guards proving no pipeline/backend path imports `extractJsonString()` or deprecated permissive parsers.
+- Continue deleting or quarantining any remaining prompt/parser modules after their callers are proven unsupported by backend/shared tests.
 
 ### 2. Final drift and boundary guards
 
-Add repository-wide guards for these invariants:
+Most repository-wide guard coverage now lives in `src/features/generationContracts/durableGenerationBoundary.test.ts`:
 
 - No local generation runner files or imports return.
 - No `GenerationProgressHud`, frontend generation log/store, or store-backed generation attention surface returns.
 - No frontend artifact appliers or `AppliedArtifactsStore` return for backend-generated artifacts.
 - No `NEXT_PUBLIC_DURABLE_RUNS*` routing flags return.
-- No `kind: 'navigation'` generation abort reason can be constructed.
-- No frontend runtime generation submission contains `modelId`, `model_id`, `providerHealingRequested`, `responseHealing`, `plugins`, `response_format`, or snapshots.
-- No frontend runtime imports snapshot builders or `inputHash` outside shared contract/test seams.
-- No pipeline model/healing settings return to browser settings.
-- `POST /v1/runs` rejects snapshots and policy fields.
-- Runtime components/hooks do not import `ApiClient`, `DurableGenerationRunRepository`, or SSE primitives directly.
-- No frontend retry/cancel UI, frontend generation logs, or local runner state returns; backend owns retry/cancel decisions.
-- No hosted Supabase migration/storage target, R2-as-database pattern, Durable-Objects-as-workflow-engine pattern, `docs/infrastructure-decisions.md`, or separate historical-plan archive returns.
+- No `kind: 'navigation'` or navigation cancel reason can be constructed in runtime code.
+- Frontend run submission remains intent-only and excludes `modelId`, `model_id`, `providerHealingRequested`, `responseHealing`, `plugins`, `response_format`, or snapshots.
+- Frontend runtime code cannot import snapshot builders or `inputHash` outside shared contract/test seams.
+- Runtime features/components/hooks do not import `ApiClient`, `DurableGenerationRunRepository`, or SSE primitives directly.
+- Backend and pipeline code cannot import `extractJsonString()` or deprecated permissive parsers.
+- `docs/infrastructure-decisions.md` remains deleted.
+
+Remaining follow-ups:
+
+- Add an explicit backend route test proving `POST /v1/runs` rejects snapshots and generation-policy fields once the run route files are in scope for this cleanup pass.
+- Extend the guard if browser settings code reintroduces pipeline model/healing configuration or if historical plan archive filenames reappear under a different path.
+- Complete the verification batch and manual close/reopen checks below.
 
 ### 3. Verification
 
