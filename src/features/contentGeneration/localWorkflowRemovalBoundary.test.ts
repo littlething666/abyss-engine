@@ -25,6 +25,11 @@ const FORBIDDEN_RUNTIME_TEXT = [
   '"topicContent"',
   "'crystalTrial'",
   '"crystalTrial"',
+  'NEXT_PUBLIC_DURABLE_RUNS',
+] as const;
+
+const FORBIDDEN_RUNTIME_PATTERNS = [
+  { label: 'navigation generation abort reason', pattern: /\bkind\s*:\s*['"]navigation['"]/ },
 ] as const;
 
 const FORBIDDEN_RUNTIME_FILES = [
@@ -38,6 +43,12 @@ const FORBIDDEN_RUNTIME_FILES = [
   'src/features/crystalTrial/generateTrialQuestions.ts',
   'src/features/crystalTrial/appliers/crystalTrialApplier.ts',
   'src/features/generationContracts/artifacts/applier.ts',
+] as const;
+
+const FORBIDDEN_RETURNED_FILE_FRAGMENTS = [
+  'contentGenerationLog',
+  'generationAttentionSurface',
+  'useContentGenerationLifecycle',
 ] as const;
 
 function walk(dir: string): string[] {
@@ -62,8 +73,10 @@ describe('local workflow removal boundary', () => {
     .filter((file) => !file.endsWith('.test.tsx'));
 
   it('keeps deleted local generation runtime files deleted', () => {
-    const existing = new Set(runtimeFiles.map(relative));
-    const restored = FORBIDDEN_RUNTIME_FILES.filter((file) => existing.has(file));
+    const restored = runtimeFiles
+      .map(relative)
+      .filter((file) => FORBIDDEN_RUNTIME_FILES.includes(file as (typeof FORBIDDEN_RUNTIME_FILES)[number]) ||
+        FORBIDDEN_RETURNED_FILE_FRAGMENTS.some((fragment) => file.includes(fragment)));
 
     expect(
       restored,
@@ -84,6 +97,25 @@ describe('local workflow removal boundary', () => {
     expect(
       offenders,
       'Frontend runtime must not reference local runners, generation HUD/log stores, frontend artifact appliers, or browser-owned generation policy settings.',
+    ).toEqual([]);
+  });
+
+  it('forbids durable routing flags and navigation abort payloads from returning', () => {
+    const offenders: Array<{ file: string; label: string }> = [];
+    for (const file of runtimeFiles) {
+      const rel = relative(file);
+      const text = readFileSync(file, 'utf8');
+
+      for (const forbidden of FORBIDDEN_RUNTIME_PATTERNS) {
+        if (!forbidden.pattern.test(text)) continue;
+        if (!/abort|cancel|generation/i.test(text)) continue;
+        offenders.push({ file: rel, label: forbidden.label });
+      }
+    }
+
+    expect(
+      offenders,
+      'Durable generation routing is unconditional. Runtime code must not reintroduce NEXT_PUBLIC_DURABLE_RUNS gates or navigation-generated abort reasons.',
     ).toEqual([]);
   });
 });

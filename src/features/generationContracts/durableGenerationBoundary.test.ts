@@ -14,8 +14,11 @@
 import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const SRC_DIR = path.resolve(import.meta.dirname ?? __dirname, '../..');
+const SELF = fileURLToPath(import.meta.url);
+const REPO_ROOT = path.resolve(path.dirname(SELF), '../../..');
+const SRC_DIR = path.join(REPO_ROOT, 'src');
 
 /** Files or directories excluded from the scan. */
 const EXCLUDED_DIRS = new Set([
@@ -46,7 +49,6 @@ function collectSourceFiles(dir: string): string[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    const relativePath = path.relative(SRC_DIR, fullPath).replace(/\\/g, '/');
 
     if (entry.isDirectory()) {
       if (EXCLUDED_DIRS.has(entry.name)) continue;
@@ -57,13 +59,21 @@ function collectSourceFiles(dir: string): string[] {
       !entry.name.endsWith('.test.tsx') &&
       !entry.name.endsWith('.spec.ts')
     ) {
-      files.push(relativePath);
+      files.push(path.relative(REPO_ROOT, fullPath).replace(/\\/g, '/'));
     }
   }
   return files;
 }
 
 describe('durable generation import boundary', () => {
+  it('scans repository-root-relative runtime files instead of a truncated subtree', () => {
+    const sourceFiles = collectSourceFiles(SRC_DIR);
+
+    expect(sourceFiles.some((file) => file.startsWith('src/features/'))).toBe(true);
+    expect(sourceFiles.some((file) => file.startsWith('src/components/'))).toBe(true);
+    expect(sourceFiles.some((file) => file.startsWith('src/hooks/'))).toBe(true);
+  });
+
   it('no feature, component, or hook imports DurableGenerationRunRepository, apiClient, or sseClient', () => {
     const sourceFiles = collectSourceFiles(SRC_DIR);
     const violations: string[] = [];
@@ -81,7 +91,7 @@ describe('durable generation import boundary', () => {
       }
 
       try {
-        const content = fs.readFileSync(path.resolve(SRC_DIR, file), 'utf-8');
+        const content = fs.readFileSync(path.resolve(REPO_ROOT, file), 'utf-8');
         for (const forbidden of FORBIDDEN_IMPORTS) {
           if (content.includes(forbidden)) {
             violations.push(`${file}: imports '${forbidden}'`);

@@ -24,7 +24,7 @@ Durable generation is backend-authoritative:
 - Browser durable observation persists only SSE cursors, invalidates backend-backed reads, and emits product notifications.
 - Generated learning content is read from the backend Learning Content Store, not local generation logs, frontend artifact appliers, or browser-owned generated question storage.
 
-## Completed Cleanup
+## Completed Work
 
 The following work is complete and should not remain as active plan tasks:
 
