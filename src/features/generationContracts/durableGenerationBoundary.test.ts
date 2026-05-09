@@ -3,8 +3,9 @@
  *
  * Enforces that frontend runtime code cannot reintroduce deleted local
  * generation runners, generation HUD/log/applier surfaces, durable routing
- * flags, navigation abort reasons, snapshot/policy submission fields, or
- * direct infrastructure adapter imports.
+ * flags, navigation abort reasons, snapshot/policy submission fields, browser
+ * pipeline model/provider/healing settings, retired durable decision/plan
+ * archives, or direct infrastructure adapter imports.
  *
  * Mirrors the pattern of `lucideImportBoundary.test.ts` and
  * `legacyParserBoundary.test.ts` while intentionally keeping backend-owned
@@ -99,11 +100,52 @@ const FORBIDDEN_SUBMISSION_FIELD_FRAGMENTS = [
   'snapshot_json',
 ] as const;
 
-const RETIRED_REPOSITORY_PATHS = [
-  'docs/infrastructure-decisions.md',
+const RETIRED_REPOSITORY_PATH_PATTERNS = [
+  /^docs\/infrastructure-decisions\.md$/i,
+  /(^|\/)(?:durable-workflow-orchestration-v\d+|historical-durable-workflow-orchestration)(?:\.[a-z0-9]+)?$/i,
+  /(^|\/)(?:durable-workflow-orchestration|durable-generation)-(?:archive|archived|history|historical|summary|decisions)(?:\.[a-z0-9]+)?$/i,
+  /(^|\/)(?:archive|archived|history|historical)\/.*durable.*(?:workflow|generation|orchestration).*\.md$/i,
 ] as const;
 
-function collectSourceFiles(dir: string): string[] {
+const SETTINGS_SOURCE_PATH_FRAGMENTS = [
+  '/settings/',
+  '/Settings/',
+  'Settings',
+  'settings',
+  'src/store/',
+] as const;
+
+const PIPELINE_SETTING_SCOPE_FRAGMENTS = [
+  'topicContent',
+  'topicExpansion',
+  'subjectGraph',
+  'crystalTrial',
+  'topic-content',
+  'topic-expansion',
+  'subject-graph',
+  'crystal-trial',
+  'generationPipeline',
+  'pipelineGeneration',
+  'pipelineModel',
+  'pipelineProvider',
+  'pipelineHealing',
+  'generationModel',
+  'generationProvider',
+  'generationHealing',
+] as const;
+
+const FORBIDDEN_PIPELINE_SETTING_FIELD_FRAGMENTS = [
+  'modelId',
+  'model_id',
+  'providerId',
+  'responseHealing',
+  'providerHealingRequested',
+  'openRouterResponseHealing',
+  'plugins',
+  'response_format',
+] as const;
+
+function collectFiles(dir: string, includeFile: (entry: fs.Dirent) => boolean): string[] {
   const files: string[] = [];
   if (!fs.existsSync(dir)) return files;
 
@@ -113,17 +155,27 @@ function collectSourceFiles(dir: string): string[] {
 
     if (entry.isDirectory()) {
       if (EXCLUDED_DIRS.has(entry.name)) continue;
-      files.push(...collectSourceFiles(fullPath));
-    } else if (
-      (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
-      !entry.name.endsWith('.test.ts') &&
-      !entry.name.endsWith('.test.tsx') &&
-      !entry.name.endsWith('.spec.ts')
-    ) {
+      files.push(...collectFiles(fullPath, includeFile));
+    } else if (includeFile(entry)) {
       files.push(path.relative(REPO_ROOT, fullPath).replace(/\\/g, '/'));
     }
   }
   return files;
+}
+
+function collectSourceFiles(dir: string): string[] {
+  return collectFiles(
+    dir,
+    (entry) =>
+      (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+      !entry.name.endsWith('.test.ts') &&
+      !entry.name.endsWith('.test.tsx') &&
+      !entry.name.endsWith('.spec.ts'),
+  );
+}
+
+function collectRepositoryFilePaths(): string[] {
+  return collectFiles(REPO_ROOT, () => true);
 }
 
 function collectRuntimeSourceFiles(): string[] {
@@ -140,6 +192,10 @@ function isFrontendRuntimeFile(file: string): boolean {
 
 function isFrontendSourceFile(file: string): boolean {
   return FRONTEND_SOURCE_PREFIXES.some((prefix) => file.startsWith(prefix));
+}
+
+function isBrowserSettingsSourceFile(file: string): boolean {
+  return isFrontendSourceFile(file) && SETTINGS_SOURCE_PATH_FRAGMENTS.some((fragment) => file.includes(fragment));
 }
 
 function escapeRegex(input: string): string {
@@ -294,8 +350,32 @@ describe('durable generation import boundary', () => {
     expect(violations).toEqual([]);
   });
 
-  it('keeps retired infrastructure decision documents deleted', () => {
-    const existing = RETIRED_REPOSITORY_PATHS.filter((file) => fs.existsSync(path.join(REPO_ROOT, file)));
+  it('keeps browser settings from reintroducing generation pipeline model/provider/healing controls', () => {
+    const settingsFiles = collectRuntimeSourceFiles().filter(isBrowserSettingsSourceFile);
+    const violations: string[] = [];
+
+    for (const file of settingsFiles) {
+      const lines = readRuntimeFile(file).split('\n');
+      lines.forEach((line, index) => {
+        const hasPipelineScope = PIPELINE_SETTING_SCOPE_FRAGMENTS.some((fragment) => line.includes(fragment));
+        const hasForbiddenField = FORBIDDEN_PIPELINE_SETTING_FIELD_FRAGMENTS.some((fragment) => line.includes(fragment));
+        if (hasPipelineScope && hasForbiddenField) {
+          violations.push(`${file}:${index + 1}: appears to configure generation pipeline policy in browser settings`);
+        }
+      });
+    }
+
+    expect(
+      violations,
+      'Pipeline model/provider/healing policy must stay backend-owned. Browser settings may configure study-explanation surfaces only.',
+    ).toEqual([]);
+  });
+
+  it('keeps retired infrastructure decisions and historical durable plan archives deleted', () => {
+    const existing = collectRepositoryFilePaths().filter((file) =>
+      RETIRED_REPOSITORY_PATH_PATTERNS.some((pattern) => pattern.test(file)),
+    );
+
     expect(existing).toEqual([]);
   });
 });

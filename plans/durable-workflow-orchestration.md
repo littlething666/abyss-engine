@@ -41,7 +41,8 @@ The following work is complete and should not remain as active plan tasks:
 - Consolidation of durable infrastructure and generation-ownership decisions into ADRs.
 - Removal of duplicate infrastructure decision and historical-planning decision files as active sources.
 - Decoupled `loadTheoryPayloadFromTopicDetails()` from deprecated permissive parser types; pipeline reconstruction now owns its persisted Learning Content payload shape.
-- Expanded durable generation boundary tests for backend/pipeline parser seams, deleted frontend generation surfaces, durable routing flags, navigation abort reasons, intent-only frontend submission, frontend snapshot/hash import drift, and retired infrastructure decision files.
+- Expanded durable generation boundary tests for backend/pipeline parser seams, deleted frontend generation surfaces, durable routing flags, navigation abort reasons, intent-only frontend submission, frontend snapshot/hash import drift, browser pipeline-settings drift, and retired infrastructure decision/plan archive files.
+- Backend route tests now explicitly reject client-built snapshots, nested client generation-policy fields, and top-level client generation-policy fields at `POST /v1/runs`.
 
 Historical implementation logs are available in Git history. Keep this file focused on remaining executable work.
 
@@ -67,12 +68,12 @@ Most repository-wide guard coverage now lives in `src/features/generationContrac
 - Frontend runtime code cannot import snapshot builders or `inputHash` outside shared contract/test seams.
 - Runtime features/components/hooks do not import `ApiClient`, `DurableGenerationRunRepository`, or SSE primitives directly.
 - Backend and pipeline code cannot import `extractJsonString()` or deprecated permissive parsers.
-- `docs/infrastructure-decisions.md` remains deleted.
+- Browser settings cannot reintroduce generation pipeline model/provider/response-healing controls.
+- `docs/infrastructure-decisions.md` and historical durable plan archive filenames remain deleted.
 
 Remaining follow-ups:
 
-- Add an explicit backend route test proving `POST /v1/runs` rejects snapshots and generation-policy fields once the run route files are in scope for this cleanup pass.
-- Extend the guard if browser settings code reintroduces pipeline model/healing configuration or if historical plan archive filenames reappear under a different path.
+- Keep guard fragments current if new browser settings surfaces are added for non-generation study tools.
 - Complete the verification batch and manual close/reopen checks below.
 
 ### 3. Verification

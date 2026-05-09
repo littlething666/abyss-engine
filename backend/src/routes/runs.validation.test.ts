@@ -121,6 +121,39 @@ describe('run route validation', () => {
     expect(calls[0].sql).toContain('insert into devices');
   });
 
+  it.each<[string, Record<string, unknown>]>([
+    ['modelId', { modelId: 'openai/gpt-4.1' }],
+    ['provider', { provider: 'openrouter' }],
+    ['response_format', { response_format: { type: 'json_schema' } }],
+  ])('rejects top-level backend generation policy field %s at POST /v1/runs', async (field, policyFragment) => {
+    const { db, calls } = createFakeD1([q(deviceRow())]);
+
+    const response = await app.fetch(
+      new Request('https://fakehost/v1/runs', {
+        method: 'POST',
+        headers: headers({ 'idempotency-key': `idem-top-level-policy-${field}` }),
+        body: JSON.stringify({
+          kind: 'crystal-trial',
+          intent: {
+            subjectId: 'physics',
+            topicId: 'vectors',
+            currentLevel: 0,
+          },
+          ...policyFragment,
+        }),
+      }),
+      env(db),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'config:forbidden-generation-policy-field',
+      message: expect.stringContaining(`body.${field}`),
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain('insert into devices');
+  });
+
   it('rejects client-provided subject graph strategy at POST /v1/runs', async () => {
     const { db, calls } = createFakeD1([q(deviceRow())]);
 
