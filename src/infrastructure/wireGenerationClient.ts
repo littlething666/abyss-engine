@@ -4,7 +4,7 @@ import {
   registerGenerationClient,
   type GenerationClient,
 } from '@/features/contentGeneration/generationClient';
-import { runEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
+import { runEventCursorStore } from '@/infrastructure/repositories/runEventCursorStore';
 import {
   createGenerationRunEventHandlers,
   type GenerationRunEventHandlers,

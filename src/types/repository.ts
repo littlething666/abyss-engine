@@ -1,19 +1,11 @@
 import type { Card, MiniGameType, Subject, SubjectGraph, TopicDetails } from './core';
 import type { StudyChecklist } from './studyChecklist';
-import type { TopicPipelineRetryContext } from './contentGeneration';
 import type { TopicContentStatusRecord } from './topicContent';
 import type {
   ArtifactEnvelope,
-  CrystalTrialRunInputSnapshot,
   RunEvent,
   RunInputSnapshot,
   RunStatus,
-  SubjectGraphEdgesRunInputSnapshot,
-  SubjectGraphTopicsRunInputSnapshot,
-  TopicExpansionRunInputSnapshot,
-  TopicMiniGameCardsRunInputSnapshot,
-  TopicStudyCardsRunInputSnapshot,
-  TopicTheoryRunInputSnapshot,
 } from '@/features/generationContracts';
 
 export type {
@@ -85,18 +77,11 @@ export interface IStudyHistoryRepository {
 }
 
 // ---------------------------------------------------------------------------
-// Durable Workflow Orchestration — Phase 0.5 step 1
+// Durable Workflow Orchestration
 //
-// `IGenerationRunRepository` is the single contract both the in-tab adapter
-// (`LocalGenerationRunRepository`, Phase 0.5 step 2) and the durable Worker
-// adapter (`DurableGenerationRunRepository`, Phase 1) implement. The
-// `GenerationClient` facade (Phase 0.5 step 3) is the only feature-layer
-// consumer; no feature/component/hook may take an `IGenerationRunRepository`
-// directly, per the architecture amendment locked in the Durable Workflow
-// Orchestration plan.
-//
-// All inputs are deterministic snapshots from `@/features/generationContracts`
-// so a backend-routed run can be reconstructed without browser state.
+// `IGenerationRunRepository` is the durable Worker adapter contract consumed
+// only through the `GenerationClient` facade. Browser submissions are compact
+// generation intents; backend snapshots remain read-only observation data.
 // ---------------------------------------------------------------------------
 
 /**
@@ -172,84 +157,11 @@ export type GenerationRunIntent =
       targetLevel?: number;
     };
 
-export type SubmitGenerationRunInput = GenerationRunIntent | RunInput;
+export type SubmitGenerationRunInput = GenerationRunIntent;
 
 /**
- * Topic Content Pipeline snapshot variant. The pipeline runs as one durable
- * run with three checkpointed stages (theory → study-cards → mini-games);
- * the snapshot bound to the current job is the matching variant.
- */
-export type TopicContentRunInputSnapshot =
-  | TopicTheoryRunInputSnapshot
-  | TopicStudyCardsRunInputSnapshot
-  | TopicMiniGameCardsRunInputSnapshot;
-
-/**
- * Run input handed to `submitRun`. The `pipelineKind` discriminates the
- * snapshot variant and carries the routing context (subject / topic / level /
- * stage) the orchestrator needs to dispatch the correct Workflow class.
- *
- * Snapshots themselves come straight from the
- * `@/features/generationContracts` builders (`buildTopicTheorySnapshot`,
- * `buildSubjectGraphTopicsSnapshot`, etc.) so `inputHash` is deterministic
- * across local and durable adapters.
- */
-export type RunInput =
-  | {
-      pipelineKind: 'topic-content';
-      snapshot: TopicContentRunInputSnapshot;
-      subjectId: string;
-      topicId: string;
-      /**
-       * Bridges today's `runTopicGenerationPipeline` surface (full pipeline,
-       * per-stage retries, `forceRegenerate`, mini-game subset) until durable
-       * stage checkpoints own every flag on the snapshot envelope.
-       */
-      topicContentLegacyOptions?: {
-        enableReasoning: boolean;
-        forceRegenerate: boolean;
-        legacyStage?: 'theory' | 'study-cards' | 'mini-games' | 'full';
-        miniGameKindsOverride?: MiniGameType[];
-        retryContext?: TopicPipelineRetryContext;
-        resumeFromStage?: 'theory' | 'study-cards' | 'mini-games' | 'full';
-      };
-    }
-  | {
-      pipelineKind: 'topic-expansion';
-      snapshot: TopicExpansionRunInputSnapshot;
-      subjectId: string;
-      topicId: string;
-      nextLevel: 1 | 2 | 3;
-      topicExpansionLegacyOptions?: {
-        enableReasoning: boolean;
-        retryOf?: string;
-      };
-    }
-  | {
-      pipelineKind: 'subject-graph';
-      snapshot: SubjectGraphTopicsRunInputSnapshot | SubjectGraphEdgesRunInputSnapshot;
-      subjectId: string;
-      stage: 'topics' | 'edges';
-      subjectGraphLegacyOptions?: {
-        orchestratorRetryOf?: string;
-      };
-    }
-  | {
-      pipelineKind: 'crystal-trial';
-      snapshot: CrystalTrialRunInputSnapshot;
-      subjectId: string;
-      topicId: string;
-      currentLevel: number;
-      crystalTrialLegacyOptions?: {
-        retryOf?: string;
-      };
-    };
-
-/**
- * Per-job snapshot. Mirrors the durable Worker's `jobs` table and the local
- * adapter's per-stage state. `kind` matches the existing
- * `ContentGenerationJobKind` literal union so HUD / mentor / failure-dashboard
- * consumers stay parity-stable across the durable cutover.
+ * Per-job snapshot. Mirrors the durable Worker's `jobs` table. `kind` is a
+ * Worker job discriminator used only for backend run/debug observation.
  */
 export interface JobSnapshot {
   jobId: string;

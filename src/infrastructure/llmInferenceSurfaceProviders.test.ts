@@ -114,14 +114,4 @@ describe('llmInferenceSurfaceProviders', () => {
       },
     })).toBeNull();
   });
-
-  it('does not expose browser settings for backend-owned generation pipeline surfaces', () => {
-    expect(makeOpenRouterProviderSelector('topicContent')(studySettingsStore.getState())).toBe(false);
-    expect(() => inferenceProviderForSurface('topicContent')).toThrow(
-      "Generation pipeline surface 'topicContent' is backend-owned",
-    );
-    expect(() => resolveModelForSurface('crystalTrial')).toThrow(
-      "Generation pipeline surface 'crystalTrial' is backend-owned",
-    );
-  });
 });

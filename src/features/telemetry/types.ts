@@ -311,8 +311,7 @@ export type MentorFirstSubjectGenerationEnqueuedPayload = z.infer<
 >;
 
 // === Topic content generation pipeline (Phase 3) ===
-// Canonical lifecycle telemetry emitted from `runTopicGenerationPipeline`
-// (see `src/features/contentGeneration/pipelines/runTopicGenerationPipeline.ts`).
+// Canonical lifecycle telemetry emitted from durable Topic Content observation.
 // The pipeline is the single source of truth for stage transitions —
 // analytics never infers stage from downstream LLM-job events. Error
 // messages are forwarded raw (no heuristic parsing) per the Phase 3 plan.

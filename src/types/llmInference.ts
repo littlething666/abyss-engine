@@ -1,18 +1,7 @@
 /** Stable keys for LLM inference entry points (hooks / modals). */
 export type StudyInferenceSurfaceId = 'studyQuestionExplain' | 'studyFormulaExplain';
 
-/**
- * Legacy generation pipeline surfaces remain in the type only until the PR 7
- * local-runner deletion removes their compile-time call sites. They are not
- * configurable from browser settings and `getSurfaceBinding()` rejects them.
- */
-export type LegacyGenerationInferenceSurfaceId =
-  | 'subjectGenerationTopics'
-  | 'subjectGenerationEdges'
-  | 'topicContent'
-  | 'crystalTrial';
-
-export type InferenceSurfaceId = StudyInferenceSurfaceId | LegacyGenerationInferenceSurfaceId;
+export type InferenceSurfaceId = StudyInferenceSurfaceId;
 
 export const ALL_SURFACE_IDS: readonly StudyInferenceSurfaceId[] = [
   'studyQuestionExplain',
@@ -25,29 +14,6 @@ export function isStudyInferenceSurfaceId(
   surfaceId: InferenceSurfaceId,
 ): surfaceId is StudyInferenceSurfaceId {
   return STUDY_SURFACE_ID_SET.has(surfaceId);
-}
-
-export const PIPELINE_INFERENCE_SURFACE_IDS = [
-  'subjectGenerationTopics',
-  'subjectGenerationEdges',
-  'topicContent',
-  'crystalTrial',
-] as const satisfies readonly LegacyGenerationInferenceSurfaceId[];
-
-export type PipelineInferenceSurfaceId = (typeof PIPELINE_INFERENCE_SURFACE_IDS)[number];
-
-const PIPELINE_SURFACE_ID_SET: ReadonlySet<InferenceSurfaceId> = new Set(
-  PIPELINE_INFERENCE_SURFACE_IDS,
-);
-
-/**
- * Legacy helper for local-runner compile support only. Runtime browser settings
- * no longer expose these surfaces.
- */
-export function isPipelineInferenceSurfaceId(
-  surfaceId: InferenceSurfaceId,
-): surfaceId is PipelineInferenceSurfaceId {
-  return PIPELINE_SURFACE_ID_SET.has(surfaceId);
 }
 
 export type LlmInferenceProviderId = 'local' | 'openrouter';

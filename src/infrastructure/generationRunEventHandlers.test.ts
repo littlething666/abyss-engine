@@ -21,9 +21,9 @@ import type {
   ArtifactEnvelope,
   RunEvent,
 } from '@/features/generationContracts';
-import type { RunEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
+import type { RunEventCursorStore } from '@/infrastructure/repositories/runEventCursorStore';
 import type { GenerationClient } from '@/features/contentGeneration';
-import type { IDeckRepository, RunInput, RunSnapshot } from '@/types/repository';
+import type { GenerationRunIntent, IDeckRepository, RunSnapshot } from '@/types/repository';
 import type { PubSubClient } from './pubsub';
 import type { RunInputSnapshot } from '@/features/generationContracts';
 
@@ -175,35 +175,19 @@ function artifactEnvelope(
   };
 }
 
-/** Build a minimal RunInput for each pipeline kind. */
+/** Build a minimal durable intent for each pipeline kind. */
 function topicContentInput(
   overrides: Partial<{
     subjectId: string;
     topicId: string;
     stage: 'theory' | 'study-cards' | 'mini-games' | 'full';
   }> = {},
-): Extract<RunInput, { pipelineKind: 'topic-content' }> {
+): Extract<GenerationRunIntent, { kind: 'topic-content' }> {
   return {
-    pipelineKind: 'topic-content',
+    kind: 'topic-content',
     subjectId: overrides.subjectId ?? 'subj-1',
     topicId: overrides.topicId ?? 'topic-1',
-    snapshot: {
-      snapshot_version: 1,
-      pipeline_kind: 'topic-theory' as const,
-      schema_version: 1,
-      prompt_template_version: 'v1',
-      model_id: 'test-model',
-      captured_at: new Date().toISOString(),
-      subject_id: overrides.subjectId ?? 'subj-1',
-      topic_id: overrides.topicId ?? 'topic-1',
-      topic_title: 'Test Topic',
-      learning_objective: 'Learn testing',
-    },
-    topicContentLegacyOptions: {
-      enableReasoning: false,
-      forceRegenerate: false,
-      legacyStage: overrides.stage ?? 'full',
-    },
+    stage: overrides.stage ?? 'full',
   };
 }
 
@@ -213,73 +197,38 @@ function topicExpansionInput(
     topicId: string;
     nextLevel: number;
   }> = {},
-): Extract<RunInput, { pipelineKind: 'topic-expansion' }> {
+): Extract<GenerationRunIntent, { kind: 'topic-expansion' }> {
   return {
-    pipelineKind: 'topic-expansion',
+    kind: 'topic-expansion',
     subjectId: overrides.subjectId ?? 'subj-1',
     topicId: overrides.topicId ?? 'topic-1',
     nextLevel: (overrides.nextLevel ?? 1) as 1 | 2 | 3,
-    snapshot: {
-      snapshot_version: 1,
-      pipeline_kind: 'topic-expansion-cards' as const,
-      schema_version: 1,
-      prompt_template_version: 'v1',
-      model_id: 'test-model',
-      captured_at: new Date().toISOString(),
-      subject_id: overrides.subjectId ?? 'subj-1',
-      topic_id: overrides.topicId ?? 'topic-1',
-      next_level: overrides.nextLevel ?? 1,
-      difficulty: (overrides.nextLevel ?? 1) + 1,
-      theory_excerpt: 'excerpt',
-      syllabus_questions: ['q1', 'q2'],
-      existing_card_ids: [],
-      existing_concept_stems: [],
-      grounding_source_count: 0,
-    },
   };
 }
 
 function subjectGraphInput(
   stage: 'topics' | 'edges' = 'topics',
-): Extract<RunInput, { pipelineKind: 'subject-graph' }> {
+): Extract<GenerationRunIntent, { kind: 'subject-graph' }> {
   if (stage === 'topics') {
     return {
-      pipelineKind: 'subject-graph',
+      kind: 'subject-graph',
       subjectId: 'subj-1',
       stage: 'topics',
-      snapshot: {
-        snapshot_version: 1,
-        pipeline_kind: 'subject-graph-topics' as const,
-        schema_version: 1,
-        prompt_template_version: 'v1',
-        model_id: 'test-model',
-        captured_at: new Date().toISOString(),
-        subject_id: 'subj-1',
-        checklist: { topic_name: 'Test Subject' },
-        strategy_brief: {
-          total_tiers: 3,
-          topics_per_tier: 4,
-          audience_brief: 'beginners',
-          domain_brief: 'testing',
-          focus_constraints: '',
-        },
+      checklist: { topicName: 'Test Subject' },
+      strategyBrief: {
+        total_tiers: 3,
+        topics_per_tier: 4,
+        audience_brief: 'beginners',
+        domain_brief: 'testing',
+        focus_constraints: '',
       },
     };
   }
   return {
-    pipelineKind: 'subject-graph',
+    kind: 'subject-graph',
     subjectId: 'subj-1',
     stage: 'edges',
-    snapshot: {
-      snapshot_version: 1,
-      pipeline_kind: 'subject-graph-edges' as const,
-      schema_version: 1,
-      prompt_template_version: 'v1',
-      model_id: 'test-model',
-      captured_at: new Date().toISOString(),
-      subject_id: 'subj-1',
-      lattice_artifact_content_hash: 'cnt_lattice123',
-    },
+    latticeArtifactContentHash: 'cnt_lattice123',
   };
 }
 
@@ -288,26 +237,13 @@ function crystalTrialInput(
     subjectId: string;
     topicId: string;
   }> = {},
-): Extract<RunInput, { pipelineKind: 'crystal-trial' }> {
+): Extract<GenerationRunIntent, { kind: 'crystal-trial' }> {
   return {
-    pipelineKind: 'crystal-trial',
+    kind: 'crystal-trial',
     subjectId: overrides.subjectId ?? 'subj-1',
     topicId: overrides.topicId ?? 'topic-1',
     currentLevel: 1,
-    snapshot: {
-      snapshot_version: 1,
-      pipeline_kind: 'crystal-trial' as const,
-      schema_version: 1,
-      prompt_template_version: 'v1',
-      model_id: 'test-model',
-      captured_at: new Date().toISOString(),
-      subject_id: overrides.subjectId ?? 'subj-1',
-      topic_id: overrides.topicId ?? 'topic-1',
-      current_level: 1,
-      target_level: 2,
-      card_pool_hash: 'pool_hash',
-      question_count: 5,
-    },
+    targetLevel: 2,
   };
 }
 
@@ -385,7 +321,7 @@ describe('generationRunEventHandlers', () => {
         evt(runId, 2, { type: 'artifact.ready', body: { artifactId: 'art-tc-1', kind: 'topic-theory', contentHash: 'cnt_tc1', schemaVersion: 1, inputHash: 'inp_tc', subjectId: 'subj-1', topicId: 'topic-1' } }),
         evt(runId, 3, { type: 'run.completed' }),
       ]],
-      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_tc', createdAt: 1000, startedAt: 1000, finishedAt: 5000, snapshotJson: input.snapshot, jobs: [] }]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_tc', createdAt: 1000, startedAt: 1000, finishedAt: 5000, snapshotJson: { pipeline_kind: input.kind } as unknown as RunSnapshot['snapshotJson'], jobs: [] }]]),
     });
 
     const handlers = createGenerationRunEventHandlers(
@@ -455,7 +391,7 @@ describe('generationRunEventHandlers', () => {
         evt(runId, 2, { type: 'artifact.ready', body: { artifactId: 'art-te-1', kind: 'topic-expansion-cards', contentHash: 'cnt_te1', schemaVersion: 1, inputHash: 'inp_te', subjectId: 'subj-1', topicId: 'topic-1' } }),
         evt(runId, 3, { type: 'run.completed' }),
       ]],
-      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-expansion', status: 'applied-local', inputHash: 'inp_te', createdAt: 1000, startedAt: 1000, finishedAt: 3000, snapshotJson: input.snapshot, jobs: [] }]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-expansion', status: 'applied-local', inputHash: 'inp_te', createdAt: 1000, startedAt: 1000, finishedAt: 3000, snapshotJson: { pipeline_kind: input.kind } as unknown as RunSnapshot['snapshotJson'], jobs: [] }]]),
     });
 
     const handlers = createGenerationRunEventHandlers(
@@ -553,7 +489,7 @@ describe('generationRunEventHandlers', () => {
         evt(runId, 2, { type: 'artifact.ready', body: { artifactId: 'art-sg-1', kind: 'subject-graph-topics', contentHash: 'cnt_sg1', schemaVersion: 1, inputHash: 'inp_sg', subjectId: 'subj-1' } }),
         evt(runId, 3, { type: 'run.completed' }),
       ]],
-      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'subject-graph', status: 'applied-local', inputHash: 'inp_sg', createdAt: 1000, startedAt: 1000, finishedAt: 4000, snapshotJson: input.snapshot, jobs: [] }]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'subject-graph', status: 'applied-local', inputHash: 'inp_sg', createdAt: 1000, startedAt: 1000, finishedAt: 4000, snapshotJson: { pipeline_kind: input.kind } as unknown as RunSnapshot['snapshotJson'], jobs: [] }]]),
     });
 
     const handlers = createGenerationRunEventHandlers(
@@ -572,7 +508,7 @@ describe('generationRunEventHandlers', () => {
     expect(generatedEvent).toBeDefined();
     expect(generatedEvent?.payload).toMatchObject({
       subjectId: 'subj-1',
-      boundModel: 'test-model',
+      boundModel: 'backend-policy',
     });
 
     handlers.stop();
@@ -592,7 +528,7 @@ describe('generationRunEventHandlers', () => {
         evt(runId, 2, { type: 'artifact.ready', body: { artifactId: 'art-sg-a', kind: 'subject-graph-topics', contentHash: 'cnt_sg_a', schemaVersion: 1, inputHash: 'inp_sg', subjectId: 'subj-1' } }),
         evt(runId, 3, { type: 'artifact.ready', body: { artifactId: 'art-sg-b', kind: 'subject-graph-edges', contentHash: 'cnt_sg_b', schemaVersion: 1, inputHash: 'inp_sg', subjectId: 'subj-1' } }),
       ]],
-      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'subject-graph', status: 'running', inputHash: 'inp_sg', createdAt: 1000, snapshotJson: input.snapshot, jobs: [] }]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'subject-graph', status: 'running', inputHash: 'inp_sg', createdAt: 1000, snapshotJson: { pipeline_kind: input.kind } as unknown as RunSnapshot['snapshotJson'], jobs: [] }]]),
     });
 
     const cursorStore = createMockCursorStore();
@@ -623,7 +559,7 @@ describe('generationRunEventHandlers', () => {
         evt(runId, 2, { type: 'artifact.ready', body: { artifactId: 'art-sg-b', kind: 'subject-graph-edges', contentHash: 'cnt_sg_b', schemaVersion: 1, inputHash: 'inp_sg', subjectId: 'subj-1' } }),
         evt(runId, 3, { type: 'run.completed' }),
       ]],
-      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'subject-graph', status: 'applied-local', inputHash: 'inp_sg', createdAt: 1000, startedAt: 1000, finishedAt: 4000, snapshotJson: input.snapshot, jobs: [] }]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'subject-graph', status: 'applied-local', inputHash: 'inp_sg', createdAt: 1000, startedAt: 1000, finishedAt: 4000, snapshotJson: { pipeline_kind: input.kind } as unknown as RunSnapshot['snapshotJson'], jobs: [] }]]),
     });
 
     const handlers = createGenerationRunEventHandlers({
@@ -728,7 +664,7 @@ describe('generationRunEventHandlers', () => {
         evt(runId, 2, { type: 'artifact.ready', body: { artifactId: 'art-ct-1', kind: 'crystal-trial', contentHash: 'cnt_ct1', schemaVersion: 1, inputHash: 'inp_ct', subjectId: 'subj-1', topicId: 'topic-1' } }),
         evt(runId, 3, { type: 'run.completed' }),
       ]],
-      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'crystal-trial', status: 'applied-local', inputHash: 'inp_ct', createdAt: 1000, snapshotJson: input.snapshot, jobs: [] }]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'crystal-trial', status: 'applied-local', inputHash: 'inp_ct', createdAt: 1000, snapshotJson: { pipeline_kind: input.kind } as unknown as RunSnapshot['snapshotJson'], jobs: [] }]]),
     });
 
     const handlers = createGenerationRunEventHandlers(
@@ -881,7 +817,7 @@ describe('generationRunEventHandlers', () => {
         evt(runId, 2, { type: 'artifact.ready', body: { artifactId: 'art-unknown', kind: 'unknown-kind', contentHash: 'cnt_unk', schemaVersion: 1, inputHash: 'inp_unk', subjectId: 'subj-1', topicId: 'topic-1' } }),
         evt(runId, 3, { type: 'run.completed' }),
       ]],
-      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_unk', createdAt: 1000, snapshotJson: input.snapshot, jobs: [] }]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_unk', createdAt: 1000, snapshotJson: { pipeline_kind: input.kind } as unknown as RunSnapshot['snapshotJson'], jobs: [] }]]),
     });
 
     const handlers = createGenerationRunEventHandlers(
@@ -959,7 +895,7 @@ describe('generationRunEventHandlers', () => {
         evt(runId, 7, { type: 'run.completed' }),
       ]],
       artifacts: new Map([['art-seq', artifactEnvelope({ id: 'art-seq', kind: 'topic-theory', contentHash: hash })]]),
-      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_seq', createdAt: 1000, snapshotJson: input.snapshot, jobs: [] }]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_seq', createdAt: 1000, snapshotJson: { pipeline_kind: input.kind } as unknown as RunSnapshot['snapshotJson'], jobs: [] }]]),
     });
 
     const handlers = createGenerationRunEventHandlers({
@@ -989,7 +925,7 @@ describe('generationRunEventHandlers', () => {
         evt(runId, 1, { type: 'run.status', status: 'generating-stage' }), // out-of-order lower seq
         evt(runId, 5, { type: 'run.completed' }),
       ]],
-      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_mono', createdAt: 1000, snapshotJson: input.snapshot, jobs: [] }]]),
+      runSnapshots: new Map([[runId, { runId, deviceId: 'dev-1', kind: 'topic-content', status: 'applied-local', inputHash: 'inp_mono', createdAt: 1000, snapshotJson: { pipeline_kind: input.kind } as unknown as RunSnapshot['snapshotJson'], jobs: [] }]]),
     });
 
     const handlers = createGenerationRunEventHandlers({

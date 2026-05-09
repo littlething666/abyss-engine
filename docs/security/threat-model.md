@@ -1,6 +1,6 @@
 # Threat Model — Abyss Engine Durable Generation (v1)
 
-**Last updated:** 2026-05-07
+**Last updated:** 2026-05-09
 **Status:** Phase 4 — productionization
 **Scope:** Cloudflare Workers orchestrator, D1 state, R2 artifacts, browser client
 
@@ -13,8 +13,8 @@ Abyss Engine v1 deploys a server-side durable generation orchestrator that persi
 ```
 ┌─ Browser (Next.js static export) ──────────────────────────────────────┐
 │  localStorage: abyss.deviceId (UUID v4)                                │
-│  IndexedDB: applied_artifacts, abyss-deck, content-generation-logs     │
-│  Env: NEXT_PUBLIC_DURABLE_RUNS, NEXT_PUBLIC_DURABLE_GENERATION_URL     │
+│  IndexedDB: abyss-deck, abyss-run-event-cursors                       │
+│  Env: NEXT_PUBLIC_DURABLE_GENERATION_URL                               │
 └─────────────────────────────────── HTTP ───────────────────────────────┘
                     │
                     ▼

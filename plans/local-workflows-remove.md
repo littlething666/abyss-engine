@@ -1,6 +1,6 @@
 # Local Workflows Removal Plan
 
-Status: in progress (2026-05-09). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, PR 4 HUD/UI removal, the first PR 5 durable-observation cutovers, and the PR 6 browser settings removal are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and retry routing no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, and store-backed topic-status/mentor UI reads have been removed from runtime UI. Durable run observation no longer fetches artifacts or invokes frontend topic-content/topic-expansion/crystal-trial appliers; terminal durable events now publish query invalidations for backend-owned Learning Content Store reads. `useContentGenerationHydration()` now skips browser generation-log hydration and reattaches durable observation using compact intents derived from Worker run snapshots, failing loudly on malformed Worker snapshot contracts instead of rebuilding frontend `RunInput`. Browser Global Settings now exposes only study explanation model/provider bindings; generation pipeline model selection and `openRouterResponseHealing` local state are removed, and pipeline surfaces fail loudly if legacy code tries to resolve them through study settings. 2026-05-08 review update: the remaining plan no longer migrates `GenerationProgressHud` into a durable projection; it deletes the remaining frontend run-log/read-cache, abort/retry controls, and store-backed generation attention because run execution and logging are backend-owned. Legacy `RunInput` and legacy pipeline surface type helpers remain temporarily accepted at low-level compile seams until PR 7 local runners are deleted.
+Status: in progress (2026-05-09). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, PR 4 HUD/UI removal, the first PR 5 durable-observation cutovers, PR 6 browser settings removal, and PR 7 local-runner/log-store deletion are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and runtime generation entry paths no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, store-backed topic-status/mentor UI reads, frontend generation log repository/store, HUD retry routing, local in-tab generation runners, frontend artifact appliers, local artifact capture, and legacy `RunInput` submit compatibility have been removed. Durable run observation no longer fetches artifacts or invokes frontend topic-content/topic-expansion/crystal-trial appliers; terminal durable events now publish query invalidations for backend-owned Learning Content Store reads. `useContentGenerationHydration()` now skips browser generation-log hydration and reattaches durable observation using compact intents derived from Worker run snapshots, failing loudly on malformed Worker snapshot contracts instead of rebuilding frontend `RunInput`. Browser Global Settings now exposes only study explanation model/provider bindings; generation pipeline model selection and `openRouterResponseHealing` local state are removed, and pipeline surfaces fail loudly if legacy code tries to resolve them through study settings. 2026-05-09 review update: the remaining work is backend subject strategy ownership (PR 8), Crystal Trial backend-resolved read consumption, cleanup of shared artifact-applier contracts/prompt-parser remnants where no backend import requires them, and final documentation/drift guards (PR 9).
 
 ## Goal
 
@@ -81,28 +81,21 @@ Move generation to durable-only routing and delete the local-runner/settings/HUD
   - Durable-only bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, constructs one `DurableGenerationRunRepository`, and always observes run events.
 - `src/infrastructure/deckRepositoryFactory.ts`
   - Selects backend reads whenever the Worker URL is configured; no durable flag gate remains.
-- `src/infrastructure/repositories/LocalGenerationRunRepository.ts`
-  - Still exists as a deletion target and wraps all four in-tab runners, but is no longer constructed by runtime durable bootstrap.
-- `src/infrastructure/repositories/localGenerationRunArtifactCapture.ts`
-  - Still exists only for the local adapter deletion wave.
+- `src/infrastructure/repositories/LocalGenerationRunRepository.ts` and `src/infrastructure/repositories/localGenerationRunArtifactCapture.ts`
+  - Deleted in PR 7; runtime bootstrap has no local adapter path.
 
 ### Frontend snapshot/model/healing leftovers to remove
 
-- `src/features/contentGeneration/prepareGenerationRunSubmit.ts`
-  - Still exists as a local-runner deletion target, but runtime entry paths no longer import it.
-- `src/features/contentGeneration/retryContentGeneration.ts`
-  - No longer reconstructs snapshots, but still exists only for HUD/job-shape retry routing and should be deleted with the HUD/log store.
+- `src/features/contentGeneration/prepareGenerationRunSubmit.ts` and `src/features/contentGeneration/retryContentGeneration.ts`
+  - Deleted in PR 7 with the legacy `RunInput` and HUD/job-shape retry seams.
 - `src/store/studySettingsStore.ts`, `src/types/llmInference.ts`, `src/components/settings/GlobalSettingsSheet.tsx`, `src/infrastructure/llmInferenceSurfaceProviders.ts`
   - Persist and expose pipeline model/provider/response-healing settings.
 
 ### Local-runner execution modules to delete after callers move
 
-- `src/features/contentGeneration/runContentGenerationJob.ts`
-- `src/features/contentGeneration/pipelines/runTopicGenerationPipeline.ts`
-- `src/features/contentGeneration/jobs/runExpansionJob.ts`
-- `src/features/crystalTrial/generateTrialQuestions.ts`
-- `src/features/subjectGeneration/orchestrator/*`
-- Frontend prompt/parsing modules under `src/features/contentGeneration/messages/**`, `src/features/contentGeneration/parsers/**`, and subject-generation local permissive prompt/parser modules once no runtime imports remain.
+- `src/features/contentGeneration/runContentGenerationJob.ts`, `src/features/contentGeneration/pipelines/runTopicGenerationPipeline.ts`, `src/features/contentGeneration/jobs/runExpansionJob.ts`, `src/features/crystalTrial/generateTrialQuestions.ts`, and `src/features/subjectGeneration/orchestrator/subjectGenerationOrchestrator.ts`
+  - Deleted in PR 7.
+- Frontend prompt/parsing modules under `src/features/contentGeneration/messages/**`, `src/features/contentGeneration/parsers/**`, and subject-generation local permissive prompt/parser modules remain as cleanup candidates once confirmed unused by backend/shared tests.
 
 ### Frontend HUD/log/store surfaces to remove
 
@@ -111,14 +104,8 @@ Move generation to durable-only routing and delete the local-runner/settings/HUD
   - Owns cancel/retry controls, raw prompt/output display, and frontend history presentation.
 - `src/store/uiStore.ts`
   - Still owns `isGenerationProgressOpen`, `openGenerationProgress()`, `closeGenerationProgress()`, and `setGenerationProgressOpen()`.
-- `src/features/contentGeneration/contentGenerationStore.ts`
-  - Still owns frontend job/pipeline state, `AbortController` maps, session failure attention, retry-routing failures, and Dexie persistence calls.
-- `src/infrastructure/repositories/contentGenerationLogRepository.ts`
-  - Still persists terminal generation logs in browser IndexedDB even though backend run logs are authoritative.
-- `src/features/contentGeneration/retryContentGeneration.ts`
-  - Still exposes HUD-oriented job/pipeline retry helpers over local UI job shapes.
-- `src/features/contentGeneration/generationAttentionSurface.ts`, `src/hooks/useMentorEntryContext.ts`, `src/components/MentorBubble.tsx`, `src/components/MentorDialogOverlay.tsx`
-  - Still derive persistent generation failure attention from frontend job state. Event-driven mentor triggers already exist in `eventBusHandlers.ts`; the store-backed attention surface should not survive HUD deletion unless replaced by a backend-run consumer.
+- `src/features/contentGeneration/contentGenerationStore.ts`, `src/infrastructure/repositories/contentGenerationLogRepository.ts`, `src/features/contentGeneration/retryContentGeneration.ts`, and `src/features/contentGeneration/generationAttentionSurface.ts`
+  - Deleted in PR 7; mentor and topic readiness runtime paths no longer read frontend generation job state.
 
 ### Frontend content-readiness/local-application seams to remove
 
@@ -128,23 +115,21 @@ Move generation to durable-only routing and delete the local-runner/settings/HUD
   - Still import `useContentGenerationStore` / `activeTopicContentGenerationLabel` for local progress labels and sorting.
 - `src/infrastructure/generationRunEventHandlers.ts`
   - No longer fetches durable artifacts or locally applies Topic Content, Topic Expansion, or Crystal Trial artifacts. It now consumes terminal durable events as query-invalidation/publication signals for backend Learning Content Store reads, while still emitting legacy product notifications for mentor/telemetry paths.
-- `src/features/contentGeneration/appliers/*`, `src/features/crystalTrial/appliers/crystalTrialApplier.ts`, `src/infrastructure/repositories/appliedArtifactsStore.ts`
-  - Deletion targets once `generationRunEventHandlers` stops locally applying artifacts. Keep only a durable SSE cursor store if observation still needs resume semantics.
+- `src/features/contentGeneration/appliers/*`, `src/features/crystalTrial/appliers/crystalTrialApplier.ts`, and `src/infrastructure/repositories/appliedArtifactsStore.ts`
+  - Deleted in PR 7. Durable SSE cursor persistence now lives in the narrow `src/infrastructure/repositories/runEventCursorStore.ts`.
 - `src/features/crystalTrial/crystalTrialStore.ts`
   - Still stores generated trial questions client-side. Backend already persists `crystal_trial_sets`; frontend should read generated question sets from the Learning Content Store and keep only player attempt/cooldown state locally if needed.
 
 ### Navigation abort to remove
 
-- `src/hooks/useContentGenerationLifecycle.ts`
-- `src/types/contentGenerationAbort.ts`
-- `abortControllers` / `pipelineAbortControllers` in `src/features/contentGeneration/contentGenerationStore.ts`
-- `app/page.tsx` call to `useContentGenerationLifecycle()`
+- `src/hooks/useContentGenerationLifecycle.ts`, `src/types/contentGenerationAbort.ts`, and `abortControllers` / `pipelineAbortControllers` in `src/features/contentGeneration/contentGenerationStore.ts`
+  - Deleted; `app/page.tsx` has no generation navigation-abort lifecycle.
 
 ## Implementation Plan
 
 ### PR 1 — Introduce intent-only frontend submission interface
 
-**Status (2026-05-08): complete for the central client/durable adapter seam; follow-up guard tests still recommended.**
+**Status (2026-05-09): complete for the central client/durable adapter seam and legacy submit compatibility removal.**
 
 Completed:
 - Added `GenerationRunIntent` / `SubmitGenerationRunInput` in `src/types/repository.ts`.
@@ -154,8 +139,7 @@ Completed:
 - Updated `generationClient` unit tests for intent-only submission and UUID idempotency.
 
 Still pending under later PRs:
-- Convert runtime callers away from `prepare*RunInput()` so the low-level `submitRun()` no longer needs the temporary `RunInput` compatibility path.
-- Add a repository boundary guard forbidding frontend runtime imports of snapshot builders / `inputHash` outside shared contracts/tests.
+- Add/keep final repository boundary guards forbidding frontend runtime imports of snapshot builders / `inputHash` outside shared contracts/tests.
 
 **Files:**
 - `src/types/repository.ts`
@@ -181,19 +165,19 @@ Still pending under later PRs:
 
 ### PR 2 — Convert generation entry paths to submit intents
 
-**Status (2026-05-08): complete for runtime entry paths; deletion of the unused snapshot-builder module is deferred until local runner deletion.**
+**Status (2026-05-09): complete for runtime entry paths and deferred snapshot-submit module deletion.**
 
 Completed:
 - Replaced runtime `prepare*RunInput()` usage in `src/infrastructure/eventBusHandlers.ts` with direct `GenerationRunIntent` submissions through `startTopicContent()`, `startTopicExpansion()`, `startSubjectGraph()`, and `startCrystalTrial()`.
 - Removed pipeline `resolveModelForSurface()` / `resolveEnableReasoningForSurface()` calls from those generation entry paths.
 - Changed `src/components/AbyssCommandPalette.tsx` crystal-trial regeneration to submit a crystal-trial intent.
-- Changed `retryContentGeneration.ts` to call `GenerationClient.retry(runId, { stage?, jobId? })` instead of rebuilding snapshots/model ids.
-- Adapted durable run observation to accept intent inputs while preserving the temporary legacy `RunInput` path for local runner compatibility.
+- Deleted `retryContentGeneration.ts` with HUD/job-shape retry routing in PR 7.
+- Durable run observation accepts intent inputs only; the temporary legacy `RunInput` path was removed in PR 7.
 - Removed `prepare*RunInput` exports from the content-generation public API and added `intentSubmissionBoundary.test.ts` to guard against runtime imports of frontend snapshot submit builders / input hashing.
+- Deleted `prepareGenerationRunSubmit.ts` in PR 7.
 
 Still pending under later PRs:
-- Delete `prepareGenerationRunSubmit.ts` after local runner modules and their tests are removed.
-- Delete HUD retry/progress paths instead of projecting durable run ids into frontend job/pipeline state. If backend retry remains product-facing later, expose it through a backend-run consumer, not `ContentGenerationJob` UI shapes.
+- If backend retry becomes product-facing later, expose it through a backend-run consumer, not `ContentGenerationJob` UI shapes.
 
 **Files:**
 - `src/infrastructure/eventBusHandlers.ts`
@@ -231,8 +215,7 @@ Completed:
 - Deck read selection now uses the backend repository whenever the durable Worker URL is configured.
 
 Still pending under later PRs:
-- Delete local runner modules/tests and remove the temporary low-level `RunInput` compatibility path (PR 7).
-- Project durable run ids explicitly into HUD/store state before deleting abort controller fields (PR 4/5).
+- None for routing; PR 7 deleted local runner modules/tests and removed the temporary low-level `RunInput` compatibility path.
 
 **Files:**
 - `src/infrastructure/wireGenerationClient.ts`
@@ -268,7 +251,7 @@ Completed:
 - Removed mentor CTAs/copy that route players to a generation HUD; failure dialogs now dismiss while backend run diagnostics own details/retry.
 
 Still pending under later PRs:
-- `contentGenerationStore`, local runner modules, abort-reason types used by local runners, retry helpers, and `generationAttentionSurface` remain as local-runner compile dependencies until PR 7 deletion. `useContentGenerationHydration()` no longer hydrates those store/log shapes.
+- None for HUD/UI removal; PR 7 deleted `contentGenerationStore`, local runner modules, abort-reason types, retry helpers, and `generationAttentionSurface`.
 
 **Files:**
 - `src/components/GenerationProgressHud.tsx` (delete)
@@ -311,10 +294,8 @@ Completed:
 - Updated event-handler and pub/sub tests to assert no frontend artifact fetch/apply path is used.
 
 Remaining follow-ups:
-- Split/delete the `AppliedArtifactsStore` artifact-dedupe table once remaining frontend applier/local-runner deletion lands; keep only the durable run-event cursor store if observation resumability remains.
-- Remove frontend applier files/exports and their tests in PR 7 after local runners are deleted.
 - Add or wire the backend-resolved current Crystal Trial set read path so the new `['content', 'crystal-trial', subjectId, topicId]` invalidation has a canonical frontend consumer.
-- Delete the remaining frontend generation log repository/store and local-runner tests in PR 7; hydration no longer references them, but local-runner compile dependencies still do.
+- Remove shared artifact-applier contract exports if no backend/shared consumer remains after prompt/parser cleanup.
 
 **Files:**
 - `src/infrastructure/generationRunEventHandlers.ts`
@@ -334,7 +315,7 @@ Remaining follow-ups:
    - `subject-graph` completion → keep `publishBackendSubjectGraph(subjectId)`. **Done.**
    - `crystal-trial` completion → invalidate the backend Crystal Trial read for the topic/target level and trigger trial availability consumption. Prefer backend-resolved current card-pool hash over frontend `setCardPoolHash`. **Invalidation added 2026-05-09; backend-resolved read consumer still pending.**
 3. Add/adjust the frontend Learning Content Store consumer for Crystal Trial sets. If the current endpoint requires `cardPoolHash`, either add a backend-resolved “current trial set” endpoint or a narrow repository method that obtains the backend-owned hash before reading questions.
-4. Keep durable SSE cursor tracking only if observation still needs resumability; split it from `AppliedArtifactsStore` so an artifact-application dedupe store does not survive as a shallow pass-through.
+4. Keep durable SSE cursor tracking only if observation still needs resumability; split it from `AppliedArtifactsStore` so an artifact-application dedupe store does not survive as a shallow pass-through. **Done 2026-05-09: `runEventCursorStore.ts` is the only runtime cursor store.**
 5. Change `useContentGenerationHydration()` to observe active/recent backend runs without loading `contentGenerationLogRepository` or reconstructing frontend `RunInput` for UI state. If backend `RunSnapshot.snapshotJson` is needed for routing, treat malformed/missing context as a Worker contract violation and throw at the adapter boundary. **Done 2026-05-09.**
 6. Update tests so duplicate SSE delivery proves duplicate query invalidation / mentor trigger suppression, not duplicate local artifact application.
 
@@ -345,7 +326,7 @@ Remaining follow-ups:
 
 ### PR 6 — Remove frontend pipeline model/provider/healing settings
 
-**Status (2026-05-09): complete for runtime browser settings; type-only legacy helpers remain until PR 7.**
+**Status (2026-05-09): complete for runtime browser settings and type-only legacy helper deletion.**
 
 Completed:
 - Removed generation pipeline rows from `GlobalSettingsSheet`; the settings sheet now states that generation model/structured-output policy is backend-owned.
@@ -355,8 +336,7 @@ Completed:
 - Legacy pipeline surface resolution through browser study settings now fails loudly with a backend-owned-policy error.
 
 Remaining follow-ups:
-- Delete `LegacyGenerationInferenceSurfaceId`, `PIPELINE_INFERENCE_SURFACE_IDS`, `isPipelineInferenceSurfaceId()`, and `validatePipelineSurfaceConfig()` when PR 7 removes the local-runner compile-time call sites.
-- Run the final PR 9 guard after PR 7 so `rg "subjectGenerationTopics|subjectGenerationEdges|topicContent|crystalTrial" src/types/llmInference.ts src/infrastructure/llmInferenceSurfaceProviders.ts` has no settings-policy hits.
+- Run the final PR 9 guard after PR 7 so `rg "subjectGenerationTopics|subjectGenerationEdges|topicContent|crystalTrial" src/types/llmInference.ts src/infrastructure/llmInferenceSurfaceProviders.ts` has no settings-policy hits. **Done 2026-05-09.**
 
 **Files:**
 - `src/types/llmInference.ts`
@@ -380,7 +360,22 @@ Remaining follow-ups:
 
 ### PR 7 — Delete local runner modules, frontend log store, and prompt/parser legacy
 
-**Files to delete/refactor:**
+**Status (2026-05-09): complete for local execution, frontend log/store, retry/HUD support, artifact-applier, and `RunInput` compatibility deletion. Prompt/parser legacy cleanup remains a narrower follow-up because shared generation-contract and backend test seams still reference snapshot/parser terminology.
+
+Completed:
+- Deleted `LocalGenerationRunRepository`, local artifact capture, frontend generation-log repository, `useContentGenerationStore`, retry helpers, generation attention surface, local job/pipeline runners, Crystal Trial question generator, Subject Graph local orchestrator, frontend artifact appliers, `src/types/contentGeneration.ts`, and navigation abort reason types.
+- Removed local-runner/applier exports from feature public APIs.
+- Removed legacy `RunInput` from `src/types/repository.ts`; `SubmitGenerationRunInput` is now `GenerationRunIntent` only.
+- Removed legacy snapshot-to-intent conversion from `DurableGenerationRunRepository` and the low-level `GenerationClient` compatibility branch.
+- Split durable SSE cursor persistence into `runEventCursorStore.ts`; the artifact-dedupe `AppliedArtifactsStore` runtime table is gone.
+- Replaced `legacyRunnerBoundary.test.ts` with a deletion guard that fails if deleted local generation seams or imports return.
+
+Remaining follow-ups:
+- Confirm and delete any frontend-only prompt/parser modules not required by backend/shared tests.
+- Remove legacy mentor retry-routing trigger/copy if no backend-run retry consumer replaces it.
+- Remove or rename stale comments in backend/shared generation-contract docs that refer to local artifacts if those contracts are no longer imported anywhere.
+
+**Files deleted/refactored:**
 - `src/infrastructure/repositories/LocalGenerationRunRepository.ts`
 - `src/infrastructure/repositories/localGenerationRunArtifactCapture.ts`
 - `src/infrastructure/repositories/LocalGenerationRunRepository.test.ts`
@@ -401,12 +396,12 @@ Remaining follow-ups:
 - frontend-only pipeline messages/parsers once imports are gone
 
 **Steps:**
-1. Delete the local adapter, artifact capture, and frontend run-log files.
-2. Delete local execution modules and update deliberate `index.ts` exports; do not leave automatic barrels that expose deleted legacy seams.
-3. Delete tests whose only subject is local execution, frontend generation logs, HUD retry/cancel, or local artifact application behavior.
-4. Keep domain-only modules that are still used outside execution (for example strategy resolution if backend or UI still needs it).
-5. Convert `legacyRunnerBoundary.test.ts` into deletion guards that assert local runner files, frontend generation-log files, and frontend artifact appliers do not exist.
-6. Add repository-wide guards forbidding imports of local runner entry points, `contentGenerationLogRepository`, `GenerationProgressHud`, frontend permissive pipeline parsers, and frontend generation-store UI job shapes from runtime code.
+1. Delete the local adapter, artifact capture, and frontend run-log files. **Done 2026-05-09.**
+2. Delete local execution modules and update deliberate `index.ts` exports; do not leave automatic barrels that expose deleted legacy seams. **Done 2026-05-09.**
+3. Delete tests whose only subject is local execution, frontend generation logs, HUD retry/cancel, or local artifact application behavior. **Done 2026-05-09.**
+4. Keep domain-only modules that are still used outside execution (for example strategy resolution if backend or UI still needs it). **Done: strategy resolution/bindings remain.**
+5. Convert `legacyRunnerBoundary.test.ts` into deletion guards that assert local runner files, frontend generation-log files, and frontend artifact appliers do not exist. **Done 2026-05-09.**
+6. Add repository-wide guards forbidding imports of local runner entry points, `contentGenerationLogRepository`, `GenerationProgressHud`, frontend permissive pipeline parsers, and frontend generation-store UI job shapes from runtime code. **Partially done for deleted local-runner/log/store/applier seams; parser-specific guard remains a PR 9 follow-up.**
 
 **Exit checks:**
 - `rg "LocalGenerationRunRepository|runContentGenerationJob|runTopicGenerationPipeline|runExpansionJob|generateTrialQuestions|createSubjectGenerationOrchestrator|contentGenerationLogRepository|GenerationProgressHud|useContentGenerationStore|retryFailedJob|retryFailedPipeline" src app tests` has no runtime hits.
@@ -452,6 +447,11 @@ Remaining follow-ups:
    - `POST /v1/runs` rejects snapshots and policy fields.
 
 ## Verification Plan
+
+Current verification (2026-05-09 PR 7 batch):
+- `pnpm check:compile` ✅
+- `pnpm test:unit:run` ✅ (191 files, 1743 passed, 1 skipped) before final PR 6 helper cleanup/documentation updates
+- Targeted post-cleanup Vitest ✅: `legacyRunnerBoundary`, `llmInferenceRegistry`, `llmInferenceSurfaceProviders`, and `generationRunEventHandlers`
 
 Run after each PR or logical batch:
 

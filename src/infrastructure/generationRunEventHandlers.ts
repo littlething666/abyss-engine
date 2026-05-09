@@ -28,10 +28,10 @@
  */
 
 import { appEventBus, type AppEventBus } from './eventBus';
-import type { GenerationRunIntent, PipelineKind, RunInput, RunSnapshot, SubmitGenerationRunInput } from '@/types/repository';
+import type { GenerationRunIntent, PipelineKind, RunSnapshot, SubmitGenerationRunInput } from '@/types/repository';
 import type { IDeckRepository } from '@/types/repository';
 import type { RunEvent } from '@/features/generationContracts';
-import type { RunEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
+import type { RunEventCursorStore } from '@/infrastructure/repositories/runEventCursorStore';
 import type { TopicLattice, TopicLatticeNode } from '@/types/topicLattice';
 import type { GenerationClient } from '@/features/contentGeneration';
 import type { PubSubClient } from './pubsub';
@@ -72,7 +72,7 @@ export interface GenerationRunEventHandlers {
 
   /**
    * Returns `0` (backwards compat only). For the authoritative seq, use
-   * `runEventCursorStore.get(runId)` from `appliedArtifactsStore`.
+   * `runEventCursorStore.get(runId)` from `runEventCursorStore`.
    *
    * Phase 3.6 Step 2: seq tracking is now durable via cursorStore.
    */
@@ -87,17 +87,13 @@ export interface GenerationRunEventHandlers {
 // ---------------------------------------------------------------------------
 
 type ObservedRunInput = SubmitGenerationRunInput;
-type ObservedTopicContentInput = Extract<RunInput, { pipelineKind: 'topic-content' }> | Extract<GenerationRunIntent, { kind: 'topic-content' }>;
-type ObservedTopicExpansionInput = Extract<RunInput, { pipelineKind: 'topic-expansion' }> | Extract<GenerationRunIntent, { kind: 'topic-expansion' }>;
-type ObservedSubjectGraphInput = Extract<RunInput, { pipelineKind: 'subject-graph' }> | Extract<GenerationRunIntent, { kind: 'subject-graph' }>;
-type ObservedCrystalTrialInput = Extract<RunInput, { pipelineKind: 'crystal-trial' }> | Extract<GenerationRunIntent, { kind: 'crystal-trial' }>;
+type ObservedTopicContentInput = Extract<GenerationRunIntent, { kind: 'topic-content' }>;
+type ObservedTopicExpansionInput = Extract<GenerationRunIntent, { kind: 'topic-expansion' }>;
+type ObservedSubjectGraphInput = Extract<GenerationRunIntent, { kind: 'subject-graph' }>;
+type ObservedCrystalTrialInput = Extract<GenerationRunIntent, { kind: 'crystal-trial' }>;
 
 function pipelineKindOf(input: ObservedRunInput): PipelineKind {
-  return 'pipelineKind' in input ? input.pipelineKind : input.kind;
-}
-
-function runInputSnapshot(input: ObservedRunInput) {
-  return 'snapshot' in input ? input.snapshot : undefined;
+  return input.kind;
 }
 
 /**
@@ -120,24 +116,14 @@ async function resolveTopicLabel(
 }
 
 /**
- * Extract the stage tag from a `RunInput` for the
+ * Extract the stage tag from a durable intent for the
  * `topic-content:generation-completed` / `topic-content:generation-failed`
  * event payloads.
  */
-function topicContentStageFromSnapshot(
+function topicContentStageFromIntent(
   input: ObservedTopicContentInput,
 ): 'theory' | 'study-cards' | 'mini-games' | 'full' {
-  if ('kind' in input) return input.stage;
-
-  // Legacy stage option takes priority (supplied by in-tab callers)
-  const legacy = input.topicContentLegacyOptions?.legacyStage;
-  if (legacy) return legacy;
-
-  // Derive from snapshot kind
-  const pk = input.snapshot.pipeline_kind;
-  if (pk === 'topic-theory') return 'theory';
-  if (pk === 'topic-study-cards') return 'study-cards';
-  return 'mini-games';
+  return input.stage;
 }
 
 /**
@@ -154,7 +140,7 @@ async function emitTopicContentCompleted(
     input.subjectId,
     input.topicId,
   );
-  const stage = topicContentStageFromSnapshot(input);
+  const stage = topicContentStageFromIntent(input);
 
   eventBus.emit('topic-content:generation-completed', {
     subjectId: input.subjectId,
@@ -181,7 +167,7 @@ async function emitTopicContentFailed(
     input.subjectId,
     input.topicId,
   );
-  const stage = topicContentStageFromSnapshot(input);
+  const stage = topicContentStageFromIntent(input);
 
   eventBus.emit('topic-content:generation-failed', {
     subjectId: input.subjectId,
@@ -254,12 +240,7 @@ async function emitSubjectGraphGenerated(
   runId: string,
   runSnapshot: RunSnapshot,
 ): Promise<void> {
-  // Derive model from the snapshot when observing a legacy local run.
-  const snapshot = runInputSnapshot(input);
-  const boundModel =
-    snapshot && 'model_id' in snapshot
-      ? (snapshot as { model_id: string }).model_id
-      : 'unknown';
+  const boundModel = 'backend-policy';
 
   // Compute durations from run timestamps
   const stageADurationMs =
@@ -316,11 +297,7 @@ function emitSubjectGraphValidationFailed(
   errorCode: string,
   errorMessage: string,
 ): void {
-  const snapshot = runInputSnapshot(input);
-  const boundModel =
-    snapshot && 'model_id' in snapshot
-      ? (snapshot as { model_id: string }).model_id
-      : 'unknown';
+  const boundModel = 'backend-policy';
 
   eventBus.emit('subject-graph:validation-failed', {
     subjectId: input.subjectId,
@@ -463,7 +440,7 @@ export function createGenerationRunEventHandlers(
                     status: 'applied-local',
                     inputHash: '',
                     createdAt: 0,
-                    snapshotJson: (runInputSnapshot(runInput) ?? { pipeline_kind: runKind }) as RunSnapshot['snapshotJson'],
+                    snapshotJson: { pipeline_kind: runKind } as unknown as RunSnapshot['snapshotJson'],
                     jobs: [],
                   },
                 );

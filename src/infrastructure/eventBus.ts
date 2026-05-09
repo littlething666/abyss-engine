@@ -1,9 +1,13 @@
-import type { TopicContentPipelinePartialCompletion } from '@/types/contentGeneration';
 import type { Buff, CoarseAppliedBucket, CoarseChoice } from '@/types/progression';
 import type { StudyChecklist } from '@/types/studyChecklist';
 import type { TopicLattice } from '@/types/topicLattice';
 
 type Rating = 1 | 2 | 3 | 4;
+
+type TopicContentPipelinePartialCompletion = {
+  completedStages: Array<'theory' | 'study-cards' | 'mini-games'>;
+  failedStage: 'theory' | 'study-cards' | 'mini-games';
+};
 
 /**
  * Runtime source of truth for app-bus event names.
@@ -125,8 +129,8 @@ export type AppEventMap = {
     stage?: 'theory' | 'study-cards' | 'mini-games' | 'full';
   };
   /**
-   * Terminal event emitted by `runTopicGenerationPipeline` when a stage or full
-   * pipeline completes successfully. Mentor consumers gate "topic ready" copy on
+   * Terminal event emitted from durable run observation when backend Topic Content
+   * publication completes. Mentor consumers gate "topic ready" copy on
    * `stage === 'full'`; partial-stage success emits with the stage that ran.
    */
   'topic-content:generation-completed': {
@@ -137,9 +141,8 @@ export type AppEventMap = {
     stage: 'theory' | 'study-cards' | 'mini-games' | 'full';
   };
   /**
-   * Terminal event emitted by `runTopicGenerationPipeline` when a stage or full
-   * pipeline fails. `stage` indicates which stage was being executed at the
-   * failure boundary (or the requested stage for a single-stage run).
+   * Terminal event emitted from durable run observation when backend Topic Content
+   * generation fails. `stage` indicates the requested durable stage.
    */
   'topic-content:generation-failed': {
     subjectId: string;
@@ -155,7 +158,7 @@ export type AppEventMap = {
     /** Present when `stage === 'full'` failed after one or more stages persisted. */
     partialCompletion?: TopicContentPipelinePartialCompletion;
   };
-  /** Terminal event emitted by `runExpansionJob` on successful crystal-level expansion. */
+  /** Terminal event emitted from durable run observation on successful crystal-level expansion. */
   'topic-expansion:generation-completed': {
     subjectId: string;
     topicId: string;
@@ -163,7 +166,7 @@ export type AppEventMap = {
     /** The `nextLevel` produced (1, 2, or 3). */
     level: number;
   };
-  /** Terminal event emitted by `runExpansionJob` when expansion fails. */
+  /** Terminal event emitted from durable run observation when expansion fails. */
   'topic-expansion:generation-failed': {
     subjectId: string;
     topicId: string;
@@ -239,7 +242,7 @@ export type AppEventMap = {
     score: number;
     trialId: string;
   };
-  /** Terminal event emitted by `generateTrialQuestions` when trial generation fails. */
+  /** Terminal event emitted from durable run observation when trial generation fails. */
   'crystal-trial:generation-failed': {
     subjectId: string;
     topicId: string;
@@ -252,11 +255,8 @@ export type AppEventMap = {
     failureKey?: string;
   };
   /**
-   * Emitted by retry orchestration (`retryFailedJob` / `retryFailedPipeline`) when
-   * the retry could not be dispatched: routing collapse (missing level / missing
-   * checklist / unsupported kind) or thrown errors inside the orchestration
-   * itself. Ordinary retried jobs whose runner subsequently fails emit fresh
-   * terminal runner events instead.
+   * Legacy mentor trigger for retry-routing failures. No runtime frontend emitter
+   * remains after durable-only HUD/log deletion; retained until mentor copy cleanup.
    */
   'content-generation:retry-failed': {
     subjectId: string;

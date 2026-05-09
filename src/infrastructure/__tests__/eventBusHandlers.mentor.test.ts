@@ -96,36 +96,6 @@ vi.mock('@/features/contentGeneration/generationClient', () => ({
   createGenerationClient: vi.fn(),
 }));
 
-vi.mock('@/features/contentGeneration/prepareGenerationRunSubmit', () => ({
-  prepareTopicContentRunInput: vi.fn().mockResolvedValue({
-    pipelineKind: 'topic-content',
-    subjectId: 'x',
-    topicId: 'y',
-    snapshot: { pipeline_kind: 'topic-theory' },
-    topicContentLegacyOptions: {},
-  }),
-  prepareSubjectGraphTopicsRunInput: vi.fn().mockResolvedValue({
-    pipelineKind: 'subject-graph',
-    subjectId: 'x',
-    stage: 'topics',
-    snapshot: { pipeline_kind: 'subject-graph-topics' },
-  }),
-  prepareTopicExpansionRunInput: vi.fn().mockResolvedValue({
-    pipelineKind: 'topic-expansion',
-    subjectId: 'x',
-    topicId: 'y',
-    nextLevel: 1,
-    snapshot: { pipeline_kind: 'topic-expansion-cards' },
-  }),
-  prepareCrystalTrialRunInput: vi.fn().mockResolvedValue({
-    pipelineKind: 'crystal-trial',
-    subjectId: 'x',
-    topicId: 'y',
-    currentLevel: 0,
-    snapshot: { pipeline_kind: 'crystal-trial' },
-  }),
-}));
-
 vi.mock('@/features/mentor', () => ({
   handleMentorTrigger: mentorApi.handleMentorTrigger,
   MENTOR_VOICE_ID: 'witty-sarcastic',

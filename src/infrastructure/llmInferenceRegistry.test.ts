@@ -51,7 +51,7 @@ describe('llmInferenceRegistry', () => {
     const mock = await import('../store/studySettingsStore') as unknown as MockHelpers;
     mock.__setProvider('openrouter');
     resetLlmInferenceRegistryForTests();
-    const repo = getChatCompletionsRepositoryForSurface('topicContent');
+    const repo = getChatCompletionsRepositoryForSurface('studyQuestionExplain');
     expect(repo).toBeDefined();
   });
 

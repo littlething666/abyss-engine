@@ -551,9 +551,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
 
   // ---- Phase C: content-generation terminal events → mentor triggers ----
   //
-  // Runners (`runTopicGenerationPipeline`, `runExpansionJob`,
-  // `generateTrialQuestions`, retry orchestration) own emission of these
-  // terminal events; this section just turns them into mentor side
+  // Durable run observation owns emission of these terminal events;
+  // this section just turns them into mentor side
   // effects. Topic-ready dedupe (per-pipelineId + 4h per
   // (subjectId, topicId)) and failure CTA wiring live in the rule engine,
   // so each handler stays thin.

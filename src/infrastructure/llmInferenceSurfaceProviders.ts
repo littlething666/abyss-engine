@@ -3,7 +3,7 @@ import type {
   LlmInferenceProviderId,
   OpenRouterModelConfig,
 } from '../types/llmInference';
-import { isPipelineInferenceSurfaceId, isStudyInferenceSurfaceId } from '../types/llmInference';
+import { isStudyInferenceSurfaceId } from '../types/llmInference';
 import type {
   ChatResponseFormat,
   ChatResponseFormatJsonSchema,
@@ -77,15 +77,12 @@ export function resolveOpenRouterReasoningChatOptions(
  * Schema mode; otherwise falls back to `json_object` when `response_format` is
  * supported. This permissive shape remains for non-pipeline surfaces.
  *
- * Durable pipeline callers (Subject Graph Generation, Topic Content Pipeline, Topic
- * Expansion, Crystal Trial) must pass `requireJsonSchema: true` and
- * `allowProviderHealing: true`. With `requireJsonSchema: true` the function never
- * returns `json_object` extras: if the bound model lacks `structured_outputs` support
- * or no JSON Schema is supplied, it returns `null` so the caller fails at the
- * boundary instead of degrading to permissive output. Binding-time / config-validation
- * enforcement of strict JSON Schema for pipeline-bound surfaces lives in
- * {@link assertPipelineSurfaceConfigValid} (Phase 0 step 6); full removal of
- * pipeline `json_object` reliance lands in Phase 0 step 8.
+ * Study explanation callers may pass `requireJsonSchema: true`. With
+ * `requireJsonSchema: true` the function never returns `json_object` extras: if
+ * the bound model lacks `structured_outputs` support or no JSON Schema is supplied,
+ * it returns `null` so the caller fails at the boundary instead of degrading to
+ * permissive output. Durable generation pipelines are backend-owned and do not use
+ * browser inference-surface settings.
  *
  * The returned `providerHealingRequested` flag is the AUTHORITATIVE source of truth
  * for the "OpenRouter response-healing was requested for this call" signal. It is
@@ -122,10 +119,7 @@ export function resolveOpenRouterStructuredChatExtrasForJob(
     && supportsStructuredOutputs;
 
   if (requireJsonSchema && !useJsonSchema) {
-    // Pipeline caller demands strict JSON Schema mode; never fall back to
-    // `json_object`. Surface-level signal — `assertPipelineSurfaceConfigValid`
-    // (Phase 0 step 6) additionally throws at config-validation time before
-    // any LLM call is reached.
+    // Caller demands strict JSON Schema mode; never fall back to `json_object`.
     return null;
   }
 
@@ -152,16 +146,11 @@ export type OpenRouterStructuredChatExtrasOptions = {
    */
   jsonSchemaResponseFormat?: ChatResponseFormatJsonSchema;
   /**
-   * When true, the caller is a durable pipeline and demands strict JSON Schema mode.
-   * The function will never return `json_object` extras: if the bound model lacks
-   * `structured_outputs` or no JSON Schema is supplied, it returns `null` so the
-   * caller fails at the boundary (no permissive fallback). Defaults to `false`,
-   * preserving the legacy permissive shape used by non-pipeline surfaces.
-   *
-   * Aligns with Plan v3 Q5 (parse fail-loud) and the strict-structured-output gate.
-   * Binding-time enforcement for pipeline-bound surfaces lives in
-   * {@link assertPipelineSurfaceConfigValid} (Phase 0 step 6); full removal of
-   * `json_object` reliance from pipeline paths lands in Phase 0 step 8.
+   * When true, the caller demands strict JSON Schema mode. The function will never
+   * return `json_object` extras: if the bound model lacks `structured_outputs` or
+   * no JSON Schema is supplied, it returns `null` so the caller fails at the
+   * boundary (no permissive fallback). Defaults to `false` for study surfaces that
+   * still accept plain JSON-object mode.
    */
   requireJsonSchema?: boolean;
   /**
@@ -226,123 +215,4 @@ export function resolveEnableStreamingForSurface(surfaceId: InferenceSurfaceId):
   if (binding.provider === 'local' || !binding.openRouterConfigId) return true;
   const config = getOpenRouterConfigById(binding.openRouterConfigId);
   return config?.enableStreaming ?? true;
-}
-
-// ---------------------------------------------------------------------------
-// Phase 0 step 6 — pipeline-bound surface config validation
-//
-// Strict JSON Schema enforcement at config-validation time (BEFORE any LLM
-// call). Wired into pipeline composition roots in Phase 1+. This module only
-// delivers the validator + assert primitives; existing call sites are
-// untouched.
-//
-// Plan v3 acceptance criterion: "Pipeline-bound model config without
-// `structured_outputs` fails before LLM call."
-// ---------------------------------------------------------------------------
-
-/**
- * Failure codes that pipeline-surface config validation may emit.
- *
- * These strings MUST stay in lockstep with the corresponding entries in
- * `GENERATION_FAILURE_CODES` (see
- * `src/features/generationContracts/failureCodes.ts`). They are redeclared
- * here as a local string-literal union so the infrastructure layer does not
- * import from the feature layer (root `AGENTS.md` keeps `eventBusHandlers`
- * as the only sanctioned `infrastructure → features` direction). The
- * contracts module's failure-code policy already documents that consumers
- * — Worker terminal-failure emission, telemetry dimensions, HUD copy,
- * mentor failure routing — keep these strings in sync per code.
- *
- * Phase 1's `generationRunEventHandlers.ts` composition root will route
- * validation failures into `RunEvent.run.failed` using the same code
- * identity.
- */
-export type PipelineSurfaceConfigFailureCode =
-  | 'config:missing-model-binding'
-  | 'config:missing-structured-output'
-  | 'config:invalid';
-
-/** Result of {@link validatePipelineSurfaceConfig}. */
-export type PipelineSurfaceConfigValidationResult =
-  | { readonly ok: true }
-  | {
-      readonly ok: false;
-      readonly code: PipelineSurfaceConfigFailureCode;
-      readonly message: string;
-    };
-
-/**
- * Validate that a pipeline-bound inference surface is wired to a model that
- * declares strict JSON Schema support, BEFORE any LLM call is made.
- *
- * Behavior:
- * - Non-pipeline surfaces (`studyQuestionExplain`, `studyFormulaExplain`):
- *   returns `{ ok: true }` unconditionally. Those surfaces are out of scope
- *   for the strict-config gate and continue to accept the legacy permissive
- *   `json_object` shape until the durable migration completes.
- * - Pipeline surfaces (Subject Graph Generation topics + edges, Topic
- *   Content Pipeline / Topic Expansion via `topicContent`, Crystal Trial):
- *   walks the binding + bound config and returns `{ ok: false, code, message }`
- *   when any prerequisite is missing.
- *
- * Failure codes:
- * - `config:invalid` — surface is bound to the local provider, which has
- *   no strict JSON Schema capability declaration. Durable pipelines
- *   (Phase 0 + Phase 1) cannot route through the local provider in v1.
- * - `config:missing-model-binding` — surface is bound to OpenRouter but
- *   `openRouterConfigId` is missing or references an unknown config.
- * - `config:missing-structured-output` — bound config does not declare
- *   `response_format` and/or `structured_outputs` among its supported
- *   parameters; strict JSON Schema mode is impossible.
- *
- * No side effects, no LLM call, no store write. Pure read of
- * `studySettingsStore`.
- */
-export function validatePipelineSurfaceConfig(
-  surfaceId: InferenceSurfaceId,
-): PipelineSurfaceConfigValidationResult {
-  if (!isPipelineInferenceSurfaceId(surfaceId)) {
-    return { ok: true };
-  }
-  return {
-    ok: false,
-    code: 'config:invalid',
-    message:
-      `Generation pipeline surface '${surfaceId}' is backend-owned and is not configurable in browser study settings. `
-      + `Submit a durable generation intent; backend GenerationPolicy owns model and structured-output configuration.`,
-  };
-
-}
-
-/**
- * Typed Error thrown by {@link assertPipelineSurfaceConfigValid}. Carries the
- * structured failure code and the offending surface id so callers / observers
- * can route the failure into `RunEvent.run.failed` without re-parsing the
- * message.
- */
-export class PipelineSurfaceConfigValidationError extends Error {
-  readonly code: PipelineSurfaceConfigFailureCode;
-  readonly surfaceId: InferenceSurfaceId;
-  constructor(
-    surfaceId: InferenceSurfaceId,
-    code: PipelineSurfaceConfigFailureCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'PipelineSurfaceConfigValidationError';
-    this.code = code;
-    this.surfaceId = surfaceId;
-  }
-}
-
-/**
- * Hard-fail variant of {@link validatePipelineSurfaceConfig}. Throws a typed
- * {@link PipelineSurfaceConfigValidationError} when the binding fails the
- * strict-config gate. No-op for non-pipeline surfaces and for valid
- * pipeline-bound configs.
- */
-export function assertPipelineSurfaceConfigValid(surfaceId: InferenceSurfaceId): void {
-  const result = validatePipelineSurfaceConfig(surfaceId);
-  if (result.ok) return;
-  throw new PipelineSurfaceConfigValidationError(surfaceId, result.code, result.message);
 }

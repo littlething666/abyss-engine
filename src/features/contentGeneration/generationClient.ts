@@ -3,7 +3,6 @@ import type {
   CancelReason,
   GenerationRunIntent,
   IGenerationRunRepository,
-  RunInput,
   RunListQuery,
   RunSnapshot,
   SubmitGenerationRunInput,
@@ -28,10 +27,7 @@ export interface GenerationClient {
   startTopicExpansion(input: TopicExpansionStartInput, opts?: { idempotencyKey?: string }): Promise<{ runId: string }>;
   startSubjectGraph(input: SubjectGraphStartInput, opts?: { idempotencyKey?: string }): Promise<{ runId: string }>;
   startCrystalTrial(input: CrystalTrialStartInput, opts?: { idempotencyKey?: string }): Promise<{ runId: string }>;
-  /**
-   * Low-level submit. New frontend runtime callers must pass compact intents;
-   * legacy RunInput is accepted only until local-runner callers are deleted.
-   */
+  /** Low-level durable submit. Browser callers pass compact intents only. */
   submitRun(input: SubmitGenerationRunInput, opts?: { idempotencyKey?: string }): Promise<{ runId: string }>;
   cancel(runId: string, reason: CancelReason): Promise<void>;
   retry(runId: string, opts?: { stage?: string; jobId?: string }): Promise<{ runId: string }>;
@@ -55,20 +51,6 @@ export function getGenerationClient(): GenerationClient {
     );
   }
   return registeredClient;
-}
-
-function isLegacyRunInput(input: SubmitGenerationRunInput): input is RunInput {
-  return 'pipelineKind' in input;
-}
-
-function assertSupportedSubmitInput(input: SubmitGenerationRunInput): void {
-  if (!isLegacyRunInput(input)) return;
-
-  // Temporary compatibility for durable rehydration/local-runner deletion sequencing:
-  // legacy RunInput can still reach low-level submit until PR 7 removes the type.
-  if (!input.pipelineKind) {
-    throw new Error('GenerationClient received an invalid legacy RunInput without pipelineKind');
-  }
 }
 
 function defaultIdempotencyKey(): string {
@@ -104,7 +86,6 @@ export function createGenerationClient(deps: CreateGenerationClientDeps): Genera
     },
 
     async submitRun(input, opts) {
-      assertSupportedSubmitInput(input);
       return repo().submitRun(input, opts?.idempotencyKey ?? defaultIdempotencyKey());
     },
 
