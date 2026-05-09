@@ -4,8 +4,8 @@
  * Used for:
  * - `input_hash`: sha256 of canonicalized RunInputSnapshot. Drives artifact
  *   dedupe and cache-hit short-circuiting in the durable orchestrator.
- * - `content_hash`: sha256 of canonicalized artifact payload. Drives
- *   client-side ArtifactApplier idempotency.
+ * - `content_hash`: sha256 of canonicalized artifact payload. Drives backend
+ *   materialization and generated-content dedupe checks.
  *
  * Canonical-JSON rules:
  * - Keys sorted lexicographically (UTF-16 code units, JS default).

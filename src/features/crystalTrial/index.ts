@@ -20,6 +20,7 @@ export {
 } from './crystalTrialConfig';
 export type {
   CrystalTrial,
+  CrystalTrialAttempt,
   CrystalTrialResult,
   CrystalTrialScenarioQuestion,
   CrystalTrialStatus,

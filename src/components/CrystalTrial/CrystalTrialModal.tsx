@@ -73,7 +73,7 @@ export function CrystalTrialModal() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [result, setResult] = useState<CrystalTrialResult | null>(null);
 
-  const questions: CrystalTrialScenarioQuestion[] = trialSetQuery.data?.questions ?? trial?.questions ?? [];
+  const questions: CrystalTrialScenarioQuestion[] = trialSetQuery.data?.questions ?? [];
   const answers = trial?.answers ?? {};
   const currentQuestion = questions[currentQuestionIndex] ?? null;
   const trialStatus = trial?.status;
@@ -81,7 +81,7 @@ export function CrystalTrialModal() {
   const isSubmitted = result !== null;
   const completedResult = isSubmitted
     ? result
-    : trialStatus === 'passed'
+    : trialStatus === 'passed' && questions.length > 0
       ? evaluateTrial(questions, answers, trial?.passThreshold ?? PASS_THRESHOLD)
       : null;
   const isReviewResult = isSubmitted || (trialStatus === 'passed' && completedResult?.passed === true);
@@ -90,7 +90,7 @@ export function CrystalTrialModal() {
     if (!selectedTopic || !trialSetQuery.data || trialStatus !== 'pregeneration') {
       return;
     }
-    useCrystalTrialStore.getState().setTrialQuestions(selectedTopic, trialSetQuery.data.questions);
+    useCrystalTrialStore.getState().markTrialQuestionsReady(selectedTopic);
   }, [selectedTopic, trialSetQuery.data, trialStatus]);
 
   useEffect(() => {
@@ -132,7 +132,7 @@ export function CrystalTrialModal() {
 
   const handleSubmit = useCallback(() => {
     if (!selectedTopic || !allAnswered) return;
-    const trialResult = useCrystalTrialStore.getState().submitTrial(selectedTopic);
+    const trialResult = useCrystalTrialStore.getState().submitTrial(selectedTopic, questions);
     if (trialResult) {
       setResult(trialResult);
       const t = useCrystalTrialStore.getState().getCurrentTrial(selectedTopic);
@@ -145,7 +145,7 @@ export function CrystalTrialModal() {
         trialId: t?.trialId ?? '',
       });
     }
-  }, [selectedTopic, allAnswered]);
+  }, [selectedTopic, allAnswered, questions]);
 
   const handleLevelUp = useCallback(() => {
     if (!selectedTopic) return;

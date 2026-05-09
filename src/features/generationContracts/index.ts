@@ -35,13 +35,6 @@ export {
 
 export type { Artifact, ArtifactEnvelope, ArtifactKind } from './artifacts/types';
 
-export type {
-  ArtifactApplier,
-  ArtifactApplyContext,
-  AppliedArtifactRecordScope,
-  AppliedArtifactsStore,
-} from './artifacts/applier';
-
 export {
   buildSubjectGraphTopicsSnapshot,
   type BuildSubjectGraphTopicsSnapshotParams,

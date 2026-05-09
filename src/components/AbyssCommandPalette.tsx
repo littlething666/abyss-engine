@@ -17,6 +17,7 @@ import {
   Zap,
 } from 'lucide-react';
 
+import { useCurrentCrystalTrialSet } from '@/hooks/useCrystalTrialSet';
 import type { MiniGameType } from '@/types/core';
 import type { BaseStudyCardType, StudyCardFilterSelection } from '@/features/content';
 
@@ -204,6 +205,15 @@ export function AbyssCommandPalette({
   const devXpBuffActive = useBuffStore((s) => s.activeBuffs.some(matchesDevXpBuff));
   const activeCrystals = useCrystalGardenStore((s) => s.activeCrystals);
   const trialStatus = useCrystalTrialStore((s) => (selectedTopic ? s.getTrialStatus(selectedTopic) : 'idle'));
+  const currentTrial = useCrystalTrialStore((s) => (
+    selectedTopic ? s.getCurrentTrial(selectedTopic) : null
+  ));
+  const currentTrialSet = useCurrentCrystalTrialSet(
+    selectedTopic?.subjectId,
+    selectedTopic?.topicId,
+    currentTrial?.targetLevel,
+  );
+  const currentTrialQuestions = currentTrialSet.data?.questions ?? [];
   const sfxEnabled = useFeatureFlagsStore((s) => s.sfxEnabled);
   const toggleSfxEnabled = useFeatureFlagsStore((s) => s.toggleSfxEnabled);
   const [studyCardFilter, setStudyCardFilter] = useState(createDefaultStudyCardFilter);
@@ -217,7 +227,9 @@ export function AbyssCommandPalette({
     Boolean(selectedTopic) && selectedCrystal != null && selectedCrystalLevel !== null &&
     selectedCrystalLevel < MAX_CRYSTAL_LEVEL &&
     (trialStatus === 'idle' || trialStatus === 'failed' || trialStatus === 'cooldown');
-  const canForceTrialPass = Boolean(selectedTopic) && (trialStatus === 'awaiting_player' || trialStatus === 'in_progress');
+  const canForceTrialPass = Boolean(selectedTopic) &&
+    currentTrialQuestions.length > 0 &&
+    (trialStatus === 'awaiting_player' || trialStatus === 'in_progress');
   const canTriggerLevelUpAnimation = Boolean(selectedTopic && selectedCrystal);
 
   const rememberRecentCommand = (commandId: PaletteCommandId) => {
@@ -288,7 +300,7 @@ export function AbyssCommandPalette({
 
   const handleForceTrialPass = () => {
     if (!selectedTopic || !canForceTrialPass) return;
-    const result = useCrystalTrialStore.getState().forceCompleteWithCorrectAnswers(selectedTopic);
+    const result = useCrystalTrialStore.getState().forceCompleteWithCorrectAnswers(selectedTopic, currentTrialQuestions);
     if (!result) return;
     uiStore.getState().openCrystalTrial();
     onOpenChange(false);

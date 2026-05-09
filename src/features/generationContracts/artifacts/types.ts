@@ -1,19 +1,18 @@
 /**
- * `Artifact` is the durable, applied-once unit produced by a successful run.
+ * `Artifact` is the durable unit produced by a successful backend run.
  *
  * Artifacts are content-addressed by `contentHash` (canonical-JSON sha256
- * of `payload`). The client `ArtifactApplier` registry uses `kind` to
- * dispatch to the feature-owned applier; an `applied_artifacts` IndexedDB
- * store will track `contentHash -> appliedAt` to enforce exactly-once
- * application (added in a later Phase 0.5 PR).
+ * of `payload`). Browser runtime does not apply artifacts locally; backend
+ * workflows materialize generated content into the Learning Content Store, and
+ * frontend durable observation treats artifact events as progress signals only.
  *
  * The `kind` literal union mirrors the durable pipeline kinds. Adding a kind
  * requires:
  *   1. Extending the literal union here.
  *   2. Adding a strict parser + semantic validator under
  *      `src/features/generationContracts/{strictParsers,semanticValidators}/`.
- *   3. Adding a feature-owned `ArtifactApplier` and wiring it through
- *      `src/infrastructure/generationRunEventHandlers.ts`.
+ *   3. Updating backend artifact application / Learning Content Store routes
+ *      and frontend query invalidation where needed.
  */
 
 export type ArtifactKind =
@@ -45,9 +44,9 @@ export interface Artifact<TPayload = unknown> {
 }
 
 /**
- * Worker-side envelope returned by `getArtifact`. Either a signed download
- * URL for the JSON payload (Supabase Storage) or the inline payload, plus
- * identity metadata.
+ * Worker-side envelope returned by `getArtifact`. The browser no longer uses
+ * this path for normal content consumption, but backend diagnostics and narrow
+ * debug tools may still expose artifact metadata or payload bodies.
  */
 export type ArtifactEnvelope<TPayload = unknown> =
   | {

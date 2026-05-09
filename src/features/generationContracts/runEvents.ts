@@ -1,6 +1,6 @@
 /**
  * `RunEvent` is the single transport contract between any generation
- * orchestrator (durable Worker, local synthetic adapter) and the client.
+ * orchestrator (durable Worker) and the client.
  * Every UI / mentor / store reaction subscribes to this event stream — never
  * to internal pipeline state.
  *
@@ -63,7 +63,7 @@ export type ArtifactReadyEventBody = {
   kind: string;
   /** sha256 tag of the canonicalized artifact payload (`cnt_<hex>`). */
   contentHash: string;
-  /** Schema version for the artifact payload — used to gate `ArtifactApplier`s. */
+  /** Schema version for the artifact payload — used to validate backend-materialized artifacts. */
   schemaVersion: number;
   /** Canonical input hash (`inp_<hex>`) the artifact was produced from. */
   inputHash: string;

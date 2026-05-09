@@ -8,8 +8,8 @@
  *
  * Adding a code requires updating the consumers below in lockstep:
  * - Worker terminal-failure emission.
- * - `LocalGenerationRunRepository` synthetic-event emission.
- * - HUD failure-card copy / mentor failure routing.
+ * - Durable run event emission.
+ * - Mentor/product failure routing.
  * - Telemetry failure dimensions.
  */
 export const GENERATION_FAILURE_CODES = [

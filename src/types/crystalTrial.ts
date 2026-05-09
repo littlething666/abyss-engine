@@ -27,13 +27,20 @@ export interface CrystalTrialScenarioQuestion {
   sourceCardSummaries: string[];
 }
 
-export interface CrystalTrial {
+/**
+ * Browser-owned Crystal Trial attempt state.
+ *
+ * Generated question content and card-pool hashes are backend Learning Content
+ * Store reads. The browser store tracks only attempt/cooldown/progression
+ * state and receives question sets transiently from backend query consumers
+ * when evaluating an attempt.
+ */
+export interface CrystalTrialAttempt {
   trialId: string;
   subjectId: string;
   topicId: string;
   /** The level the player is trying to reach (currentLevel + 1) */
   targetLevel: number;
-  questions: CrystalTrialScenarioQuestion[];
   status: CrystalTrialStatus;
   /** questionId → selected option text */
   answers: Record<string, string>;
@@ -42,7 +49,16 @@ export interface CrystalTrial {
   passThreshold: number;
   createdAt: number;
   completedAt: number | null;
-  /** Hash of card IDs used for generation — for invalidation detection */
+}
+
+/**
+ * Legacy full trial shape retained for import compatibility and read-model
+ * boundaries that still model questions inline. Runtime browser state should
+ * use {@link CrystalTrialAttempt} instead.
+ */
+export interface CrystalTrial extends CrystalTrialAttempt {
+  questions: CrystalTrialScenarioQuestion[];
+  /** Hash of card IDs used for generation — backend-owned validity marker */
   cardPoolHash: string | null;
 }
 

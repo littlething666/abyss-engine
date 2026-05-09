@@ -73,38 +73,24 @@ Move generation to durable-only routing and delete the local-runner/settings/HUD
 
 ## Remaining follow-ups:
 
- 1. Narrow crystalTrialStore further
-     - Remove generated question ownership from the store entirely.
-     - Keep only player attempt state, answers, cooldown, score, and status.
-     - Make backend trial-set queries the only source for question content.
- 2. Add final drift/boundary guards
-     - Guard against reintroducing:
-           - local generation runners
-           - GenerationProgressHud
-           - frontend generation logs/stores
-           - frontend artifact appliers
-           - frontend snapshot submission/imports
-           - generation pipeline model/healing settings
-           - Crystal Trial frontend card-pool hash authority
- 3. Clean up prompt/parser leftovers
-     - Confirm which src/features/contentGeneration/messages/** and parsers/** modules are still needed by backend/shared tests.
-     - Delete frontend-only permissive parser/prompt remnants if unused.
- 4. Review shared artifact-applier contracts
-     - src/features/generationContracts/artifacts/applier.ts may now be stale.
-     - Remove or narrow exports if no backend/shared consumer requires them.
- 5. Refresh old durable-workflow docs
-     - plans/durable-workflow-orchestration.md still contains historical references to deleted appliers/HUD/local paths.
-     - Either mark those sections as historical or update with current durable-only status.
- 6. Run full verification batch
-     - pnpm test:unit:run
-     - pnpm test:eval
-     - pnpm check:compile
-     - pnpm test:e2e:smoke
- 7. Manual durable checks
-     - Generate Subject Graph, Topic Content, Topic Expansion, Crystal Trial.
-     - Close/reopen tab during a run.
-     - Verify Crystal Trial questions load from backend current-set reads.
-     - Confirm no browser IndexedDB generation-log/artifact writes occur.
+ ## Follow-ups
+
+1. Run the full verification batch:
+   - `pnpm test:unit:run`
+   - `pnpm test:eval`
+   - `pnpm check:compile`
+   - `pnpm test:e2e:smoke`
+2. Manually verify durable flows:
+   - Generate Subject Graph, Topic Content, Topic Expansion, and Crystal Trial.
+   - Close and reopen the tab during a run.
+   - Confirm Crystal Trial questions load from backend current-set reads.
+   - Confirm no browser IndexedDB/localStorage generation-log, generated-question, artifact-application, or card-pool-hash writes occur.
+3. Finish prompt/parser cleanup:
+   - Audit `src/features/contentGeneration/messages/**` and `src/features/contentGeneration/parsers/**`.
+   - Keep only modules still required by backend/shared tests or explicitly supported read-model validation.
+4. Refresh historical durable-workflow documentation:
+   - Update or mark historical any references in `plans/durable-workflow-orchestration.md` to the deleted HUD, local runners, frontend artifact appliers, and browser generation settings.
+5. Keep boundary guards current when adding new generation kinds or backend read endpoints.
 
 ## Current Codebase Findings
 
@@ -118,6 +104,14 @@ Move generation to durable-only routing and delete the local-runner/settings/HUD
   - Selects backend reads whenever the Worker URL is configured; no durable flag gate remains.
 - `src/infrastructure/repositories/LocalGenerationRunRepository.ts` and `src/infrastructure/repositories/localGenerationRunArtifactCapture.ts`
   - Deleted in PR 7; runtime bootstrap has no local adapter path.
+
+## Current status consolidation (2026-05-09)
+
+Current architecture remains:
+- Browser generation submissions are compact intents only.
+- Backend workflows expand snapshots, resolve generation policy, persist artifacts, and materialize generated content.
+- Browser observation persists only durable SSE cursors, invalidates backend Learning Content Store reads, and routes product notifications.
+- Crystal Trial generated questions are transient backend current-set reads; browser state owns only attempt/cooldown/progression state.
 
 ### Frontend snapshot/model/healing leftovers to remove
 
