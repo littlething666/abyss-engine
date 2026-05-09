@@ -156,13 +156,11 @@ Follow-up Phase 0 PRs will add `prompts/` here.
 5. The harness is wired as a path-filtered required check in
    `.github/workflows/eval-gate.yml` (Phase 0 step 11) and is invoked
    via `pnpm run test:eval`. The gate fires on any PR that touches the
-   contracts module, the legacy prompt builders that still drive in-tab
-   pipeline output (`src/features/contentGeneration/messages/**`,
-   `src/features/contentGeneration/parsers/**`,
-   `src/features/subjectGeneration/graph/topicLattice/**`,
-   `src/features/subjectGeneration/graph/prerequisiteEdges/**`), or the
-   inference-surface providers + types
-   (`src/infrastructure/llmInferenceSurfaceProviders.ts`,
+   contracts module, backend prompt modules (`backend/src/prompts/**`),
+   the remaining documented Subject Graph Stage B repair exception
+   (`src/features/subjectGeneration/graph/prereqWiring/**` and
+   `src/prompts/subject-graph-edges.prompt`), or the inference-surface
+   providers + types (`src/infrastructure/llmInferenceSurfaceProviders.ts`,
    `src/types/llmInference.ts`) that gate `model_id`, `response_format`,
    `structured_outputs`, and pipeline-vs-non-pipeline routing. A change
    to any of these surfaces MUST land alongside the matching fixture

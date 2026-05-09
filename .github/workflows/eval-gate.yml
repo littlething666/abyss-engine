@@ -21,15 +21,12 @@ on:
       # future prompts/ directory. This is the durable-pipeline
       # contract that locks input_hash + content_hash identity.
       - 'src/features/generationContracts/**'
-      # Legacy prompt builders that produce the model-facing prompt
-      # text. They are deprecated for durable pipeline paths (Phase 0
-      # step 4) but still control today's in-tab pipeline output, so a
-      # change here must re-run the eval harness against the matching
-      # ArtifactKind fixtures.
-      - 'src/features/contentGeneration/messages/**'
-      - 'src/features/contentGeneration/parsers/**'
-      - 'src/features/subjectGeneration/graph/topicLattice/**'
-      - 'src/features/subjectGeneration/graph/prerequisiteEdges/**'
+      # Backend prompt modules and the remaining documented Subject
+      # Graph Stage B repair exception touch model-facing generation
+      # behavior and must stay lockstep with eval fixtures.
+      - 'backend/src/prompts/**'
+      - 'src/features/subjectGeneration/graph/prereqWiring/**'
+      - 'src/prompts/subject-graph-edges.prompt'
       # Model bindings + inference-surface providers — model_id,
       # response_format, structured_outputs capability, pipeline-vs-
       # non-pipeline surface routing, and the provider-healing flag

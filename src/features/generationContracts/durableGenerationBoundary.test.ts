@@ -4,8 +4,9 @@
  * Enforces that frontend runtime code cannot reintroduce deleted local
  * generation runners, generation HUD/log/applier surfaces, durable routing
  * flags, navigation abort reasons, snapshot/policy submission fields, browser
- * pipeline model/provider/healing settings, retired durable decision/plan
- * archives, or direct infrastructure adapter imports.
+ * pipeline model/provider/healing settings, retired frontend permissive
+ * prompt/parser paths, retired durable decision/plan archives, or direct
+ * infrastructure adapter imports.
  *
  * Mirrors the pattern of `lucideImportBoundary.test.ts` and
  * `legacyParserBoundary.test.ts` while intentionally keeping backend-owned
@@ -105,6 +106,16 @@ const RETIRED_REPOSITORY_PATH_PATTERNS = [
   /(^|\/)(?:durable-workflow-orchestration-v\d+|historical-durable-workflow-orchestration)(?:\.[a-z0-9]+)?$/i,
   /(^|\/)(?:durable-workflow-orchestration|durable-generation)-(?:archive|archived|history|historical|summary|decisions)(?:\.[a-z0-9]+)?$/i,
   /(^|\/)(?:archive|archived|history|historical)\/.*durable.*(?:workflow|generation|orchestration).*\.md$/i,
+] as const;
+
+const RETIRED_LEGACY_GENERATION_PATH_PATTERNS = [
+  /^src\/features\/contentGeneration\/messages\//,
+  /^src\/features\/contentGeneration\/parsers\//,
+  /^src\/features\/contentGeneration\/schemas\/(?:topicMiniGameCardsResponseFormat|topicTheoryResponseFormat)\.ts$/,
+  /^src\/features\/subjectGeneration\/graph\/parseGraphResponse(?:\.test)?\.ts$/,
+  /^src\/features\/subjectGeneration\/graph\/topicLattice\/buildTopicLatticeMessages(?:\.test)?\.ts$/,
+  /^src\/features\/subjectGeneration\/graph\/topicLattice\/parseTopicLatticeResponse(?:\.test)?\.ts$/,
+  /^src\/prompts\/subject-graph-topics\.prompt$/,
 ] as const;
 
 const SETTINGS_SOURCE_PATH_FRAGMENTS = [
@@ -368,6 +379,17 @@ describe('durable generation import boundary', () => {
     expect(
       violations,
       'Pipeline model/provider/healing policy must stay backend-owned. Browser settings may configure study-explanation surfaces only.',
+    ).toEqual([]);
+  });
+
+  it('keeps retired frontend permissive prompt/parser modules deleted', () => {
+    const existing = collectRepositoryFilePaths().filter((file) =>
+      RETIRED_LEGACY_GENERATION_PATH_PATTERNS.some((pattern) => pattern.test(file)),
+    );
+
+    expect(
+      existing,
+      'Durable generation owns prompt construction and artifact parsing in backend/contracts modules; retired frontend permissive prompt/parser paths must not return.',
     ).toEqual([]);
   });
 

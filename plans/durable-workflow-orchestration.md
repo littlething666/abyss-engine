@@ -43,17 +43,21 @@ The following work is complete and should not remain as active plan tasks:
 - Decoupled `loadTheoryPayloadFromTopicDetails()` from deprecated permissive parser types; pipeline reconstruction now owns its persisted Learning Content payload shape.
 - Expanded durable generation boundary tests for backend/pipeline parser seams, deleted frontend generation surfaces, durable routing flags, navigation abort reasons, intent-only frontend submission, frontend snapshot/hash import drift, browser pipeline-settings drift, and retired infrastructure decision/plan archive files.
 - Backend route tests now explicitly reject client-built snapshots, nested client generation-policy fields, and top-level client generation-policy fields at `POST /v1/runs`.
+- Removed retired frontend permissive prompt builders, response-format helpers, and parser modules under `src/features/contentGeneration/{messages,parsers,schemas}`.
+- Removed retired Subject Graph Stage A/local graph prompt-parser remnants: `buildTopicLatticeMessages`, `parseTopicLatticeResponse`, `parseGraphResponse`, and the unused `subject-graph-topics.prompt` template.
+- Added a durable boundary guard that keeps retired frontend permissive prompt/parser paths deleted.
 
 Historical implementation logs are available in Git history. Keep this file focused on remaining executable work.
 
 ## Remaining Work
 
-### 1. Final shared prompt/parser cleanup
+### 1. Stage B deterministic repair exception audit
 
-- Audit `src/features/contentGeneration/messages/**`, `src/features/contentGeneration/parsers/**`, and Subject Graph local prompt/parser remnants.
-- Delete frontend-only permissive pipeline parser/prompt modules that no backend/shared test or supported read-model validation still imports.
-- Keep the documented Subject Graph Stage B deterministic edge-repair exception only where still required by backend workflow code.
-- Continue deleting or quarantining any remaining prompt/parser modules after their callers are proven unsupported by backend/shared tests.
+The broad frontend prompt/parser cleanup is complete for unsupported durable-generation surfaces. The remaining prompt/parser-adjacent follow-up is the narrow Subject Graph Stage B deterministic edge-repair exception.
+
+- Confirm whether `src/features/subjectGeneration/graph/prereqWiring/prerequisiteEdgeRules.ts` is still required by supported backend workflow code or only by retired in-tab Subject Graph tests.
+- If unsupported, remove `prereqWiring/prerequisiteEdgeRules.ts`, its tests, and `src/prompts/subject-graph-edges.prompt`.
+- If still required, move the correction seam into the backend/contract-owned durable Subject Graph Stage B path and keep its no-second-parser/no-fallback boundary tests.
 
 ### 2. Final drift and boundary guards
 
@@ -68,12 +72,14 @@ Most repository-wide guard coverage now lives in `src/features/generationContrac
 - Frontend runtime code cannot import snapshot builders or `inputHash` outside shared contract/test seams.
 - Runtime features/components/hooks do not import `ApiClient`, `DurableGenerationRunRepository`, or SSE primitives directly.
 - Backend and pipeline code cannot import `extractJsonString()` or deprecated permissive parsers.
+- Retired frontend permissive prompt/parser paths cannot return.
 - Browser settings cannot reintroduce generation pipeline model/provider/response-healing controls.
 - `docs/infrastructure-decisions.md` and historical durable plan archive filenames remain deleted.
 
 Remaining follow-ups:
 
 - Keep guard fragments current if new browser settings surfaces are added for non-generation study tools.
+- Keep retired prompt/parser path guards current if additional unsupported local generation seams are removed.
 - Complete the verification batch and manual close/reopen checks below.
 
 ### 3. Verification
