@@ -1,8 +1,8 @@
 /**
- * Durable Generation Run Event Handlers — Phase 0.5 step 6.
+ * Durable Generation Run Event Handlers.
  *
- * This is the **single sanctioned composition root** that translates
- * backend `RunEvent`s into local artifact application, legacy
+ * This is the **single sanctioned composition root** that translates backend
+ * `RunEvent`s into Learning Content Store query invalidation, legacy
  * `AppEventBus` notifications, and telemetry.
  *
  * ## Boundary rules (locked by AGENTS.md amendment)
@@ -10,40 +10,30 @@
  * - Imports ONLY from feature public APIs (barrels).
  * - Must NOT deep-import feature internals, own generation rules, or
  *   perform remote I/O directly.
- * - Must NOT mutate stores except through exported feature appliers.
+ * - Must NOT mutate generated-content stores; backend workflows publish generated artifacts.
  * - Must NOT emit `crystal-trial:completed` — that event is
  *   exclusively the player-assessment surface.
  * - Topic Expansion supersession MUST suppress player-facing failure
  *   copy.
- * - Durable subject-graph artifacts MUST NOT be frontend-applied; they are
- *   progress-only until backend publication at `run.completed`.
+ * - Durable artifacts MUST NOT be frontend-applied; `artifact.ready` is a
+ *   progress signal until backend publication is observed at `run.completed`.
  *
  * ## When this runs
  *
  * `generationRunEventHandlers` now runs against the durable Worker adapter
  * unconditionally. Local in-tab runners no longer participate in runtime
  * submission/observation; remaining local runner files are deletion targets.
- * This composition root is the sole path for artifact application and event
- * emission from generation results while the HUD projection is migrated.
+ * This composition root consumes durable events only to refresh backend-owned
+ * content projections and emit product notifications.
  */
 
 import { appEventBus, type AppEventBus } from './eventBus';
 import type { GenerationRunIntent, PipelineKind, RunInput, RunSnapshot, SubmitGenerationRunInput } from '@/types/repository';
 import type { IDeckRepository } from '@/types/repository';
-import type {
-  ArtifactApplier,
-  ArtifactApplyContext,
-  AppliedArtifactsStore,
-  ArtifactEnvelope,
-  ArtifactKind,
-  RunEvent,
-} from '@/features/generationContracts';
+import type { RunEvent } from '@/features/generationContracts';
 import type { RunEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
 import type { TopicLattice, TopicLatticeNode } from '@/types/topicLattice';
 import type { GenerationClient } from '@/features/contentGeneration';
-import type { TopicContentApplier } from '@/features/contentGeneration/appliers/topicContentApplier';
-import type { TopicExpansionApplier } from '@/features/contentGeneration/appliers/topicExpansionApplier';
-import type { CrystalTrialApplier } from '@/features/crystalTrial/appliers/crystalTrialApplier';
 import type { PubSubClient } from './pubsub';
 
 // ---------------------------------------------------------------------------
@@ -52,17 +42,11 @@ import type { PubSubClient } from './pubsub';
 
 export interface GenerationRunEventHandlersDeps {
   client: GenerationClient;
-  appliers: {
-    topicContent: TopicContentApplier;
-    topicExpansion: TopicExpansionApplier;
-    crystalTrial: CrystalTrialApplier;
-  };
   eventBus: AppEventBus;
-  dedupeStore: AppliedArtifactsStore;
   /** Phase 3.6 Step 2: Durable per-run event cursor so rehydration survives browser reloads. */
   cursorStore: RunEventCursorStore;
   deckRepository: IDeckRepository;
-  contentPublication: Pick<PubSubClient, 'publishBackendSubjectGraph'>;
+  contentPublication: Pick<PubSubClient, 'publishBackendSubjectGraph' | 'publishTopicContent' | 'publishTopicCards' | 'publishCrystalTrial'>;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,63 +138,6 @@ function topicContentStageFromSnapshot(
   if (pk === 'topic-theory') return 'theory';
   if (pk === 'topic-study-cards') return 'study-cards';
   return 'mini-games';
-}
-
-/**
- * Build the `ArtifactApplyContext` for a given run + artifact.
- */
-function buildApplyContext(
-  runInput: ObservedRunInput,
-  runId: string,
-  deviceId: string,
-  dedupeStore: AppliedArtifactsStore,
-): ArtifactApplyContext {
-  const ctx: ArtifactApplyContext = {
-    runId,
-    deviceId,
-    now: () => Date.now(),
-    dedupeStore,
-  };
-
-  // Populate subject/topic when available
-  if ('subjectId' in runInput) ctx.subjectId = runInput.subjectId;
-  if ('topicId' in runInput) ctx.topicId = runInput.topicId;
-
-  // Topic expansion supersession context
-  if (
-    pipelineKindOf(runInput) === 'topic-expansion' &&
-    'nextLevel' in runInput
-  ) {
-    ctx.topicExpansionTargetLevel = runInput.nextLevel;
-  }
-
-  return ctx;
-}
-
-/**
- * Pick the right applier for an artifact kind.
- */
-function pickApplier(
-  kind: string,
-  appliers: GenerationRunEventHandlersDeps['appliers'],
-): ArtifactApplier | null {
-  switch (kind) {
-    case 'topic-theory':
-    case 'topic-study-cards':
-    case 'topic-mini-game-category-sort':
-    case 'topic-mini-game-sequence-build':
-    case 'topic-mini-game-match-pairs':
-      return appliers.topicContent;
-    case 'topic-expansion-cards':
-      return appliers.topicExpansion;
-    case 'subject-graph-topics':
-    case 'subject-graph-edges':
-      return null;
-    case 'crystal-trial':
-      return appliers.crystalTrial;
-    default:
-      return null;
-  }
 }
 
 /**
@@ -452,7 +379,7 @@ function isSubjectGraphValidationCode(code: string): boolean {
 export function createGenerationRunEventHandlers(
   deps: GenerationRunEventHandlersDeps,
 ): GenerationRunEventHandlers {
-  const { client, appliers, eventBus, dedupeStore, cursorStore, deckRepository, contentPublication } = deps;
+  const { client, eventBus, cursorStore, deckRepository, contentPublication } = deps;
   const activeRuns = new Set<string>();
   let stopped = false;
 
@@ -481,90 +408,48 @@ export function createGenerationRunEventHandlers(
       const runSnapshot = (await client.listRuns({ status: 'all', limit: 100 })).find((r) => r.runId === runId);
       const deviceId = runSnapshot?.deviceId ?? 'unknown';
 
-      const applyCtx = buildApplyContext(
-        runInput,
-        runId,
-        deviceId,
-        dedupeStore,
-      );
-
       // Phase 3.6 Step 2: seed startSeq from the durable cursor so SSE
       // replays only unprocessed events after a browser reload.
       const startSeq = await cursorStore.get(runId);
       let lastProcessedSeq = startSeq;
-      let newArtifactsApplied = false;
 
       for await (const event of client.observe(runId, startSeq)) {
         if (stopped) break;
         if (event.seq <= lastProcessedSeq) continue;
 
         switch (event.type) {
-          // ── artifact.ready: apply via applier ──────────────────
-          case 'artifact.ready': {
-            const { artifactId, kind } = event.body;
-            const isDurableSubjectGraphArtifact =
-              pipelineKindOf(runInput) === 'subject-graph' &&
-              (kind === 'subject-graph-topics' || kind === 'subject-graph-edges');
-
-            if (isDurableSubjectGraphArtifact) {
-              // Durable subject-graph artifacts are progress signals only.
-              // The backend publishes Learning Content atomically after both
-              // stages, and canonical frontend reads are HTTP-backed.
-              break;
-            }
-
-            const applier = pickApplier(kind, appliers);
-            if (!applier) {
-              throw new Error(
-                `[generationRunEventHandlers] unknown artifact kind: ${kind} (runId=${runId})`,
-              );
-            }
-
-            const artifact: ArtifactEnvelope = await client.getArtifact(artifactId);
-
-            const result = await applier.apply(
-              artifact as ArtifactEnvelope<ArtifactKind>,
-              applyCtx,
-            );
-
-            if (!result.applied) {
-              // suppressed: duplicate, superseded, or invalid
-              if (result.reason === 'superseded') {
-                // Superseded expansion — silence, per Plan v3 policy.
-                // The winning run will emit the completion event.
-              }
-            } else {
-              newArtifactsApplied = true;
-            }
+          // ── artifact.ready: progress signal only ───────────────
+          case 'artifact.ready':
+            // Backend workflows already apply artifacts to the Learning
+            // Content Store. Fetching artifacts here would recreate a second
+            // frontend write path and drift from durable authority.
             break;
-          }
 
-          // ── run.completed: fire legacy completion event ────────
+          // ── run.completed: refresh backend content reads ───────
           case 'run.completed': {
-            // Phase 3.6 Step 2: most legacy completion events are
-            // product-facing artifact-application events. Durable subject-graph
-            // completion is different: backend publication, not local artifact
-            // application, is the content-readiness boundary.
             const runKind = pipelineKindOf(runInput);
-            if (!newArtifactsApplied && runKind !== 'subject-graph') {
-              break;
-            }
             switch (runKind) {
-              case 'topic-content':
+              case 'topic-content': {
+                const input = runInput as ObservedTopicContentInput;
+                contentPublication.publishTopicContent(input.subjectId, input.topicId);
                 await emitTopicContentCompleted(
                   eventBus,
                   deckRepository,
-                  runInput as ObservedTopicContentInput,
+                  input,
                   runId,
                 );
                 break;
-              case 'topic-expansion':
+              }
+              case 'topic-expansion': {
+                const input = runInput as ObservedTopicExpansionInput;
+                contentPublication.publishTopicCards(input.subjectId, input.topicId);
                 await emitTopicExpansionCompleted(
                   eventBus,
                   deckRepository,
-                  runInput as ObservedTopicExpansionInput,
+                  input,
                 );
                 break;
+              }
               case 'subject-graph':
                 contentPublication.publishBackendSubjectGraph(runInput.subjectId);
                 await emitSubjectGraphGenerated(
@@ -583,13 +468,12 @@ export function createGenerationRunEventHandlers(
                   },
                 );
                 break;
-              case 'crystal-trial':
+              case 'crystal-trial': {
+                const input = runInput as ObservedCrystalTrialInput;
+                contentPublication.publishCrystalTrial(input.subjectId, input.topicId);
                 // MUST NOT emit crystal-trial:completed (Plan v3 Q21).
-                // The existing trial-availability watcher in
-                // eventBusHandlers.ts fires the mentor trigger via
-                // handleMentorTrigger('crystal-trial:available-for-player', ...)
-                // automatically after the applier writes to the store.
                 break;
+              }
             }
             break;
           }
@@ -665,14 +549,13 @@ export function createGenerationRunEventHandlers(
             break;
           }
 
-          // ── lifecycle events: HUD-owned ────────────────────────
+          // ── lifecycle events: durable diagnostics-owned ────────
           case 'run.queued':
           case 'run.status':
           case 'stage.progress':
           case 'run.cancel-acknowledged':
-            // HUD progress managed by useContentGenerationStore;
-            // these events are informational from the handlers'
-            // perspective.
+            // Backend run/debug endpoints own progress diagnostics; these
+            // events are informational from the handlers' perspective.
             break;
 
           default: {

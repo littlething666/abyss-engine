@@ -10,6 +10,7 @@ export const PUB_SUB_EVENT_TYPES = [
   'topic-cards:updated',
   'subject:updated',
   'subject-graph:published',
+  'crystal-trial:updated',
 ] as const;
 
 export type PubSubEventType = (typeof PUB_SUB_EVENT_TYPES)[number];
@@ -63,6 +64,28 @@ export class PubSubClient {
       throw new Error('[PubSubClient] subject graph publication requires subjectId');
     }
     this.emit({ type: 'subject-graph:published', subjectId });
+  }
+
+  publishTopicContent(subjectId: string, topicId: string): void {
+    if (!subjectId.trim() || !topicId.trim()) {
+      throw new Error('[PubSubClient] topic content publication requires subjectId and topicId');
+    }
+    this.emit({ type: 'topic:updated', subjectId, topicId });
+    this.emit({ type: 'topic-cards:updated', subjectId, topicId });
+  }
+
+  publishTopicCards(subjectId: string, topicId: string): void {
+    if (!subjectId.trim() || !topicId.trim()) {
+      throw new Error('[PubSubClient] topic cards publication requires subjectId and topicId');
+    }
+    this.emit({ type: 'topic-cards:updated', subjectId, topicId });
+  }
+
+  publishCrystalTrial(subjectId: string, topicId: string): void {
+    if (!subjectId.trim() || !topicId.trim()) {
+      throw new Error('[PubSubClient] crystal trial publication requires subjectId and topicId');
+    }
+    this.emit({ type: 'crystal-trial:updated', subjectId, topicId });
   }
 
   emit(message: PubSubMessage): void {
@@ -122,6 +145,14 @@ export class PubSubClient {
         this.queryClient.invalidateQueries({ queryKey: ['content', 'subjects'] });
         this.queryClient.invalidateQueries({ queryKey: ['content', 'subject', subjectId, 'graph'] });
         this.queryClient.invalidateQueries({ queryKey: ['content', 'subject', 'graphs'] });
+        this.queryClient.invalidateQueries({ queryKey: ['content', 'topic-statuses', subjectId] });
+        return;
+      }
+      case 'crystal-trial:updated': {
+        const subjectId = message.subjectId ?? '';
+        const topicId = message.topicId ?? '';
+        if (!subjectId || !topicId) return;
+        this.queryClient.invalidateQueries({ queryKey: ['content', 'crystal-trial', subjectId, topicId] });
         this.queryClient.invalidateQueries({ queryKey: ['content', 'topic-statuses', subjectId] });
         return;
       }

@@ -1,6 +1,6 @@
 # Local Workflows Removal Plan
 
-Status: in progress (2026-05-08). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, and PR 4 HUD/UI removal are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and retry routing no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, and store-backed topic-status/mentor UI reads have been removed from runtime UI. 2026-05-08 review update: the remaining plan no longer migrates `GenerationProgressHud` into a durable projection; it deletes the remaining frontend run-log/read-cache, abort/retry controls, and store-backed generation attention because run execution and logging are backend-owned. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 7 local runners are deleted.
+Status: in progress (2026-05-09). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, PR 4 HUD/UI removal, and the first PR 5 durable-observation cutover are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and retry routing no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, and store-backed topic-status/mentor UI reads have been removed from runtime UI. Durable run observation no longer fetches artifacts or invokes frontend topic-content/topic-expansion/crystal-trial appliers; terminal durable events now publish query invalidations for backend-owned Learning Content Store reads. 2026-05-08 review update: the remaining plan no longer migrates `GenerationProgressHud` into a durable projection; it deletes the remaining frontend run-log/read-cache, abort/retry controls, and store-backed generation attention because run execution and logging are backend-owned. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 7 local runners are deleted.
 
 ## Goal
 
@@ -127,7 +127,7 @@ Move generation to durable-only routing and delete the local-runner/settings/HUD
 - `src/components/TopicSelectionBar.tsx`, `src/components/TopicDetailsPopup.tsx`, `src/components/DiscoveryModal.tsx`
   - Still import `useContentGenerationStore` / `activeTopicContentGenerationLabel` for local progress labels and sorting.
 - `src/infrastructure/generationRunEventHandlers.ts`
-  - Still fetches durable artifacts and locally applies Topic Content, Topic Expansion, and Crystal Trial artifacts through frontend appliers. Backend workflows already apply these artifacts to the Learning Content Store, so this composition root should become an event-to-query-invalidation/mentor/telemetry consumer only.
+  - No longer fetches durable artifacts or locally applies Topic Content, Topic Expansion, or Crystal Trial artifacts. It now consumes terminal durable events as query-invalidation/publication signals for backend Learning Content Store reads, while still emitting legacy product notifications for mentor/telemetry paths.
 - `src/features/contentGeneration/appliers/*`, `src/features/crystalTrial/appliers/crystalTrialApplier.ts`, `src/infrastructure/repositories/appliedArtifactsStore.ts`
   - Deletion targets once `generationRunEventHandlers` stops locally applying artifacts. Keep only a durable SSE cursor store if observation still needs resume semantics.
 - `src/features/crystalTrial/crystalTrialStore.ts`
@@ -302,6 +302,20 @@ Still pending under later PRs:
 
 ### PR 5 — Convert durable observation into content-refresh consumption
 
+**Status (2026-05-09): partially complete for the runtime event-observation composition root.**
+
+Completed:
+- `generationRunEventHandlers` treats `artifact.ready` as a progress signal only and no longer calls `GenerationClient.getArtifact()` or frontend topic-content/topic-expansion/crystal-trial appliers.
+- `wireGenerationClient` no longer constructs frontend generation artifact appliers or passes the artifact dedupe store into durable observation.
+- Terminal `run.completed` now publishes content-refresh signals through `PubSubClient`: topic content invalidates details/cards/status/ready reads, topic expansion invalidates cards/status/ready reads, subject graph keeps backend subject publication, and crystal trial invalidates the backend trial read/status keys.
+- Updated event-handler and pub/sub tests to assert no frontend artifact fetch/apply path is used.
+
+Remaining follow-ups:
+- Split/delete the `AppliedArtifactsStore` artifact-dedupe table once remaining frontend applier/local-runner deletion lands; keep only the durable run-event cursor store if observation resumability remains.
+- Remove frontend applier files/exports and their tests in PR 7 after local runners are deleted.
+- Replace `useContentGenerationHydration()` store/log hydration with durable observation only.
+- Add or wire the backend-resolved current Crystal Trial set read path so the new `['content', 'crystal-trial', subjectId, topicId]` invalidation has a canonical frontend consumer.
+
 **Files:**
 - `src/infrastructure/generationRunEventHandlers.ts`
 - `src/infrastructure/wireGenerationClient.ts`
@@ -313,12 +327,12 @@ Still pending under later PRs:
 - generation-run event handler tests
 
 **Steps:**
-1. Stop fetching durable artifacts in `generationRunEventHandlers`. Backend workflows already materialize artifacts into the Learning Content Store.
+1. Stop fetching durable artifacts in `generationRunEventHandlers`. Backend workflows already materialize artifacts into the Learning Content Store. **Done 2026-05-09.**
 2. Replace frontend applier calls with explicit content-publication/query-invalidation methods:
-   - `topic-content` completion → invalidate topic details, topic cards, and topic statuses for the topic.
-   - `topic-expansion` completion → invalidate topic cards and statuses for the topic.
-   - `subject-graph` completion → keep `publishBackendSubjectGraph(subjectId)`.
-   - `crystal-trial` completion → invalidate the backend Crystal Trial read for the topic/target level and trigger trial availability consumption. Prefer backend-resolved current card-pool hash over frontend `setCardPoolHash`.
+   - `topic-content` completion → invalidate topic details, topic cards, and topic statuses for the topic. **Done 2026-05-09.**
+   - `topic-expansion` completion → invalidate topic cards and statuses for the topic. **Done 2026-05-09.**
+   - `subject-graph` completion → keep `publishBackendSubjectGraph(subjectId)`. **Done.**
+   - `crystal-trial` completion → invalidate the backend Crystal Trial read for the topic/target level and trigger trial availability consumption. Prefer backend-resolved current card-pool hash over frontend `setCardPoolHash`. **Invalidation added 2026-05-09; backend-resolved read consumer still pending.**
 3. Add/adjust the frontend Learning Content Store consumer for Crystal Trial sets. If the current endpoint requires `cardPoolHash`, either add a backend-resolved “current trial set” endpoint or a narrow repository method that obtains the backend-owned hash before reading questions.
 4. Keep durable SSE cursor tracking only if observation still needs resumability; split it from `AppliedArtifactsStore` so an artifact-application dedupe store does not survive as a shallow pass-through.
 5. Change `useContentGenerationHydration()` to observe active/recent backend runs without loading `contentGenerationLogRepository` or reconstructing frontend `RunInput` for UI state. If backend `RunSnapshot.snapshotJson` is needed for routing, treat malformed/missing context as a Worker contract violation and throw at the adapter boundary.

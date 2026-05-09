@@ -4,23 +4,14 @@ import {
   registerGenerationClient,
   type GenerationClient,
 } from '@/features/contentGeneration/generationClient';
-import {
-  createTopicContentApplier,
-} from '@/features/contentGeneration/appliers/topicContentApplier';
-import {
-  createTopicExpansionApplier,
-} from '@/features/contentGeneration/appliers/topicExpansionApplier';
-import {
-  createCrystalTrialApplier,
-} from '@/features/crystalTrial/appliers/crystalTrialApplier';
-import { appliedArtifactsStore, runEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
+import { runEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
 import {
   createGenerationRunEventHandlers,
   type GenerationRunEventHandlers,
 } from '@/infrastructure/generationRunEventHandlers';
 import { appEventBus } from '@/infrastructure/eventBus';
 import { pubSubClient } from '@/infrastructure/pubsub';
-import { deckRepository, deckWriter } from '@/infrastructure/di';
+import { deckRepository } from '@/infrastructure/di';
 import { DurableGenerationRunRepository } from '@/infrastructure/repositories/DurableGenerationRunRepository';
 import { createApiClient } from '@/infrastructure/http/apiClient';
 import { readOrMintDeviceId } from '@/infrastructure/deviceIdentity';
@@ -69,13 +60,7 @@ export function ensureGenerationClientRegistered(): GenerationClient {
 
   handlersInstance = createGenerationRunEventHandlers({
     client,
-    appliers: {
-      topicContent: createTopicContentApplier({ deckWriter, deckRepository }),
-      topicExpansion: createTopicExpansionApplier({ deckWriter }),
-      crystalTrial: createCrystalTrialApplier(),
-    },
     eventBus: appEventBus,
-    dedupeStore: appliedArtifactsStore,
     cursorStore: runEventCursorStore,
     deckRepository,
     contentPublication: pubSubClient,
@@ -87,8 +72,7 @@ export function ensureGenerationClientRegistered(): GenerationClient {
 
 /**
  * Observe a newly submitted durable run through the generationRunEventHandlers.
- * The handlers apply Worker artifacts and emit legacy AppEventBus events while
- * the UI projection is migrated to durable run state.
+ * The handlers refresh backend content reads and emit legacy AppEventBus events.
  */
 export function observeGenerationRun(runId: string, runInput: SubmitGenerationRunInput): void {
   const h = handlersInstance;

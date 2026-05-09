@@ -2,13 +2,13 @@
  * Tests for `generationRunEventHandlers.ts` — Phase 0.5 step 6.
  *
  * Covers the typed RunEvent → AppEventMap adapter:
- * - Happy-path artifact application + legacy event emission per pipeline kind.
+ * - Durable completion refreshes Learning Content Store query keys.
+ * - Legacy product notifications still emit per pipeline kind.
  * - crystal-trial:completed is NEVER emitted from question generation.
  * - Superseded expansion silence (no player-facing event).
- * - Duplicate artifact idempotency.
  * - Run failure event routing (validation vs generic).
  * - Cancel/supersession event routing.
- * - Artifact contract failures fail loudly instead of emitting completion.
+ * - Artifact events are progress signals and do not trigger frontend fetch/apply.
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
@@ -18,18 +18,11 @@ import {
 } from './generationRunEventHandlers';
 import type { AppEventBus, AppEventMap } from './eventBus';
 import type {
-  ArtifactApplier,
   ArtifactEnvelope,
-  AppliedArtifactsStore,
   RunEvent,
 } from '@/features/generationContracts';
 import type { RunEventCursorStore } from '@/infrastructure/repositories/appliedArtifactsStore';
-import type {
-  GenerationClient,
-  TopicContentApplier,
-} from '@/features/contentGeneration';
-import type { TopicExpansionApplier } from '@/features/contentGeneration/appliers/topicExpansionApplier';
-import type { CrystalTrialApplier } from '@/features/crystalTrial/appliers/crystalTrialApplier';
+import type { GenerationClient } from '@/features/contentGeneration';
 import type { IDeckRepository, RunInput, RunSnapshot } from '@/types/repository';
 import type { PubSubClient } from './pubsub';
 import type { RunInputSnapshot } from '@/features/generationContracts';
@@ -62,20 +55,6 @@ function createMockCursorStore(): RunEventCursorStore {
       const prev = cursors.get(runId) ?? 0;
       if (seq > prev) cursors.set(runId, seq);
     }),
-  };
-}
-
-/** Create a mock DedupeStore that never has duplicates by default. */
-function createMockDedupeStore(
-  knownHashes?: Set<string>,
-): AppliedArtifactsStore {
-  const hashes = knownHashes ?? new Set<string>();
-  return {
-    has: vi.fn(async (hash: string) => hashes.has(hash)),
-    record: vi.fn(async (_hash, _kind, _at, _scope) => {
-      hashes.add(_hash);
-    }),
-    getLatestTopicExpansionScope: vi.fn(async () => null),
   };
 }
 
@@ -351,17 +330,6 @@ function evt(
   return { ...base, ...(overrides as Record<string, unknown>) } as RunEvent;
 }
 
-/** Create a mock applier that always applies successfully. */
-function createMockApplier(
-  kind: string,
-  applyResult?: { applied: boolean; reason?: 'duplicate' | 'superseded' | 'invalid' },
-): ArtifactApplier {
-  return {
-    kind: kind as ArtifactApplier['kind'],
-    apply: vi.fn(async () => applyResult ?? { applied: true }),
-  } as unknown as ArtifactApplier;
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -369,24 +337,21 @@ function createMockApplier(
 describe('generationRunEventHandlers', () => {
   let handlersDeps: GenerationRunEventHandlersDeps;
   let mockEventBus: ReturnType<typeof createMockEventBus>;
-  let mockDedupe: AppliedArtifactsStore;
   let mockDeck: IDeckRepository;
   let mockClient: GenerationClient;
-  let tfApplier: ArtifactApplier;
-  let teApplier: ArtifactApplier;
-  let ctApplier: ArtifactApplier;
-  let contentPublication: Pick<PubSubClient, 'publishBackendSubjectGraph'>;
+  let contentPublication: Pick<PubSubClient, 'publishBackendSubjectGraph' | 'publishTopicContent' | 'publishTopicCards' | 'publishCrystalTrial'>;
 
   beforeEach(() => {
     mockEventBus = createMockEventBus();
-    mockDedupe = createMockDedupeStore();
     mockDeck = createMockDeckRepository({
       'subj-1:topic-1': 'Test Topic',
     });
-    tfApplier = createMockApplier('topic-theory');
-    teApplier = createMockApplier('topic-expansion-cards');
-    ctApplier = createMockApplier('crystal-trial');
-    contentPublication = { publishBackendSubjectGraph: vi.fn() };
+    contentPublication = {
+      publishBackendSubjectGraph: vi.fn(),
+      publishTopicContent: vi.fn(),
+      publishTopicCards: vi.fn(),
+      publishCrystalTrial: vi.fn(),
+    };
   });
 
   function buildDeps(
@@ -400,13 +365,7 @@ describe('generationRunEventHandlers', () => {
     });
     return {
       client: mockClient,
-      appliers: {
-        topicContent: tfApplier as TopicContentApplier,
-        topicExpansion: teApplier as TopicExpansionApplier,
-        crystalTrial: ctApplier as CrystalTrialApplier,
-      },
       eventBus: overrides.eventBus ?? mockEventBus.bus,
-      dedupeStore: mockDedupe,
       cursorStore: createMockCursorStore(),
       deckRepository: mockDeck,
       contentPublication,
@@ -415,7 +374,7 @@ describe('generationRunEventHandlers', () => {
 
   // ── Topic Content happy path ──────────────────────────────────
 
-  it('applies topic-theory artifact and emits topic-content:generation-completed', async () => {
+  it('refreshes topic content reads and emits topic-content:generation-completed', async () => {
     const input = topicContentInput({ stage: 'full' });
     const runId = 'run-tc-1';
 
@@ -435,10 +394,9 @@ describe('generationRunEventHandlers', () => {
 
     await handlers.observeRun(runId, input);
 
-    // Artifact was applied
-    expect(tfApplier.apply).toHaveBeenCalled();
+    expect(client.getArtifact).not.toHaveBeenCalled();
+    expect(contentPublication.publishTopicContent).toHaveBeenCalledWith('subj-1', 'topic-1');
 
-    // Completion event emitted
     const completedEvent = mockEventBus.emitted.find(
       (e) => e.event === 'topic-content:generation-completed',
     );
@@ -486,7 +444,7 @@ describe('generationRunEventHandlers', () => {
 
   // ── Topic Expansion happy path ──────────────────────────────────
 
-  it('applies topic-expansion-cards artifact and emits topic-expansion:generation-completed', async () => {
+  it('refreshes topic expansion reads and emits topic-expansion:generation-completed', async () => {
     const input = topicExpansionInput({ nextLevel: 1 });
     const runId = 'run-te-1';
 
@@ -506,7 +464,8 @@ describe('generationRunEventHandlers', () => {
 
     await handlers.observeRun(runId, input);
 
-    expect(teApplier.apply).toHaveBeenCalled();
+    expect(client.getArtifact).not.toHaveBeenCalled();
+    expect(contentPublication.publishTopicCards).toHaveBeenCalledWith('subj-1', 'topic-1');
 
     const completedEvent = mockEventBus.emitted.find(
       (e) => e.event === 'topic-expansion:generation-completed',
@@ -758,7 +717,7 @@ describe('generationRunEventHandlers', () => {
 
   // ── Crystal Trial ─────────────────────────────────────────────
 
-  it('applies crystal-trial artifact and does NOT emit crystal-trial:completed', async () => {
+  it('refreshes crystal-trial reads and does NOT emit crystal-trial:completed', async () => {
     const input = crystalTrialInput();
     const runId = 'run-ct-1';
 
@@ -778,7 +737,8 @@ describe('generationRunEventHandlers', () => {
 
     await handlers.observeRun(runId, input);
 
-    expect(ctApplier.apply).toHaveBeenCalled();
+    expect(client.getArtifact).not.toHaveBeenCalled();
+    expect(contentPublication.publishCrystalTrial).toHaveBeenCalledWith('subj-1', 'topic-1');
 
     // MUST NOT emit crystal-trial:completed (Plan v3 Q21 drift-prevention pin)
     const completedEvent = mockEventBus.emitted.find(
@@ -829,15 +789,10 @@ describe('generationRunEventHandlers', () => {
 
   // ── Duplicate/idempotency ─────────────────────────────────────
 
-  it('does not emit completion when every artifact is deduped', async () => {
+  it('emits completion from terminal durable state without frontend dedupe/applier state', async () => {
     const input = topicContentInput({ stage: 'full' });
     const runId = 'run-dup-1';
     const CONTENT_HASH = 'cnt_dup1';
-
-    // Pre-seed dedupe store with the hash
-    const dedupeWithHash = createMockDedupeStore(new Set([CONTENT_HASH]));
-    const applySpy = vi.fn(async () => ({ applied: false, reason: 'duplicate' as const }));
-    const dupeApplier = { kind: 'topic-theory', apply: applySpy };
 
     const client = createMockGenerationClient({
       artifacts: new Map([['art-dup-1', artifactEnvelope({ id: 'art-dup-1', kind: 'topic-theory', contentHash: CONTENT_HASH })]]),
@@ -851,13 +806,7 @@ describe('generationRunEventHandlers', () => {
 
     const handlers = createGenerationRunEventHandlers({
       client,
-      appliers: {
-        topicContent: dupeApplier as TopicContentApplier,
-        topicExpansion: teApplier as TopicExpansionApplier,
-        crystalTrial: ctApplier as CrystalTrialApplier,
-      },
       eventBus: mockEventBus.bus,
-      dedupeStore: dedupeWithHash,
       cursorStore: createMockCursorStore(),
       deckRepository: mockDeck,
       contentPublication,
@@ -865,13 +814,12 @@ describe('generationRunEventHandlers', () => {
 
     await handlers.observeRun(runId, input);
 
-    expect(applySpy).toHaveBeenCalled();
-    // Legacy completion represents newly applied product content, not just a
-    // terminal durable run. Replays with duplicate artifacts must stay silent.
+    expect(client.getArtifact).not.toHaveBeenCalled();
+    expect(contentPublication.publishTopicContent).toHaveBeenCalledWith('subj-1', 'topic-1');
     const completedEvent = mockEventBus.emitted.find(
       (e) => e.event === 'topic-content:generation-completed',
     );
-    expect(completedEvent).toBeUndefined();
+    expect(completedEvent).toBeDefined();
 
     handlers.stop();
   });
@@ -923,7 +871,7 @@ describe('generationRunEventHandlers', () => {
 
   // ── Unknown artifact kind ─────────────────────────────────────
 
-  it('fails loudly for unknown artifact kind and does not emit completion', async () => {
+  it('ignores unknown artifact kind because artifacts are backend-owned and emits completion', async () => {
     const input = topicContentInput();
     const runId = 'run-unknown-kind';
 
@@ -940,21 +888,21 @@ describe('generationRunEventHandlers', () => {
       buildDeps({ client }),
     );
 
-    await expect(handlers.observeRun(runId, input)).rejects.toThrow(
-      'unknown artifact kind',
-    );
+    await handlers.observeRun(runId, input);
 
+    expect(client.getArtifact).not.toHaveBeenCalled();
+    expect(contentPublication.publishTopicContent).toHaveBeenCalledWith('subj-1', 'topic-1');
     const completedEvent = mockEventBus.emitted.find(
       (e) => e.event === 'topic-content:generation-completed',
     );
-    expect(completedEvent).toBeUndefined();
+    expect(completedEvent).toBeDefined();
 
     handlers.stop();
   });
 
   // ── Artifact fetch failure ────────────────────────────────────
 
-  it('fails loudly on artifact fetch failure and does not emit completion', async () => {
+  it('does not fetch artifacts and completes even when artifact storage lacks a payload', async () => {
     const input = topicContentInput();
     const runId = 'run-art-fail';
     const cursorStore = createMockCursorStore();
@@ -975,15 +923,15 @@ describe('generationRunEventHandlers', () => {
       cursorStore,
     });
 
-    await expect(handlers.observeRun(runId, input)).rejects.toThrow(
-      'Unknown artifact: art-missing',
-    );
+    await handlers.observeRun(runId, input);
 
+    expect(client.getArtifact).not.toHaveBeenCalled();
+    expect(contentPublication.publishTopicContent).toHaveBeenCalledWith('subj-1', 'topic-1');
     const completedEvent = mockEventBus.emitted.find(
       (e) => e.event === 'topic-content:generation-completed',
     );
-    expect(completedEvent).toBeUndefined();
-    expect(await cursorStore.get(runId)).toBe(1);
+    expect(completedEvent).toBeDefined();
+    expect(await cursorStore.get(runId)).toBe(3);
 
     handlers.stop();
   });

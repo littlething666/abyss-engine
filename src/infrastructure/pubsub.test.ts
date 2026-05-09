@@ -37,6 +37,24 @@ describe('PubSubClient content invalidation', () => {
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['content', 'topic-ready', 's1', 't1'] });
   });
 
+  it('publishes topic content as topic details and cards invalidation', () => {
+    client.publishTopicContent('s1', 't1');
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(6);
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['content', 'topic', 's1', 't1'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['content', 'topic-cards', 's1', 't1'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['content', 'topic-statuses', 's1'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['content', 'topic-ready', 's1', 't1'] });
+  });
+
+  it('invalidates crystal trial read keys on crystal-trial publication', () => {
+    client.publishCrystalTrial('s1', 't1');
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2);
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['content', 'crystal-trial', 's1', 't1'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['content', 'topic-statuses', 's1'] });
+  });
+
   it('invalidates backend-published subject graph read keys without local subject:updated semantics', () => {
     const publishedHandler = vi.fn();
     const subjectUpdatedHandler = vi.fn();
