@@ -17,6 +17,7 @@ After Phase 4:
 - the backend expands intents into canonical `RunInputSnapshot`s, including checklist-derived Subject Graph Generation strategy;
 - model choice, prompt construction, response-healing posture, strict parsing, semantic validation, retries, idempotency, budget accounting, and artifact persistence live behind backend seams;
 - generated Subjects, Subject Graphs, Topic Content, study cards, and Crystal Trial question sets persist in the backend **Learning Content Store**;
+- Crystal Trial question-set consumption uses a backend-resolved current-set endpoint that derives the active card-pool hash from stored cards before returning questions;
 - the frontend reads learning content from backend repositories and observes run events for UI state only;
 - the frontend never runs pipeline LLM calls, never chooses pipeline models, never toggles provider response healing, and never applies durable artifacts into local IndexedDB as source of truth.
 
@@ -24,7 +25,7 @@ After Phase 4:
 
 1. **Backend owns pipeline model choice and Subject Graph strategy expansion.** Pipeline model IDs are resolved from backend generation policy. Subject Graph Generation topic-stage intents carry checklist-only browser input; the Worker derives the canonical strategy brief before snapshot hashing. Frontend study-explanation surfaces may keep their own local settings for now, but Subject Graph Generation, Topic Content Pipeline, Topic Expansion, and Crystal Trial generation cannot read `studySettingsStore` model bindings.
 2. **Response healing is not user-toggleable.** The OpenRouter `response-healing` plugin is a backend generation-policy decision. Phase 4 v1 keeps it enabled in backend defaults and records `providerHealingRequested` in run/job metadata. There is no browser setting and no localStorage migration.
-3. **Full backend learning-content persistence lands now.** The browser no longer owns generated deck persistence. Durable workflows write validated artifacts into backend learning-content tables before `run.completed` is emitted.
+3. **Full backend learning-content persistence lands now.** The browser no longer owns generated deck persistence. Durable workflows write validated artifacts into backend learning-content tables before `run.completed` is emitted. Crystal Trial availability/questions are read from backend current-set routes, not from frontend card-pool hash persistence.
 4. **Destructive reset is allowed.** Do not preserve old IndexedDB/localStorage generation data. Do not write compatibility adapters for old snapshots/settings.
 5. **Strict failure at seams.** Invalid backend generation policy, invalid intents, missing backend learning content, unsupported model capabilities, and malformed model output fail loudly with structured errors. Do not add frontend fallbacks or downstream repair branches.
 6. **Cloudflare infrastructure split is locked.** Workflows own durable execution, D1 owns queryable run/job/event/usage/artifact metadata state, R2 owns artifact/checkpoint blobs, and Durable Objects are optional coordination infrastructure only. See `docs/infrastructure-decisions.md`.

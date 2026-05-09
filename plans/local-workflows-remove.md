@@ -1,6 +1,6 @@
 # Local Workflows Removal Plan
 
-Status: in progress (2026-05-09). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, PR 4 HUD/UI removal, the first PR 5 durable-observation cutovers, PR 6 browser settings removal, PR 7 local-runner/log-store deletion, and PR 8 backend Subject Graph strategy ownership are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and runtime generation entry paths no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, store-backed topic-status/mentor UI reads, frontend generation log repository/store, HUD retry routing, local in-tab generation runners, frontend artifact appliers, local artifact capture, and legacy `RunInput` submit compatibility have been removed. Durable run observation no longer fetches artifacts or invokes frontend topic-content/topic-expansion/crystal-trial appliers; terminal durable events now publish query invalidations for backend-owned Learning Content Store reads. Subject Graph Generation topic-stage intents now carry checklist-only browser input; the Worker rejects client `strategyBrief` and derives the canonical strategy brief server-side before snapshot expansion. `useContentGenerationHydration()` now skips browser generation-log hydration and reattaches durable observation using compact intents derived from Worker run snapshots, failing loudly on malformed Worker snapshot contracts instead of rebuilding frontend `RunInput`. Browser Global Settings now exposes only study explanation model/provider bindings; generation pipeline model selection and `openRouterResponseHealing` local state are removed, and pipeline surfaces fail loudly if legacy code tries to resolve them through study settings. 2026-05-09 review update: the remaining work is Crystal Trial backend-resolved read consumption, cleanup of shared artifact-applier contracts/prompt-parser remnants where no backend import requires them, and final documentation/drift guards (PR 9).
+Status: in progress (2026-05-09). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, PR 4 HUD/UI removal, the first PR 5 durable-observation cutovers, PR 6 browser settings removal, PR 7 local-runner/log-store deletion, and PR 8 backend Subject Graph strategy ownership are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and runtime generation entry paths no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, store-backed topic-status/mentor UI reads, frontend generation log repository/store, HUD retry routing, local in-tab generation runners, frontend artifact appliers, local artifact capture, and legacy `RunInput` submit compatibility have been removed. Durable run observation no longer fetches artifacts or invokes frontend topic-content/topic-expansion/crystal-trial appliers; terminal durable events now publish query invalidations for backend-owned Learning Content Store reads. Subject Graph Generation topic-stage intents now carry checklist-only browser input; the Worker rejects client `strategyBrief` and derives the canonical strategy brief server-side before snapshot expansion. `useContentGenerationHydration()` now skips browser generation-log hydration and reattaches durable observation using compact intents derived from Worker run snapshots, failing loudly on malformed Worker snapshot contracts instead of rebuilding frontend `RunInput`. Browser Global Settings now exposes only study explanation model/provider bindings; generation pipeline model selection and `openRouterResponseHealing` local state are removed, and pipeline surfaces fail loudly if legacy code tries to resolve them through study settings. 2026-05-09 continuation update: Crystal Trial now has a backend-resolved current-set read path (`/v1/subjects/:subjectId/topics/:topicId/trials/:targetLevel/current`) that derives the current card-pool hash from Learning Content Store cards before reading the matching generated question set. The frontend has an infrastructure repository and TanStack Query hook for that current-set read, and the Crystal Trial modal consumes the backend set while persisted trial state strips generated questions. Remaining work is cleanup of shared artifact-applier contracts/prompt-parser remnants where no backend import requires them and final PR 9 drift guards/documentation hardening.
 
 ## Goal
 
@@ -70,6 +70,41 @@ Move generation to durable-only routing and delete the local-runner/settings/HUD
 14. **Should Crystal Trial card-pool invalidation/regeneration remain frontend-owned?**
    - **Recommended answer:** No for generated question-set validity. Backend should own the current card-pool hash and serve the matching Crystal Trial set, so stale frontend persisted questions cannot survive Topic Content or Topic Expansion changes.
    - **Solution:** Prefer a backend endpoint that resolves the current card-pool hash for `{ subjectId, topicId, targetLevel }` and returns either the matching trial set or an explicit not-found/stale status. Keep frontend-triggered pregeneration requests only as a product intent; do not keep frontend card-pool hash writes or generated-question persistence.
+
+## Remaining follow-ups:
+
+ 1. Narrow crystalTrialStore further
+     - Remove generated question ownership from the store entirely.
+     - Keep only player attempt state, answers, cooldown, score, and status.
+     - Make backend trial-set queries the only source for question content.
+ 2. Add final drift/boundary guards
+     - Guard against reintroducing:
+           - local generation runners
+           - GenerationProgressHud
+           - frontend generation logs/stores
+           - frontend artifact appliers
+           - frontend snapshot submission/imports
+           - generation pipeline model/healing settings
+           - Crystal Trial frontend card-pool hash authority
+ 3. Clean up prompt/parser leftovers
+     - Confirm which src/features/contentGeneration/messages/** and parsers/** modules are still needed by backend/shared tests.
+     - Delete frontend-only permissive parser/prompt remnants if unused.
+ 4. Review shared artifact-applier contracts
+     - src/features/generationContracts/artifacts/applier.ts may now be stale.
+     - Remove or narrow exports if no backend/shared consumer requires them.
+ 5. Refresh old durable-workflow docs
+     - plans/durable-workflow-orchestration.md still contains historical references to deleted appliers/HUD/local paths.
+     - Either mark those sections as historical or update with current durable-only status.
+ 6. Run full verification batch
+     - pnpm test:unit:run
+     - pnpm test:eval
+     - pnpm check:compile
+     - pnpm test:e2e:smoke
+ 7. Manual durable checks
+     - Generate Subject Graph, Topic Content, Topic Expansion, Crystal Trial.
+     - Close/reopen tab during a run.
+     - Verify Crystal Trial questions load from backend current-set reads.
+     - Confirm no browser IndexedDB generation-log/artifact writes occur.
 
 ## Current Codebase Findings
 
@@ -294,7 +329,7 @@ Completed:
 - Updated event-handler and pub/sub tests to assert no frontend artifact fetch/apply path is used.
 
 Remaining follow-ups:
-- Add or wire the backend-resolved current Crystal Trial set read path so the new `['content', 'crystal-trial', subjectId, topicId]` invalidation has a canonical frontend consumer.
+- Continue reducing `crystalTrialStore` so it owns only player attempt/cooldown state; today it can still hold generated questions in memory for legacy selectors, but persistence strips them and the modal reads the backend current set.
 - Remove shared artifact-applier contract exports if no backend/shared consumer remains after prompt/parser cleanup.
 
 **Files:**
@@ -313,8 +348,8 @@ Remaining follow-ups:
    - `topic-content` completion → invalidate topic details, topic cards, and topic statuses for the topic. **Done 2026-05-09.**
    - `topic-expansion` completion → invalidate topic cards and statuses for the topic. **Done 2026-05-09.**
    - `subject-graph` completion → keep `publishBackendSubjectGraph(subjectId)`. **Done.**
-   - `crystal-trial` completion → invalidate the backend Crystal Trial read for the topic/target level and trigger trial availability consumption. Prefer backend-resolved current card-pool hash over frontend `setCardPoolHash`. **Invalidation added 2026-05-09; backend-resolved read consumer still pending.**
-3. Add/adjust the frontend Learning Content Store consumer for Crystal Trial sets. If the current endpoint requires `cardPoolHash`, either add a backend-resolved “current trial set” endpoint or a narrow repository method that obtains the backend-owned hash before reading questions.
+   - `crystal-trial` completion → invalidate the backend Crystal Trial read for the topic/target level and trigger trial availability consumption. Prefer backend-resolved current card-pool hash over frontend `setCardPoolHash`. **Invalidation and backend-resolved current-set consumer added 2026-05-09.**
+3. Add/adjust the frontend Learning Content Store consumer for Crystal Trial sets. If the current endpoint requires `cardPoolHash`, either add a backend-resolved “current trial set” endpoint or a narrow repository method that obtains the backend-owned hash before reading questions. **Done 2026-05-09 via backend current-set route + `BackendCrystalTrialSetRepository` + `useCurrentCrystalTrialSet()`.**
 4. Keep durable SSE cursor tracking only if observation still needs resumability; split it from `AppliedArtifactsStore` so an artifact-application dedupe store does not survive as a shallow pass-through. **Done 2026-05-09: `runEventCursorStore.ts` is the only runtime cursor store.**
 5. Change `useContentGenerationHydration()` to observe active/recent backend runs without loading `contentGenerationLogRepository` or reconstructing frontend `RunInput` for UI state. If backend `RunSnapshot.snapshotJson` is needed for routing, treat malformed/missing context as a Worker contract violation and throw at the adapter boundary. **Done 2026-05-09.**
 6. Update tests so duplicate SSE delivery proves duplicate query invalidation / mentor trigger suppression, not duplicate local artifact application.

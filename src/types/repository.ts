@@ -1,4 +1,5 @@
 import type { Card, MiniGameType, Subject, SubjectGraph, TopicDetails } from './core';
+import type { CrystalTrialScenarioQuestion } from './crystalTrial';
 import type { StudyChecklist } from './studyChecklist';
 import type { TopicContentStatusRecord } from './topicContent';
 import type {
@@ -36,6 +37,21 @@ export interface IDeckRepository {
   getTopicDetails(subjectId: string, topicId: string): Promise<TopicDetails>;
   getTopicCards(subjectId: string, topicId: string): Promise<Card[]>;
   getTopicContentStatuses(subjectId: string): Promise<TopicContentStatusRecord[]>;
+}
+
+export interface CrystalTrialSetReadModel {
+  subjectId: string;
+  topicId: string;
+  targetLevel: number;
+  cardPoolHash: string;
+  questions: CrystalTrialScenarioQuestion[];
+  contentHash: string;
+  createdByRunId: string;
+  createdAt: string;
+}
+
+export interface ICrystalTrialSetRepository {
+  getCurrentTrialSet(subjectId: string, topicId: string, targetLevel: number): Promise<CrystalTrialSetReadModel | null>;
 }
 
 export interface IDeckContentWriter {

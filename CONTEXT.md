@@ -117,7 +117,7 @@ The generation of additional cards triggered by crystal progression.
 _Avoid_: Expansion, level content, follow-up cards
 
 **Learning Content Store**:
-The backend-authoritative persistence surface for Subjects, Subject Graphs, Topic Content, study cards, and generated Crystal Trial question sets. The browser reads learning content from this store and no longer owns generation-pipeline persistence.
+The backend-authoritative persistence surface for Subjects, Subject Graphs, Topic Content, study cards, and generated Crystal Trial question sets. The browser reads learning content from this store and no longer owns generation-pipeline persistence. Crystal Trial question-set reads use a backend-resolved current card-pool hash rather than frontend-persisted question/hash state.
 _Avoid_: Local deck, browser cache, generated content cache
 
 ### Guidance And Signals

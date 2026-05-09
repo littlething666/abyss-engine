@@ -41,7 +41,6 @@ interface CrystalTrialActions {
     questions: CrystalTrialScenarioQuestion[],
   ) => void;
   setTrialGenerationFailed: (ref: TopicRef) => void;
-  setCardPoolHash: (ref: TopicRef, hash: string) => void;
   startTrial: (ref: TopicRef) => void;
   cancelTrialAttempt: (ref: TopicRef) => void;
   answerQuestion: (
@@ -161,22 +160,6 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
             trials: {
               ...state.trials,
               [key]: { ...trial, status: 'failed' },
-            },
-          };
-        });
-      },
-
-      setCardPoolHash: (ref, hash) => {
-        const key = topicRefKey(ref);
-        set((state) => {
-          const trial = state.trials[key];
-          if (!trial) {
-            return {};
-          }
-          return {
-            trials: {
-              ...state.trials,
-              [key]: { ...trial, cardPoolHash: hash },
             },
           };
         });
@@ -445,7 +428,20 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
       name: STORAGE_KEY,
       version: 1,
       partialize: (state) => ({
-        trials: state.trials,
+        trials: Object.fromEntries(
+          Object.entries(state.trials).map(([key, trial]) => [
+            key,
+            {
+              ...trial,
+              // Generated question sets and their card-pool hashes are backend
+              // Learning Content Store reads. Persist only player
+              // attempt/cooldown state and let the query consumer rehydrate
+              // questions from the Worker after reload.
+              questions: [],
+              cardPoolHash: null,
+            },
+          ]),
+        ),
         cooldownCardsReviewed: state.cooldownCardsReviewed,
         cooldownStartedAt: state.cooldownStartedAt,
       }),

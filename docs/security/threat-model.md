@@ -39,6 +39,7 @@ Abyss Engine v1 deploys a server-side durable generation orchestrator that persi
 |---|---|---|
 | Device run history | `runs`, `jobs`, `events` rows | Low — reveals topic/study timing |
 | Generation artifacts | D1 `artifacts` metadata + Cloudflare R2 blobs | Low — educational content |
+| Learning Content Store rows | D1 `subjects`, `subject_graphs`, `topic_contents`, `topic_cards`, `crystal_trial_sets` | Low — educational content; device-scoped |
 | Usage counters | `usage_counters` rows | Low — aggregate token counts |
 | Device identity | `devices` rows | Medium — links activity to device |
 | OpenRouter API key | Cloudflare Worker secret | **High** — billable LLM access |
@@ -53,6 +54,7 @@ Abyss Engine v1 deploys a server-side durable generation orchestrator that persi
 - `deviceId` is a random UUID v4 (122 bits of entropy), not guessable.
 - Workers enforce `X-Abyss-Device` header on all endpoints.
 - No endpoint exposes cross-device data or device enumeration.
+- Crystal Trial current-set reads derive the active card-pool hash server-side from device-scoped Learning Content Store cards before reading `crystal_trial_sets`; the browser does not submit or persist that hash as authority.
 
 **Planned mitigation (Phase 4+):**
 - Migrate to account auth (see [auth-migration.md](./auth-migration.md)).

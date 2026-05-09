@@ -80,10 +80,13 @@ const runsListQuerySchema = z.strictObject({
   limit: limitQuerySchema,
 });
 
-const crystalTrialReadSchema = z.strictObject({
+const crystalTrialCurrentReadSchema = z.strictObject({
   subjectId: nonEmptyRouteString,
   topicId: nonEmptyRouteString,
   targetLevel: positiveIntegerPathParam,
+});
+
+const crystalTrialReadSchema = crystalTrialCurrentReadSchema.extend({
   cardPoolHash: exactNonEmptyQueryString,
 });
 
@@ -137,10 +140,13 @@ export interface ValidatedRunsListQuery {
   limit?: number;
 }
 
-export interface ValidatedCrystalTrialReadInput {
+export interface ValidatedCrystalTrialCurrentReadInput {
   subjectId: string;
   topicId: string;
   targetLevel: number;
+}
+
+export interface ValidatedCrystalTrialReadInput extends ValidatedCrystalTrialCurrentReadInput {
   cardPoolHash: string;
 }
 
@@ -235,6 +241,14 @@ export function validateRetryBody(body: unknown): ValidationResult<RetryOptions>
     retryBodySchema.safeParse(body),
     'parse:json-mode-violation',
     'retry body must contain optional string stage/jobId fields only',
+  );
+}
+
+export function validateCrystalTrialCurrentReadInput(input: Record<string, string | undefined>): ValidationResult<ValidatedCrystalTrialCurrentReadInput> {
+  return fromSafeParse(
+    crystalTrialCurrentReadSchema.safeParse(input),
+    'parse:invalid-route-input',
+    'invalid Crystal Trial current route input',
   );
 }
 

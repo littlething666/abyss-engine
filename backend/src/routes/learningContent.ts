@@ -9,12 +9,29 @@
 import { Hono } from 'hono';
 import type { Env } from '../env';
 import { makeRepos } from '../repositories';
-import { validateCrystalTrialReadInput } from './validation';
+import { contentHash } from '../contracts/generationContracts';
+import type { TopicCardContent } from '../learningContent/types';
+import { validateCrystalTrialReadInput, validateCrystalTrialCurrentReadInput } from './validation';
 
 const learningContent = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotencyKey?: string } }>();
 
 function notFound(message: string) {
   return { error: 'not_found', message };
+}
+
+const MAX_CARD_DIFFICULTY = 4;
+
+function cardPoolForTargetLevel(cards: TopicCardContent[], targetLevel: number): TopicCardContent[] {
+  const targetDifficulty = Math.min(targetLevel, MAX_CARD_DIFFICULTY);
+  const levelCards = cards.filter((card) => card.difficulty === targetDifficulty);
+  if (levelCards.length > 0) return levelCards;
+  return cards.filter((card) => card.difficulty === MAX_CARD_DIFFICULTY);
+}
+
+async function currentCrystalTrialCardPoolHash(cards: TopicCardContent[], targetLevel: number): Promise<string | null> {
+  const pool = cardPoolForTargetLevel(cards, targetLevel);
+  if (pool.length === 0) return null;
+  return contentHash({ cardIds: pool.map((card) => card.cardId).sort() });
 }
 
 learningContent.get('/library/manifest', async (c) => {
@@ -89,6 +106,36 @@ learningContent.get('/subjects/:subjectId/topics/:topicId/trials/:targetLevel', 
   );
   if (!trialSet) {
     return c.json(notFound(`Crystal Trial set not found for subject ${subjectId}, topic ${topicId}, target level ${targetLevel}`), 404);
+  }
+  return c.json(trialSet);
+});
+
+learningContent.get('/subjects/:subjectId/topics/:topicId/trials/:targetLevel/current', async (c) => {
+  const repos = makeRepos(c.env);
+  const input = validateCrystalTrialCurrentReadInput({
+    subjectId: c.req.param('subjectId'),
+    topicId: c.req.param('topicId'),
+    targetLevel: c.req.param('targetLevel'),
+  });
+  if (!input.ok) {
+    return c.json(input.failure, 400);
+  }
+  const { subjectId, topicId, targetLevel } = input.value;
+  const cards = await repos.learningContent.getTopicCards(c.get('deviceId'), subjectId, topicId);
+  const cardPoolHash = await currentCrystalTrialCardPoolHash(cards, targetLevel);
+  if (!cardPoolHash) {
+    return c.json(notFound(`Current Crystal Trial card pool not found for subject ${subjectId}, topic ${topicId}, target level ${targetLevel}`), 404);
+  }
+
+  const trialSet = await repos.learningContent.getCrystalTrialSet(
+    c.get('deviceId'),
+    subjectId,
+    topicId,
+    targetLevel,
+    cardPoolHash,
+  );
+  if (!trialSet) {
+    return c.json(notFound(`Current Crystal Trial set not found for subject ${subjectId}, topic ${topicId}, target level ${targetLevel}`), 404);
   }
   return c.json(trialSet);
 });

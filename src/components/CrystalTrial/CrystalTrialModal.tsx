@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { InfoPopover } from '@/components/InfoPopover';
+import { useCurrentCrystalTrialSet } from '@/hooks/useCrystalTrialSet';
 import { TrialQuestionCard } from './TrialQuestionCard';
 import { TrialResultsView } from './TrialResultsView';
 
@@ -63,11 +64,16 @@ export function CrystalTrialModal() {
   // requires a non-nullable status; short-circuit to false when no trial
   // is active for the selected topic so the button stays disabled.
   const canStartTrial = trial ? isCrystalTrialAvailableForPlayer(trial.status, selectedXp) : false;
+  const trialSetQuery = useCurrentCrystalTrialSet(
+    selectedTopic?.subjectId,
+    selectedTopic?.topicId,
+    trial?.targetLevel,
+  );
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [result, setResult] = useState<CrystalTrialResult | null>(null);
 
-  const questions: CrystalTrialScenarioQuestion[] = trial?.questions ?? [];
+  const questions: CrystalTrialScenarioQuestion[] = trialSetQuery.data?.questions ?? trial?.questions ?? [];
   const answers = trial?.answers ?? {};
   const currentQuestion = questions[currentQuestionIndex] ?? null;
   const trialStatus = trial?.status;
@@ -79,6 +85,13 @@ export function CrystalTrialModal() {
       ? evaluateTrial(questions, answers, trial?.passThreshold ?? PASS_THRESHOLD)
       : null;
   const isReviewResult = isSubmitted || (trialStatus === 'passed' && completedResult?.passed === true);
+
+  useEffect(() => {
+    if (!selectedTopic || !trialSetQuery.data || trialStatus !== 'pregeneration') {
+      return;
+    }
+    useCrystalTrialStore.getState().setTrialQuestions(selectedTopic, trialSetQuery.data.questions);
+  }, [selectedTopic, trialSetQuery.data, trialStatus]);
 
   useEffect(() => {
     if (!isReviewResult || trialStatus !== 'passed' || questions.length === 0) {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { contentHash } from '../contracts/generationContracts';
 import app from '../index';
 import { createFakeD1, q } from '../testStubs/fakeD1';
 import type { Env } from '../env';
@@ -296,6 +297,60 @@ describe('Learning Content Store routes', () => {
       questions: { questions: [{ id: 'q1' }] },
     });
     expect(calls[1].args).toEqual([DEVICE_ID, 'math', 'limits', 3, 'pool-1']);
+  });
+
+  it('returns the current Crystal Trial set using the backend-resolved card-pool hash', async () => {
+    const currentPoolHash = await contentHash({ cardIds: ['card-a', 'card-b'] });
+    const stalePoolHash = await contentHash({ cardIds: ['old-card'] });
+    const { db, calls } = createFakeD1([
+      q(deviceRow(DEVICE_ID)),
+      q([
+        {
+          device_id: DEVICE_ID,
+          subject_id: 'math',
+          topic_id: 'limits',
+          card_id: 'card-b',
+          card_json: JSON.stringify({ id: 'card-b' }),
+          difficulty: 3,
+          source_artifact_kind: 'topic-expansion-cards',
+          created_by_run_id: 'run-cards',
+          created_at: '2026-05-07T00:00:00Z',
+        },
+        {
+          device_id: DEVICE_ID,
+          subject_id: 'math',
+          topic_id: 'limits',
+          card_id: 'card-a',
+          card_json: JSON.stringify({ id: 'card-a' }),
+          difficulty: 3,
+          source_artifact_kind: 'topic-expansion-cards',
+          created_by_run_id: 'run-cards',
+          created_at: '2026-05-07T00:00:00Z',
+        },
+      ]),
+      q({
+        device_id: DEVICE_ID,
+        subject_id: 'math',
+        topic_id: 'limits',
+        target_level: 3,
+        card_pool_hash: currentPoolHash,
+        questions_json: JSON.stringify({ questions: [{ id: 'q-current' }] }),
+        content_hash: 'cnt_current_trial',
+        created_by_run_id: 'run-current-trial',
+        created_at: '2026-05-07T00:00:00Z',
+      }),
+    ]);
+
+    const response = await fetchLearningContent(`/v1/subjects/math/topics/limits/trials/3/current?ignored=${stalePoolHash}`, db);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      targetLevel: 3,
+      cardPoolHash: currentPoolHash,
+      questions: { questions: [{ id: 'q-current' }] },
+    });
+    expect(calls[1].args).toEqual([DEVICE_ID, 'math', 'limits']);
+    expect(calls[2].args).toEqual([DEVICE_ID, 'math', 'limits', 3, currentPoolHash]);
   });
 
   it('rejects malformed Crystal Trial route inputs before read-model lookup', async () => {
