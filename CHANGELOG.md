@@ -15,3 +15,4 @@
 - Converted runtime generation entry paths and retry routing to intent/durable endpoints: event-bus generation requests and command-palette trial regeneration no longer prepare frontend snapshots or resolve pipeline models, and HUD retries call `GenerationClient.retry()`.
 - Removed the frontend Generation Progress HUD and quick action; topic readiness UI now relies on backend Topic Content Status instead of store-backed active generation jobs.
 - Converted durable run observation from frontend artifact application to backend content-refresh consumption: artifact events are progress-only, terminal events invalidate Learning Content Store query keys, and `wireGenerationClient` no longer constructs frontend generation appliers.
+- Removed browser generation-log hydration from `useContentGenerationHydration`; mount-time durable observation now uses compact intents derived from Worker snapshots and fails loudly on malformed Worker snapshot contracts.

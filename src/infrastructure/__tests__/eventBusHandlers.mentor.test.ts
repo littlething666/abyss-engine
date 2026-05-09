@@ -85,7 +85,13 @@ vi.mock('@/infrastructure/wireGenerationClient', () => ({
 }));
 
 vi.mock('@/features/contentGeneration/generationClient', () => ({
-  getGenerationClient: () => ({ submitRun: mockSubmitRun }),
+  getGenerationClient: () => ({
+    submitRun: mockSubmitRun,
+    startTopicContent: mockSubmitRun,
+    startTopicExpansion: mockSubmitRun,
+    startSubjectGraph: mockSubmitRun,
+    startCrystalTrial: mockSubmitRun,
+  }),
   registerGenerationClient: vi.fn(),
   createGenerationClient: vi.fn(),
 }));

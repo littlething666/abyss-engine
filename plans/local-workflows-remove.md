@@ -1,6 +1,6 @@
 # Local Workflows Removal Plan
 
-Status: in progress (2026-05-09). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, PR 4 HUD/UI removal, and the first PR 5 durable-observation cutover are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and retry routing no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, and store-backed topic-status/mentor UI reads have been removed from runtime UI. Durable run observation no longer fetches artifacts or invokes frontend topic-content/topic-expansion/crystal-trial appliers; terminal durable events now publish query invalidations for backend-owned Learning Content Store reads. 2026-05-08 review update: the remaining plan no longer migrates `GenerationProgressHud` into a durable projection; it deletes the remaining frontend run-log/read-cache, abort/retry controls, and store-backed generation attention because run execution and logging are backend-owned. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 7 local runners are deleted.
+Status: in progress (2026-05-09). PR 1 core, PR 2 runtime intent submission, PR 3 durable-only routing, PR 4 HUD/UI removal, and the first PR 5 durable-observation cutovers are implemented. `GenerationClient` no longer imports snapshot builders or `inputHash`, default idempotency keys are UUID-based, and `DurableGenerationRunRepository.submitRun()` posts `{ kind, intent }` without client snapshots/policy fields. `eventBusHandlers`, the command palette trial regeneration path, and retry routing no longer reconstruct frontend snapshots or resolve pipeline models. Frontend bootstrap now requires `NEXT_PUBLIC_DURABLE_GENERATION_URL`, always registers one `DurableGenerationRunRepository`, observes durable runs unconditionally, and no longer parses `NEXT_PUBLIC_DURABLE_RUNS*`. The `GenerationProgressHud`, its app mount, its quick action, generation-progress `uiStore` state/actions, navigation-abort lifecycle hook, and store-backed topic-status/mentor UI reads have been removed from runtime UI. Durable run observation no longer fetches artifacts or invokes frontend topic-content/topic-expansion/crystal-trial appliers; terminal durable events now publish query invalidations for backend-owned Learning Content Store reads. `useContentGenerationHydration()` now skips browser generation-log hydration and reattaches durable observation using compact intents derived from Worker run snapshots, failing loudly on malformed Worker snapshot contracts instead of rebuilding frontend `RunInput`. 2026-05-08 review update: the remaining plan no longer migrates `GenerationProgressHud` into a durable projection; it deletes the remaining frontend run-log/read-cache, abort/retry controls, and store-backed generation attention because run execution and logging are backend-owned. Legacy `RunInput` remains temporarily accepted at the low-level seam until PR 7 local runners are deleted.
 
 ## Goal
 
@@ -268,8 +268,7 @@ Completed:
 - Removed mentor CTAs/copy that route players to a generation HUD; failure dialogs now dismiss while backend run diagnostics own details/retry.
 
 Still pending under later PRs:
-- `useContentGenerationHydration()` still hydrates the temporary frontend generation store/log shapes and should be removed with the run-log/read-cache deletion in PR 5/7.
-- `contentGenerationStore`, local runner modules, abort-reason types used by local runners, retry helpers, and `generationAttentionSurface` remain as local-runner compile dependencies until PR 7 deletion.
+- `contentGenerationStore`, local runner modules, abort-reason types used by local runners, retry helpers, and `generationAttentionSurface` remain as local-runner compile dependencies until PR 7 deletion. `useContentGenerationHydration()` no longer hydrates those store/log shapes.
 
 **Files:**
 - `src/components/GenerationProgressHud.tsx` (delete)
@@ -297,7 +296,7 @@ Still pending under later PRs:
 
 **Exit checks:**
 - `rg "GenerationProgressHud|isGenerationProgressOpen|openGenerationProgress|setGenerationProgressOpen|Background generation|generation HUD" src app tests` has no runtime references.
-- `rg "useContentGenerationStore" src/components src/hooks app` has no runtime UI references except `useContentGenerationHydration()` (temporary run-log/store hydration scheduled for PR 5/7) and test mocks.
+- `rg "useContentGenerationStore" src/components src/hooks app` has no runtime UI references except local-runner/test-only mocks.
 - Topic Content Status now shows `generating` only from backend Learning Content Store rows after a topic-content run is submitted.
 
 ### PR 5 — Convert durable observation into content-refresh consumption
@@ -308,13 +307,14 @@ Completed:
 - `generationRunEventHandlers` treats `artifact.ready` as a progress signal only and no longer calls `GenerationClient.getArtifact()` or frontend topic-content/topic-expansion/crystal-trial appliers.
 - `wireGenerationClient` no longer constructs frontend generation artifact appliers or passes the artifact dedupe store into durable observation.
 - Terminal `run.completed` now publishes content-refresh signals through `PubSubClient`: topic content invalidates details/cards/status/ready reads, topic expansion invalidates cards/status/ready reads, subject graph keeps backend subject publication, and crystal trial invalidates the backend trial read/status keys.
+- `useContentGenerationHydration()` no longer imports `contentGenerationLogRepository` or `useContentGenerationStore`; it observes active/recent durable runs with compact intents derived from Worker run snapshots and throws descriptive contract errors for malformed snapshots.
 - Updated event-handler and pub/sub tests to assert no frontend artifact fetch/apply path is used.
 
 Remaining follow-ups:
 - Split/delete the `AppliedArtifactsStore` artifact-dedupe table once remaining frontend applier/local-runner deletion lands; keep only the durable run-event cursor store if observation resumability remains.
 - Remove frontend applier files/exports and their tests in PR 7 after local runners are deleted.
-- Replace `useContentGenerationHydration()` store/log hydration with durable observation only.
 - Add or wire the backend-resolved current Crystal Trial set read path so the new `['content', 'crystal-trial', subjectId, topicId]` invalidation has a canonical frontend consumer.
+- Delete the remaining frontend generation log repository/store and local-runner tests in PR 7; hydration no longer references them, but local-runner compile dependencies still do.
 
 **Files:**
 - `src/infrastructure/generationRunEventHandlers.ts`
@@ -335,7 +335,7 @@ Remaining follow-ups:
    - `crystal-trial` completion → invalidate the backend Crystal Trial read for the topic/target level and trigger trial availability consumption. Prefer backend-resolved current card-pool hash over frontend `setCardPoolHash`. **Invalidation added 2026-05-09; backend-resolved read consumer still pending.**
 3. Add/adjust the frontend Learning Content Store consumer for Crystal Trial sets. If the current endpoint requires `cardPoolHash`, either add a backend-resolved “current trial set” endpoint or a narrow repository method that obtains the backend-owned hash before reading questions.
 4. Keep durable SSE cursor tracking only if observation still needs resumability; split it from `AppliedArtifactsStore` so an artifact-application dedupe store does not survive as a shallow pass-through.
-5. Change `useContentGenerationHydration()` to observe active/recent backend runs without loading `contentGenerationLogRepository` or reconstructing frontend `RunInput` for UI state. If backend `RunSnapshot.snapshotJson` is needed for routing, treat malformed/missing context as a Worker contract violation and throw at the adapter boundary.
+5. Change `useContentGenerationHydration()` to observe active/recent backend runs without loading `contentGenerationLogRepository` or reconstructing frontend `RunInput` for UI state. If backend `RunSnapshot.snapshotJson` is needed for routing, treat malformed/missing context as a Worker contract violation and throw at the adapter boundary. **Done 2026-05-09.**
 6. Update tests so duplicate SSE delivery proves duplicate query invalidation / mentor trigger suppression, not duplicate local artifact application.
 
 **Exit checks:**
