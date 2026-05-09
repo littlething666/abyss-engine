@@ -1,8 +1,33 @@
-# Subject Graph Generation Publishes Only Complete Subjects
+# ADR 0001: Subject Graph Generation Publishes Only Complete Subjects
 
 Status: accepted and implemented
+Date: 2026-05-08
 
-Subject Graph Generation creates generated Subjects, but the Learning Content Store must not expose a new or replacement Subject until both Topic Lattice generation and Prerequisite Edge wiring have completed and the backend has published a complete Subject Graph. We choose final publication over Stage A partial materialization because the backend is the source of truth for generated content and client reads/sync must never observe a partial curriculum graph.
+## Context
+
+Subject Graph Generation creates generated Subjects through a staged backend workflow:
+
+1. Stage A generates the Topic Lattice.
+2. Stage B wires Prerequisite Edges.
+3. The backend publishes generated Learning Content.
+
+The Learning Content Store is the product read model for generated Subjects and Subject Graphs. Client reads and sync must not observe a partial curriculum graph, and regeneration must not hide a previously valid graph until a complete replacement is ready.
+
+## Decision
+
+Subject Graph Generation publishes only a complete Subject Graph.
+
+The Topic Lattice stage may persist durable artifacts and checkpoints, but it must not publish a client-visible Subject or partial Subject Graph. Learning Content Store reads expose a new or replacement generated Subject only after prerequisite-edge wiring has completed and the backend has published the complete Subject, Subject Graph, and unavailable topic-detail stubs in one publication path.
+
+`publishCompleteSubjectGraphToLearningContent()` is the only Subject Graph Learning Content publication path.
+
+## Consequences
+
+- Stage A Topic Lattice artifacts are durable workflow artifacts/checkpoints, not client-visible Learning Content.
+- A Stage A cache hit may resume generation, but it must not complete a subject-graph run by itself.
+- Stage B generation is required before run completion and final Learning Content publication.
+- Regenerating an existing subject keeps the previously published graph visible until the replacement graph publish step succeeds.
+- Device-scoped Learning Content remains isolated by `device_id`; future auth migration tightens the same ownership boundary to user identity.
 
 ## Implementation Notes
 
@@ -11,12 +36,10 @@ Implemented on 2026-05-08 in the backend durable workflow and Learning Content S
 - `SubjectGraphWorkflow` persists Stage A Topic Lattice artifacts/checkpoints only; it no longer applies `subject-graph-topics` to the Learning Content Store.
 - A Stage A artifact cache hit emits/records artifact readiness idempotently and continues into Stage B instead of marking the run completed.
 - Stage B generation uses an input hash that includes the Stage A lattice content hash.
-- `publishCompleteSubjectGraphToLearningContent()` is the only subject-graph publication path. It assembles the complete Subject Graph from Stage A topics and Stage B edges, derives generated Subject metadata from the accepted snapshot and final graph, and publishes the Subject, Subject Graph, and unavailable topic-detail stubs through one repository publication method.
+- The complete publication step assembles the final Subject Graph from Stage A topics and Stage B edges, derives generated Subject metadata from the accepted snapshot and final graph, and publishes the Subject, Subject Graph, and unavailable topic-detail stubs through one repository publication method.
 - Workflow terminal error handling preserves structured `WorkflowFail` codes across serialized Workflow step boundaries; non-LLM workflow failures no longer collapse into `llm:upstream-5xx`.
 
-## Consequences
+## Related
 
-- Stage A Topic Lattice artifacts are durable workflow artifacts/checkpoints, not client-visible Learning Content.
-- A Stage A cache hit may resume generation, but must not complete a subject-graph run by itself.
-- Regenerating an existing subject must keep the old complete graph visible until the replacement graph publish step succeeds.
-- Device-scoped Learning Content remains isolated by `device_id`; future auth migration will tighten the same ownership boundary to user identity.
+- [ADR 0002: Durable Generation Infrastructure](./0002-durable-generation-infrastructure.md)
+- [ADR 0003: Backend-Authoritative Generation and Learning Content](./0003-backend-authoritative-generation.md)
