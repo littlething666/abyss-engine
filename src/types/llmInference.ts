@@ -1,43 +1,38 @@
 /** Stable keys for LLM inference entry points (hooks / modals). */
-export type InferenceSurfaceId =
-  | 'studyQuestionExplain'
-  | 'studyFormulaExplain'
+export type StudyInferenceSurfaceId = 'studyQuestionExplain' | 'studyFormulaExplain';
+
+/**
+ * Legacy generation pipeline surfaces remain in the type only until the PR 7
+ * local-runner deletion removes their compile-time call sites. They are not
+ * configurable from browser settings and `getSurfaceBinding()` rejects them.
+ */
+export type LegacyGenerationInferenceSurfaceId =
   | 'subjectGenerationTopics'
   | 'subjectGenerationEdges'
   | 'topicContent'
   | 'crystalTrial';
 
-export const ALL_SURFACE_IDS: readonly InferenceSurfaceId[] = [
+export type InferenceSurfaceId = StudyInferenceSurfaceId | LegacyGenerationInferenceSurfaceId;
+
+export const ALL_SURFACE_IDS: readonly StudyInferenceSurfaceId[] = [
   'studyQuestionExplain',
   'studyFormulaExplain',
-  'subjectGenerationTopics',
-  'subjectGenerationEdges',
-  'topicContent',
-  'crystalTrial',
 ] as const;
 
-/**
- * Subset of inference surfaces that drive durable, pipeline-bound generation:
- * Subject Graph topics (`subjectGenerationTopics`), Subject Graph edges
- * (`subjectGenerationEdges`), Topic Content Pipeline / Topic Expansion
- * (`topicContent`), and Crystal Trial (`crystalTrial`).
- *
- * These surfaces require strict JSON Schema-capable model bindings because
- * their parsers run in `json_schema` strict mode (Phase 0 step 3) and never
- * fall back to permissive `json_object` output (Phase 0 step 4 deprecation;
- * Phase 0 step 8 removal). Non-pipeline surfaces (e.g. `studyQuestionExplain`,
- * `studyFormulaExplain`) are NOT in this set: they continue to accept the
- * legacy permissive `json_object` shape until the durable migration completes.
- *
- * Adding a surface here requires adding the corresponding pipeline snapshot
- * builder + binding-time validation entry.
- */
+const STUDY_SURFACE_ID_SET: ReadonlySet<InferenceSurfaceId> = new Set(ALL_SURFACE_IDS);
+
+export function isStudyInferenceSurfaceId(
+  surfaceId: InferenceSurfaceId,
+): surfaceId is StudyInferenceSurfaceId {
+  return STUDY_SURFACE_ID_SET.has(surfaceId);
+}
+
 export const PIPELINE_INFERENCE_SURFACE_IDS = [
   'subjectGenerationTopics',
   'subjectGenerationEdges',
   'topicContent',
   'crystalTrial',
-] as const satisfies readonly InferenceSurfaceId[];
+] as const satisfies readonly LegacyGenerationInferenceSurfaceId[];
 
 export type PipelineInferenceSurfaceId = (typeof PIPELINE_INFERENCE_SURFACE_IDS)[number];
 
@@ -45,7 +40,10 @@ const PIPELINE_SURFACE_ID_SET: ReadonlySet<InferenceSurfaceId> = new Set(
   PIPELINE_INFERENCE_SURFACE_IDS,
 );
 
-/** True when the surface drives a durable, pipeline-bound generation flow. */
+/**
+ * Legacy helper for local-runner compile support only. Runtime browser settings
+ * no longer expose these surfaces.
+ */
 export function isPipelineInferenceSurfaceId(
   surfaceId: InferenceSurfaceId,
 ): surfaceId is PipelineInferenceSurfaceId {
@@ -64,13 +62,9 @@ export const PROVIDER_DISPLAY_LABELS: Record<LlmInferenceProviderId, string> = {
   openrouter: 'OpenRouter (via Worker)',
 };
 
-export const SURFACE_DISPLAY_LABELS: Record<InferenceSurfaceId, string> = {
+export const SURFACE_DISPLAY_LABELS: Record<StudyInferenceSurfaceId, string> = {
   studyQuestionExplain: 'Study Question Explain',
   studyFormulaExplain: 'Study Formula Explain',
-  subjectGenerationTopics: 'Curriculum — Topics',
-  subjectGenerationEdges: 'Curriculum — Edges',
-  topicContent: 'Topic Content',
-  crystalTrial: 'Crystal Trial',
 };
 
 /** Declared OpenRouter chat parameters this app knows how to use for a config. */

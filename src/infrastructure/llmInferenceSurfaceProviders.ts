@@ -3,7 +3,7 @@ import type {
   LlmInferenceProviderId,
   OpenRouterModelConfig,
 } from '../types/llmInference';
-import { isPipelineInferenceSurfaceId } from '../types/llmInference';
+import { isPipelineInferenceSurfaceId, isStudyInferenceSurfaceId } from '../types/llmInference';
 import type {
   ChatResponseFormat,
   ChatResponseFormatJsonSchema,
@@ -13,7 +13,6 @@ import {
   getLocalModelId,
   getOpenRouterConfigById,
   getSurfaceBinding,
-  studySettingsStore,
 } from '../store/studySettingsStore';
 
 export function inferenceProviderForSurface(surfaceId: InferenceSurfaceId): LlmInferenceProviderId {
@@ -36,6 +35,7 @@ export function openRouterConfigSupportsParameter(
 /** Selector factory for Zustand stores with StudySettings state. */
 export function makeOpenRouterProviderSelector(surfaceId: InferenceSurfaceId) {
   return (state: StudySettingsState) => {
+    if (!isStudyInferenceSurfaceId(surfaceId)) return false;
     const binding = state.surfaceProviders[surfaceId];
     if (binding.provider !== 'openrouter' || !binding.openRouterConfigId) return false;
     return state.openRouterConfigs.some((config) => config.id === binding.openRouterConfigId);
@@ -133,13 +133,7 @@ export function resolveOpenRouterStructuredChatExtrasForJob(
     ? jsonSchemaResponseFormat
     : { type: 'json_object' };
 
-  const healingEnabledByStore = studySettingsStore.getState().openRouterResponseHealing;
-  // Phase 0 step 7 (Plan v3 Q22): `providerHealingRequested` is the authoritative
-  // metadata flag surfaced to callers. The OpenRouter `response-healing` plugin
-  // attaches iff this flag is true — keeping the two in lockstep prevents the
-  // local job log / Worker `jobs.metadata_json` (Phase 1) from disagreeing with
-  // the actual chat-completions request body.
-  const providerHealingRequested = allowProviderHealing && healingEnabledByStore;
+  const providerHealingRequested = allowProviderHealing;
 
   return {
     responseFormat,
@@ -171,15 +165,8 @@ export type OpenRouterStructuredChatExtrasOptions = {
    */
   requireJsonSchema?: boolean;
   /**
-   * When true (default), respect the workspace `openRouterResponseHealing` setting
-   * and attach the OpenRouter `response-healing` plugin when enabled. When false,
-   * the caller forbids provider healing entirely and `plugins` is left undefined.
-   *
-   * Plan v3 Q22 keeps `response-healing` enabled for v1 pipelines together with
-   * strict JSON Schema mode. The resolved value of this flag combined with the
-   * store setting is surfaced authoritatively as
-   * {@link OpenRouterStructuredChatExtras.providerHealingRequested} for callers to
-   * record on job/run metadata (Phase 0 step 7).
+   * When true (default), attach the OpenRouter `response-healing` plugin. When
+   * false, the caller forbids provider healing entirely and `plugins` is left undefined.
    */
   allowProviderHealing?: boolean;
 };
@@ -317,58 +304,14 @@ export function validatePipelineSurfaceConfig(
   if (!isPipelineInferenceSurfaceId(surfaceId)) {
     return { ok: true };
   }
-  const binding = getSurfaceBinding(surfaceId);
-  if (binding.provider === 'local') {
-    return {
-      ok: false,
-      code: 'config:invalid',
-      message:
-        `Pipeline-bound surface '${surfaceId}' is wired to the local provider, which has no strict JSON Schema capability declaration. `
-        + `Bind it to an OpenRouter model that declares 'structured_outputs' in Global Settings.`,
-    };
-  }
-  if (!binding.openRouterConfigId) {
-    return {
-      ok: false,
-      code: 'config:missing-model-binding',
-      message:
-        `Pipeline-bound surface '${surfaceId}' is bound to OpenRouter but has no config id. `
-        + `Select a model config in Global Settings.`,
-    };
-  }
-  const config = getOpenRouterConfigById(binding.openRouterConfigId);
-  if (!config) {
-    return {
-      ok: false,
-      code: 'config:missing-model-binding',
-      message:
-        `Pipeline-bound surface '${surfaceId}' references missing OpenRouter config `
-        + `'${binding.openRouterConfigId}'.`,
-    };
-  }
-  if (!openRouterConfigSupportsParameter(config, 'response_format')) {
-    return {
-      ok: false,
-      code: 'config:missing-structured-output',
-      message:
-        `Pipeline-bound surface '${surfaceId}' is bound to OpenRouter config '${config.id}' `
-        + `(model '${config.model}'), which does not declare 'response_format' among its `
-        + `supported parameters. Strict JSON Schema mode is required for durable pipelines; `
-        + `choose a schema-capable model in Global Settings.`,
-    };
-  }
-  if (!openRouterConfigSupportsParameter(config, 'structured_outputs')) {
-    return {
-      ok: false,
-      code: 'config:missing-structured-output',
-      message:
-        `Pipeline-bound surface '${surfaceId}' is bound to OpenRouter config '${config.id}' `
-        + `(model '${config.model}'), which does not declare 'structured_outputs' among its `
-        + `supported parameters. Strict JSON Schema mode is required for durable pipelines; `
-        + `choose a schema-capable model in Global Settings.`,
-    };
-  }
-  return { ok: true };
+  return {
+    ok: false,
+    code: 'config:invalid',
+    message:
+      `Generation pipeline surface '${surfaceId}' is backend-owned and is not configurable in browser study settings. `
+      + `Submit a durable generation intent; backend GenerationPolicy owns model and structured-output configuration.`,
+  };
+
 }
 
 /**

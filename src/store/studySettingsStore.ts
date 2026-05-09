@@ -4,18 +4,17 @@ import {
   DEFAULT_AGENT_PERSONALITY,
   normalizeAgentPersonality,
 } from '../features/studyPanel/agentPersonalityPresets';
-import { ALL_SURFACE_IDS } from '../types/llmInference';
+import { ALL_SURFACE_IDS, isStudyInferenceSurfaceId } from '../types/llmInference';
 import type {
   InferenceSurfaceId,
   LlmInferenceProviderId,
   OpenRouterModelConfig,
   OpenRouterSupportedParameter,
+  StudyInferenceSurfaceId,
   SurfaceProviderBinding,
 } from '../types/llmInference';
 import {
   buildSeedOpenRouterConfigs,
-  GENERATION_SURFACE_DEFAULT_MODEL,
-  PREVIOUS_GENERATION_SURFACE_DEFAULT_MODEL,
   inferOpenRouterExtraSupportedParameters,
   seededConfigIdForModel,
   STUDY_SURFACE_DEFAULT_MODEL,
@@ -43,9 +42,8 @@ const targetAudienceSet = new Set<string>(TARGET_AUDIENCE_OPTIONS as readonly st
 
 function buildDefaultSurfaceBindings(
   configs: OpenRouterModelConfig[],
-): Record<InferenceSurfaceId, SurfaceProviderBinding> {
+): Record<StudyInferenceSurfaceId, SurfaceProviderBinding> {
   const studyId = seededConfigIdForModel(configs, STUDY_SURFACE_DEFAULT_MODEL);
-  const genId = seededConfigIdForModel(configs, GENERATION_SURFACE_DEFAULT_MODEL);
   const or = (configId: string): SurfaceProviderBinding => ({
     provider: 'openrouter',
     openRouterConfigId: configId,
@@ -53,10 +51,6 @@ function buildDefaultSurfaceBindings(
   return {
     studyQuestionExplain: or(studyId),
     studyFormulaExplain: or(studyId),
-    subjectGenerationTopics: or(genId),
-    subjectGenerationEdges: or(genId),
-    topicContent: or(genId),
-    crystalTrial: or(genId),
   };
 }
 
@@ -65,11 +59,6 @@ export interface StudySettingsState {
   agentPersonality: string;
   /** Model string for the 'local' provider (env fallback is NEXT_PUBLIC_LLM_MODEL). */
   localModelId: string;
-  /**
-   * When true and a surface uses OpenRouter, structured JSON jobs send the `response-healing` plugin.
-   * Those requests use non-streaming `json_object` mode (see OpenRouter docs). Defaults to on.
-   */
-  openRouterResponseHealing: boolean;
   /**
    * When true, Cmd/Ctrl+Z (and Shift variant) are wired up inside the Study Panel to undo/redo
    * the most recent rating. Off by default to keep the study session UI minimal; users opt in
@@ -80,7 +69,7 @@ export interface StudySettingsState {
    */
   showStudyHistoryControls: boolean;
   openRouterConfigs: OpenRouterModelConfig[];
-  surfaceProviders: Record<InferenceSurfaceId, SurfaceProviderBinding>;
+  surfaceProviders: Record<StudyInferenceSurfaceId, SurfaceProviderBinding>;
 }
 
 export interface StudySettingsActions {
@@ -88,13 +77,12 @@ export interface StudySettingsActions {
   resetTargetAudience: () => void;
   setAgentPersonality: (agentPersonality: string) => void;
   setLocalModelId: (modelId: string) => void;
-  setOpenRouterResponseHealing: (enabled: boolean) => void;
   setShowStudyHistoryControls: (enabled: boolean) => void;
   addOpenRouterConfig: (partial: Omit<OpenRouterModelConfig, 'id'> & { id?: string }) => string;
   updateOpenRouterConfig: (id: string, patch: Partial<Omit<OpenRouterModelConfig, 'id'>>) => void;
   deleteOpenRouterConfig: (id: string) => void;
-  setSurfaceProvider: (surfaceId: InferenceSurfaceId, providerId: LlmInferenceProviderId) => void;
-  setSurfaceConfigId: (surfaceId: InferenceSurfaceId, configId: string) => void;
+  setSurfaceProvider: (surfaceId: StudyInferenceSurfaceId, providerId: LlmInferenceProviderId) => void;
+  setSurfaceConfigId: (surfaceId: StudyInferenceSurfaceId, configId: string) => void;
 }
 
 export type StudySettingsStore = StudySettingsState & StudySettingsActions;
@@ -169,35 +157,13 @@ function mergeSeedConfigs(configs: OpenRouterModelConfig[]): OpenRouterModelConf
   return next;
 }
 
-function migrateOldGenerationDefaultBindings(
-  bindings: Record<InferenceSurfaceId, SurfaceProviderBinding>,
-  configs: OpenRouterModelConfig[],
-): Record<InferenceSurfaceId, SurfaceProviderBinding> {
-  const oldId = seededConfigIdForModel(configs, PREVIOUS_GENERATION_SURFACE_DEFAULT_MODEL);
-  const newId = seededConfigIdForModel(configs, GENERATION_SURFACE_DEFAULT_MODEL);
-  const generationSurfaces: InferenceSurfaceId[] = [
-    'subjectGenerationTopics',
-    'subjectGenerationEdges',
-    'topicContent',
-    'crystalTrial',
-  ];
-  const next = { ...bindings };
-  for (const surfaceId of generationSurfaces) {
-    const binding = next[surfaceId];
-    if (binding.provider === 'openrouter' && binding.openRouterConfigId === oldId) {
-      next[surfaceId] = { provider: 'openrouter', openRouterConfigId: newId };
-    }
-  }
-  return next;
-}
-
 function parseBindings(
   raw: unknown,
   validConfigIds: Set<string>,
-): Record<InferenceSurfaceId, SurfaceProviderBinding> | null {
+): Record<StudyInferenceSurfaceId, SurfaceProviderBinding> | null {
   if (!isStringRecord(raw)) return null;
   const fallbackConfigId = validConfigIds.values().next().value ?? null;
-  const result = {} as Record<InferenceSurfaceId, SurfaceProviderBinding>;
+  const result = {} as Record<StudyInferenceSurfaceId, SurfaceProviderBinding>;
   for (const surfaceId of ALL_SURFACE_IDS) {
     const entry = raw[surfaceId];
     if (isStringRecord(entry) && typeof entry.provider === 'string') {
@@ -229,7 +195,6 @@ function buildDefaultSnapshot(): Snapshot {
     targetAudience: DEFAULT_TARGET_AUDIENCE,
     agentPersonality: DEFAULT_AGENT_PERSONALITY,
     localModelId: '',
-    openRouterResponseHealing: true,
     showStudyHistoryControls: false,
     openRouterConfigs: configs,
     surfaceProviders: buildDefaultSurfaceBindings(configs),
@@ -253,7 +218,6 @@ function readSnapshotFromStorage(): Snapshot {
       ? normalizeAgentPersonality(parsed.agentPersonality)
       : DEFAULT_AGENT_PERSONALITY;
   const localModelId = typeof parsed.localModelId === 'string' ? parsed.localModelId : '';
-  const openRouterResponseHealing = parsed.openRouterResponseHealing !== false;
   const showStudyHistoryControls = parsed.showStudyHistoryControls === true;
 
   // Migration: if no configs persisted, seed defaults.
@@ -265,15 +229,13 @@ function readSnapshotFromStorage(): Snapshot {
   }
   const validConfigIds = new Set(configs.map((c) => c.id));
 
-  const parsedBindings =
+  const bindings =
     parseBindings(parsed.surfaceProviders, validConfigIds) ?? buildDefaultSurfaceBindings(configs);
-  const bindings = migrateOldGenerationDefaultBindings(parsedBindings, configs);
 
   return {
     targetAudience,
     agentPersonality,
     localModelId,
-    openRouterResponseHealing,
     showStudyHistoryControls,
     openRouterConfigs: configs,
     surfaceProviders: bindings,
@@ -318,7 +280,6 @@ export const createStudySettingsStore = () =>
         targetAudience: patch.targetAudience ?? current.targetAudience,
         agentPersonality: patch.agentPersonality ?? current.agentPersonality,
         localModelId: patch.localModelId ?? current.localModelId,
-        openRouterResponseHealing: patch.openRouterResponseHealing ?? current.openRouterResponseHealing,
         showStudyHistoryControls: patch.showStudyHistoryControls ?? current.showStudyHistoryControls,
         openRouterConfigs: patch.openRouterConfigs ?? current.openRouterConfigs,
         surfaceProviders: patch.surfaceProviders ?? current.surfaceProviders,
@@ -334,7 +295,6 @@ export const createStudySettingsStore = () =>
       resetTargetAudience: () => persist({ targetAudience: DEFAULT_TARGET_AUDIENCE }),
       setAgentPersonality: (v) => persist({ agentPersonality: normalizeAgentPersonality(v) }),
       setLocalModelId: (v) => persist({ localModelId: v }),
-      setOpenRouterResponseHealing: (enabled) => persist({ openRouterResponseHealing: enabled }),
       setShowStudyHistoryControls: (enabled) => persist({ showStudyHistoryControls: enabled === true }),
 
       addOpenRouterConfig: (partial) => {
@@ -440,6 +400,11 @@ export const createStudySettingsStore = () =>
 const store = createStudySettingsStore();
 
 export function getSurfaceBinding(surfaceId: InferenceSurfaceId): SurfaceProviderBinding {
+  if (!isStudyInferenceSurfaceId(surfaceId)) {
+    throw new Error(
+      `Generation pipeline surface '${surfaceId}' is backend-owned and is not configurable in browser study settings.`,
+    );
+  }
   return store.getState().surfaceProviders[surfaceId];
 }
 

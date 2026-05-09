@@ -490,8 +490,8 @@ Add repository-wide tests that fail if any of these regressions appear:
 
 - [ ] Frontend submits only generation intents for all four pipeline kinds.
 - [ ] Backend expands intents into canonical snapshots with model/policy/healing fields.
-- [ ] Backend Generation Policy is the only model/response-healing authority for pipelines.
-- [ ] Response healing has no user-facing toggle or frontend persisted state.
+- [x] Backend Generation Policy is the only model/response-healing authority for browser-submitted pipeline runs; legacy local-runner compile seams remain until local runner deletion.
+- [x] Response healing has no user-facing toggle or frontend persisted state.
 - [ ] Backend workflows use backend prompt modules and contain no inline model fallbacks.
 - [ ] Learning Content Store persists generated Subjects, Subject Graphs, Topic Content, study cards, and Crystal Trial question sets.
 - [ ] Frontend reads generated learning content from backend repositories.

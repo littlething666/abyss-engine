@@ -16,3 +16,4 @@
 - Removed the frontend Generation Progress HUD and quick action; topic readiness UI now relies on backend Topic Content Status instead of store-backed active generation jobs.
 - Converted durable run observation from frontend artifact application to backend content-refresh consumption: artifact events are progress-only, terminal events invalidate Learning Content Store query keys, and `wireGenerationClient` no longer constructs frontend generation appliers.
 - Removed browser generation-log hydration from `useContentGenerationHydration`; mount-time durable observation now uses compact intents derived from Worker snapshots and fails loudly on malformed Worker snapshot contracts.
+- Removed browser-owned generation pipeline settings from Global Settings and `studySettingsStore`; only study explanation surfaces keep model/provider bindings, while durable generation model and response-healing policy are backend-owned.

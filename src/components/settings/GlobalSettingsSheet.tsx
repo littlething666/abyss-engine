@@ -37,14 +37,9 @@ import {
   PROVIDER_DISPLAY_LABELS,
   SURFACE_DISPLAY_LABELS,
 } from '@/types/llmInference';
-import type { InferenceSurfaceId, LlmInferenceProviderId } from '@/types/llmInference';
+import type { LlmInferenceProviderId, StudyInferenceSurfaceId } from '@/types/llmInference';
 import { useInferenceTtsToggle } from '@/hooks/useInferenceTtsToggle';
 import { useMentorStore } from '@/features/mentor/mentorStore';
-
-const CURRICULUM_SURFACE_IDS = [
-  'subjectGenerationTopics',
-  'subjectGenerationEdges',
-] as const satisfies readonly InferenceSurfaceId[];
 
 const CONTENT_SHEET_CLASSNAME = '!w-full sm:max-w-xl overflow-y-auto p-4';
 const SECTION_SPACING = 'pt-5';
@@ -100,7 +95,7 @@ async function pruneStorage(): Promise<void> {
   }
 }
 
-function SurfaceBindingRow({ surfaceId }: { surfaceId: InferenceSurfaceId }) {
+function SurfaceBindingRow({ surfaceId }: { surfaceId: StudyInferenceSurfaceId }) {
   const binding = useStudySettingsStore((s) => s.surfaceProviders[surfaceId]);
   const configs = useStudySettingsStore((s) => s.openRouterConfigs);
   const setSurfaceProvider = useStudySettingsStore((s) => s.setSurfaceProvider);
@@ -431,25 +426,15 @@ function StudyDefaultsSection() {
   );
 }
 
-function CurriculumProvidersSection() {
-  return (
-    <section className={SECTION_SPACING}>
-      <Badge variant="outline">🧬 Curriculum providers</Badge>
-      <div className="pt-3">
-        {CURRICULUM_SURFACE_IDS.map((surfaceId) => (
-          <SurfaceBindingRow key={surfaceId} surfaceId={surfaceId} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function StudyProvidersSection() {
   return (
     <section className={SECTION_SPACING}>
       <Badge variant="outline">🧠 Study providers</Badge>
+      <p className="pt-2 text-xs text-muted-foreground">
+        Generation pipelines are durable Worker workflows; their models and structured-output policy are backend-owned.
+      </p>
       <div className="pt-3">
-        {ALL_SURFACE_IDS.filter((id) => !CURRICULUM_SURFACE_IDS.includes(id as typeof CURRICULUM_SURFACE_IDS[number])).map((surfaceId) => (
+        {ALL_SURFACE_IDS.map((surfaceId) => (
           <SurfaceBindingRow key={surfaceId} surfaceId={surfaceId} />
         ))}
       </div>
@@ -541,7 +526,6 @@ export function GlobalSettingsSheet() {
         </SheetHeader>
         <PreferencesSection />
         <StudyDefaultsSection />
-        <CurriculumProvidersSection />
         <StudyProvidersSection />
         <OpenRouterSection />
         <DangerZoneSection onPrune={closeGlobalSettings} />
