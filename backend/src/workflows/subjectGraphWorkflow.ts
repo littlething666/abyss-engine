@@ -10,7 +10,7 @@
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
-import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
+import { WorkflowFail, WorkflowAbort, toWorkflowStepError, workflowFailureDetails } from '../lib/workflowErrors';
 import { callSubjectGraph } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust, recordLlmJob } from './shared/workflowObservability';
 import {
@@ -108,9 +108,12 @@ async function runStage(
   snapshot: Record<string, unknown>,
   _inputHash: string,
   schemaVersion: number,
-  exec: (generationPolicy: ResolvedGenerationJobPolicy) => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
+  generate: (generationPolicy: ResolvedGenerationJobPolicy) => Promise<GenerateResult>,
+  parseAndValidate: (raw: GenerateResult) => Promise<Record<string, unknown>> | Record<string, unknown>,
 ): Promise<StageRunResult> {
-  await step.do(`start:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+  const safeStage = stage.replace(/:/g, '_');
+
+  await step.do(`start:${safeStage}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
     await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('generating_stage', stage),
       buildRunStatusEvent('generating_stage'),
     );
@@ -139,28 +142,32 @@ async function runStage(
     providerHealingRequested: generationPolicy.providerHealingRequested,
   });
 
-  let result: GenerateResult & { parsedPayload: Record<string, unknown> };
+  let raw: GenerateResult;
   try {
-    result = (await step.do(
-      `generate:${stage.replace(/:/g, '_')}`,
+    raw = (await step.do(
+      `generate:${safeStage}`,
       WORKFLOW_LLM_STEP_RETRY,
-      // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
-      () => exec(generationPolicy),
-    )) as GenerateResult & { parsedPayload: Record<string, unknown> };
-    const trace = llmTrace.finalizeSuccess(result.usage);
+      async () => {
+        try {
+          return await generate(generationPolicy);
+        } catch (err) {
+          throw toWorkflowStepError(err);
+        }
+      },
+    )) as GenerateResult;
+    const trace = llmTrace.finalizeSuccess(raw.usage);
     const jobId = await recordLlmJob({ repos, runId, pipelineKind: 'subject-graph', stage, inputHash: _inputHash, model: generationPolicy.modelId, status: 'success', trace });
     if (jobId) {
       await repos.stageCheckpoints.linkJob(runId, stage, jobId);
     }
   } catch (err) {
-    const code = err instanceof WorkflowFail ? err.code : 'llm:upstream-5xx';
-    const msg = err instanceof Error ? err.message : String(err);
-    const trace = llmTrace.finalizeFailure(code, msg);
-    const jobId = await recordLlmJob({ repos, runId, pipelineKind: 'subject-graph', stage, inputHash: _inputHash, model: generationPolicy.modelId, status: 'failed', trace, errorCode: code, errorMessage: msg });
+    const failure = workflowFailureDetails(err, 'llm:upstream-transient');
+    const trace = llmTrace.finalizeFailure(failure.code, failure.message);
+    const jobId = await recordLlmJob({ repos, runId, pipelineKind: 'subject-graph', stage, inputHash: _inputHash, model: generationPolicy.modelId, status: 'failed', trace, errorCode: failure.code, errorMessage: failure.message });
     if (jobId) {
       await repos.stageCheckpoints.linkJob(runId, stage, jobId).catch(() => undefined);
     }
-    await repos.stageCheckpoints.markFailed(runId, stage, code, msg).catch((checkpointErr) => {
+    await repos.stageCheckpoints.markFailed(runId, stage, failure.code, failure.message).catch((checkpointErr) => {
       createLogger({ runId, deviceId, pipelineKind: 'subject-graph', stage }).warn('stage_checkpoint.mark_failed.failed', {
         errorMessage: checkpointErr instanceof Error ? checkpointErr.message : String(checkpointErr),
       });
@@ -168,7 +175,22 @@ async function runStage(
     throw err;
   }
 
-  const persisted = (await step.do(`persist:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async (): Promise<Omit<StageRunResult, 'payload'>> => {
+  let parsedPayload: Record<string, unknown>;
+  try {
+    parsedPayload = await parseAndValidate(raw);
+  } catch (err) {
+    const failure = workflowFailureDetails(err, 'parse:zod-shape');
+    await repos.stageCheckpoints.markFailed(runId, stage, failure.code, failure.message).catch((checkpointErr) => {
+      createLogger({ runId, deviceId, pipelineKind: 'subject-graph', stage }).warn('stage_checkpoint.mark_failed.failed', {
+        errorMessage: checkpointErr instanceof Error ? checkpointErr.message : String(checkpointErr),
+      });
+    });
+    throw err;
+  }
+
+  const result = { ...raw, parsedPayload };
+
+  const persisted = (await step.do(`persist:${safeStage}`, WORKFLOW_STORAGE_STEP_RETRY, async (): Promise<Omit<StageRunResult, 'payload'>> => {
     const _contentHash = await contentHash(result.parsedPayload);
     const artifactId = await repos.artifacts.putStorage(
       { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
@@ -186,7 +208,7 @@ async function runStage(
     return { artifactId, contentHash: _contentHash, kind };
   })) as Omit<StageRunResult, 'payload'>;
 
-  await step.do(`artifact-ready:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+  await step.do(`artifact-ready:${safeStage}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
     await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey(kind, _inputHash),
       buildArtifactReadyEvent({
         artifactId: persisted.artifactId,
@@ -393,18 +415,17 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
         const topicsResult = await runStage(
           step, repos, runId, deviceId, 'topics', 'subject-graph-topics',
           snapshot, _inputHash, topicsSchemaVersion,
-          async (generationPolicy) => {
-            const raw = await callSubjectGraph(
-              {
-                modelId: generationPolicy.modelId,
-                messages: buildSubjectGraphTopicsMessages(snapshot),
-                responseFormat: topicsResponseFormat,
-                providerHealingRequested: generationPolicy.providerHealingRequested,
-                temperature: generationPolicy.temperature,
-              },
-              this.env,
-            );
-
+          async (generationPolicy) => callSubjectGraph(
+            {
+              modelId: generationPolicy.modelId,
+              messages: buildSubjectGraphTopicsMessages(snapshot),
+              responseFormat: topicsResponseFormat,
+              providerHealingRequested: generationPolicy.providerHealingRequested,
+              temperature: generationPolicy.temperature,
+            },
+            this.env,
+          ),
+          (raw) => {
             const parseResult = strictParseArtifact('subject-graph-topics', raw.text);
             if (!parseResult.ok) {
               throw new WorkflowFail(parseResult.failureCode, parseResult.message);
@@ -422,7 +443,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
               latticeTopicIds = topicsPayload.topics.map((t) => t.topicId);
             }
 
-            return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
+            return parseResult.payload as Record<string, unknown>;
           },
         );
         latticeArtifactContentHash = topicsResult.contentHash;
@@ -470,21 +491,20 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
         const edgesResult = await runStage(
           step, repos, runId, deviceId, 'edges', 'subject-graph-edges',
           snapshot, edgesInputHash, edgesSchemaVersion,
-          async (generationPolicy) => {
-            const raw = await callSubjectGraph(
-              {
-                modelId: generationPolicy.modelId,
-                messages: buildSubjectGraphEdgesMessages({
-                  ...snapshot,
-                  lattice_artifact_content_hash: latticeArtifactContentHash,
-                }, latticeTopics ?? []),
-                responseFormat: edgesResponseFormat,
-                providerHealingRequested: generationPolicy.providerHealingRequested,
-                temperature: generationPolicy.temperature,
-              },
-              this.env,
-            );
-
+          async (generationPolicy) => callSubjectGraph(
+            {
+              modelId: generationPolicy.modelId,
+              messages: buildSubjectGraphEdgesMessages({
+                ...snapshot,
+                lattice_artifact_content_hash: latticeArtifactContentHash,
+              }, latticeTopics ?? []),
+              responseFormat: edgesResponseFormat,
+              providerHealingRequested: generationPolicy.providerHealingRequested,
+              temperature: generationPolicy.temperature,
+            },
+            this.env,
+          ),
+          (raw) => {
             const parseResult = strictParseArtifact('subject-graph-edges', raw.text);
             if (!parseResult.ok) {
               throw new WorkflowFail(parseResult.failureCode, parseResult.message);
@@ -497,7 +517,7 @@ export class SubjectGraphWorkflow extends WorkflowEntrypoint<
               throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
             }
 
-            return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
+            return parseResult.payload as Record<string, unknown>;
           },
         );
         edgesContentHash = edgesResult.contentHash;

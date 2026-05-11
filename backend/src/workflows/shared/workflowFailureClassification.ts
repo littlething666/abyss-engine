@@ -1,4 +1,4 @@
-import { WorkflowFail, isWorkflowFailLike, toWorkflowRuntimeError } from '../../lib/workflowErrors';
+import { workflowFailFromUnknown, toWorkflowRuntimeError } from '../../lib/workflowErrors';
 
 export interface ClassifiedWorkflowTerminalError {
   code: string;
@@ -7,12 +7,8 @@ export interface ClassifiedWorkflowTerminalError {
 }
 
 export function classifyWorkflowTerminalError(err: unknown): ClassifiedWorkflowTerminalError {
-  if (err instanceof WorkflowFail) {
-    return { code: err.code, message: err.message, runtimeError: toWorkflowRuntimeError(err) };
-  }
-
-  if (isWorkflowFailLike(err)) {
-    const fail = new WorkflowFail(err.code, err.message);
+  const fail = workflowFailFromUnknown(err);
+  if (fail) {
     return { code: fail.code, message: fail.message, runtimeError: toWorkflowRuntimeError(fail) };
   }
 

@@ -11,7 +11,7 @@
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
-import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
+import { WorkflowFail, WorkflowAbort, toWorkflowStepError, workflowFailureDetails } from '../lib/workflowErrors';
 import { callTopicExpansion } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust, recordLlmJob } from './shared/workflowObservability';
 import {
@@ -207,57 +207,57 @@ export class TopicExpansionWorkflow extends WorkflowEntrypoint<
               buildRunStatusEvent('generating_stage'),
             );
 
-            return await callTopicExpansion(
-              {
-                modelId: generationPolicy.modelId,
-                messages: buildTopicExpansionMessages(snapshot),
-                responseFormat,
-                providerHealingRequested: generationPolicy.providerHealingRequested,
-              },
-              this.env,
-            );
+            try {
+              return await callTopicExpansion(
+                {
+                  modelId: generationPolicy.modelId,
+                  messages: buildTopicExpansionMessages(snapshot),
+                  responseFormat,
+                  providerHealingRequested: generationPolicy.providerHealingRequested,
+                },
+                this.env,
+              );
+            } catch (err) {
+              throw toWorkflowStepError(err);
+            }
           },
         )) as GenerateResult;
         const trace = llmTrace.finalizeSuccess(raw.usage);
         await recordLlmJob({ repos, runId, pipelineKind: 'topic-expansion', stage: 'generate', inputHash: _inputHash, model: generationPolicy.modelId, status: 'success', trace });
 
-        // @ts-expect-error Workflow Serializable cannot express validated JSON payloads typed as unknown.
-        const parseResult = (await step.do('parse', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+        await step.do('status:parse', WORKFLOW_STORAGE_STEP_RETRY, async () => {
           await repos.runs.transition(runId, 'parsing');
           await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('parsing', 'parse'),
             buildRunStatusEvent('parsing'),
           );
-          const parsedResult = strictParseArtifact('topic-expansion-cards', raw.text);
-          if (!parsedResult.ok) {
-            throw new WorkflowFail(parsedResult.failureCode, parsedResult.message);
-          }
-          return parsedResult;
-        })) as { ok: true; payload: unknown };
+        });
+        const parseResult = strictParseArtifact('topic-expansion-cards', raw.text);
+        if (!parseResult.ok) {
+          throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+        }
 
-        // @ts-expect-error Workflow Serializable cannot express validated JSON payloads typed as Record<string, unknown>.
-        const parsedPayload = (await step.do('validate', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+        await step.do('status:validate', WORKFLOW_STORAGE_STEP_RETRY, async () => {
           await repos.runs.transition(runId, 'validating');
           await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('validating', 'validate'),
             buildRunStatusEvent('validating'),
           );
-          const existingStems = Array.isArray(snapshot.existing_concept_stems)
-            ? (snapshot.existing_concept_stems as string[])
-            : undefined;
-          const ctx = existingStems ? { existingConceptStems: existingStems } : undefined;
-          const result = semanticValidateArtifact('topic-expansion-cards', parseResult.payload, ctx);
-          if (!result.ok) {
-            throw new WorkflowFail(result.failureCode, result.message ?? 'semantic validation failed');
-          }
-          return parseResult.payload as Record<string, unknown>;
-        })) as Record<string, unknown>;
+        });
+        const existingStems = Array.isArray(snapshot.existing_concept_stems)
+          ? (snapshot.existing_concept_stems as string[])
+          : undefined;
+        const ctx = existingStems ? { existingConceptStems: existingStems } : undefined;
+        const result = semanticValidateArtifact('topic-expansion-cards', parseResult.payload, ctx);
+        if (!result.ok) {
+          throw new WorkflowFail(result.failureCode, result.message ?? 'semantic validation failed');
+        }
+        const parsedPayload = parseResult.payload as Record<string, unknown>;
 
         genResult = { ...raw, parsedPayload };
       } catch (err) {
         if (!llmTrace.trace.finishedAt) {
-          const code = err instanceof WorkflowFail ? err.code : 'llm:upstream-5xx';
-          const msg = err instanceof Error ? err.message : String(err);
-          const trace = llmTrace.finalizeFailure(code, msg);
-          await recordLlmJob({ repos, runId, pipelineKind: 'topic-expansion', stage: 'generate', inputHash: _inputHash, model: generationPolicy.modelId, status: 'failed', trace, errorCode: code, errorMessage: msg });
+          const failure = workflowFailureDetails(err, 'llm:upstream-transient');
+          const trace = llmTrace.finalizeFailure(failure.code, failure.message);
+          await recordLlmJob({ repos, runId, pipelineKind: 'topic-expansion', stage: 'generate', inputHash: _inputHash, model: generationPolicy.modelId, status: 'failed', trace, errorCode: failure.code, errorMessage: failure.message });
         }
         throw err;
       }

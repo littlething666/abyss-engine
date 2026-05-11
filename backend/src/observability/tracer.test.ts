@@ -25,7 +25,7 @@ describe('tracer', () => {
       deviceId: 'dev-001',
       pipelineKind: 'crystal-trial',
       stage: 'generate',
-      model: 'google/gemini-2.5-flash',
+      model: 'google/gemini-3.1-flash-lite-preview',
       generationPolicyHash: 'gpol_abc123',
       promptVersion: 2,
       schemaVersion: 1,
@@ -44,7 +44,7 @@ describe('tracer', () => {
     expect(t.deviceId).toBe('dev-001');
     expect(t.pipelineKind).toBe('crystal-trial');
     expect(t.stage).toBe('generate');
-    expect(t.model).toBe('google/gemini-2.5-flash');
+    expect(t.model).toBe('google/gemini-3.1-flash-lite-preview');
     expect(t.generationPolicyHash).toBe('gpol_abc123');
     expect(t.promptVersion).toBe(2);
     expect(t.schemaVersion).toBe(1);
@@ -65,7 +65,7 @@ describe('tracer', () => {
       deviceId: 'dev-001',
       pipelineKind: 'topic-content',
       stage: 'theory',
-      model: 'google/gemini-2.5-flash',
+      model: 'google/gemini-3.1-flash-lite-preview',
       inputHash: 'inp_def456',
       providerHealingRequested: false,
     });
@@ -92,7 +92,7 @@ describe('tracer', () => {
       deviceId: 'dev-001',
       pipelineKind: 'subject-graph',
       stage: 'edges',
-      model: 'google/gemini-2.5-flash',
+      model: 'google/gemini-3.1-flash-lite-preview',
       inputHash: 'inp_ghi789',
       providerHealingRequested: true,
     });

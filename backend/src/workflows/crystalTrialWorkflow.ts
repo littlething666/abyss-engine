@@ -15,7 +15,7 @@
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
-import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
+import { WorkflowFail, WorkflowAbort, toWorkflowStepError, workflowFailureDetails } from '../lib/workflowErrors';
 import { callCrystalTrial } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust, recordLlmJob } from './shared/workflowObservability';
 import {
@@ -208,57 +208,57 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
               buildRunStatusEvent('generating_stage'),
             );
 
-            return await callCrystalTrial(
-              {
-                modelId: generationPolicy.modelId,
-                messages: buildCrystalTrialMessages(snapshot),
-                responseFormat,
-                providerHealingRequested: generationPolicy.providerHealingRequested,
-              },
-              this.env,
-            );
+            try {
+              return await callCrystalTrial(
+                {
+                  modelId: generationPolicy.modelId,
+                  messages: buildCrystalTrialMessages(snapshot),
+                  responseFormat,
+                  providerHealingRequested: generationPolicy.providerHealingRequested,
+                },
+                this.env,
+              );
+            } catch (err) {
+              throw toWorkflowStepError(err);
+            }
           },
         )) as GenerateResult;
         const trace = llmTrace.finalizeSuccess(raw.usage);
         await recordLlmJob({ repos, runId, pipelineKind: 'crystal-trial', stage: 'generate', inputHash: _inputHash, model: generationPolicy.modelId, status: 'success', trace });
 
-        // @ts-expect-error Workflow Serializable cannot express validated JSON payloads typed as unknown.
-        const parseResult = (await step.do('parse', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+        await step.do('status:parse', WORKFLOW_STORAGE_STEP_RETRY, async () => {
           await repos.runs.transition(runId, 'parsing');
           await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('parsing', 'parse'),
             buildRunStatusEvent('parsing'),
           );
-          const parsedResult = strictParseArtifact('crystal-trial', raw.text);
-          if (!parsedResult.ok) {
-            throw new WorkflowFail(parsedResult.failureCode, parsedResult.message);
-          }
-          return parsedResult;
-        })) as { ok: true; payload: unknown };
+        });
+        const parseResult = strictParseArtifact('crystal-trial', raw.text);
+        if (!parseResult.ok) {
+          throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+        }
 
-        // @ts-expect-error Workflow Serializable cannot express validated JSON payloads typed as Record<string, unknown>.
-        const parsedPayload = (await step.do('validate', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+        await step.do('status:validate', WORKFLOW_STORAGE_STEP_RETRY, async () => {
           await repos.runs.transition(runId, 'validating');
           await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('validating', 'validate'),
             buildRunStatusEvent('validating'),
           );
-          const expectedQuestionCount = snapshot.question_count as number | undefined;
-          const ctx = expectedQuestionCount !== undefined
-            ? { expectedQuestionCount }
-            : undefined;
-          const result = semanticValidateArtifact('crystal-trial', parseResult.payload, ctx);
-          if (!result.ok) {
-            throw new WorkflowFail(result.failureCode, result.message ?? 'semantic validation failed');
-          }
-          return parseResult.payload as Record<string, unknown>;
-        })) as Record<string, unknown>;
+        });
+        const expectedQuestionCount = snapshot.question_count as number | undefined;
+        const ctx = expectedQuestionCount !== undefined
+          ? { expectedQuestionCount }
+          : undefined;
+        const result = semanticValidateArtifact('crystal-trial', parseResult.payload, ctx);
+        if (!result.ok) {
+          throw new WorkflowFail(result.failureCode, result.message ?? 'semantic validation failed');
+        }
+        const parsedPayload = parseResult.payload as Record<string, unknown>;
 
         genResult = { ...raw, parsedPayload };
       } catch (err) {
         if (!llmTrace.trace.finishedAt) {
-          const code = err instanceof WorkflowFail ? err.code : 'llm:upstream-5xx';
-          const msg = err instanceof Error ? err.message : String(err);
-          const trace = llmTrace.finalizeFailure(code, msg);
-          await recordLlmJob({ repos, runId, pipelineKind: 'crystal-trial', stage: 'generate', inputHash: _inputHash, model: generationPolicy.modelId, status: 'failed', trace, errorCode: code, errorMessage: msg });
+          const failure = workflowFailureDetails(err, 'llm:upstream-transient');
+          const trace = llmTrace.finalizeFailure(failure.code, failure.message);
+          await recordLlmJob({ repos, runId, pipelineKind: 'crystal-trial', stage: 'generate', inputHash: _inputHash, model: generationPolicy.modelId, status: 'failed', trace, errorCode: failure.code, errorMessage: failure.message });
         }
         throw err;
       }

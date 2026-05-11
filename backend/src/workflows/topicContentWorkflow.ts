@@ -10,7 +10,7 @@
 
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
-import { WorkflowFail, WorkflowAbort } from '../lib/workflowErrors';
+import { WorkflowFail, WorkflowAbort, toWorkflowStepError, workflowFailureDetails } from '../lib/workflowErrors';
 import { callTopicContent } from '../llm/openrouterClient';
 import { traceLlmCall, recordTokensRobust, recordLlmJob } from './shared/workflowObservability';
 import {
@@ -113,9 +113,12 @@ async function runStage(
   snapshot: Record<string, unknown>,
   _inputHash: string,
   schemaVersion: number,
-  exec: (generationPolicy: ResolvedGenerationJobPolicy) => Promise<GenerateResult & { parsedPayload: Record<string, unknown> }>,
+  generate: (generationPolicy: ResolvedGenerationJobPolicy) => Promise<GenerateResult>,
+  parseAndValidate: (raw: GenerateResult) => Promise<Record<string, unknown>> | Record<string, unknown>,
 ): Promise<StageRunResult> {
-  await step.do(`start:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+  const safeStage = stage.replace(/:/g, '_');
+
+  await step.do(`start:${safeStage}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
     await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowStatusEventKey('generating_stage', stage),
       buildRunStatusEvent('generating_stage'),
     );
@@ -144,28 +147,32 @@ async function runStage(
     providerHealingRequested: generationPolicy.providerHealingRequested,
   });
 
-  let result: GenerateResult & { parsedPayload: Record<string, unknown> };
+  let raw: GenerateResult;
   try {
-    result = (await step.do(
-      `generate:${stage.replace(/:/g, '_')}`,
+    raw = (await step.do(
+      `generate:${safeStage}`,
       WORKFLOW_LLM_STEP_RETRY,
-      // @ts-expect-error exec return type contains `unknown` (safe — DB stores jsonb)
-      () => exec(generationPolicy),
-    )) as GenerateResult & { parsedPayload: Record<string, unknown> };
-    const trace = llmTrace.finalizeSuccess(result.usage);
+      async () => {
+        try {
+          return await generate(generationPolicy);
+        } catch (err) {
+          throw toWorkflowStepError(err);
+        }
+      },
+    )) as GenerateResult;
+    const trace = llmTrace.finalizeSuccess(raw.usage);
     const jobId = await recordLlmJob({ repos, runId, pipelineKind: 'topic-content', stage, inputHash: _inputHash, model: generationPolicy.modelId, status: 'success', trace });
     if (jobId) {
       await repos.stageCheckpoints.linkJob(runId, stage, jobId);
     }
   } catch (err) {
-    const code = err instanceof WorkflowFail ? err.code : 'llm:upstream-5xx';
-    const msg = err instanceof Error ? err.message : String(err);
-    const trace = llmTrace.finalizeFailure(code, msg);
-    const jobId = await recordLlmJob({ repos, runId, pipelineKind: 'topic-content', stage, inputHash: _inputHash, model: generationPolicy.modelId, status: 'failed', trace, errorCode: code, errorMessage: msg });
+    const failure = workflowFailureDetails(err, 'llm:upstream-transient');
+    const trace = llmTrace.finalizeFailure(failure.code, failure.message);
+    const jobId = await recordLlmJob({ repos, runId, pipelineKind: 'topic-content', stage, inputHash: _inputHash, model: generationPolicy.modelId, status: 'failed', trace, errorCode: failure.code, errorMessage: failure.message });
     if (jobId) {
       await repos.stageCheckpoints.linkJob(runId, stage, jobId).catch(() => undefined);
     }
-    await repos.stageCheckpoints.markFailed(runId, stage, code, msg).catch((checkpointErr) => {
+    await repos.stageCheckpoints.markFailed(runId, stage, failure.code, failure.message).catch((checkpointErr) => {
       createLogger({ runId, deviceId, pipelineKind: 'topic-content', stage }).warn('stage_checkpoint.mark_failed.failed', {
         errorMessage: checkpointErr instanceof Error ? checkpointErr.message : String(checkpointErr),
       });
@@ -173,7 +180,22 @@ async function runStage(
     throw err;
   }
 
-  const persisted = (await step.do(`persist:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async (): Promise<StageRunResult> => {
+  let parsedPayload: Record<string, unknown>;
+  try {
+    parsedPayload = await parseAndValidate(raw);
+  } catch (err) {
+    const failure = workflowFailureDetails(err, 'parse:zod-shape');
+    await repos.stageCheckpoints.markFailed(runId, stage, failure.code, failure.message).catch((checkpointErr) => {
+      createLogger({ runId, deviceId, pipelineKind: 'topic-content', stage }).warn('stage_checkpoint.mark_failed.failed', {
+        errorMessage: checkpointErr instanceof Error ? checkpointErr.message : String(checkpointErr),
+      });
+    });
+    throw err;
+  }
+
+  const result = { ...raw, parsedPayload };
+
+  const persisted = (await step.do(`persist:${safeStage}`, WORKFLOW_STORAGE_STEP_RETRY, async (): Promise<StageRunResult> => {
     const _contentHash = await contentHash(result.parsedPayload);
     const artifactId = await repos.artifacts.putStorage(
       { deviceId, kind, inputHash: _inputHash, payload: result.parsedPayload },
@@ -191,7 +213,7 @@ async function runStage(
     return { artifactId, contentHash: _contentHash, kind };
   })) as StageRunResult;
 
-  await step.do(`apply:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+  await step.do(`apply:${safeStage}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
     await applyArtifactToLearningContent({
       learningContent: repos.learningContent,
       deviceId,
@@ -203,7 +225,7 @@ async function runStage(
     });
   });
 
-  await step.do(`artifact-ready:${stage.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+  await step.do(`artifact-ready:${safeStage}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
     await appendWorkflowEventOnce(repos.runs, runId, deviceId, workflowArtifactReadyEventKey(kind, _inputHash),
       buildArtifactReadyEvent({
         artifactId: persisted.artifactId,
@@ -530,18 +552,17 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         )) ?? await runStage(
           step, repos, runId, deviceId, 'theory', 'topic-theory',
           snapshot, theoryInputHash, theorySchemaVersion,
-          async (generationPolicy) => {
-            const raw = await callTopicContent(
-              {
-                modelId: generationPolicy.modelId,
-                messages: buildTopicTheoryMessages(snapshot),
-                responseFormat: theoryResponseFormat,
-                providerHealingRequested: generationPolicy.providerHealingRequested,
-                stage: 'theory',
-              },
-              this.env,
-            );
-
+          async (generationPolicy) => callTopicContent(
+            {
+              modelId: generationPolicy.modelId,
+              messages: buildTopicTheoryMessages(snapshot),
+              responseFormat: theoryResponseFormat,
+              providerHealingRequested: generationPolicy.providerHealingRequested,
+              stage: 'theory',
+            },
+            this.env,
+          ),
+          (raw) => {
             const parseResult = strictParseArtifact('topic-theory', raw.text);
             if (!parseResult.ok) {
               throw new WorkflowFail(parseResult.failureCode, parseResult.message);
@@ -552,7 +573,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
               throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
             }
 
-            return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
+            return parseResult.payload as Record<string, unknown>;
           },
         );
         theoryArtifactId = theoryResult.artifactId;
@@ -582,7 +603,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
           async (generationPolicy) => {
             const promptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId);
 
-            const raw = await callTopicContent(
+            return callTopicContent(
               {
                 modelId: generationPolicy.modelId,
                 messages: buildTopicStudyCardsMessages(promptSnapshot),
@@ -592,7 +613,8 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
               },
               this.env,
             );
-
+          },
+          (raw) => {
             const parseResult = strictParseArtifact('topic-study-cards', raw.text);
             if (!parseResult.ok) {
               throw new WorkflowFail(parseResult.failureCode, parseResult.message);
@@ -607,7 +629,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
               throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
             }
 
-            return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
+            return parseResult.payload as Record<string, unknown>;
           },
         );
         studyCardsContentHash = studyCardsResult.contentHash;
@@ -648,7 +670,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
                   pipeline_kind: kind,
                 }, theoryArtifactId);
 
-                const raw = await callTopicContent(
+                return callTopicContent(
                   {
                     modelId: generationPolicy.modelId,
                     messages: buildTopicMiniGameMessages(promptSnapshot),
@@ -658,7 +680,8 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
                   },
                   this.env,
                 );
-
+              },
+              (raw) => {
                 const parseResult = strictParseArtifact(kind, raw.text);
                 if (!parseResult.ok) {
                   throw new WorkflowFail(parseResult.failureCode, parseResult.message);
@@ -669,7 +692,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
                   throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
                 }
 
-                return { ...raw, parsedPayload: parseResult.payload as Record<string, unknown> };
+                return parseResult.payload as Record<string, unknown>;
               },
             );
           }),

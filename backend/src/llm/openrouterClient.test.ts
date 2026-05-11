@@ -27,7 +27,7 @@ function makeResponseFormat(name: string, schema: Record<string, unknown>) {
 }
 
 const testArgs = {
-  modelId: 'google/gemini-2.5-flash',
+  modelId: 'google/gemini-3.1-flash-lite-preview',
   messages: [{ role: 'user', content: 'Generate trial questions.' }],
   responseFormat: makeResponseFormat('crystal_trial', { type: 'object', properties: { questions: { type: 'array' } } }),
   providerHealingRequested: true,
@@ -85,6 +85,18 @@ describe('callOpenRouterChat', () => {
     ).rejects.toMatchObject({
       code: 'parse:zod-shape',
       message: 'invalid OpenRouter usage wrapper for topic-content',
+    });
+  });
+
+
+  it('classifies fetch failures as retryable network failures', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('connection reset'));
+
+    await expect(
+      callOpenRouterChat({ ...testArgs, jobKind: 'topic-content' }, testEnv),
+    ).rejects.toMatchObject({
+      code: 'llm:network',
+      message: 'fetch failed: connection reset',
     });
   });
 });
@@ -155,19 +167,36 @@ describe('callCrystalTrial', () => {
     expect(body.plugins).toBeUndefined();
   });
 
-  it('throws WorkflowFail on 429', async () => {
+  it('classifies 429 as retryable rate limit', async () => {
     mockFetch(429, {});
 
-    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toThrow('openrouter 429');
+    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({
+      code: 'llm:rate-limit',
+      message: 'openrouter 429: {}',
+    });
   });
 
-  it('throws WorkflowFail on 5xx', async () => {
+  it('classifies hard quota-style 429 as non-retryable configuration exhaustion', async () => {
+    mockFetch(429, { error: { message: 'insufficient_quota: credits exhausted' } });
+
+    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({
+      code: 'config:quota-exhausted',
+      message: 'openrouter 429: {"error":{"message":"insufficient_quota: credits exhausted"}}',
+    });
+  });
+
+  it('classifies timeout, conflict, and provider 5xx statuses as retryable LLM failures', async () => {
+    mockFetch(408, {});
+    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({ code: 'llm:timeout' });
+
+    mockFetch(409, {});
+    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({ code: 'llm:upstream-transient' });
+
     mockFetch(503, {});
-
-    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toThrow('openrouter 503');
+    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({ code: 'llm:upstream-transient' });
   });
 
-  it('includes OpenRouter error response body on non-OK responses', async () => {
+  it('includes OpenRouter error response body and treats 400 as non-retryable provider request validation', async () => {
     mockFetch(400, {
       error: {
         message: 'Provider rejected json_schema',
@@ -176,9 +205,20 @@ describe('callCrystalTrial', () => {
     });
 
     await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({
-      code: 'llm:upstream-5xx',
+      code: 'validation:provider-request',
       message: 'openrouter 400: {"error":{"message":"Provider rejected json_schema","code":400}}',
     });
+  });
+
+  it('classifies authorization and missing-model statuses as non-retryable configuration errors', async () => {
+    mockFetch(401, {});
+    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({ code: 'config:invalid' });
+
+    mockFetch(403, {});
+    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({ code: 'config:invalid' });
+
+    mockFetch(404, {});
+    await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({ code: 'config:invalid' });
   });
 
   it('throws WorkflowFail when model returns no content', async () => {
@@ -199,7 +239,7 @@ describe('callCrystalTrial', () => {
 // ── Phase 2: Topic Expansion caller ──────────────────────────────
 describe('callTopicExpansion', () => {
   const expansionArgs = {
-    modelId: 'google/gemini-2.5-flash',
+    modelId: 'google/gemini-3.1-flash-lite-preview',
     messages: [{ role: 'user', content: 'Generate expansion cards.' }],
     responseFormat: makeResponseFormat('topic_expansion', { type: 'object', properties: { cards: { type: 'array' } } }),
     providerHealingRequested: true,
@@ -225,21 +265,21 @@ describe('callTopicExpansion', () => {
     expect(body.response_format.json_schema.strict).toBe(true);
   });
 
-  it('throws WorkflowFail on 429', async () => {
+  it('throws WorkflowFail on retryable 429', async () => {
     mockFetch(429, {});
-    await expect(callTopicExpansion(expansionArgs, testEnv)).rejects.toThrow('openrouter 429');
+    await expect(callTopicExpansion(expansionArgs, testEnv)).rejects.toMatchObject({ code: 'llm:rate-limit' });
   });
 
-  it('throws WorkflowFail on 5xx', async () => {
+  it('throws WorkflowFail on retryable 5xx', async () => {
     mockFetch(503, {});
-    await expect(callTopicExpansion(expansionArgs, testEnv)).rejects.toThrow('openrouter 503');
+    await expect(callTopicExpansion(expansionArgs, testEnv)).rejects.toMatchObject({ code: 'llm:upstream-transient' });
   });
 });
 
 // ── Phase 2: Subject Graph caller ──────────────────────────────────
 describe('callSubjectGraph', () => {
   const sgArgs = {
-    modelId: 'google/gemini-2.5-flash',
+    modelId: 'google/gemini-3.1-flash-lite-preview',
     messages: [{ role: 'user', content: 'Generate topic lattice.' }],
     responseFormat: makeResponseFormat('subject_graph', { type: 'object', properties: { topics: { type: 'array' } } }),
     providerHealingRequested: true,
@@ -276,7 +316,7 @@ describe('callSubjectGraph', () => {
 // ── Phase 2: Topic Content caller ──────────────────────────────────
 describe('callTopicContent', () => {
   const tcArgs = {
-    modelId: 'google/gemini-2.5-flash',
+    modelId: 'google/gemini-3.1-flash-lite-preview',
     messages: [{ role: 'user', content: 'Generate theory.' }],
     responseFormat: makeResponseFormat('topic_content_theory', { type: 'object', properties: { coreConcept: { type: 'string' } } }),
     providerHealingRequested: true,
@@ -315,8 +355,8 @@ describe('callTopicContent', () => {
     expect(body.response_format.json_schema.name).toBe('topic_mini_game_category_sort');
   });
 
-  it('throws WorkflowFail on 429', async () => {
+  it('throws WorkflowFail on retryable 429', async () => {
     mockFetch(429, {});
-    await expect(callTopicContent(tcArgs, testEnv)).rejects.toThrow('openrouter 429');
+    await expect(callTopicContent(tcArgs, testEnv)).rejects.toMatchObject({ code: 'llm:rate-limit' });
   });
 });

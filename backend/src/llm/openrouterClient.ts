@@ -31,9 +31,19 @@ function openRouterHeaders(env: Env): HeadersInit {
   };
 }
 
-function openRouterFailureCode(status: number): string {
+function openRouterFailureCode(status: number, bodyText = ''): string {
+  const normalizedBody = bodyText.toLowerCase();
+  const quotaExhausted = /\b(insufficient[_ -]?quota|quota|credits?|billing|payment)\b/.test(normalizedBody);
+
+  if (status === 429 && quotaExhausted) return 'config:quota-exhausted';
   if (status === 429) return 'llm:rate-limit';
-  return 'llm:upstream-5xx';
+  if (status === 408) return 'llm:timeout';
+  if (status === 409 || status >= 500) return 'llm:upstream-transient';
+
+  if (status === 401 || status === 403 || status === 404) return 'config:invalid';
+  if (status === 400 || status === 413 || status === 422) return 'validation:provider-request';
+
+  return 'validation:provider-request';
 }
 
 function formatOpenRouterErrorBody(bodyText: string): string {
@@ -47,22 +57,29 @@ function formatOpenRouterErrorBody(bodyText: string): string {
   }
 }
 
-async function openRouterFailureMessage(res: Response): Promise<string> {
+async function openRouterFailureDetails(res: Response): Promise<{ code: string; message: string }> {
   let bodyText = '';
   try {
     bodyText = await res.text();
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    return `openrouter ${res.status}: failed to read error body: ${reason}`;
+    return {
+      code: openRouterFailureCode(res.status),
+      message: `openrouter ${res.status}: failed to read error body: ${reason}`,
+    };
   }
 
   const body = formatOpenRouterErrorBody(bodyText);
-  return body ? `openrouter ${res.status}: ${body}` : `openrouter ${res.status}`;
+  return {
+    code: openRouterFailureCode(res.status, bodyText),
+    message: body ? `openrouter ${res.status}: ${body}` : `openrouter ${res.status}`,
+  };
 }
 
 async function throwIfOpenRouterFailed(res: Response): Promise<void> {
   if (res.ok) return;
-  throw new WorkflowFail(openRouterFailureCode(res.status), await openRouterFailureMessage(res));
+  const failure = await openRouterFailureDetails(res);
+  throw new WorkflowFail(failure.code, failure.message);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -182,7 +199,7 @@ export async function callOpenRouterChat(
     });
   } catch (err) {
     throw new WorkflowFail(
-      'llm:upstream-5xx',
+      'llm:network',
       `fetch failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }

@@ -122,6 +122,9 @@ describe('studySettingsStore', () => {
       'structured_outputs',
     ]);
 
+    // Study surfaces default to STUDY_SURFACE_DEFAULT_MODEL (not configs[0]); bind explicitly so
+    // deleting firstId exercises cascade onto the next surviving config.
+    store.getState().setSurfaceConfigId('studyQuestionExplain', firstId);
     store.getState().deleteOpenRouterConfig(firstId);
     const binding = store.getState().surfaceProviders.studyQuestionExplain;
     if (secondId) {

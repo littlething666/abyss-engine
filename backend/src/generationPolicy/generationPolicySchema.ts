@@ -3,7 +3,7 @@ import { BACKEND_GENERATION_JOB_KINDS } from './types';
 
 export const generationJobPolicySchema = z
   .object({
-    /** OpenRouter chat model id: `provider/model` (e.g. `google/gemini-2.5-flash`). Provider field is `openrouter`. */
+    /** OpenRouter chat model id: `provider/model` (e.g. `google/gemini-3.1-flash-lite-preview`). Provider field is `openrouter`. */
     modelId: z
       .string()
       .trim()
