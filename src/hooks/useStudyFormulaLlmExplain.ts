@@ -2,22 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { buildFormulaExplainMessages, type StudyFormulaExplainContext } from '../features/studyPanel';
-import { getChatCompletionsRepositoryForSurface } from '../infrastructure/llmInferenceRegistry';
-import {
-  resolveEnableStreamingForSurface,
-  resolveModelForSurface,
-  resolveOpenRouterReasoningChatOptions,
-} from '../infrastructure/llmInferenceSurfaceProviders';
+import type { StudyFormulaExplainContext } from '../features/studyPanel/studyLlmClient';
+import { ensureStudyLlmClientRegistered } from '../infrastructure/wireStudyLlmClient';
 
-const chat = getChatCompletionsRepositoryForSurface('studyFormulaExplain');
 export type { StudyFormulaExplainContext };
 
 export interface UseStudyFormulaLlmExplainParams {
   topicLabel: string;
   cardQuestionText: string;
   cardId: string | null;
-  reasoningFromUserToggle: boolean;
 }
 
 type CachedResponse = { content: string; reasoning: string | null };
@@ -43,7 +36,6 @@ export function useStudyFormulaLlmExplain({
   topicLabel,
   cardQuestionText,
   cardId,
-  reasoningFromUserToggle,
 }: UseStudyFormulaLlmExplainParams) {
   const [assistantText, setAssistantText] = useState<string | null>(null);
   const [reasoningText, setReasoningText] = useState<string | null>(null);
@@ -83,7 +75,8 @@ export function useStudyFormulaLlmExplain({
     abortRef.current?.abort();
     generationRef.current += 1;
     const myGeneration = generationRef.current;
-    const key = cacheKey(cardId, context, latex.trim(), topicLabel, cardQuestionText);
+    const trimmedLatex = latex.trim();
+    const key = cacheKey(cardId, context, trimmedLatex, topicLabel, cardQuestionText);
     const cached = sessionFormulaExplainCache.get(key);
     if (cached !== undefined) { setError(null); setAssistantText(cached.content); setReasoningText(cached.reasoning); setPending(false); return; }
 
@@ -91,22 +84,17 @@ export function useStudyFormulaLlmExplain({
     abortRef.current = ac;
     setError(null); setAssistantText(''); setReasoningText(null); setPending(true);
 
-    const messages = buildFormulaExplainMessages(topicLabel, cardQuestionText, latex, context);
-    const model = resolveModelForSurface('studyFormulaExplain');
-    const enableStreaming = resolveEnableStreamingForSurface('studyFormulaExplain');
-    const reasoningOpts = resolveOpenRouterReasoningChatOptions('studyFormulaExplain', reasoningFromUserToggle);
-
     void (async () => {
       try {
         let contentAcc = ''; let reasoningAcc = '';
-        for await (const chunk of chat.streamChat({
-          model,
-          messages,
-          signal: ac.signal,
-          includeOpenRouterReasoning: reasoningOpts.includeOpenRouterReasoning,
-          enableReasoning: reasoningOpts.enableReasoning,
-          enableStreaming,
-        })) {
+        const client = ensureStudyLlmClientRegistered();
+        for await (const chunk of client.stream(
+          {
+            kind: 'study-formula-explain',
+            intent: { topicLabel, cardQuestionText, latex: trimmedLatex, context },
+          },
+          ac.signal,
+        )) {
           if (generationRef.current !== myGeneration) return;
           if (chunk.type === 'reasoning') { reasoningAcc += chunk.text; setReasoningText(reasoningAcc); }
           else { contentAcc += chunk.text; setAssistantText(contentAcc); }
@@ -120,7 +108,7 @@ export function useStudyFormulaLlmExplain({
         setError(e); setPending(false); setAssistantText(null); setReasoningText(null);
       }
     })();
-  }, [cardId, topicLabel, cardQuestionText, reasoningFromUserToggle, setPending]);
+  }, [cardId, topicLabel, cardQuestionText, setPending]);
 
   return {
     requestExplain, isPending,

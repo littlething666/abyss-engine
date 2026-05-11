@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 
-import type { StudyFormulaExplainContext } from '../features/studyPanel/formulaExplainLlmMessages';
+import type { StudyFormulaExplainContext } from '../features/studyPanel/studyLlmClient';
 import { shouldAutoRequestStudyLlmStream } from '../features/studyPanel/shouldAutoRequestStudyLlmStream';
 import type {
   StudyPanelFormulaExplainProps,
@@ -12,8 +12,6 @@ import type {
 export type UseStudyPanelLlmSurfacesParams = {
   llmExplain: StudyPanelLlmExplainProps;
   llmFormulaExplain: StudyPanelFormulaExplainProps;
-  explainReasoningEnabled: boolean;
-  formulaReasoningEnabled: boolean;
   isAnswerSubmitted: boolean;
   onHintUsed?: () => void;
 };
@@ -21,8 +19,6 @@ export type UseStudyPanelLlmSurfacesParams = {
 export function useStudyPanelLlmSurfaces({
   llmExplain,
   llmFormulaExplain,
-  explainReasoningEnabled,
-  formulaReasoningEnabled,
   isAnswerSubmitted,
   onHintUsed,
 }: UseStudyPanelLlmSurfacesParams) {
@@ -30,10 +26,6 @@ export function useStudyPanelLlmSurfaces({
   const [formulaOpen, setFormulaOpen] = useState(false);
   const [activeFormulaLatex, setActiveFormulaLatex] = useState<string | null>(null);
   const [activeFormulaContext, setActiveFormulaContext] = useState<StudyFormulaExplainContext | null>(null);
-  const prevReasoningEnabled = useRef({
-    explain: explainReasoningEnabled,
-    formula: formulaReasoningEnabled,
-  });
 
   const closeFormulaExplain = useCallback(() => {
     llmFormulaExplain.cancelInflight();
@@ -77,35 +69,6 @@ export function useStudyPanelLlmSurfaces({
     },
     [fireHint, llmFormulaExplain],
   );
-
-  useEffect(() => {
-    if (prevReasoningEnabled.current.explain !== explainReasoningEnabled) {
-      llmExplain.clearSessionCache();
-      if (explainOpen) {
-        llmExplain.cancelInflight();
-        llmExplain.requestExplain();
-      }
-      prevReasoningEnabled.current.explain = explainReasoningEnabled;
-    }
-
-    if (prevReasoningEnabled.current.formula !== formulaReasoningEnabled) {
-      llmFormulaExplain.clearSessionCache();
-      if (formulaOpen && activeFormulaLatex !== null && activeFormulaContext !== null) {
-        llmFormulaExplain.cancelInflight();
-        llmFormulaExplain.requestExplain(activeFormulaLatex, activeFormulaContext);
-      }
-      prevReasoningEnabled.current.formula = formulaReasoningEnabled;
-    }
-  }, [
-    activeFormulaContext,
-    activeFormulaLatex,
-    explainOpen,
-    explainReasoningEnabled,
-    formulaOpen,
-    formulaReasoningEnabled,
-    llmExplain,
-    llmFormulaExplain,
-  ]);
 
   const handleExplainOpenChange = useCallback(
     (open: boolean) => {

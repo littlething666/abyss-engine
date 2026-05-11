@@ -1,6 +1,6 @@
 # Backend LLM Ownership and Frontend Prompt Removal Plan
 
-Status: proposed implementation plan, 2026-05-11
+Status: in progress, first implementation slice completed, 2026-05-11
 
 ## Decisions Applied
 
@@ -11,6 +11,43 @@ Accepted decisions for this plan:
 - Do not keep frontend reasoning toggles. Backend policy decides whether reasoning is requested and whether reasoning text is streamed back.
 - Do not keep `src/features/subjectGeneration/graph/prereqWiring/prerequisiteEdgeRules.ts` or related tests/code.
 - No migration or backward compatibility is required; the app is unreleased.
+
+
+## Completed in This Patch
+
+- Added backend study LLM contract modules under `backend/src/studyLlm/`:
+  - compact request types;
+  - backend-owned prompt construction;
+  - backend-owned policy for model, temperature, reasoning posture, streaming posture, and prompt version;
+  - validation that rejects unknown kinds, empty required strings, and browser-supplied provider/request-shape fields anywhere in the body;
+  - normalized SSE event encoding.
+- Added `POST /v1/study-llm/stream` in `backend/src/routes/studyLlm.ts` and mounted it from `backend/src/index.ts` under the existing `/v1` API boundary, so the route is behind `X-Abyss-Device` middleware in the Worker app.
+- Extended `backend/src/llm/openrouterClient.ts` with a backend-only streaming helper for study explanations. It owns OpenRouter auth headers, model/request shape, reasoning request policy, non-2xx provider classification before browser streaming starts, and normalization of provider content/reasoning deltas.
+- Added frontend study LLM seam `src/features/studyPanel/studyLlmClient.ts`, infrastructure adapter `src/infrastructure/repositories/BackendStudyLlmRepository.ts`, and wiring `src/infrastructure/wireStudyLlmClient.ts`. The adapter posts only compact study intent plus `Content-Type` and `X-Abyss-Device` headers to `NEXT_PUBLIC_DURABLE_GENERATION_URL`.
+- Rewrote `useStudyQuestionLlmExplain` and `useStudyFormulaLlmExplain` to call the study LLM client with compact intents. The hooks keep pending/abort/error/session-cache behavior and still render backend-streamed reasoning chunks, but no longer build messages or resolve model/provider/streaming/reasoning settings in the browser.
+- Removed study explanation reasoning toggle UI from `StudyPanelModal` / `StudyPanelStudyView`, simplified `useStudyPanelLlmSurfaces`, and deleted the unused reasoning-toggle component/hook files.
+- Added targeted tests for backend validation/prompts/route streaming, backend OpenRouter streaming normalization/request shape, frontend hook compact intents, frontend Worker SSE parsing, and a boundary guard for the new study LLM browser seams.
+
+## Remaining Follow-ups
+
+- Expand `durableGenerationBoundary.test.ts` to enforce the full deletion contract after the obsolete files are removed: `src/prompts/**`, `src/types/prompt-assets.d.ts`, raw-loader config, `raw-loader`, browser provider modules, and settings/provider UI.
+- Delete obsolete frontend prompt builder modules and tests once the remaining prompt-importing surfaces are rewritten:
+  - `src/features/studyPanel/minimalStudyLlmMessages.ts`;
+  - `src/features/studyPanel/formulaExplainLlmMessages.ts`;
+  - `src/features/studyPanel/promptTemplate.ts` if no non-LLM prompt utility remains.
+- Remove or rewrite remaining prompt-importing study surfaces:
+  - `src/hooks/useStudyPanelModel.ts` still constructs `topicSystemPrompt` from `src/prompts/topic-system.prompt`;
+  - `src/components/studyPanel/StudyPromptExternalActions.tsx` still uses diagram prompt helpers and prompt-search actions.
+- Remove the retired browser provider stack and tests after all consumers are gone:
+  - `src/infrastructure/repositories/HttpChatCompletionsRepository.ts`;
+  - `src/infrastructure/llmInferenceRegistry.ts`;
+  - `src/infrastructure/llmInferenceSurfaceProviders.ts`;
+  - `src/infrastructure/openRouterDefaults.ts`;
+  - associated tests and request-shape lockstep tests.
+- Remove provider/model/OpenRouter settings from `src/store/studySettingsStore.ts`, `src/types/llmInference.ts`, and `src/components/settings/GlobalSettingsSheet.tsx`; retain only product study settings such as target audience, agent personality, TTS, and study-history controls.
+- Delete `src/prompts/**`, `src/types/prompt-assets.d.ts`, `*.prompt` loader config in `next.config.mjs` / `vitest.config.ts`, and `raw-loader` from `package.json` / lockfile.
+- Remove frontend Subject Graph Stage B prompt/repair code (`src/features/subjectGeneration/graph/prereqWiring/prerequisiteEdgeRules.ts` and related tests/code) in the same cleanup pass.
+- Add integration coverage against the real Worker middleware stack once the full backend route tree is available in the test bundle; the current route test uses a lightweight v1 device-header harness because this task bundle only included related backend files.
 
 ## Target Architecture
 
@@ -78,7 +115,7 @@ Delete all files:
 
 ## Implementation Sequence
 
-### 1. Strengthen boundary tests first
+### 1. Strengthen boundary tests first — partially completed
 
 Update `src/features/generationContracts/durableGenerationBoundary.test.ts` before implementation.
 
@@ -96,7 +133,7 @@ Add guards that fail when any of these return:
 
 Keep `NEXT_PUBLIC_DURABLE_GENERATION_URL` allowed: it is the backend Worker URL, not an LLM provider setting.
 
-### 2. Add backend study LLM interface
+### 2. Add backend study LLM interface — completed for first slice
 
 Add a backend module with a narrow interface:
 
@@ -153,7 +190,7 @@ Backend policy lives only in `backend/src/studyLlm/studyLlmPolicy.ts` and should
 
 No policy values come from the browser.
 
-### 3. Add backend study LLM route
+### 3. Add backend study LLM route — completed for first slice
 
 Add `backend/src/routes/studyLlm.ts` and mount it from `backend/src/index.ts` under:
 
@@ -189,7 +226,7 @@ Tests:
   - streams reasoning chunks only when backend policy/provider returns them;
   - maps provider failure to stable error event or non-2xx response before streaming starts.
 
-### 4. Reuse/extend backend OpenRouter seam
+### 4. Reuse/extend backend OpenRouter seam — completed for study streaming
 
 Prefer extending `backend/src/llm/openrouterClient.ts` instead of adding a second provider adapter.
 
@@ -208,7 +245,7 @@ Tests in `backend/src/llm/openrouterClient.test.ts` should cover:
 - normalized content/reasoning chunk parsing;
 - provider error classification for streaming responses.
 
-### 5. Add frontend study LLM client seam
+### 5. Add frontend study LLM client seam — completed
 
 Add a frontend feature seam that hooks can call without importing infrastructure adapters directly:
 
@@ -243,7 +280,7 @@ The adapter may use `fetch` because it lives in infrastructure. It must send onl
 
 It must use `NEXT_PUBLIC_DURABLE_GENERATION_URL` as the Worker base URL.
 
-### 6. Rewrite study explanation hooks
+### 6. Rewrite study explanation hooks — completed
 
 Rewrite:
 

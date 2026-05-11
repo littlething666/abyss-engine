@@ -19,7 +19,7 @@ const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const REFERRER = 'https://abyss.globesoul.com';
 const X_TITLE = 'Abyss Engine Durable Orchestrator';
 
-type OpenRouterMessage = { role: string; content: string };
+export type OpenRouterMessage = { role: string; content: string };
 export type OpenRouterJobKind = 'crystal-trial' | 'topic-expansion' | 'subject-graph' | 'topic-content';
 
 function openRouterHeaders(env: Env): HeadersInit {
@@ -206,6 +206,181 @@ export async function callOpenRouterChat(
 
   await throwIfOpenRouterFailed(res);
   return parseOpenRouterChatResponse(res, args.jobKind);
+}
+
+
+export type OpenRouterStudyStreamChunk =
+  | { type: 'content'; text: string }
+  | { type: 'reasoning'; text: string };
+
+export interface OpenRouterStudyStreamArgs {
+  modelId: string;
+  messages: OpenRouterMessage[];
+  temperature?: number;
+  requestReasoning: boolean;
+}
+
+function hasNonWhitespaceText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function formatOpenRouterReasoningDetails(details: unknown): string | null {
+  if (!Array.isArray(details) || details.length === 0) return null;
+  const parts: string[] = [];
+  for (const item of details) {
+    if (!item || typeof item !== 'object') {
+      if (hasNonWhitespaceText(item)) parts.push(item);
+      continue;
+    }
+
+    const record = item as Record<string, unknown>;
+    if (record.type === 'reasoning.text' && hasNonWhitespaceText(record.text)) {
+      parts.push(record.text);
+    } else if (record.type === 'reasoning.summary' && hasNonWhitespaceText(record.summary)) {
+      parts.push(record.summary);
+    } else if (record.type === 'reasoning.encrypted') {
+      parts.push('[encrypted reasoning]');
+    } else {
+      try {
+        parts.push(JSON.stringify(record));
+      } catch {
+        parts.push(String(item));
+      }
+    }
+  }
+  return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
+function reasoningTextFromOpenRouterDelta(delta: Record<string, unknown>): string | null {
+  if (hasNonWhitespaceText(delta.reasoning)) return delta.reasoning;
+  return formatOpenRouterReasoningDetails(delta.reasoning_details);
+}
+
+function providerErrorMessage(errorValue: unknown): string {
+  if (!isRecord(errorValue)) return 'OpenRouter stream error';
+  const message = errorValue.message;
+  if (typeof message === 'string' && message.trim()) return message;
+  try {
+    return JSON.stringify(errorValue);
+  } catch {
+    return 'OpenRouter stream error';
+  }
+}
+
+export function parseOpenRouterStudyStreamSseDataLine(rawLine: string): OpenRouterStudyStreamChunk[] {
+  const line = rawLine.trim();
+  if (!line.startsWith('data:')) return [];
+  const payload = line.slice(5).trim();
+  if (payload === '' || payload === '[DONE]') return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new WorkflowFail('parse:zod-shape', `invalid OpenRouter stream JSON: ${message}`);
+  }
+
+  if (!isRecord(parsed)) {
+    throw new WorkflowFail('parse:zod-shape', 'invalid OpenRouter stream wrapper');
+  }
+  if (parsed.error !== undefined && parsed.error !== null) {
+    throw new WorkflowFail('llm:upstream-transient', providerErrorMessage(parsed.error));
+  }
+  if (!Array.isArray(parsed.choices)) return [];
+
+  const firstChoice = parsed.choices[0];
+  if (!isRecord(firstChoice)) return [];
+  if (firstChoice.error !== undefined && firstChoice.error !== null) {
+    throw new WorkflowFail('llm:upstream-transient', providerErrorMessage(firstChoice.error));
+  }
+  if (!isRecord(firstChoice.delta)) return [];
+
+  const out: OpenRouterStudyStreamChunk[] = [];
+  const reasoningText = reasoningTextFromOpenRouterDelta(firstChoice.delta);
+  if (reasoningText) out.push({ type: 'reasoning', text: reasoningText });
+  if (typeof firstChoice.delta.content === 'string' && firstChoice.delta.content.length > 0) {
+    out.push({ type: 'content', text: firstChoice.delta.content });
+  }
+  return out;
+}
+
+async function* parseOpenRouterStudyStreamBody(body: ReadableStream<Uint8Array>): AsyncGenerator<OpenRouterStudyStreamChunk> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let sawAnyChunk = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const rawLine of lines) {
+        for (const chunk of parseOpenRouterStudyStreamSseDataLine(rawLine)) {
+          sawAnyChunk = true;
+          yield chunk;
+        }
+      }
+    }
+
+    buffer += decoder.decode();
+    for (const chunk of parseOpenRouterStudyStreamSseDataLine(buffer)) {
+      sawAnyChunk = true;
+      yield chunk;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!sawAnyChunk) {
+    throw new WorkflowFail('parse:zod-shape', 'OpenRouter study stream ended with no assistant content');
+  }
+}
+
+/**
+ * Opens a backend-owned OpenRouter streaming call for study explanation routes.
+ * Fetch, auth, failure classification, model id, reasoning, and request shape are
+ * owned entirely by the Worker before a browser SSE response is returned.
+ */
+export async function callOpenRouterStudyStream(
+  args: OpenRouterStudyStreamArgs,
+  env: Env,
+): Promise<AsyncIterable<OpenRouterStudyStreamChunk>> {
+  if (!env.OPENROUTER_API_KEY) {
+    throw new WorkflowFail('config:invalid', 'missing OPENROUTER_API_KEY');
+  }
+
+  const body: Record<string, unknown> = {
+    model: args.modelId,
+    messages: args.messages,
+    stream: true,
+  };
+  if (args.temperature !== undefined) body.temperature = args.temperature;
+  if (args.requestReasoning) body.reasoning = { enabled: true };
+
+  let res: Response;
+  try {
+    res = await fetch(OPENROUTER_CHAT_URL, {
+      method: 'POST',
+      headers: openRouterHeaders(env),
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new WorkflowFail(
+      'llm:network',
+      `fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  await throwIfOpenRouterFailed(res);
+  if (!res.body) {
+    throw new WorkflowFail('parse:zod-shape', 'OpenRouter study stream missing response body');
+  }
+
+  return parseOpenRouterStudyStreamBody(res.body);
 }
 
 export interface CrystalTrialGenerateArgs {

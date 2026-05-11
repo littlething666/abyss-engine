@@ -45,6 +45,31 @@ const FRONTEND_RUNTIME_PREFIXES = [
   'src/hooks/',
 ] as const;
 
+const STUDY_LLM_BROWSER_SEAM_FILES = [
+  'src/hooks/useStudyQuestionLlmExplain.ts',
+  'src/hooks/useStudyFormulaLlmExplain.ts',
+  'src/features/studyPanel/studyLlmClient.ts',
+  'src/infrastructure/repositories/BackendStudyLlmRepository.ts',
+] as const;
+
+const FORBIDDEN_STUDY_LLM_BROWSER_FRAGMENTS = [
+  'buildMinimalStudyQuestionMessages',
+  'buildFormulaExplainMessages',
+  'getChatCompletionsRepositoryForSurface',
+  'resolveModelForSurface',
+  'resolveEnableStreamingForSurface',
+  'resolveOpenRouterReasoningChatOptions',
+  'includeOpenRouterReasoning',
+  'enableReasoning',
+  'response_format',
+  'plugins',
+  'tools',
+  'NEXT_PUBLIC_LLM_CHAT_URL',
+  'NEXT_PUBLIC_LLM_API_KEY',
+  'NEXT_PUBLIC_LLM_MODEL',
+  'NEXT_PUBLIC_LLM_WORKER_URL',
+] as const;
+
 const FRONTEND_SOURCE_PREFIXES = [
   ...FRONTEND_RUNTIME_PREFIXES,
   'src/infrastructure/',
@@ -379,6 +404,26 @@ describe('durable generation import boundary', () => {
     expect(
       violations,
       'Pipeline model/provider/healing policy must stay backend-owned. Browser settings may configure study-explanation surfaces only.',
+    ).toEqual([]);
+  });
+
+
+
+  it('keeps study explanation browser seams compact and off provider request construction', () => {
+    const violations: string[] = [];
+
+    for (const file of STUDY_LLM_BROWSER_SEAM_FILES) {
+      const content = readRuntimeFile(file);
+      for (const fragment of FORBIDDEN_STUDY_LLM_BROWSER_FRAGMENTS) {
+        if (content.includes(fragment)) {
+          violations.push(`${file}: contains frontend-owned study LLM provider/request fragment '${fragment}'`);
+        }
+      }
+    }
+
+    expect(
+      violations,
+      'Study explanation browser code must submit compact intent to the Worker; prompts, model/provider selection, reasoning policy, and provider request-shape fields are backend-owned.',
     ).toEqual([]);
   });
 

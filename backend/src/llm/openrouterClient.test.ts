@@ -5,7 +5,15 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { callOpenRouterChat, callCrystalTrial, callTopicExpansion, callSubjectGraph, callTopicContent } from '../llm/openrouterClient';
+import {
+  callOpenRouterChat,
+  callOpenRouterStudyStream,
+  callCrystalTrial,
+  callTopicExpansion,
+  callSubjectGraph,
+  callTopicContent,
+  parseOpenRouterStudyStreamSseDataLine,
+} from '../llm/openrouterClient';
 import type { Env } from '../env';
 
 const originalFetch = globalThis.fetch;
@@ -358,5 +366,73 @@ describe('callTopicContent', () => {
   it('throws WorkflowFail on retryable 429', async () => {
     mockFetch(429, {});
     await expect(callTopicContent(tcArgs, testEnv)).rejects.toMatchObject({ code: 'llm:rate-limit' });
+  });
+});
+
+
+function mockStreamingFetch(status: number, bodyText: string) {
+  const encoder = new TextEncoder();
+  globalThis.fetch = vi.fn().mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(bodyText));
+        controller.close();
+      },
+    }),
+    text: async () => bodyText,
+  });
+}
+
+describe('callOpenRouterStudyStream', () => {
+  it('builds backend policy-owned streaming request shape', async () => {
+    mockStreamingFetch(200, 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n');
+
+    const stream = await callOpenRouterStudyStream({
+      modelId: 'google/gemini-3.1-flash-lite-preview',
+      messages: [{ role: 'system', content: 'Explain question.' }],
+      temperature: 0.2,
+      requestReasoning: true,
+    }, testEnv);
+
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+
+    expect(chunks).toEqual([{ type: 'content', text: 'hello' }]);
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(fetchCall[1].body);
+    expect(body).toEqual({
+      model: 'google/gemini-3.1-flash-lite-preview',
+      messages: [{ role: 'system', content: 'Explain question.' }],
+      stream: true,
+      temperature: 0.2,
+      reasoning: { enabled: true },
+    });
+    expect(body.response_format).toBeUndefined();
+    expect(body.plugins).toBeUndefined();
+    expect(body.tools).toBeUndefined();
+  });
+
+  it('normalizes OpenRouter streaming content and reasoning chunks', () => {
+    expect(parseOpenRouterStudyStreamSseDataLine(
+      'data: {"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.text","text":"plan"}],"content":"answer"}}]}',
+    )).toEqual([
+      { type: 'reasoning', text: 'plan' },
+      { type: 'content', text: 'answer' },
+    ]);
+  });
+
+  it('classifies provider failure before returning a browser stream', async () => {
+    mockStreamingFetch(429, '{"error":{"message":"rate limit"}}');
+
+    await expect(callOpenRouterStudyStream({
+      modelId: 'google/gemini-3.1-flash-lite-preview',
+      messages: [{ role: 'system', content: 'Explain question.' }],
+      requestReasoning: false,
+    }, testEnv)).rejects.toMatchObject({
+      code: 'llm:rate-limit',
+      message: 'openrouter 429: {"error":{"message":"rate limit"}}',
+    });
   });
 });

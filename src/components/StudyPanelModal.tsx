@@ -23,13 +23,11 @@ import { useStudyKeyboardShortcuts } from '../hooks/useStudyKeyboardShortcuts';
 import { useStudyFormulaLlmExplain } from '../hooks/useStudyFormulaLlmExplain';
 import { useStudyQuestionLlmExplain } from '../hooks/useStudyQuestionLlmExplain';
 import { useInferenceTtsToggle } from '../hooks/useInferenceTtsToggle';
-import { useReasoningToggle } from '../hooks/useReasoningToggle';
 import { MiniGameView } from './miniGames/MiniGameView';
 import type { MiniGameContent } from '../types/core';
 import { cardRefKey } from '@/lib/topicRef';
 import { RatingFeedbackCanvas, type RatingFeedbackCanvasHandle } from './studyPanel/RatingFeedbackCanvas';
 import { useRatingFeedback } from '@/hooks/useRatingFeedback';
-import { makeOpenRouterProviderSelector } from '../infrastructure/llmInferenceSurfaceProviders';
 import { useStudySettingsStore } from '@/store/studySettingsStore';
 
 interface StudyPanelModalProps {
@@ -66,27 +64,17 @@ export function StudyPanelModal({
   const currentSession = useStudySessionStore((state) => state.currentSession);
 
   const model = useStudyPanelModel({ currentCardId, currentTopicId, currentSubjectId, totalCards });
-  const explainReasoning = useReasoningToggle('studyQuestionExplain');
-  const formulaReasoning = useReasoningToggle('studyFormulaExplain');
-  const explainReasoningSupported = useStudySettingsStore(
-    makeOpenRouterProviderSelector('studyQuestionExplain'),
-  );
-  const formulaReasoningSupported = useStudySettingsStore(
-    makeOpenRouterProviderSelector('studyFormulaExplain'),
-  );
   const ttsEnabled = useInferenceTtsToggle();
   const showStudyHistoryControls = useStudySettingsStore((s) => s.showStudyHistoryControls);
   const llmExplain = useStudyQuestionLlmExplain({
     topicLabel: model.resolvedTopic,
     questionText: model.currentQuestion,
     cardId: model.activeCard?.id ?? null,
-    reasoningFromUserToggle: explainReasoning.enableReasoning,
   });
   const llmFormulaExplain = useStudyFormulaLlmExplain({
     topicLabel: model.resolvedTopic,
     cardQuestionText: model.currentQuestion,
     cardId: model.activeCard?.id ?? null,
-    reasoningFromUserToggle: formulaReasoning.enableReasoning,
   });
 
   useEffect(() => {
@@ -291,12 +279,6 @@ export function StudyPanelModal({
                   onHintUsed={handleHintUsed}
                   llmExplain={llmExplain}
                   llmFormulaExplain={llmFormulaExplain}
-                  explainReasoningEnabled={explainReasoning.enableReasoning}
-                  explainReasoningToggleDisabled={!explainReasoningSupported}
-                  formulaReasoningEnabled={formulaReasoning.enableReasoning}
-                  formulaReasoningToggleDisabled={!formulaReasoningSupported}
-                  onToggleExplainReasoning={explainReasoning.toggleReasoning}
-                  onToggleFormulaReasoning={formulaReasoning.toggleReasoning}
                   explainTtsEnabled={ttsEnabled.enableTts}
                   formulaTtsEnabled={ttsEnabled.enableTts}
                   onToggleExplainTts={ttsEnabled.toggleTts}

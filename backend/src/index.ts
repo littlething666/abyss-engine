@@ -15,6 +15,7 @@ import { runs } from './routes/runs';
 import { runEvents } from './routes/runEvents';
 import { artifacts } from './routes/artifacts';
 import { learningContent } from './routes/learningContent';
+import { studyLlm } from './routes/studyLlm';
 import { stats } from './routes/runs.stats';
 import { WorkflowFail } from './lib/workflowErrors';
 
@@ -51,6 +52,7 @@ v1.post('/runs', idempotencyMiddleware);
 v1.route('/runs', stats);
 v1.route('/runs', runs);
 v1.route('/runs', runEvents);
+v1.route('/', studyLlm);
 v1.route('/', learningContent);
 v1.route('/artifacts', artifacts);
 

@@ -17,7 +17,6 @@ import {
   type ResponsiveLlmInferenceDescription,
 } from '../ResponsiveLlmInferenceSurface';
 import { LlmReasoningBlock } from '../LlmReasoningBlock';
-import { LlmReasoningToggle } from '../LlmReasoningToggle';
 import { LlmTtsToggle } from '../LlmTtsToggle';
 import { Lightbulb, Sparkles } from 'lucide-react';
 import { StudyKatexInteractive } from './StudyKatexInteractive';
@@ -161,12 +160,6 @@ interface StudyPanelStudyViewProps {
   onHintUsed: () => void;
   llmExplain: StudyPanelLlmExplainProps;
   llmFormulaExplain: StudyPanelFormulaExplainProps;
-  explainReasoningEnabled: boolean;
-  explainReasoningToggleDisabled: boolean;
-  formulaReasoningEnabled: boolean;
-  formulaReasoningToggleDisabled: boolean;
-  onToggleExplainReasoning: () => void;
-  onToggleFormulaReasoning: () => void;
   explainTtsEnabled: boolean;
   formulaTtsEnabled: boolean;
   onToggleExplainTts: () => void;
@@ -205,12 +198,6 @@ export function StudyPanelStudyView({
   onHintUsed,
   llmExplain,
   llmFormulaExplain,
-  explainReasoningEnabled,
-  explainReasoningToggleDisabled,
-  formulaReasoningEnabled,
-  formulaReasoningToggleDisabled,
-  onToggleExplainReasoning,
-  onToggleFormulaReasoning,
   explainTtsEnabled,
   formulaTtsEnabled,
   onToggleExplainTts,
@@ -239,9 +226,7 @@ export function StudyPanelStudyView({
   } = useStudyPanelLlmSurfaces({
     llmExplain,
     llmFormulaExplain,
-    explainReasoningEnabled,
-    formulaReasoningEnabled,
-    isAnswerSubmitted,
+        isAnswerSubmitted,
     onHintUsed,
   });
 
@@ -429,12 +414,6 @@ export function StudyPanelStudyView({
               topicSystemPrompt={topicSystemPrompt}
               resolvedTopic={resolvedTopic}
             />
-            <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-            <LlmReasoningToggle
-              enabled={explainReasoningEnabled}
-              disabled={explainReasoningToggleDisabled}
-              onToggle={onToggleExplainReasoning}
-            />
             <LlmTtsToggle
               enabled={explainTtsEnabled}
               onToggle={onToggleExplainTts}
@@ -458,11 +437,6 @@ export function StudyPanelStudyView({
         sheetBodyScrollClassName="max-h-[min(40vh,32rem)]"
         headerAction={
           <div className="flex items-center gap-1">
-            <LlmReasoningToggle
-              enabled={formulaReasoningEnabled}
-              disabled={formulaReasoningToggleDisabled}
-              onToggle={onToggleFormulaReasoning}
-            />
             <LlmTtsToggle
               enabled={formulaTtsEnabled}
               onToggle={onToggleFormulaTts}
