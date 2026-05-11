@@ -106,9 +106,7 @@ Follow-up Phase 0 PRs will add `prompts/` here.
 2. The Zod schema for an `ArtifactKind` is the single source of truth for
    accepted shapes. Extra keys on `.strict()` objects are rejected with
    `parse:zod-shape`. JSON parse errors surface as `parse:json-mode-violation`.
-3. No second parser. No fallback. No probabilistic recovery (the existing
-   subject-graph Stage B `correctPrereqEdges` repair stays where it is and is
-   the only documented exception in the root `AGENTS.md`).
+3. No second parser. No fallback. No probabilistic recovery. Subject-graph Stage B prerequisite repair was retired; invalid edge output must fail through strict parse or semantic validation.
 4. Domain rules (card-pool size, difficulty distribution, mini-game
    playability, Crystal Trial question count, lattice/edge invariants) live
    in `semanticValidators/`, which runs AFTER the strict parser as a
@@ -157,9 +155,7 @@ Follow-up Phase 0 PRs will add `prompts/` here.
    `.github/workflows/eval-gate.yml` (Phase 0 step 11) and is invoked
    via `pnpm run test:eval`. The gate fires on any PR that touches the
    contracts module, backend prompt modules (`backend/src/prompts/**`),
-   the remaining documented Subject Graph Stage B repair exception
-   (`src/features/subjectGeneration/graph/prereqWiring/**` and
-   `src/prompts/subject-graph-edges.prompt`), or the inference-surface
+   retired Subject Graph Stage B repair paths, or the inference-surface
    providers + types (`src/infrastructure/llmInferenceSurfaceProviders.ts`,
    `src/types/llmInference.ts`) that gate `model_id`, `response_format`,
    `structured_outputs`, and pipeline-vs-non-pipeline routing. A change
@@ -168,9 +164,7 @@ Follow-up Phase 0 PRs will add `prompts/` here.
 
 ## Authoritative rules
 
-1. No second parser. No fallback. No probabilistic recovery (the existing
-   subject-graph Stage B repair stays where it is and is the only documented
-   exception).
+1. No second parser. No fallback. No probabilistic recovery. Subject-graph Stage B repair is retired and must not return.
 2. Failure modes use the codes in `failureCodes.ts`. Adding a code requires
    updating downstream consumers (Worker, telemetry, HUD copy) in lockstep.
 3. Run events are the only contract between any orchestrator and the client.

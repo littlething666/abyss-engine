@@ -11,13 +11,8 @@ import {
 import { useTopicMetadata } from '../features/content';
 import { useTopicCards } from './useDeckData';
 import { useTopicContentStatusMap } from './useTopicContentStatusMap';
-import topicSystemPromptTemplate from '../prompts/topic-system.prompt';
-import { useStudySettingsStore } from '../store/studySettingsStore';
-import { TARGET_AUDIENCE_OPTIONS } from '../store/studySettingsStore';
 import {
   buildPriorKnowledgeLines,
-  getAgentPersonalityInstructions,
-  interpolatePromptTemplate,
   resolveActiveCard,
 } from '../features/studyPanel';
 import { toRenderableCard, type RenderableCard, type RenderableType } from '../features/studyPanel/cardPresenter';
@@ -44,7 +39,6 @@ export interface StudyPanelModel {
   activeCard: Card | null;
   renderedCard: RenderableCard | null;
   currentQuestion: string;
-  topicSystemPrompt: string;
   sm2State: SM2Data | null;
   isLoadingCards: boolean;
   isCardsLoadError: boolean;
@@ -88,9 +82,6 @@ export function useStudyPanelModel({
     () => activeCrystals.map((c) => topicRefKey({ subjectId: c.subjectId, topicId: c.topicId })),
     [activeCrystals],
   );
-  const targetAudience = useStudySettingsStore((state) => state.targetAudience);
-  const agentPersonality = useStudySettingsStore((state) => state.agentPersonality);
-
   const resolvedTopicRef = useMemo((): TopicRef | null => {
     if (currentSubjectId && currentTopicId) {
       return { subjectId: currentSubjectId, topicId: currentTopicId };
@@ -163,22 +154,6 @@ export function useStudyPanelModel({
     return (activeCard.content as { question: string }).question ?? 'unknown';
   }, [activeCard]);
 
-  const topicSystemPrompt = useMemo(
-    () =>
-      interpolatePromptTemplate(
-        topicSystemPromptTemplate,
-        {
-          subject: resolvedSubject,
-          topic: resolvedTopic,
-          priorKnowledge: priorKnowledgeLines,
-          question: currentQuestion,
-          targetAudience: targetAudience || TARGET_AUDIENCE_OPTIONS[0],
-          personality: getAgentPersonalityInstructions(agentPersonality),
-        },
-      ),
-    [resolvedSubject, resolvedTopic, priorKnowledgeLines, currentQuestion, targetAudience, agentPersonality],
-  );
-
   const sm2State = useMemo(() => {
     if (!resolvedTopicRef || !activeCard) {
       return null;
@@ -220,7 +195,6 @@ export function useStudyPanelModel({
     activeCard,
     renderedCard,
     currentQuestion,
-    topicSystemPrompt,
     sm2State,
     isLoadingCards,
     isCardsLoadError,

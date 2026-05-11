@@ -25,8 +25,6 @@ const baseProps: StudyPanelStudyViewProps = {
   isRevealed: false,
   sm2State: null,
   activeCard: null,
-  topicSystemPrompt: '',
-  resolvedTopic: 'Test topic',
   onSelectAnswer: vi.fn(),
   onChoiceSubmit: vi.fn(),
   onChoiceContinue: vi.fn(),

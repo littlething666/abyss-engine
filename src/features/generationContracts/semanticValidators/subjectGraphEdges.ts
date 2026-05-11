@@ -19,10 +19,9 @@ import type { SemanticValidator } from './types';
  * - No self-loops (`source === target`).
  * - No duplicate `(source, target)` pair.
  *
- * The AGENTS.md-authorized `correctPrereqEdges` repair pass runs BEFORE
- * the strict parser, so anything reaching this validator is post-repair
- * and any leftover violation is a hard fail rather than a candidate for
- * silent coercion.
+ * There is no frontend or backend prerequisite-edge repair pass. Anything
+ * reaching this validator has already passed the strict parser; any semantic
+ * violation is a hard failure rather than a candidate for silent coercion.
  */
 export const validateSubjectGraphEdgesArtifact: SemanticValidator<
   SubjectGraphEdgesArtifactPayload

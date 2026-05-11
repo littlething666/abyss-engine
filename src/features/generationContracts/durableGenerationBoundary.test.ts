@@ -140,7 +140,24 @@ const RETIRED_LEGACY_GENERATION_PATH_PATTERNS = [
   /^src\/features\/subjectGeneration\/graph\/parseGraphResponse(?:\.test)?\.ts$/,
   /^src\/features\/subjectGeneration\/graph\/topicLattice\/buildTopicLatticeMessages(?:\.test)?\.ts$/,
   /^src\/features\/subjectGeneration\/graph\/topicLattice\/parseTopicLatticeResponse(?:\.test)?\.ts$/,
-  /^src\/prompts\/subject-graph-topics\.prompt$/,
+] as const;
+
+const RETIRED_FRONTEND_PROMPT_PATH_PATTERNS = [
+  /^src\/prompts\//,
+  /^src\/types\/prompt-assets\.d\.ts$/,
+  /^src\/features\/studyPanel\/(?:minimalStudyLlmMessages|formulaExplainLlmMessages|promptTemplate)(?:\.test)?\.ts$/,
+  /^src\/components\/studyPanel\/StudyPromptExternalActions\.tsx$/,
+] as const;
+
+const RETIRED_STAGE_B_REPAIR_PATH_PATTERNS = [
+  /^src\/features\/subjectGeneration\/graph\/prereqWiring\//,
+  /^backend\/src\/.*(?:Prereq|Prerequisite|Edges?)Correction.*\.ts$/i,
+] as const;
+
+const FORBIDDEN_PROMPT_IMPORT_PATTERNS = [
+  /from\s+['"][^'"]*\.prompt(?:\?raw)?['"]/,
+  /import\s*\(\s*['"][^'"]*\.prompt(?:\?raw)?['"]\s*\)/,
+  /require\s*\(\s*['"][^'"]*\.prompt(?:\?raw)?['"]\s*\)/,
 ] as const;
 
 const SETTINGS_SOURCE_PATH_FRAGMENTS = [
@@ -435,6 +452,52 @@ describe('durable generation import boundary', () => {
     expect(
       existing,
       'Durable generation owns prompt construction and artifact parsing in backend/contracts modules; retired frontend permissive prompt/parser paths must not return.',
+    ).toEqual([]);
+  });
+
+  it('keeps frontend prompt assets, prompt importers, and raw prompt tooling deleted', () => {
+    const repositoryFiles = collectRepositoryFilePaths();
+    const existing = repositoryFiles.filter((file) =>
+      RETIRED_FRONTEND_PROMPT_PATH_PATTERNS.some((pattern) => pattern.test(file)),
+    );
+
+    const promptImports: string[] = [];
+    for (const file of collectRuntimeSourceFiles().filter(isFrontendSourceFile)) {
+      const content = readRuntimeFile(file);
+      if (FORBIDDEN_PROMPT_IMPORT_PATTERNS.some((pattern) => pattern.test(content))) {
+        promptImports.push(`${file}: imports a frontend .prompt asset`);
+      }
+    }
+
+    const packageJson = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf-8')) as {
+      dependencies?: Record<string, unknown>;
+      devDependencies?: Record<string, unknown>;
+    };
+    const rawLoaderInstalled = Boolean(
+      packageJson.dependencies?.['raw-loader'] || packageJson.devDependencies?.['raw-loader'],
+    );
+    const nextConfig = fs.readFileSync(path.join(REPO_ROOT, 'next.config.mjs'), 'utf-8');
+    const vitestConfig = fs.readFileSync(path.join(REPO_ROOT, 'vitest.config.ts'), 'utf-8');
+
+    expect(
+      { existing, promptImports, rawLoaderInstalled, promptLoaderConfig: nextConfig.includes('*.prompt') || vitestConfig.includes('.prompt') },
+      'Frontend prompt ownership must stay deleted: no src/prompts assets, prompt asset declarations/imports, raw-loader dependency, or .prompt loader config.',
+    ).toEqual({
+      existing: [],
+      promptImports: [],
+      rawLoaderInstalled: false,
+      promptLoaderConfig: false,
+    });
+  });
+
+  it('keeps frontend Subject Graph Stage B prerequisite repair deleted', () => {
+    const existing = collectRepositoryFilePaths().filter((file) =>
+      RETIRED_STAGE_B_REPAIR_PATH_PATTERNS.some((pattern) => pattern.test(file)),
+    );
+
+    expect(
+      existing,
+      'Subject Graph Stage B must fail through backend strict parse plus semantic validation; frontend prerequisite repair/correction seams must not return.',
     ).toEqual([]);
   });
 

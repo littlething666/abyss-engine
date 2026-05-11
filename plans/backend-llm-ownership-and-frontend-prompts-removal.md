@@ -1,6 +1,6 @@
 # Backend LLM Ownership and Frontend Prompt Removal Plan
 
-Status: in progress, first implementation slice completed, 2026-05-11
+Status: in progress, second implementation slice completed, 2026-05-11
 
 ## Decisions Applied
 
@@ -27,26 +27,24 @@ Accepted decisions for this plan:
 - Rewrote `useStudyQuestionLlmExplain` and `useStudyFormulaLlmExplain` to call the study LLM client with compact intents. The hooks keep pending/abort/error/session-cache behavior and still render backend-streamed reasoning chunks, but no longer build messages or resolve model/provider/streaming/reasoning settings in the browser.
 - Removed study explanation reasoning toggle UI from `StudyPanelModal` / `StudyPanelStudyView`, simplified `useStudyPanelLlmSurfaces`, and deleted the unused reasoning-toggle component/hook files.
 - Added targeted tests for backend validation/prompts/route streaming, backend OpenRouter streaming normalization/request shape, frontend hook compact intents, frontend Worker SSE parsing, and a boundary guard for the new study LLM browser seams.
+- Removed the remaining frontend study prompt surfaces: `topicSystemPrompt` construction, `StudyPromptExternalActions`, frontend study prompt builders, and prompt-template tests.
+- Deleted `src/prompts/**`, `src/types/prompt-assets.d.ts`, the Turbopack/Vitest prompt loaders, and the `raw-loader` package/lockfile entry.
+- Deleted the frontend Subject Graph Stage B prerequisite-edge repair path and moved the surviving `PrereqEdges` type to `assembleSubjectGraph.ts`; validation docs now state Stage B failures must remain strict.
+- Added boundary guards for deleted frontend prompt assets/tooling and deleted Stage B repair/correction paths.
+- Removed provider/model/OpenRouter controls from `GlobalSettingsSheet`; study settings now present only product-level study defaults/preferences in the UI.
 
 ## Remaining Follow-ups
 
-- Expand `durableGenerationBoundary.test.ts` to enforce the full deletion contract after the obsolete files are removed: `src/prompts/**`, `src/types/prompt-assets.d.ts`, raw-loader config, `raw-loader`, browser provider modules, and settings/provider UI.
-- Delete obsolete frontend prompt builder modules and tests once the remaining prompt-importing surfaces are rewritten:
-  - `src/features/studyPanel/minimalStudyLlmMessages.ts`;
-  - `src/features/studyPanel/formulaExplainLlmMessages.ts`;
-  - `src/features/studyPanel/promptTemplate.ts` if no non-LLM prompt utility remains.
-- Remove or rewrite remaining prompt-importing study surfaces:
-  - `src/hooks/useStudyPanelModel.ts` still constructs `topicSystemPrompt` from `src/prompts/topic-system.prompt`;
-  - `src/components/studyPanel/StudyPromptExternalActions.tsx` still uses diagram prompt helpers and prompt-search actions.
-- Remove the retired browser provider stack and tests after all consumers are gone:
+- Expand `durableGenerationBoundary.test.ts` further once the retired provider stack is deleted: browser provider modules, provider request-shape tests, settings-store provider state, and obsolete `NEXT_PUBLIC_LLM_*` env support.
+- Remove the retired browser provider stack and tests after confirming no hidden consumers remain:
   - `src/infrastructure/repositories/HttpChatCompletionsRepository.ts`;
   - `src/infrastructure/llmInferenceRegistry.ts`;
   - `src/infrastructure/llmInferenceSurfaceProviders.ts`;
   - `src/infrastructure/openRouterDefaults.ts`;
   - associated tests and request-shape lockstep tests.
-- Remove provider/model/OpenRouter settings from `src/store/studySettingsStore.ts`, `src/types/llmInference.ts`, and `src/components/settings/GlobalSettingsSheet.tsx`; retain only product study settings such as target audience, agent personality, TTS, and study-history controls.
-- Delete `src/prompts/**`, `src/types/prompt-assets.d.ts`, `*.prompt` loader config in `next.config.mjs` / `vitest.config.ts`, and `raw-loader` from `package.json` / lockfile.
-- Remove frontend Subject Graph Stage B prompt/repair code (`src/features/subjectGeneration/graph/prereqWiring/prerequisiteEdgeRules.ts` and related tests/code) in the same cleanup pass.
+- Finish provider/model/OpenRouter settings cleanup in `src/store/studySettingsStore.ts` and `src/types/llmInference.ts`; the Global Settings UI has been removed, but persisted provider state and helper exports still exist for the retired browser provider modules.
+- Remove obsolete frontend LLM types from `src/types/llm.ts` once `HttpChatCompletionsRepository` and lockstep tests are deleted; keep only backend/compact-study contracts that remain consumed.
+- Remove `NEXT_PUBLIC_LLM_WORKER_URL` from `config/next-public-env.mjs` after deleting `src/infrastructure/llmInferenceRegistry.ts` / `src/infrastructure/openRouterDefaults.ts`. Keep `NEXT_PUBLIC_DURABLE_GENERATION_URL`.
 - Add integration coverage against the real Worker middleware stack once the full backend route tree is available in the test bundle; the current route test uses a lightweight v1 device-header harness because this task bundle only included related backend files.
 
 ## Target Architecture
@@ -75,7 +73,7 @@ The browser must not:
 
 ### `src/prompts/**` disposition
 
-Delete all files:
+Deleted all files in the second slice:
 
 - `src/prompts/crystal-trial.prompt` — superseded by backend durable generation prompts.
 - `src/prompts/topic-expansion-cards.prompt` — superseded by backend durable generation prompts.
@@ -89,7 +87,7 @@ Delete all files:
 - `src/prompts/diagram-system.prompt` — remove frontend diagram prompt action.
 - `src/prompts/witty-mentor.prompt` — delete; current Mentor uses canned lines and does not need an LLM prompt.
 
-### Frontend prompt importers to remove or rewrite
+### Frontend prompt importers removed
 
 - `src/features/studyPanel/minimalStudyLlmMessages.ts`
 - `src/features/studyPanel/formulaExplainLlmMessages.ts`
@@ -107,11 +105,7 @@ Delete all files:
 - `src/infrastructure/llm/openRouterRequestShapeLockstep.test.ts`
 - frontend OpenRouter/provider tests tied to those modules
 - `chatCompletionsRepository` export from `src/infrastructure/di.ts`
-- LLM provider/model settings in `src/store/studySettingsStore.ts`
-- Study provider/OpenRouter config UI in `src/components/settings/GlobalSettingsSheet.tsx`
-- prompt asset declarations in `src/types/prompt-assets.d.ts`
-- `*.prompt` raw-loader config in `next.config.mjs`
-- `raw-loader` dependency from root `package.json`
+- LLM provider/model settings internals in `src/store/studySettingsStore.ts` (the visible settings UI is removed)
 
 ## Implementation Sequence
 
@@ -308,7 +302,7 @@ Delete usage of:
 - `useReasoningToggle`;
 - `LlmReasoningToggle` if no remaining consumer exists.
 
-### 7. Remove frontend prompt-based external actions
+### 7. Remove frontend prompt-based external actions — completed in second slice
 
 Delete or simplify these prompt surfaces:
 
@@ -324,7 +318,7 @@ Update tests that expect:
 - `study-prompt-external-diagram`;
 - `topicSystemPrompt` props.
 
-### 8. Simplify study settings
+### 8. Simplify study settings — partially completed in second slice
 
 Remove from `src/store/studySettingsStore.ts`:
 
@@ -345,15 +339,16 @@ Keep product settings only:
 
 Because there is no migration requirement, old persisted blobs can be ignored by constructing a fresh normalized snapshot from supported fields only.
 
-Remove from `src/components/settings/GlobalSettingsSheet.tsx`:
+Completed in this slice for `src/components/settings/GlobalSettingsSheet.tsx`:
 
-- `StudyProvidersSection`;
-- `OpenRouterSection`;
-- all provider/config/model/reasoning UI.
+- removed `StudyProvidersSection`;
+- removed `OpenRouterSection`;
+- removed provider/config/model/reasoning UI;
+- added explanatory copy that study explanations are backend-powered and not model-configurable in browser settings.
 
-Keep the explanatory copy clear: study explanations are backend-powered and not model-configurable in browser settings.
+Remaining: remove the corresponding persisted provider/model state and helper exports from `src/store/studySettingsStore.ts` / `src/types/llmInference.ts` after the retired provider modules are deleted.
 
-### 9. Delete the Stage B prerequisite-edge repair exception path
+### 9. Delete the Stage B prerequisite-edge repair exception path — completed in second slice
 
 Delete:
 
@@ -380,7 +375,7 @@ Required cleanup:
 - keep or add boundary guards so `prerequisiteEdgeRules.ts`, `prereqWiring/**`, `src/prompts/subject-graph-edges.prompt`, or backend `*EdgesCorrection*` modules cannot return;
 - keep backend Stage B artifact shape as `{ edges: Array<{ source, target, minLevel? }> }`; do not support the old frontend map shape.
 
-### 10. Delete `src/prompts/**` and prompt tooling
+### 10. Delete `src/prompts/**` and prompt tooling — completed in second slice
 
 After all imports are gone:
 
@@ -390,7 +385,7 @@ After all imports are gone:
 - remove `raw-loader` from `package.json` and lockfile;
 - update any docs/tests that reference `src/prompts/**` as supported paths.
 
-### 11. Remove obsolete frontend LLM types and tests
+### 11. Remove obsolete frontend LLM types and tests — remaining
 
 Delete or reduce:
 

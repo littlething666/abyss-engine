@@ -270,8 +270,6 @@ export function StudyPanelModal({
                   isRevealed={isRevealed}
                   sm2State={model.sm2State}
                   activeCard={model.activeCard}
-                  topicSystemPrompt={model.topicSystemPrompt}
-                  resolvedTopic={model.resolvedTopic}
                   onSelectAnswer={handleAnswerSelect}
                   onChoiceSubmit={handleChoiceSubmit}
                   onChoiceContinue={handleChoiceContinue}

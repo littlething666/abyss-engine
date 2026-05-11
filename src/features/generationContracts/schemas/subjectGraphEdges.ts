@@ -7,9 +7,8 @@ import { KebabId } from './_shared';
  *
  * Cross-stage referential integrity (every `source` / `target` exists in
  * the lattice produced by Stage A) is a semantic-validator concern
- * (Phase 0 step 9). The AGENTS.md-authorized `correctPrereqEdges` repair
- * pass runs BEFORE this strict schema, so any leftover invalid edges
- * after correction are a hard `parse:zod-shape` failure here.
+ * (Phase 0 step 9). There is no prerequisite-edge repair pass; malformed
+ * artifacts fail this schema or the semantic validator explicitly.
  */
 export const subjectGraphEdgesArtifactSchema = z
   .object({
