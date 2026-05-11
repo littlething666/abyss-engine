@@ -154,6 +154,24 @@ const RETIRED_STAGE_B_REPAIR_PATH_PATTERNS = [
   /^backend\/src\/.*(?:Prereq|Prerequisite|Edges?)Correction.*\.ts$/i,
 ] as const;
 
+const RETIRED_BROWSER_LLM_PROVIDER_PATH_PATTERNS = [
+  /^src\/infrastructure\/repositories\/(?:HttpChatCompletionsRepository|openRouterReasoningDetails)(?:\.test)?\.ts$/,
+  /^src\/infrastructure\/(?:llmInferenceRegistry|llmInferenceSurfaceProviders|openRouterDefaults)(?:\.test)?\.ts$/,
+  /^src\/infrastructure\/llm\/openrouterRequestShapeLockstep\.test\.ts$/,
+  /^src\/types\/llm(?:Inference)?\.ts$/,
+] as const;
+
+const RETIRED_BROWSER_LLM_IMPORT_FRAGMENTS = [
+  'HttpChatCompletionsRepository',
+  'openRouterReasoningDetails',
+  'llmInferenceRegistry',
+  'llmInferenceSurfaceProviders',
+  'openRouterDefaults',
+  'IChatCompletionsRepository',
+  'getChatCompletionsRepositoryForSurface',
+  'resolveModelForSurface',
+] as const;
+
 const FORBIDDEN_PROMPT_IMPORT_PATTERNS = [
   /from\s+['"][^'"]*\.prompt(?:\?raw)?['"]/,
   /import\s*\(\s*['"][^'"]*\.prompt(?:\?raw)?['"]\s*\)/,
@@ -420,7 +438,7 @@ describe('durable generation import boundary', () => {
 
     expect(
       violations,
-      'Pipeline model/provider/healing policy must stay backend-owned. Browser settings may configure study-explanation surfaces only.',
+      'Pipeline and study-explanation model/provider/healing policy must stay backend-owned. Browser settings may configure product preferences only.',
     ).toEqual([]);
   });
 
@@ -499,6 +517,32 @@ describe('durable generation import boundary', () => {
       existing,
       'Subject Graph Stage B must fail through backend strict parse plus semantic validation; frontend prerequisite repair/correction seams must not return.',
     ).toEqual([]);
+  });
+
+  it('keeps the retired browser LLM provider stack and public LLM env keys deleted', () => {
+    const repositoryFiles = collectRepositoryFilePaths();
+    const existing = repositoryFiles.filter((file) =>
+      RETIRED_BROWSER_LLM_PROVIDER_PATH_PATTERNS.some((pattern) => pattern.test(file)),
+    );
+
+    const imports: string[] = [];
+    for (const file of collectRuntimeSourceFiles().filter(isFrontendSourceFile)) {
+      const content = readRuntimeFile(file);
+      for (const fragment of RETIRED_BROWSER_LLM_IMPORT_FRAGMENTS) {
+        if (buildImportPattern(fragment).test(content)) {
+          imports.push(`${file}: imports retired browser LLM provider seam '${fragment}'`);
+        }
+      }
+    }
+
+    const nextPublicEnv = fs.readFileSync(path.join(REPO_ROOT, 'config', 'next-public-env.mjs'), 'utf-8');
+    const publicLlmEnvKeys = ['NEXT_PUBLIC_LLM_CHAT_URL', 'NEXT_PUBLIC_LLM_API_KEY', 'NEXT_PUBLIC_LLM_MODEL', 'NEXT_PUBLIC_LLM_WORKER_URL'];
+    const configuredEnvKeys = publicLlmEnvKeys.filter((key) => nextPublicEnv.includes(key));
+
+    expect(
+      { existing, imports, configuredEnvKeys },
+      'Browser LLM provider policy is retired; frontend code must not keep provider adapters, request-shape types, or NEXT_PUBLIC_LLM_* configuration.',
+    ).toEqual({ existing: [], imports: [], configuredEnvKeys: [] });
   });
 
   it('keeps retired infrastructure decisions and historical durable plan archives deleted', () => {

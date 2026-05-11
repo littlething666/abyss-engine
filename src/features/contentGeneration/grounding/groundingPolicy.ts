@@ -1,5 +1,4 @@
 import type { GroundingSearchPolicy } from '@/types/grounding';
-import type { OpenRouterWebSearchTool } from '@/types/llm';
 
 /**
  * Target policy when topic theory is grounded via backend search (e.g. Firecrawl) and/or
@@ -52,23 +51,3 @@ export const TOPIC_THEORY_INTERIM_UNGROUNDED_POLICY: GroundingSearchPolicy = {
   requireWebSearch: false,
   minAcceptedSources: 0,
 };
-
-/**
- * @deprecated OpenRouter server-side web search is broken/unreliable; do not attach
- * `openrouter:web_search` to chat completions. Backend Firecrawl (or equivalent) will
- * replace this path. Kept only for tests and typed references during migration.
- */
-export function buildOpenRouterWebSearchTools(
-  policy: GroundingSearchPolicy,
-): OpenRouterWebSearchTool[] {
-  return [
-    {
-      type: 'openrouter:web_search',
-      parameters: {
-        engine: policy.engine,
-        max_results: policy.maxResults,
-        max_total_results: policy.maxTotalResults,
-      },
-    },
-  ];
-}

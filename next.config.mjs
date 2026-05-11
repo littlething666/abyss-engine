@@ -8,14 +8,6 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_ABYSS_LOADING_SEED: nextPublicAbyssLoadingSeed,
   },
-  turbopack: {
-    rules: {
-      '*.prompt': {
-        loaders: ['raw-loader'],
-        as: '*.js',
-      },
-    },
-  },
   ...(basePath
     ? {
         basePath,

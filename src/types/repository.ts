@@ -9,18 +9,6 @@ import type {
   RunStatus,
 } from '@/features/generationContracts';
 
-export type {
-  ChatCompletionResult,
-  ChatCompletionStreamInput,
-  ChatMessage,
-  ChatMessageRole,
-  ChatStreamChunk,
-  ChatStreamChunkType,
-  IChatCompletionsRepository,
-} from './llm';
-
-export type { InferenceSurfaceId, LlmInferenceProviderId } from './llmInference';
-
 export interface Manifest {
   subjects: Subject[];
 }

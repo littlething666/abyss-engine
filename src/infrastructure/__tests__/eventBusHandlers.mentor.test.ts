@@ -105,16 +105,6 @@ vi.mock('@/features/mentor', () => ({
 vi.mock('@/infrastructure/di', () => ({
   deckRepository: { getManifest: deckApi.getManifest },
   deckWriter: {},
-  chatCompletionsRepository: {},
-}));
-
-vi.mock('@/infrastructure/llmInferenceRegistry', () => ({
-  getChatCompletionsRepositoryForSurface: vi.fn(() => ({})),
-}));
-
-vi.mock('@/infrastructure/llmInferenceSurfaceProviders', () => ({
-  resolveEnableReasoningForSurface: vi.fn(() => false),
-  resolveModelForSurface: vi.fn(() => 'test-model'),
 }));
 
 vi.mock('@/features/crystalTrial', () => ({

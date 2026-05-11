@@ -1,8 +1,7 @@
 /**
  * Server-side OpenRouter client for the durable orchestrator Worker.
  *
- * Distinct from the browser-side `HttpChatCompletionsRepository` — the Worker
- * holds the API key and never exposes it. All durable pipeline adapters route
+ * The Worker holds the API key and never exposes it. All durable pipeline adapters route
  * through `callOpenRouterChat`, preserving one canonical strict `json_schema`
  * request shape while keeping per-pipeline typed seams at workflow call sites.
  *

@@ -152,49 +152,6 @@ describe('useStudyPanelLlmSurfaces', () => {
     unmount();
   });
 
-  it('clears and restarts explain request when explain reasoning toggle changes while explain is open', () => {
-    const p = makeLlmProps();
-    const { getApi, rerender, unmount } = renderHarness(p);
-    act(() => {
-      getApi()?.handleExplainOpenChange(true);
-    });
-    p.clearExplain.mockClear();
-    p.requestExplain.mockClear();
-
-    rerender({
-      ...p,
-      explainReasoningEnabled: true,
-      formulaReasoningEnabled: false,
-    });
-
-    expect(p.cancelExplain).toHaveBeenCalledTimes(1);
-    expect(p.clearExplain).toHaveBeenCalledTimes(1);
-    expect(p.requestExplain).toHaveBeenCalledTimes(1);
-    unmount();
-  });
-
-  it('clears and restarts formula request when formula reasoning toggle changes while formula is open', () => {
-    const p = makeLlmProps();
-    const anchor = document.createElement('span');
-    const { getApi, rerender, unmount } = renderHarness(p);
-    act(() => {
-      getApi()?.openFormulaExplain('x^2', 'question', anchor);
-    });
-    p.clearFormula.mockClear();
-    p.requestFormula.mockClear();
-
-    rerender({
-      ...p,
-      explainReasoningEnabled: false,
-      formulaReasoningEnabled: true,
-    });
-
-    expect(p.cancelFormula).toHaveBeenCalledTimes(1);
-    expect(p.clearFormula).toHaveBeenCalledTimes(1);
-    expect(p.requestFormula).toHaveBeenCalledTimes(1);
-    expect(p.requestFormula).toHaveBeenCalledWith('x^2', 'question');
-    unmount();
-  });
 
   it('dismiss helpers close surfaces', () => {
     const p = makeLlmProps();
