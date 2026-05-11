@@ -1,4 +1,5 @@
 import {
+  SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE,
   SEMANTIC_TOPIC_ICON_NAMES_ALLOWLIST,
   type MiniGamePipelineKind,
 } from '../contracts/generationContracts';
@@ -60,6 +61,30 @@ function requireStringArray(value: unknown, label: string): string[] {
     throw new Error(`${label} must be an array of non-empty strings for backend prompt construction`);
   }
   return [...value] as string[];
+}
+
+function formatStudyCardSemanticRules(topicId: string, difficulty: number, options: { includeMinimum: boolean }): string {
+  return [
+    'Study-card semantic requirements:',
+    ...(options.includeMinimum ? [`- Generate at least ${SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE} deck-compatible cards.`] : []),
+    '- Allowed card.type values: FLASHCARD and MULTIPLE_CHOICE only.',
+    '- Do not generate CLOZE cards; the current deck read model does not materialize CLOZE.',
+    '- Every card object must include id, topicId, type, difficulty, and content.',
+    '- Every card.topicId must equal the snapshot topic id.',
+    `- Every card.difficulty must equal ${difficulty}.`,
+    '- FLASHCARD content must contain non-empty string fields front and back.',
+    '- MULTIPLE_CHOICE content must contain question, options, explanation, and correctAnswer or correctAnswers.',
+    '- MULTIPLE_CHOICE question and explanation must be non-empty strings.',
+    '- MULTIPLE_CHOICE options must be an array of non-empty strings.',
+    '- MULTIPLE_CHOICE correctAnswer must be one string copied exactly from options, or correctAnswers must be a non-empty array of strings copied exactly from options.',
+    '- Do not use alternate content keys such as prompt, answer, term, definition, choices, correctOption, or rationale.',
+    '',
+    'Valid FLASHCARD shape:',
+    `{"id":"${topicId}-card-001","topicId":"${topicId}","type":"FLASHCARD","difficulty":${difficulty},"content":{"front":"<question or term>","back":"<answer or explanation>"}}`,
+    '',
+    'Valid MULTIPLE_CHOICE shape:',
+    `{"id":"${topicId}-card-002","topicId":"${topicId}","type":"MULTIPLE_CHOICE","difficulty":${difficulty},"content":{"question":"<question>","options":["<option A>","<option B>","<option C>"],"correctAnswer":"<one option copied exactly>","explanation":"<why the answer is correct>"}}`,
+  ].join('\n');
 }
 
 function appendContentBrief(system: string, contentBrief: string | undefined): string {
@@ -183,13 +208,15 @@ export function buildTopicTheoryMessages(snapshot: Record<string, unknown>): Pro
 
 export function buildTopicStudyCardsMessages(snapshot: Record<string, unknown>): PromptMessage[] {
   const syllabusQuestions = requireStringArray(snapshot.syllabus_questions, 'snapshot.syllabus_questions');
+  const topicId = requireString(snapshot.topic_id, 'snapshot.topic_id');
+  const targetDifficulty = requireInteger(snapshot.target_difficulty, 'snapshot.target_difficulty');
   const system = [
     'You are an Abyss Engine Topic Content prompt module.',
-    'Create study cards and return only JSON matching the topic-study-cards schema.',
+    `Create at least ${SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE} deck-compatible study cards and return only JSON matching the topic-study-cards schema.`,
     '',
     `Subject id: ${requireString(snapshot.subject_id, 'snapshot.subject_id')}`,
-    `Topic id: ${requireString(snapshot.topic_id, 'snapshot.topic_id')}`,
-    `Target difficulty: ${requireInteger(snapshot.target_difficulty, 'snapshot.target_difficulty')}`,
+    `Topic id: ${topicId}`,
+    `Target difficulty: ${targetDifficulty}`,
     `Grounding source count: ${requireInteger(snapshot.grounding_source_count, 'snapshot.grounding_source_count')}`,
     `Has authoritative primary source: ${formatBoolean(snapshot.has_authoritative_primary_source, 'snapshot.has_authoritative_primary_source')}`,
     '',
@@ -199,7 +226,7 @@ export function buildTopicStudyCardsMessages(snapshot: Record<string, unknown>):
     'Theory excerpt:',
     requireString(snapshot.theory_excerpt, 'snapshot.theory_excerpt'),
     '',
-    'Create FLASHCARD, CLOZE, and MULTIPLE_CHOICE cards only. Every card topicId must equal the snapshot topic id.',
+    formatStudyCardSemanticRules(topicId, targetDifficulty, { includeMinimum: true }),
   ].join('\n');
 
   return [
@@ -246,14 +273,16 @@ export function buildTopicExpansionMessages(snapshot: Record<string, unknown>): 
   const syllabusQuestions = requireStringArray(snapshot.syllabus_questions, 'snapshot.syllabus_questions');
   const existingConceptStems = requireStringArray(snapshot.existing_concept_stems, 'snapshot.existing_concept_stems');
   const existingCardIds = requireStringArray(snapshot.existing_card_ids, 'snapshot.existing_card_ids');
+  const topicId = requireString(snapshot.topic_id, 'snapshot.topic_id');
+  const difficulty = requireInteger(snapshot.difficulty, 'snapshot.difficulty');
   const system = [
     'You are an Abyss Engine Topic Expansion prompt module.',
-    'Create additional study cards for the next Crystal Level and return only JSON matching the topic-expansion-cards schema.',
+    'Create additional deck-compatible study cards for the next Crystal Level and return only JSON matching the topic-expansion-cards schema.',
     '',
     `Subject id: ${requireString(snapshot.subject_id, 'snapshot.subject_id')}`,
-    `Topic id: ${requireString(snapshot.topic_id, 'snapshot.topic_id')}`,
+    `Topic id: ${topicId}`,
     `Next Crystal Level: ${requireInteger(snapshot.next_level, 'snapshot.next_level')}`,
-    `Difficulty: ${requireInteger(snapshot.difficulty, 'snapshot.difficulty')}`,
+    `Difficulty: ${difficulty}`,
     `Grounding source count: ${requireInteger(snapshot.grounding_source_count, 'snapshot.grounding_source_count')}`,
     '',
     'Syllabus questions:',
@@ -267,6 +296,8 @@ export function buildTopicExpansionMessages(snapshot: Record<string, unknown>): 
     '',
     'Theory excerpt:',
     requireString(snapshot.theory_excerpt, 'snapshot.theory_excerpt'),
+    '',
+    formatStudyCardSemanticRules(topicId, difficulty, { includeMinimum: false }),
   ].join('\n');
 
   return [

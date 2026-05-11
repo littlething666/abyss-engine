@@ -12,6 +12,7 @@ import {
   buildTopicStudyCardsMessages,
   buildTopicTheoryMessages,
 } from './generationPrompts';
+import { SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE } from '../contracts/generationContracts';
 
 const base = {
   snapshot_version: 1,
@@ -111,6 +112,32 @@ describe('backend generation prompt modules', () => {
     expect(miniGame[0].content).toContain('Expected gameType: SEQUENCE_BUILD');
   });
 
+  it('documents topic study-card semantic count, type, and content-shape requirements', () => {
+    const messages = buildTopicStudyCardsMessages({
+      ...base,
+      pipeline_kind: 'topic-study-cards',
+      subject_id: 'math',
+      topic_id: 'vectors',
+      theory_excerpt: 'A vector has magnitude and direction.',
+      syllabus_questions: ['What is a vector?'],
+      target_difficulty: 2,
+      grounding_source_count: 0,
+      has_authoritative_primary_source: false,
+    });
+
+    const content = messages[0].content;
+    expect(content).toContain(`at least ${SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE} deck-compatible`);
+    expect(content).toContain('Allowed card.type values: FLASHCARD and MULTIPLE_CHOICE only.');
+    expect(content).toContain('Do not generate CLOZE cards');
+    expect(content).toContain('Every card.difficulty must equal 2.');
+    expect(content).toContain('FLASHCARD content must contain non-empty string fields front and back.');
+    expect(content).toContain('MULTIPLE_CHOICE content must contain question, options, explanation, and correctAnswer or correctAnswers.');
+    expect(content).toContain('Do not use alternate content keys such as prompt, answer, term, definition, choices, correctOption, or rationale.');
+    expect(content).toContain('"content":{"front"');
+    expect(content).toContain('"difficulty":2');
+    expect(content).not.toContain('Create FLASHCARD, CLOZE, and MULTIPLE_CHOICE cards only');
+  });
+
   it('builds Topic Expansion and Crystal Trial messages without frontend model policy fields', () => {
     const expansion = buildTopicExpansionMessages({
       ...base,
@@ -139,6 +166,9 @@ describe('backend generation prompt modules', () => {
 
     expect(expansion[0].content).toContain('Existing card ids');
     expect(expansion[0].content).toContain('vector basics');
+    expect(expansion[0].content).toContain('FLASHCARD content must contain non-empty string fields front and back.');
+    expect(expansion[0].content).toContain('MULTIPLE_CHOICE content must contain question, options, explanation, and correctAnswer or correctAnswers.');
+    expect(expansion[0].content).not.toContain(`at least ${SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE} deck-compatible`);
     expect(trial[0].content).toContain('sha256:pool');
     expect(trial[0].content).toContain('Use engineering scenarios.');
   });
