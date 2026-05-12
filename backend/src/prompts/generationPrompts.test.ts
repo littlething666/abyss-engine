@@ -167,6 +167,43 @@ describe('backend generation prompt modules', () => {
     expect(theory[0].content).toContain('Prefer applied examples.');
     expect(cards[0].content).toContain('A vector has magnitude and direction.');
     expect(miniGame[0].content).toContain('Expected gameType: SEQUENCE_BUILD');
+    expect(miniGame[0].content).toContain('Grounding source selection: legacy');
+  });
+
+  it('includes compiled mini-game specs when broad mini-game prompts are plan-gated', () => {
+    const miniGame = buildTopicMiniGameMessages({
+      ...base,
+      pipeline_kind: 'topic-mini-game-match-pairs',
+      subject_id: 'math',
+      topic_id: 'vectors',
+      theory_excerpt: '[span-a | theory] Pair vector notation with meaning.',
+      syllabus_questions: ['Which notation maps to which vector idea?'],
+      target_difficulty: 1,
+      grounding_source_count: 1,
+      grounding_source_selection: 'compiled-mini-game-specs',
+      has_authoritative_primary_source: false,
+      compiled_mini_game_specs: [
+        {
+          mini_game_spec_id: 'mini_game_spec_backend_owned',
+          concept_id: 'concept_backend_owned',
+          concept_key: 'vector-notation',
+          mini_game_key: 'notation-pairs',
+          game_type: 'MATCH_PAIRS',
+          difficulty: 3,
+          prompt: 'Match vector notation to its geometric meaning.',
+          source_span_ids: ['span-a'],
+          learning_objective: 'Interpret vector notation.',
+        },
+      ],
+    });
+
+    const content = miniGame[0].content;
+    expect(content).toContain('Compiled mini-game specs selected by the backend card plan:');
+    expect(content).toContain('notation-pairs | mini_game_spec_backend_owned');
+    expect(content).toContain('Difficulty: 3');
+    expect(content).toContain('Match vector notation to its geometric meaning.');
+    expect(content).toContain('Generate cards only for the compiled mini-game specs above.');
+    expect(content).toContain('Grounding source selection: compiled-mini-game-specs');
   });
 
   it('documents topic study-card semantic count, type, and content-shape requirements', () => {

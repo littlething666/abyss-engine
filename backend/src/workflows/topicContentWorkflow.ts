@@ -1,8 +1,8 @@
 /**
  * Topic Content Workflow — Phase 2 PR-2D / Phase 3.6.
  *
- * Three-stage durable pipeline mirroring `runTopicGenerationPipeline.ts`:
- * theory → study-cards → mini-games (×3 in parallel).
+ * Durable topic-content pipeline:
+ * theory → planning checkpoints → study-cards → plan-gated mini-games.
  *
  * Phase 3.6: Typed event
  * builders and transport statuses throughout.
@@ -96,12 +96,21 @@ import {
   isTopicCardPlanCheckpointReusable,
   isTopicConceptPlanCheckpointReusable,
 } from './topicPlanningCheckpointReuse';
+import {
+  compiledMiniGameSpecsForType,
+  miniGameSpecsForPrompt,
+  resolvePlannedTopicMiniGameStages,
+  sourceSpanIdsForMiniGameType,
+  TOPIC_MINI_GAME_TYPES,
+  type TopicMiniGameType,
+  type TopicMiniGameStage,
+} from './topicMiniGamePlanStages';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const MINI_GAME_TYPES = ['CATEGORY_SORT', 'SEQUENCE_BUILD', 'MATCH_PAIRS'] as const;
-type MiniGameType = (typeof MINI_GAME_TYPES)[number];
+const MINI_GAME_TYPES = TOPIC_MINI_GAME_TYPES;
+type MiniGameType = TopicMiniGameType;
 
 const MINI_GAME_ARTIFACT_KINDS: Record<MiniGameType, ArtifactKind> = {
   CATEGORY_SORT: 'topic-mini-game-category-sort',
@@ -762,11 +771,7 @@ async function buildOrLoadTopicPlanningState(input: {
   return { sourceSpans, concepts, cardPlan, conceptCheckpoint, cardCheckpoint };
 }
 
-function sourceSpanIdsForCardPlan(cardPlan: CompiledTopicCardPlan, gameType?: MiniGameType): string[] {
-  const ids = gameType === undefined
-    ? cardPlan.cardSpecs.flatMap((spec) => spec.sourceSpanIds)
-    : cardPlan.miniGameSpecs.filter((spec) => spec.gameType === gameType).flatMap((spec) => spec.sourceSpanIds);
-  if (ids.length > 0) return stableStringList(ids);
+function sourceSpanIdsForCardPlan(cardPlan: CompiledTopicCardPlan): string[] {
   return stableStringList([
     ...cardPlan.cardSpecs.flatMap((spec) => spec.sourceSpanIds),
     ...cardPlan.miniGameSpecs.flatMap((spec) => spec.sourceSpanIds),
@@ -1050,14 +1055,17 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         studyCardsContentHash = await loadStageArtifactContentHash(repos, studyCardsCheckpointArtifactId, 'study-cards');
       }
 
-      // ---- 4. MINI-GAMES (three in parallel) ----
-      const miniStages = wantedStages.filter((s) => s.startsWith('mini-games:'));
+      // ---- 4. MINI-GAMES (plan-gated legacy broad artifacts) ----
+      const miniStages = resolvePlannedTopicMiniGameStages({
+        wantedStages,
+        cardPlan: planningState?.cardPlan ?? null,
+      });
       if (miniStages.length > 0) {
         await checkCancel('before-mini-games');
 
         await Promise.all(
           miniStages.map(async (rawMiniStage) => {
-            const miniStage = rawMiniStage as `mini-games:${MiniGameType}`;
+            const miniStage = rawMiniStage as TopicMiniGameStage;
             const gameType = miniStage.replace('mini-games:', '') as MiniGameType;
             const kind = MINI_GAME_ARTIFACT_KINDS[gameType];
             const schemaVersion = MINI_GAME_SCHEMA_VERSIONS[gameType];
@@ -1079,15 +1087,25 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
               step, repos, runId, deviceId, miniStage, kind,
               snapshot, miniGameInputHash, schemaVersion,
               async (generationPolicy) => {
+                const plannedMiniGameSpecs = planningState
+                  ? compiledMiniGameSpecsForType(planningState.cardPlan, gameType)
+                  : [];
                 const promptSnapshot = await buildTopicCardPromptSnapshot(repos, {
                   ...snapshot,
                   pipeline_kind: kind,
-                }, theoryArtifactId, planningState ? sourceSpanIdsForCardPlan(planningState.cardPlan, gameType) : undefined);
+                }, theoryArtifactId, planningState ? sourceSpanIdsForMiniGameType(planningState.cardPlan, gameType) : undefined);
+                const miniGamePromptSnapshot = plannedMiniGameSpecs.length > 0
+                  ? {
+                    ...promptSnapshot,
+                    compiled_mini_game_specs: miniGameSpecsForPrompt(plannedMiniGameSpecs),
+                    grounding_source_selection: 'compiled-mini-game-specs',
+                  }
+                  : promptSnapshot;
 
                 return callTopicContent(
                   {
                     modelId: generationPolicy.modelId,
-                    messages: buildTopicMiniGameMessages(promptSnapshot),
+                    messages: buildTopicMiniGameMessages(miniGamePromptSnapshot),
                     responseFormat,
                     providerHealingRequested: generationPolicy.providerHealingRequested,
                     temperature: generationPolicy.temperature,

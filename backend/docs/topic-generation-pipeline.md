@@ -141,6 +141,22 @@ Completed:
 
 This keeps the current broad-artifact workflow path operational while making retry/child-run planning reuse safer: stale checkpoint rows are ignored and overwritten by newly persisted checkpoints when the workflow regenerates the planning stage.
 
+### Plan-gated legacy mini-game fan-out
+
+This patch adds the next workflow slice: broad mini-game artifact generation is now gated by compiled mini-game specs from the card-plan checkpoint.
+
+Completed:
+
+- Added a workflow-local mini-game planning helper that maps compiled `miniGameSpecs` to legacy broad mini-game workflow stages.
+- `TopicContentWorkflow` no longer fans out to all three mini-game artifact kinds unconditionally when compiled planning state is available.
+- Full and mini-game runs now generate only the legacy broad mini-game stages whose `gameType` appears in the compiled card plan.
+- The workflow keeps the previous all-requested mini-game behavior when no compiled card-plan checkpoint is available, preserving compatibility for legacy/single-stage paths.
+- Mini-game prompt snapshots now carry the compiled mini-game specs selected for the legacy broad artifact, including backend-owned `miniGameSpecId`, concept linkage, difficulty, prompt, and `sourceSpanId[]` grounding.
+- Mini-game prompts instruct the model to generate cards only for those compiled specs and to match each spec's difficulty and grounding.
+- Added unit coverage for plan-gated mini-game stage resolution, deterministic spec ordering, source-span selection, and prompt text.
+
+This still does not create one durable `topic-mini-game-content` artifact per `miniGameSpecId`; the current artifact kinds remain the legacy broad mini-game contracts. The workflow now avoids generating unplanned mini-game types and passes explicit compiled-spec intent into those remaining broad jobs.
+
 ## Deterministic materialization policy
 
 For legacy broad artifacts, the backend currently derives:
@@ -166,8 +182,9 @@ For planning artifacts, backend-local snapshots, the compiler, checkpoint helper
 - `topic-card-plan-checkpoint` input hashes from subject/topic scope, compiled concept references, and the parsed card-plan payload.
 - broad content-stage input hashes from the compiled card-plan checkpoint content hash when full-pipeline stages consume planning state.
 - planning checkpoint reuse from current subject/topic scope plus current theory source spans or compiled concept references.
+- legacy broad mini-game stage selection from compiled `miniGameSpecs.gameType` values when planning state is available.
 
-This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow, adding a retry-safe persistence seam for compiled planning outputs, wiring that seam into the current broad-artifact workflow path, and preventing stale compiled planning checkpoints from being reused across changed theory or concept inputs.
+This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow, adding a retry-safe persistence seam for compiled planning outputs, wiring that seam into the current broad-artifact workflow path, preventing stale compiled planning checkpoints from being reused across changed theory or concept inputs, and gating legacy mini-game fan-out by compiled mini-game specs.
 
 ## Target pipeline still intended
 
@@ -192,10 +209,10 @@ backend materialization
    - `topic-card-content`
    - `topic-mini-game-content`
 2. Replace the broad `study-cards` artifact in `TopicContentWorkflow` with per-card-spec jobs driven by compiled `cardSpecId` values.
-3. Replace unconditional mini-game fan-out with mini-game specs emitted by the compiled card plan.
-4. Add bounded concurrency for per-spec content jobs once the workflow fans out beyond the current three mini-game stages.
+3. Promote plan-gated legacy mini-game jobs to one durable `topic-mini-game-content` job per compiled `miniGameSpecId`.
+4. Add bounded concurrency for per-spec content jobs once the workflow fans out beyond the current legacy broad mini-game stages.
 5. Retire lexical source-span fallback after per-spec content jobs are live and every downstream prompt receives explicit compiled-spec `sourceSpanId[]` grounding.
 6. Make topic readiness explicit, for example `theory`, `deck`, and `enrichment` readiness instead of a single `ready` flag.
 7. Remove temporary LLM ID compatibility from external generation contracts once the contract source is updated to allow ID-free content outputs.
 8. Add duplicate-repair retry jobs that regenerate only the failed card spec when `question_signature` conflicts.
-9. Add end-to-end Worker/runtime tests with a mocked LLM provider for the full planning path, including stale checkpoint regeneration in a real D1/R2-backed workflow environment.
+9. Add end-to-end Worker/runtime tests with a mocked LLM provider for the full planning path, including stale checkpoint regeneration and plan-gated mini-game fan-out in a real D1/R2-backed workflow environment.

@@ -112,6 +112,34 @@ function requireRecordArray(value: unknown, label: string): Record<string, unkno
   return value.map((item) => item as Record<string, unknown>);
 }
 
+function optionalRecordArray(value: unknown, label: string): Record<string, unknown>[] {
+  if (value === undefined) return [];
+  return requireRecordArray(value, label);
+}
+
+function formatCompiledMiniGameSpecRecords(specs: readonly Record<string, unknown>[]): string {
+  return specs.map((spec, index) => {
+    const specId = requireString(spec.mini_game_spec_id, `snapshot.compiled_mini_game_specs[${index}].mini_game_spec_id`);
+    const conceptKey = requireString(spec.concept_key, `snapshot.compiled_mini_game_specs[${index}].concept_key`);
+    const miniGameKey = requireString(spec.mini_game_key, `snapshot.compiled_mini_game_specs[${index}].mini_game_key`);
+    const gameType = requireString(spec.game_type, `snapshot.compiled_mini_game_specs[${index}].game_type`);
+    const difficulty = requireInteger(spec.difficulty, `snapshot.compiled_mini_game_specs[${index}].difficulty`);
+    const prompt = requireString(spec.prompt, `snapshot.compiled_mini_game_specs[${index}].prompt`);
+    const sourceSpanIds = requireStringArray(spec.source_span_ids, `snapshot.compiled_mini_game_specs[${index}].source_span_ids`);
+    const learningObjective = spec.learning_objective === undefined
+      ? ''
+      : `\n  Learning objective: ${requireString(spec.learning_objective, `snapshot.compiled_mini_game_specs[${index}].learning_objective`)}`;
+    return [
+      `- ${miniGameKey} | ${specId}`,
+      `  Concept: ${conceptKey}`,
+      `  Game type: ${gameType}`,
+      `  Difficulty: ${difficulty}`,
+      `  Source spans: ${sourceSpanIds.join(', ')}`,
+      `  Prompt: ${prompt}${learningObjective}`,
+    ].join('\n');
+  }).join('\n');
+}
+
 function requireIntegerArray(value: unknown, label: string): number[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error(`${label} must be a non-empty array of integers for backend prompt construction`);
@@ -364,6 +392,14 @@ export function buildTopicMiniGameMessages(snapshot: Record<string, unknown>): P
   }
 
   const syllabusQuestions = requireStringArray(snapshot.syllabus_questions, 'snapshot.syllabus_questions');
+  const compiledMiniGameSpecs = optionalRecordArray(snapshot.compiled_mini_game_specs, 'snapshot.compiled_mini_game_specs');
+  const compiledSpecBlock = compiledMiniGameSpecs.length === 0
+    ? []
+    : [
+      '',
+      'Compiled mini-game specs selected by the backend card plan:',
+      formatCompiledMiniGameSpecRecords(compiledMiniGameSpecs),
+    ];
   const system = [
     'You are an Abyss Engine Topic Content prompt module.',
     `Create playable ${expectedGameType} mini-game cards and return only JSON matching the ${pipelineKind} schema.`,
@@ -371,9 +407,11 @@ export function buildTopicMiniGameMessages(snapshot: Record<string, unknown>): P
     `Subject id: ${requireString(snapshot.subject_id, 'snapshot.subject_id')}`,
     `Topic id: ${requireString(snapshot.topic_id, 'snapshot.topic_id')}`,
     `Expected gameType: ${expectedGameType}`,
-    `Target difficulty: ${requireInteger(snapshot.target_difficulty, 'snapshot.target_difficulty')}`,
+    `Default target difficulty: ${requireInteger(snapshot.target_difficulty, 'snapshot.target_difficulty')}`,
     `Grounding source count: ${requireInteger(snapshot.grounding_source_count, 'snapshot.grounding_source_count')}`,
+    `Grounding source selection: ${optionalString(snapshot.grounding_source_selection, 'snapshot.grounding_source_selection') ?? 'legacy'}`,
     `Has authoritative primary source: ${formatBoolean(snapshot.has_authoritative_primary_source, 'snapshot.has_authoritative_primary_source')}`,
+    ...compiledSpecBlock,
     '',
     'Syllabus questions:',
     formatList(syllabusQuestions),
@@ -383,6 +421,9 @@ export function buildTopicMiniGameMessages(snapshot: Record<string, unknown>): P
     '',
     'Backend materialization deterministically assigns persisted card IDs; any model-generated id is temporary and will be ignored.',
     `Every card must have type MINI_GAME, content.gameType ${expectedGameType}, and topicId equal to the snapshot topic id.`,
+    compiledMiniGameSpecs.length > 0
+      ? 'Generate cards only for the compiled mini-game specs above. Each card difficulty must match its spec difficulty, and content must satisfy that spec prompt using only the selected source spans.'
+      : 'Every generated card difficulty should match the default target difficulty.',
   ].join('\n');
 
   return [
