@@ -16,3 +16,21 @@ export type {
   TopicDetailsContent,
   UpsertSubjectInput,
 } from './types';
+
+export {
+  compileTopicCardPlan,
+  compileTopicConceptPlan,
+  TOPIC_CARD_PLAN_ARTIFACT_KIND,
+  TOPIC_CONCEPT_PLAN_ARTIFACT_KIND,
+  topicCardPlanArtifactPayloadSchema,
+  topicConceptPlanArtifactPayloadSchema,
+  type CompiledTopicCardPlan,
+  type CompiledTopicCardSpec,
+  type CompiledTopicConceptSpec,
+  type CompiledTopicMiniGameSpec,
+  type TopicCardPlanArtifactPayload,
+  type TopicConceptPlanArtifactPayload,
+  type TopicPlanArtifactKind,
+  type TopicPlannedCardType,
+  type TopicPlannedMiniGameType,
+} from './topicPlanCompiler';
