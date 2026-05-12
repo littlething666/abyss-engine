@@ -42,10 +42,30 @@ export const subjectGraphEnvelopeSchema = z.object({
   }).passthrough()),
 }).passthrough();
 
+
+const topicTheorySourceSpanEnvelopeSchema = z.object({
+  spanId: z.string().trim().min(1),
+  subjectId: z.string().trim().min(1),
+  topicId: z.string().trim().min(1),
+  kind: z.enum(['core-concept', 'theory', 'key-takeaway', 'syllabus-question']),
+  index: z.number().int().min(0),
+  difficulty: z.number().int().min(1).optional(),
+  text: z.string().trim().min(1),
+}).strict();
+
 export const topicDetailsEnvelopeSchema = jsonObjectSchema.superRefine((value, ctx) => {
   for (const key of ['topicId', 'title'] as const) {
     if (value[key] !== undefined && (typeof value[key] !== 'string' || value[key].trim().length === 0)) {
       ctx.addIssue({ code: 'custom', path: [key], message: `${key} must be a non-empty string when present` });
+    }
+  }
+
+  if (value.sourceSpans !== undefined) {
+    const parsed = z.array(topicTheorySourceSpanEnvelopeSchema).safeParse(value.sourceSpans);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        ctx.addIssue({ code: 'custom', path: ['sourceSpans', ...issue.path], message: issue.message });
+      }
     }
   }
 });

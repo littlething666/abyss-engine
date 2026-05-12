@@ -11,23 +11,24 @@ App is unreleased, so you can introduce breaking changes with no data migration 
   - [x] Add a DB uniqueness guard for duplicate `question_signature` values per topic.
 - [x] Update LCS repository/envelope validation so persisted card JSON must match backend-owned row metadata.
 - [x] Document the current implementation slice and remaining topic-generation pipeline work.
+- [x] Add backend-owned topic theory source spans and use selected spans when constructing downstream card/mini-game prompt context.
 
 ## Remaining
 
-- [ ] Remove @src/prompts/** and transfer responsibility for all llm requests to @backend.
 - [ ] Introduce CLOZE and free form cards to the workflow.
 - [ ] Remove static pre-generated @public/data/subjects deck json stubs.
 - [ ] check if we can remove @src/features/subjectGeneration .
 - [ ] Finish reducing LLM context workload with deterministic typed stages.
   - [ ] Add `topic-concept-plan` artifact kind/schema/prompt.
   - [ ] Extract most important concepts and plan card specifications based on theory.
-  - [ ] Add backend theory source spans and pass only relevant spans to content jobs.
   - [ ] Add `topic-card-plan` artifact kind/schema/prompt.
   - [ ] Determine suitable card types and mini-game types per concept.
   - [ ] Generate per-card content from a single compiled card specification.
   - [ ] Generate mini-games only when the plan says a mini-game is suitable.
   - [ ] Ensure multiple cards for the same concept do not repeat questions.
-  - [ ] Replace broad mini-game fan-out with per-spec jobs and bounded concurrency.
+  - [ ] Replace broad mini-game fan-out with plan-selected per-spec jobs.
+  - [ ] Add bounded concurrency once per-spec content fan-out exceeds the current three broad mini-game stages.
+  - [ ] Improve source-span selection from lexical overlap to explicit plan-selected `sourceSpanId[]`.
   - [ ] Add duplicate-repair retry jobs for failed card specs.
 - [ ] Remove temporary LLM ID compatibility from generation contracts once ID-free content schemas exist.
 - [ ] Replace single topic readiness with explicit theory/deck/enrichment readiness state.

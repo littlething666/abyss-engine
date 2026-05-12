@@ -58,6 +58,12 @@ import type { Env } from '../env';
 import type { ArtifactKind } from '../contracts/generationContracts';
 import { createLogger } from '../observability/logger';
 import { writeRunDebugBundle } from '../observability/debugBundle';
+import {
+  buildTopicTheorySourceSpans,
+  formatTheorySourceSpansForPrompt,
+  selectRelevantTheorySourceSpans,
+  topicTheorySourceSpansAsJson,
+} from '../learningContent/theorySourceSpans';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -410,16 +416,23 @@ async function buildTopicCardPromptSnapshot(
   }
 
   const payload = requireRecord(await repos.artifacts.getStorage(artifact.storage_key), `topic-content theory artifact ${theoryArtifactId}`);
+  const subjectId = requireString(snapshot.subject_id, 'snapshot.subject_id');
+  const topicId = requireString(snapshot.topic_id, 'snapshot.topic_id');
   const questionsByDifficulty = requireRecord(payload.coreQuestionsByDifficulty, 'topic-content theory artifact.coreQuestionsByDifficulty');
   const targetDifficulty = typeof snapshot.target_difficulty === 'number' ? snapshot.target_difficulty : 1;
   const syllabusQuestions = requireStringArray(questionsByDifficulty[String(targetDifficulty)], `topic-content theory artifact.coreQuestionsByDifficulty.${targetDifficulty}`);
+  const sourceSpans = await buildTopicTheorySourceSpans({ subjectId, topicId, payload });
+  const selectedSourceSpans = selectRelevantTheorySourceSpans({ spans: sourceSpans, queries: syllabusQuestions });
 
   return {
     ...snapshot,
-    theory_excerpt: requireString(payload.theory, 'topic-content theory artifact.theory'),
+    theory_excerpt: selectedSourceSpans.length > 0
+      ? formatTheorySourceSpansForPrompt(selectedSourceSpans)
+      : requireString(payload.theory, 'topic-content theory artifact.theory'),
+    theory_source_spans: topicTheorySourceSpansAsJson(selectedSourceSpans),
     syllabus_questions: syllabusQuestions,
     target_difficulty: targetDifficulty,
-    grounding_source_count: 0,
+    grounding_source_count: selectedSourceSpans.length,
     has_authoritative_primary_source: false,
   };
 }

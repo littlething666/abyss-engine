@@ -43,8 +43,26 @@ function topicDetails(): TopicDetailsContent {
       subjectId: 'math',
       title: 'Limits',
       coreConcept: 'Approach behavior',
-      theory: 'Limits describe the value a function approaches.',
+      theory: 'Limits describe the value a function approaches. One-sided limits compare left and right behavior.',
       keyTakeaways: ['Limits capture approach behavior.'],
+      sourceSpans: [
+        {
+          spanId: 'theory_span_core',
+          subjectId: 'math',
+          topicId: 'limits',
+          kind: 'core-concept',
+          index: 0,
+          text: 'Approach behavior',
+        },
+        {
+          spanId: 'theory_span_one_sided',
+          subjectId: 'math',
+          topicId: 'limits',
+          kind: 'theory',
+          index: 1,
+          text: 'One-sided limits compare left and right behavior.',
+        },
+      ],
       coreQuestionsByDifficulty: {
         1: ['What is a limit?'],
         2: ['How do one-sided limits compare?'],
@@ -184,6 +202,28 @@ describe('expandRunIntent', () => {
     })).rejects.toThrow('intent.strategyBrief is not accepted');
   });
 
+  it('expands topic content study-card intent with selected theory source spans', async () => {
+    const expanded = await expandRunIntent({
+      deviceId: DEVICE_ID,
+      kind: 'topic-content',
+      intent: { subjectId: 'math', topicId: 'limits', stage: 'study-cards' },
+      learningContent: repo(),
+      now: () => NOW,
+    });
+
+    expect(expanded.snapshot).toMatchObject({
+      pipeline_kind: 'topic-study-cards',
+      subject_id: 'math',
+      topic_id: 'limits',
+      syllabus_questions: ['What is a limit?'],
+      grounding_source_count: 3,
+      provider_healing_requested: true,
+    });
+    expect(expanded.snapshot.theory_excerpt).toContain('theory_span_core');
+    expect(expanded.snapshot.theory_excerpt).toContain('theory_span_one_sided');
+  });
+
+
   it('expands topic expansion intent from Learning Content rows and backend policy', async () => {
     const expanded = await expandRunIntent({
       deviceId: DEVICE_ID,
@@ -205,6 +245,7 @@ describe('expandRunIntent', () => {
       existing_card_ids: ['card-1'],
       provider_healing_requested: true,
     });
+    expect(expanded.snapshot.theory_excerpt).toContain('theory_span_one_sided');
     expect(expanded.snapshot.model_id).toBe(DEFAULT_GENERATION_POLICY.jobs['topic-expansion-cards'].modelId);
     expect(expanded.snapshot.generation_policy_hash).toMatch(/^gpol_[0-9a-f]{64}$/);
   });

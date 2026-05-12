@@ -92,7 +92,15 @@ describe('applyArtifactToLearningContent', () => {
       contentHash: 'cnt_theory',
       status: 'unavailable',
       updatedByRunId: 'run-1',
-      details: expect.objectContaining({ topicId: 'limits', title: 'Limits', coreConcept: 'Approach behavior' }),
+      details: expect.objectContaining({
+        topicId: 'limits',
+        title: 'Limits',
+        coreConcept: 'Approach behavior',
+        sourceSpans: expect.arrayContaining([
+          expect.objectContaining({ kind: 'core-concept', spanId: expect.stringMatching(/^theory_span_[0-9a-f]{64}$/) }),
+          expect.objectContaining({ kind: 'theory', spanId: expect.stringMatching(/^theory_span_[0-9a-f]{64}$/) }),
+        ]),
+      }),
     }));
   });
 

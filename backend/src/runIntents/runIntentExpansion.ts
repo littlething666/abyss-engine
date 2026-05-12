@@ -29,6 +29,11 @@ import {
 } from './subjectGraphStrategy';
 import type { ILearningContentRepo } from '../learningContent/learningContentRepo';
 import type { JsonObject, LearningContentSubject, TopicCardContent, TopicDetailsContent } from '../learningContent/types';
+import {
+  formatTheorySourceSpansForPrompt,
+  selectRelevantTheorySourceSpans,
+  type TopicTheorySourceSpan,
+} from '../learningContent/theorySourceSpans';
 import type { PipelineKind } from '../repositories/types';
 
 const PROMPT_TEMPLATE_VERSION = 'v1';
@@ -274,6 +279,26 @@ function groundingSources(details: JsonObject, label: string): Record<string, un
   return value as Record<string, unknown>[];
 }
 
+function isTheorySourceSpan(value: unknown): value is TopicTheorySourceSpan {
+  if (!isRecord(value)) return false;
+  return typeof value.spanId === 'string'
+    && typeof value.subjectId === 'string'
+    && typeof value.topicId === 'string'
+    && typeof value.kind === 'string'
+    && typeof value.index === 'number'
+    && typeof value.text === 'string'
+    && (value.difficulty === undefined || typeof value.difficulty === 'number');
+}
+
+function theorySourceSpans(details: JsonObject, label: string): TopicTheorySourceSpan[] {
+  const value = details.sourceSpans;
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((item) => !isTheorySourceSpan(item))) {
+    throw new Error(`${label}.sourceSpans must be an array of topic theory source span objects when present`);
+  }
+  return value as TopicTheorySourceSpan[];
+}
+
 function hasAuthoritativePrimarySource(details: JsonObject, label: string): boolean {
   return groundingSources(details, label).some((source) => source.trustLevel === 'high');
 }
@@ -286,7 +311,15 @@ function questionsForDifficulty(details: JsonObject, difficulty: number, label: 
   return questions;
 }
 
-function theoryExcerpt(details: JsonObject, label: string): string {
+function selectedTheorySourceSpans(details: JsonObject, label: string, syllabusQuestions: readonly string[]): TopicTheorySourceSpan[] {
+  return selectRelevantTheorySourceSpans({
+    spans: theorySourceSpans(details, label),
+    queries: syllabusQuestions,
+  });
+}
+
+function theoryExcerpt(details: JsonObject, label: string, selectedSpans: readonly TopicTheorySourceSpan[] = []): string {
+  if (selectedSpans.length > 0) return formatTheorySourceSpansForPrompt(selectedSpans);
   const theory = requireString(details.theory, `${label}.theory`).trim();
   return theory.length > 12000 ? `${theory.slice(0, 12000)}\n\n…` : theory;
 }
@@ -401,11 +434,14 @@ async function expandTopicContentIntent(deps: ExpandRunIntentDeps): Promise<Inte
   }
 
   const detailsRow = await requireTopicDetails(learningContent, deviceId, subjectId, topicId);
-  const details = requireJsonObject(detailsRow.details, `topic details ${subjectId}/${topicId}`);
+  const detailsLabel = `topic details ${subjectId}/${topicId}`;
+  const details = requireJsonObject(detailsRow.details, detailsLabel);
   const targetDifficulty = 1;
-  const sources = groundingSources(details, `topic details ${subjectId}/${topicId}`);
+  const sources = groundingSources(details, detailsLabel);
 
   if (stage === 'study-cards') {
+    const syllabusQuestions = questionsForDifficulty(details, targetDifficulty, detailsLabel);
+    const selectedSpans = selectedTheorySourceSpans(details, detailsLabel, syllabusQuestions);
     const snapshot = await withBackendPolicy(deviceId, 'topic-study-cards', (modelId) => ({
       ...buildTopicStudyCardsSnapshot({
         subjectId,
@@ -414,11 +450,11 @@ async function expandTopicContentIntent(deps: ExpandRunIntentDeps): Promise<Inte
         promptTemplateVersion: PROMPT_TEMPLATE_VERSION,
         modelId,
         capturedAt,
-        theoryExcerpt: theoryExcerpt(details, `topic details ${subjectId}/${topicId}`),
-        syllabusQuestions: questionsForDifficulty(details, targetDifficulty, `topic details ${subjectId}/${topicId}`),
+        theoryExcerpt: theoryExcerpt(details, detailsLabel, selectedSpans),
+        syllabusQuestions,
         targetDifficulty,
-        groundingSourceCount: sources.length,
-        hasAuthoritativePrimarySource: hasAuthoritativePrimarySource(details, `topic details ${subjectId}/${topicId}`),
+        groundingSourceCount: selectedSpans.length + sources.length,
+        hasAuthoritativePrimarySource: hasAuthoritativePrimarySource(details, detailsLabel),
       }),
       stage,
     }));
@@ -427,6 +463,8 @@ async function expandTopicContentIntent(deps: ExpandRunIntentDeps): Promise<Inte
 
   const miniGameType = requireMiniGameType(intent.miniGameType, 'intent.miniGameType');
   const jobKind = MINI_GAME_PIPELINE_BY_TYPE[miniGameType];
+  const syllabusQuestions = questionsForDifficulty(details, targetDifficulty, detailsLabel);
+  const selectedSpans = selectedTheorySourceSpans(details, detailsLabel, syllabusQuestions);
   const snapshot = await withBackendPolicy(deviceId, jobKind, (modelId) => ({
     ...buildTopicMiniGameCardsSnapshot({
       pipelineKind: jobKind,
@@ -436,11 +474,11 @@ async function expandTopicContentIntent(deps: ExpandRunIntentDeps): Promise<Inte
       promptTemplateVersion: PROMPT_TEMPLATE_VERSION,
       modelId,
       capturedAt,
-      theoryExcerpt: theoryExcerpt(details, `topic details ${subjectId}/${topicId}`),
-      syllabusQuestions: questionsForDifficulty(details, targetDifficulty, `topic details ${subjectId}/${topicId}`),
+      theoryExcerpt: theoryExcerpt(details, detailsLabel, selectedSpans),
+      syllabusQuestions,
       targetDifficulty,
-      groundingSourceCount: sources.length,
-      hasAuthoritativePrimarySource: hasAuthoritativePrimarySource(details, `topic details ${subjectId}/${topicId}`),
+      groundingSourceCount: selectedSpans.length + sources.length,
+      hasAuthoritativePrimarySource: hasAuthoritativePrimarySource(details, detailsLabel),
     }),
     stage,
   }));
@@ -460,8 +498,11 @@ async function expandTopicExpansionIntent(deps: ExpandRunIntentDeps): Promise<In
     requireTopicDetails(learningContent, deviceId, subjectId, topicId),
     learningContent.getTopicCards(deviceId, subjectId, topicId),
   ]);
-  const details = requireJsonObject(detailsRow.details, `topic details ${subjectId}/${topicId}`);
+  const detailsLabel = `topic details ${subjectId}/${topicId}`;
+  const details = requireJsonObject(detailsRow.details, detailsLabel);
   const cards = cardRecords(cardRows);
+  const syllabusQuestions = questionsForDifficulty(details, difficulty, detailsLabel);
+  const selectedSpans = selectedTheorySourceSpans(details, detailsLabel, syllabusQuestions);
   const snapshot = await withBackendPolicy(deviceId, 'topic-expansion-cards', (modelId) => buildTopicExpansionSnapshot({
     subjectId,
     topicId,
@@ -471,11 +512,11 @@ async function expandTopicExpansionIntent(deps: ExpandRunIntentDeps): Promise<In
     capturedAt: now().toISOString(),
     nextLevel,
     difficulty,
-    theoryExcerpt: theoryExcerpt(details, `topic details ${subjectId}/${topicId}`),
-    syllabusQuestions: questionsForDifficulty(details, difficulty, `topic details ${subjectId}/${topicId}`),
+    theoryExcerpt: theoryExcerpt(details, detailsLabel, selectedSpans),
+    syllabusQuestions,
     existingCardIds: cards.map((card) => requireString(card.id, 'topic card.id')),
     existingConceptStems: cards.map((card, index) => conceptTarget(card, `topicCards[${index}].card`)).filter((target) => target.length > 0),
-    groundingSourceCount: groundingSources(details, `topic details ${subjectId}/${topicId}`).length,
+    groundingSourceCount: selectedSpans.length + groundingSources(details, detailsLabel).length,
   }));
   return { kind: deps.kind, snapshot, subjectId, topicId };
 }

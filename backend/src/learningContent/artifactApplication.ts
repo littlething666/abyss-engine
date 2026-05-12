@@ -3,6 +3,7 @@ import { contentHash as computeContentHash, type ArtifactKind } from '../contrac
 import type { ILearningContentRepo } from './learningContentRepo';
 import type { JsonObject, PutTopicCardInput, TopicDetailsContent } from './types';
 import { buildTopicCardMaterializationIds } from './deterministicIds';
+import { buildTopicTheorySourceSpans, topicTheorySourceSpansAsJson } from './theorySourceSpans';
 
 const TOPIC_CARD_ARTIFACT_KINDS = new Set<ArtifactKind>([
   'topic-study-cards',
@@ -83,15 +84,19 @@ function strategyBriefFromSnapshot(snapshot: Record<string, unknown>): Record<st
   return requireRecord(snapshot.strategy_brief, 'snapshot.strategy_brief');
 }
 
-function topicDetailsFromTheory(
+async function topicDetailsFromTheory(
   snapshot: Record<string, unknown>,
   payload: Record<string, unknown>,
   existing: TopicDetailsContent | null,
-): JsonObject {
+): Promise<JsonObject> {
+  const subjectId = snapshotSubjectId(snapshot);
+  const topicId = snapshotTopicId(snapshot);
+  const sourceSpans = await buildTopicTheorySourceSpans({ subjectId, topicId, payload });
+
   return {
     ...(existing?.details ?? {}),
-    topicId: snapshotTopicId(snapshot),
-    subjectId: snapshotSubjectId(snapshot),
+    topicId,
+    subjectId,
     title: optionalString((existing?.details as Record<string, unknown> | undefined)?.title)
       ?? optionalString(snapshot.topic_title)
       ?? snapshotTopicId(snapshot),
@@ -99,6 +104,7 @@ function topicDetailsFromTheory(
     theory: requireString(payload.theory, 'topic-theory.theory'),
     keyTakeaways: payload.keyTakeaways,
     coreQuestionsByDifficulty: payload.coreQuestionsByDifficulty,
+    sourceSpans: topicTheorySourceSpansAsJson(sourceSpans),
   } as JsonObject;
 }
 
@@ -229,7 +235,7 @@ async function applyTopicTheory(input: ApplyArtifactToLearningContentInput): Pro
   const subjectId = snapshotSubjectId(input.snapshot);
   const topicId = snapshotTopicId(input.snapshot);
   const existing = await input.learningContent.getTopicDetails(input.deviceId, subjectId, topicId);
-  const details = topicDetailsFromTheory(input.snapshot, input.payload, existing);
+  const details = await topicDetailsFromTheory(input.snapshot, input.payload, existing);
   await input.learningContent.putTopicDetails({
     deviceId: input.deviceId,
     subjectId,
