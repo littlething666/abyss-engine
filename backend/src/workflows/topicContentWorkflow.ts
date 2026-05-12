@@ -105,6 +105,10 @@ import {
   type TopicMiniGameType,
   type TopicMiniGameStage,
 } from './topicMiniGamePlanStages';
+import {
+  compiledStudyCardSpecsForPrompt,
+  sourceSpanIdsForStudyCardSpecs,
+} from './topicStudyCardPlanStages';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -768,14 +772,14 @@ async function buildOrLoadTopicPlanningState(input: {
     if (generated.jobId) await input.repos.stageCheckpoints.linkJob(input.runId, TOPIC_CARD_PLAN_CHECKPOINT_STAGE, generated.jobId).catch(() => undefined);
   }
 
-  return { sourceSpans, concepts, cardPlan, conceptCheckpoint, cardCheckpoint };
-}
+  if (!conceptCheckpoint) {
+    throw new WorkflowFail('state:unexpected-workflow-error', 'topic concept-plan checkpoint was not available after planning');
+  }
+  if (!cardCheckpoint) {
+    throw new WorkflowFail('state:unexpected-workflow-error', 'topic card-plan checkpoint was not available after planning');
+  }
 
-function sourceSpanIdsForCardPlan(cardPlan: CompiledTopicCardPlan): string[] {
-  return stableStringList([
-    ...cardPlan.cardSpecs.flatMap((spec) => spec.sourceSpanIds),
-    ...cardPlan.miniGameSpecs.flatMap((spec) => spec.sourceSpanIds),
-  ]);
+  return { sourceSpans, concepts, cardPlan, conceptCheckpoint, cardCheckpoint };
 }
 
 async function buildTopicCardPromptSnapshot(
@@ -994,7 +998,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
           theoryArtifactId,
         })
         : null;
-      const plannedCardSourceSpanIds = planningState ? sourceSpanIdsForCardPlan(planningState.cardPlan) : undefined;
+      const plannedCardSourceSpanIds = planningState ? sourceSpanIdsForStudyCardSpecs(planningState.cardPlan) : undefined;
 
       // ---- 3. STUDY CARDS ----
       if (wantedStages.includes('study-cards')) {
@@ -1019,11 +1023,21 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
           snapshot, studyCardsInputHash, cardsSchemaVersion,
           async (generationPolicy) => {
             const promptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId, plannedCardSourceSpanIds);
+            const plannedCardSpecs = planningState
+              ? compiledStudyCardSpecsForPrompt(planningState.cardPlan.cardSpecs)
+              : [];
+            const studyCardPromptSnapshot = plannedCardSpecs.length > 0
+              ? {
+                ...promptSnapshot,
+                compiled_study_card_specs: plannedCardSpecs,
+                grounding_source_selection: 'compiled-card-specs',
+              }
+              : promptSnapshot;
 
             return callTopicContent(
               {
                 modelId: generationPolicy.modelId,
-                messages: buildTopicStudyCardsMessages(promptSnapshot),
+                messages: buildTopicStudyCardsMessages(studyCardPromptSnapshot),
                 responseFormat: cardsResponseFormat,
                 providerHealingRequested: generationPolicy.providerHealingRequested,
                 temperature: generationPolicy.temperature,

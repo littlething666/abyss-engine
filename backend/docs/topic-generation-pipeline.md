@@ -157,6 +157,21 @@ Completed:
 
 This still does not create one durable `topic-mini-game-content` artifact per `miniGameSpecId`; the current artifact kinds remain the legacy broad mini-game contracts. The workflow now avoids generating unplanned mini-game types and passes explicit compiled-spec intent into those remaining broad jobs.
 
+### Plan-guided legacy study-card generation
+
+This patch adds a parallel compatibility slice for study cards: broad `topic-study-cards` generation is now guided by compiled `cardSpecs` from the card-plan checkpoint while the durable artifact kind remains unchanged.
+
+Completed:
+
+- Added a workflow-local study-card planning helper that maps compiled `cardSpecs` to prompt records and derives a deterministic card-only `sourceSpanId[]` allow-list.
+- `TopicContentWorkflow` now builds study-card prompt grounding from compiled card specs when planning state is available, instead of using the union of study-card and mini-game source spans.
+- Study-card prompt snapshots now carry compiled study-card specs selected by the backend card plan, including backend-owned `cardSpecId`, concept linkage, card type, difficulty, prompt, and `sourceSpanId[]` grounding.
+- Study-card prompts instruct the model to generate cards only for the compiled specs and to match each spec's card type, difficulty, and grounding.
+- The legacy fallback path is preserved when no compiled card-plan checkpoint is available.
+- Added unit coverage for deterministic study-card spec ordering, source-span selection, and prompt text containing the compiled-spec rules.
+
+This still does not create one durable `topic-card-content` artifact per `cardSpecId`, and current broad study-card materialization still derives legacy deterministic `card_spec_id` values from generated card content and position. The workflow now passes explicit compiled-spec intent into the broad study-card job so the later per-card fan-out slice can replace the broad artifact with narrower content jobs.
+
 ## Deterministic materialization policy
 
 For legacy broad artifacts, the backend currently derives:
@@ -182,9 +197,10 @@ For planning artifacts, backend-local snapshots, the compiler, checkpoint helper
 - `topic-card-plan-checkpoint` input hashes from subject/topic scope, compiled concept references, and the parsed card-plan payload.
 - broad content-stage input hashes from the compiled card-plan checkpoint content hash when full-pipeline stages consume planning state.
 - planning checkpoint reuse from current subject/topic scope plus current theory source spans or compiled concept references.
+- legacy broad study-card prompt grounding and instructions from compiled `cardSpecs` when planning state is available.
 - legacy broad mini-game stage selection from compiled `miniGameSpecs.gameType` values when planning state is available.
 
-This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow, adding a retry-safe persistence seam for compiled planning outputs, wiring that seam into the current broad-artifact workflow path, preventing stale compiled planning checkpoints from being reused across changed theory or concept inputs, and gating legacy mini-game fan-out by compiled mini-game specs.
+This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow, adding a retry-safe persistence seam for compiled planning outputs, wiring that seam into the current broad-artifact workflow path, preventing stale compiled planning checkpoints from being reused across changed theory or concept inputs, guiding legacy study-card generation by compiled card specs, and gating legacy mini-game fan-out by compiled mini-game specs.
 
 ## Target pipeline still intended
 
@@ -208,11 +224,12 @@ backend materialization
    - `topic-card-plan`
    - `topic-card-content`
    - `topic-mini-game-content`
-2. Replace the broad `study-cards` artifact in `TopicContentWorkflow` with per-card-spec jobs driven by compiled `cardSpecId` values.
+2. Replace the plan-guided broad `study-cards` artifact in `TopicContentWorkflow` with per-card-spec jobs driven by compiled `cardSpecId` values. The broad prompt now receives compiled specs, but materialization still uses legacy broad-artifact IDs.
 3. Promote plan-gated legacy mini-game jobs to one durable `topic-mini-game-content` job per compiled `miniGameSpecId`.
-4. Add bounded concurrency for per-spec content jobs once the workflow fans out beyond the current legacy broad mini-game stages.
-5. Retire lexical source-span fallback after per-spec content jobs are live and every downstream prompt receives explicit compiled-spec `sourceSpanId[]` grounding.
-6. Make topic readiness explicit, for example `theory`, `deck`, and `enrichment` readiness instead of a single `ready` flag.
-7. Remove temporary LLM ID compatibility from external generation contracts once the contract source is updated to allow ID-free content outputs.
-8. Add duplicate-repair retry jobs that regenerate only the failed card spec when `question_signature` conflicts.
-9. Add end-to-end Worker/runtime tests with a mocked LLM provider for the full planning path, including stale checkpoint regeneration and plan-gated mini-game fan-out in a real D1/R2-backed workflow environment.
+4. Bind per-spec generated content materialization to compiled `cardSpecId` / `miniGameSpecId` values once the durable per-spec artifact kinds exist.
+5. Add bounded concurrency for per-spec content jobs once the workflow fans out beyond the current legacy broad stages.
+6. Retire lexical source-span fallback after per-spec content jobs are live and every downstream prompt receives explicit compiled-spec `sourceSpanId[]` grounding.
+7. Make topic readiness explicit, for example `theory`, `deck`, and `enrichment` readiness instead of a single `ready` flag.
+8. Remove temporary LLM ID compatibility from external generation contracts once the contract source is updated to allow ID-free content outputs.
+9. Add duplicate-repair retry jobs that regenerate only the failed card spec when `question_signature` conflicts.
+10. Add end-to-end Worker/runtime tests with a mocked LLM provider for the full planning path, including stale checkpoint regeneration, plan-guided study-card generation, and plan-gated mini-game fan-out in a real D1/R2-backed workflow environment.

@@ -63,7 +63,7 @@ function requireStringArray(value: unknown, label: string): string[] {
   return [...value] as string[];
 }
 
-function formatStudyCardSemanticRules(topicId: string, difficulty: number, options: { includeMinimum: boolean }): string {
+function formatStudyCardSemanticRules(topicId: string, difficulty: number, options: { includeMinimum: boolean; difficultyRule?: string }): string {
   return [
     'Study-card semantic requirements:',
     ...(options.includeMinimum ? [`- Generate at least ${SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE} deck-compatible cards.`] : []),
@@ -72,7 +72,7 @@ function formatStudyCardSemanticRules(topicId: string, difficulty: number, optio
     '- Backend materialization deterministically assigns persisted card IDs; any model-generated id is temporary and will be ignored.',
     '- Every card object must include topicId, type, difficulty, and content.',
     '- Every card.topicId must equal the snapshot topic id.',
-    `- Every card.difficulty must equal ${difficulty}.`,
+    options.difficultyRule ?? `- Every card.difficulty must equal ${difficulty}.`,
     '- FLASHCARD content must contain non-empty string fields front and back.',
     '- MULTIPLE_CHOICE content must contain question, options, explanation, and correctAnswer or correctAnswers.',
     '- MULTIPLE_CHOICE question and explanation must be non-empty strings.',
@@ -133,6 +133,29 @@ function formatCompiledMiniGameSpecRecords(specs: readonly Record<string, unknow
       `- ${miniGameKey} | ${specId}`,
       `  Concept: ${conceptKey}`,
       `  Game type: ${gameType}`,
+      `  Difficulty: ${difficulty}`,
+      `  Source spans: ${sourceSpanIds.join(', ')}`,
+      `  Prompt: ${prompt}${learningObjective}`,
+    ].join('\n');
+  }).join('\n');
+}
+
+function formatCompiledStudyCardSpecRecords(specs: readonly Record<string, unknown>[]): string {
+  return specs.map((spec, index) => {
+    const specId = requireString(spec.card_spec_id, `snapshot.compiled_study_card_specs[${index}].card_spec_id`);
+    const conceptKey = requireString(spec.concept_key, `snapshot.compiled_study_card_specs[${index}].concept_key`);
+    const cardKey = requireString(spec.card_key, `snapshot.compiled_study_card_specs[${index}].card_key`);
+    const cardType = requireString(spec.card_type, `snapshot.compiled_study_card_specs[${index}].card_type`);
+    const difficulty = requireInteger(spec.difficulty, `snapshot.compiled_study_card_specs[${index}].difficulty`);
+    const prompt = requireString(spec.prompt, `snapshot.compiled_study_card_specs[${index}].prompt`);
+    const sourceSpanIds = requireStringArray(spec.source_span_ids, `snapshot.compiled_study_card_specs[${index}].source_span_ids`);
+    const learningObjective = spec.learning_objective === undefined
+      ? ''
+      : `\n  Learning objective: ${requireString(spec.learning_objective, `snapshot.compiled_study_card_specs[${index}].learning_objective`)}`;
+    return [
+      `- ${cardKey} | ${specId}`,
+      `  Concept: ${conceptKey}`,
+      `  Card type: ${cardType}`,
       `  Difficulty: ${difficulty}`,
       `  Source spans: ${sourceSpanIds.join(', ')}`,
       `  Prompt: ${prompt}${learningObjective}`,
@@ -359,15 +382,25 @@ export function buildTopicStudyCardsMessages(snapshot: Record<string, unknown>):
   const syllabusQuestions = requireStringArray(snapshot.syllabus_questions, 'snapshot.syllabus_questions');
   const topicId = requireString(snapshot.topic_id, 'snapshot.topic_id');
   const targetDifficulty = requireInteger(snapshot.target_difficulty, 'snapshot.target_difficulty');
+  const compiledStudyCardSpecs = optionalRecordArray(snapshot.compiled_study_card_specs, 'snapshot.compiled_study_card_specs');
+  const compiledSpecBlock = compiledStudyCardSpecs.length === 0
+    ? []
+    : [
+      '',
+      'Compiled study-card specs selected by the backend card plan:',
+      formatCompiledStudyCardSpecRecords(compiledStudyCardSpecs),
+    ];
   const system = [
     'You are an Abyss Engine Topic Content prompt module.',
     `Create at least ${SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE} deck-compatible study cards and return only JSON matching the topic-study-cards schema.`,
     '',
     `Subject id: ${requireString(snapshot.subject_id, 'snapshot.subject_id')}`,
     `Topic id: ${topicId}`,
-    `Target difficulty: ${targetDifficulty}`,
+    `Default target difficulty: ${targetDifficulty}`,
     `Grounding source count: ${requireInteger(snapshot.grounding_source_count, 'snapshot.grounding_source_count')}`,
+    `Grounding source selection: ${optionalString(snapshot.grounding_source_selection, 'snapshot.grounding_source_selection') ?? 'legacy'}`,
     `Has authoritative primary source: ${formatBoolean(snapshot.has_authoritative_primary_source, 'snapshot.has_authoritative_primary_source')}`,
+    ...compiledSpecBlock,
     '',
     'Syllabus questions:',
     formatList(syllabusQuestions),
@@ -375,7 +408,15 @@ export function buildTopicStudyCardsMessages(snapshot: Record<string, unknown>):
     'Selected theory source spans or excerpt:',
     requireString(snapshot.theory_excerpt, 'snapshot.theory_excerpt'),
     '',
-    formatStudyCardSemanticRules(topicId, targetDifficulty, { includeMinimum: true }),
+    formatStudyCardSemanticRules(topicId, targetDifficulty, {
+      includeMinimum: true,
+      difficultyRule: compiledStudyCardSpecs.length > 0
+        ? '- Every card.difficulty must match the difficulty of the compiled study-card spec it satisfies.'
+        : undefined,
+    }),
+    compiledStudyCardSpecs.length > 0
+      ? 'Generate study cards only for the compiled study-card specs above. Each card difficulty and card type must match its spec, and content must satisfy that spec prompt using only the selected source spans.'
+      : 'Every generated card difficulty should match the default target difficulty.',
   ].join('\n');
 
   return [

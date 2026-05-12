@@ -206,6 +206,44 @@ describe('backend generation prompt modules', () => {
     expect(content).toContain('Grounding source selection: compiled-mini-game-specs');
   });
 
+  it('includes compiled study-card specs when broad study-card prompts are plan-guided', () => {
+    const cards = buildTopicStudyCardsMessages({
+      ...base,
+      pipeline_kind: 'topic-study-cards',
+      subject_id: 'math',
+      topic_id: 'vectors',
+      theory_excerpt: '[span-a | theory] A vector has magnitude and direction.',
+      syllabus_questions: ['What is a vector?'],
+      target_difficulty: 1,
+      grounding_source_count: 1,
+      grounding_source_selection: 'compiled-card-specs',
+      has_authoritative_primary_source: false,
+      compiled_study_card_specs: [
+        {
+          card_spec_id: 'card_spec_backend_owned',
+          concept_id: 'concept_backend_owned',
+          concept_key: 'vector-basics',
+          card_key: 'vector-definition',
+          card_type: 'FLASHCARD',
+          difficulty: 2,
+          prompt: 'Ask for the definition of a vector.',
+          source_span_ids: ['span-a'],
+          learning_objective: 'Define vectors.',
+        },
+      ],
+    });
+
+    const content = cards[0].content;
+    expect(content).toContain('Compiled study-card specs selected by the backend card plan:');
+    expect(content).toContain('vector-definition | card_spec_backend_owned');
+    expect(content).toContain('Card type: FLASHCARD');
+    expect(content).toContain('Difficulty: 2');
+    expect(content).toContain('Ask for the definition of a vector.');
+    expect(content).toContain('Every card.difficulty must match the difficulty of the compiled study-card spec it satisfies.');
+    expect(content).toContain('Generate study cards only for the compiled study-card specs above.');
+    expect(content).toContain('Grounding source selection: compiled-card-specs');
+  });
+
   it('documents topic study-card semantic count, type, and content-shape requirements', () => {
     const messages = buildTopicStudyCardsMessages({
       ...base,
