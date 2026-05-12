@@ -1,3 +1,5 @@
+App is unreleased, so you can introduce breaking changes with no data migration or backward compatibility, etc.
+
 - [ ] Remove @src/prompts/** and transfer responsibility for all llm requests to @backend.
 - [ ] Introduce CLOZE and free form cards to the workflow.
 - [ ] Remove static pre-generated @public/data/subjects deck json stubs.
