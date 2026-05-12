@@ -59,7 +59,26 @@ Completed:
 - The compiler intentionally ignores model-generated `id`, `conceptId`, `cardSpecId`, and `miniGameSpecId` compatibility fields by consuming only the typed planning fields required for backend materialization.
 - Added compiler tests for deterministic IDs, source-span validation, concept linkage, duplicate local keys, and rejection of card specs that reference unknown concepts or spans outside the concept.
 
-This still does not wire the new plan artifacts into durable run artifacts or `TopicContentWorkflow`. The included repository slice does not include the external `@contracts` package that owns runtime artifact kinds, strict parsers, semantic validators, response formats, and snapshot builders, so this patch keeps the work behind a backend-local seam that can be promoted once those contract files are available.
+This still does not wire the new plan artifacts into durable run artifacts or `TopicContentWorkflow`. The implementation stays behind a backend-local seam until the workflow is ready to persist these artifacts and the external `@contracts` package can be updated with artifact kinds, strict parsers, semantic validators, response formats, snapshots, and eval fixtures in one durable-contract slice.
+
+
+### Backend-local planning snapshots and prompt modules
+
+This patch adds the next dependency slice after the local compiler: deterministic backend-local snapshots and prompt builders for planning artifacts.
+
+Completed:
+
+- Added backend-local snapshot builders for:
+  - `topic-concept-plan`
+  - `topic-card-plan`
+- `topic-concept-plan` snapshots now carry the exact backend-owned `sourceSpanId` values, source span text, derived syllabus questions, and target difficulties used to prompt concept planning.
+- `topic-card-plan` snapshots now carry authoritative compiled concepts, their backend-owned `concept_id` values, and only the source spans selected by each concept.
+- Added prompt builders for `topic-concept-plan` and `topic-card-plan` behind the backend prompt module seam.
+- Planning prompts explicitly require the model to copy `sourceSpanId` values from the supplied span allow-list, and require card/mini-game specs to use only source spans attached to the selected concept.
+- Planning prompts explicitly tell the model not to emit backend-owned IDs such as `conceptId`, `cardSpecId`, or `miniGameSpecId`; the compiler remains the only authority for those IDs.
+- Added tests for snapshot shape, source-span scope validation, compiled-concept grounding, and prompt text containing the required grounding and ID-boundary rules.
+
+This still does not persist planning artifacts or fan out per-spec content jobs. The implementation remains backend-local and deterministic so the next workflow slice can checkpoint compiled specs before invoking per-card or per-mini-game generation.
 
 ## Deterministic materialization policy
 
@@ -75,11 +94,13 @@ For theory artifacts, the backend currently derives:
 - `theory_span_id` from subject/topic scope, span kind, span index, optional difficulty, and span text.
 - selected downstream grounding spans from deterministic token overlap against the target syllabus questions.
 
-For planning artifacts, the backend-local compiler currently derives:
+For planning artifacts, backend-local snapshots and the compiler currently derive:
 
+- `topic-concept-plan` input snapshots from backend-owned source spans, derived syllabus questions, and target difficulties.
 - `concept_id` from subject/topic scope, normalized local concept key, and selected source spans.
 - `card_spec_id` from compiled concept, normalized local card key, card type, difficulty, and selected source spans.
 - `mini_game_spec_id` from compiled concept, normalized local mini-game key, game type, difficulty, and selected source spans.
+- `topic-card-plan` input snapshots from compiled concept specs plus each concept's allowed source-span subset.
 
 This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, and establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow.
 
@@ -100,17 +121,17 @@ backend materialization
 
 ## Remaining follow-ups
 
-1. Promote the backend-local planning schemas into the durable external `@contracts` artifact layer once that package is available:
+1. Promote the backend-local planning schemas and snapshot builders into the durable external `@contracts` artifact layer once the workflow is ready to persist these artifacts:
    - `topic-concept-plan`
    - `topic-card-plan`
    - `topic-card-content`
    - `topic-mini-game-content`
-2. Add prompt modules and snapshot builders for `topic-concept-plan` and `topic-card-plan`, using explicit `sourceSpanId[]` grounding.
-3. Persist or checkpoint compiled concept/card/mini-game specs so workflow retries reuse the same authoritative IDs.
+2. Persist or checkpoint compiled concept/card/mini-game specs so workflow retries reuse the same authoritative IDs.
+3. Wire `TopicContentWorkflow` through the new plan snapshots in dependency order: theory source spans → concept plan → compiled concepts → card plan → compiled specs.
 4. Replace the broad `study-cards` artifact in `TopicContentWorkflow` with per-card-spec jobs.
-5. Replace unconditional mini-game fan-out with mini-game specs emitted by the card plan.
+5. Replace unconditional mini-game fan-out with mini-game specs emitted by the compiled card plan.
 6. Add bounded concurrency for per-spec content jobs once the workflow fans out beyond the current three mini-game stages.
-7. Replace lexical source-span selection in downstream content prompts with the explicit plan-selected `sourceSpanId[]` emitted by the compiled specs.
+7. Replace lexical source-span selection in downstream broad content prompts with explicit plan-selected `sourceSpanId[]` from compiled specs, then retire the lexical fallback after per-spec jobs are live.
 8. Make topic readiness explicit, for example `theory`, `deck`, and `enrichment` readiness instead of a single `ready` flag.
 9. Remove temporary LLM ID compatibility from external generation contracts once the contract source is updated to allow ID-free content outputs.
 10. Add duplicate-repair retry jobs that regenerate only the failed card spec when `question_signature` conflicts.

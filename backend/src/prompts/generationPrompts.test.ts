@@ -7,6 +7,8 @@ import {
   buildCrystalTrialMessages,
   buildSubjectGraphEdgesMessages,
   buildSubjectGraphTopicsMessages,
+  buildTopicCardPlanMessages,
+  buildTopicConceptPlanMessages,
   buildTopicExpansionMessages,
   buildTopicMiniGameMessages,
   buildTopicStudyCardsMessages,
@@ -72,6 +74,61 @@ describe('backend generation prompt modules', () => {
       subject_id: 'linear-algebra',
       lattice_artifact_content_hash: 'sha256:lattice',
     }, [])).toThrow('requires the Stage A Topic Lattice topics');
+  });
+
+  it('builds topic concept-plan and card-plan messages with explicit sourceSpanId grounding', () => {
+    const conceptPlan = buildTopicConceptPlanMessages({
+      ...base,
+      pipeline_kind: 'topic-concept-plan',
+      subject_id: 'math',
+      topic_id: 'limits',
+      topic_title: 'Limits',
+      learning_objective: 'Explain limits as approach behavior.',
+      source_spans: [
+        { sourceSpanId: 'span-core', kind: 'core-concept', index: 0, text: 'Limits describe approach behavior.' },
+        { sourceSpanId: 'span-question', kind: 'syllabus-question', index: 0, difficulty: 2, text: 'How do one-sided limits compare?' },
+      ],
+      syllabus_questions: ['How do one-sided limits compare?'],
+      target_difficulties: [1, 2],
+    });
+
+    expect(conceptPlan[0].content).toContain('topic-concept-plan schema');
+    expect(conceptPlan[0].content).toContain('[span-core | core-concept] Limits describe approach behavior.');
+    expect(conceptPlan[0].content).toContain('[span-question | syllabus-question difficulty 2] How do one-sided limits compare?');
+    expect(conceptPlan[0].content).toContain('sourceSpanIds must be a non-empty subset copied exactly');
+    expect(conceptPlan[0].content).toContain('Do not emit conceptId');
+
+    const cardPlan = buildTopicCardPlanMessages({
+      ...base,
+      pipeline_kind: 'topic-card-plan',
+      subject_id: 'math',
+      topic_id: 'limits',
+      topic_title: 'Limits',
+      learning_objective: 'Explain limits as approach behavior.',
+      concepts: [
+        {
+          concept_id: 'concept_abc',
+          concept_key: 'approach-behavior',
+          title: 'Approach behavior',
+          summary: 'Values near an input.',
+          source_span_ids: ['span-core', 'span-question'],
+          target_difficulties: [1, 2],
+          priority: 1,
+          source_spans: [
+            { sourceSpanId: 'span-core', kind: 'core-concept', index: 0, text: 'Limits describe approach behavior.' },
+            { sourceSpanId: 'span-question', kind: 'syllabus-question', index: 0, difficulty: 2, text: 'How do one-sided limits compare?' },
+          ],
+        },
+      ],
+      card_spec_target: 2,
+      mini_game_spec_target: 1,
+    });
+
+    expect(cardPlan[0].content).toContain('topic-card-plan schema');
+    expect(cardPlan[0].content).toContain('Concept 1: approach-behavior | Approach behavior');
+    expect(cardPlan[0].content).toContain('Allowed sourceSpanIds for this concept: span-core, span-question');
+    expect(cardPlan[0].content).toContain('sourceSpanIds for each spec must be a non-empty subset');
+    expect(cardPlan[0].content).toContain('Do not emit cardSpecId, miniGameSpecId, conceptId');
   });
 
   it('builds Topic Content theory, study-card, and mini-game messages behind one backend seam', () => {

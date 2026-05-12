@@ -104,6 +104,50 @@ function formatBoolean(value: unknown, label: string): string {
   return value ? 'yes' : 'no';
 }
 
+
+function requireRecordArray(value: unknown, label: string): Record<string, unknown>[] {
+  if (!Array.isArray(value) || value.length === 0 || value.some((item) => !isRecord(item))) {
+    throw new Error(`${label} must be a non-empty array of JSON objects for backend prompt construction`);
+  }
+  return value.map((item) => item as Record<string, unknown>);
+}
+
+function requireIntegerArray(value: unknown, label: string): number[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${label} must be a non-empty array of integers for backend prompt construction`);
+  }
+  return value.map((item, index) => requireInteger(item, `${label}[${index}]`));
+}
+
+function formatSourceSpanRecords(spans: readonly Record<string, unknown>[], label: string): string {
+  return spans.map((span, index) => {
+    const sourceSpanId = requireString(span.sourceSpanId, `${label}[${index}].sourceSpanId`);
+    const kind = requireString(span.kind, `${label}[${index}].kind`);
+    const text = requireString(span.text, `${label}[${index}].text`);
+    const difficulty = span.difficulty === undefined ? '' : ` difficulty ${requireInteger(span.difficulty, `${label}[${index}].difficulty`)}`;
+    return `- [${sourceSpanId} | ${kind}${difficulty}] ${text}`;
+  }).join('\n');
+}
+
+function formatConceptRecords(concepts: readonly Record<string, unknown>[]): string {
+  return concepts.map((concept, index) => {
+    const conceptKey = requireString(concept.concept_key, `snapshot.concepts[${index}].concept_key`);
+    const title = requireString(concept.title, `snapshot.concepts[${index}].title`);
+    const summary = requireString(concept.summary, `snapshot.concepts[${index}].summary`);
+    const sourceSpanIds = requireStringArray(concept.source_span_ids, `snapshot.concepts[${index}].source_span_ids`);
+    const targetDifficulties = requireIntegerArray(concept.target_difficulties, `snapshot.concepts[${index}].target_difficulties`);
+    const sourceSpans = requireRecordArray(concept.source_spans, `snapshot.concepts[${index}].source_spans`);
+    return [
+      `Concept ${index + 1}: ${conceptKey} | ${title}`,
+      `Summary: ${summary}`,
+      `Target difficulties: ${targetDifficulties.join(', ')}`,
+      `Allowed sourceSpanIds for this concept: ${sourceSpanIds.join(', ')}`,
+      'Allowed source spans:',
+      formatSourceSpanRecords(sourceSpans, `snapshot.concepts[${index}].source_spans`),
+    ].join('\n');
+  }).join('\n\n');
+}
+
 export function buildSubjectGraphTopicsMessages(snapshot: Record<string, unknown>): PromptMessage[] {
   const subjectId = requireString(snapshot.subject_id, 'snapshot.subject_id');
   const checklist = requireRecord(snapshot.checklist, 'snapshot.checklist');
@@ -188,6 +232,82 @@ export function buildSubjectGraphEdgesMessages(
   return [
     { role: 'system', content: system },
     { role: 'user', content: 'Generate the prerequisite edges now. Output only the JSON object with the edges array.' },
+  ];
+}
+
+export function buildTopicConceptPlanMessages(snapshot: Record<string, unknown>): PromptMessage[] {
+  const sourceSpans = requireRecordArray(snapshot.source_spans, 'snapshot.source_spans');
+  const syllabusQuestions = Array.isArray(snapshot.syllabus_questions)
+    ? requireStringArray(snapshot.syllabus_questions, 'snapshot.syllabus_questions')
+    : [];
+  const targetDifficulties = requireIntegerArray(snapshot.target_difficulties, 'snapshot.target_difficulties');
+
+  const system = [
+    'You are an Abyss Engine Topic Content planning prompt module.',
+    'Create a compact concept plan and return only JSON matching the backend-local topic-concept-plan schema.',
+    '',
+    `Subject id: ${requireString(snapshot.subject_id, 'snapshot.subject_id')}`,
+    `Topic id: ${requireString(snapshot.topic_id, 'snapshot.topic_id')}`,
+    `Topic title: ${requireString(snapshot.topic_title, 'snapshot.topic_title')}`,
+    `Learning objective: ${requireString(snapshot.learning_objective, 'snapshot.learning_objective')}`,
+    `Target difficulties: ${targetDifficulties.join(', ')}`,
+    '',
+    'Syllabus questions:',
+    syllabusQuestions.length > 0 ? formatList(syllabusQuestions) : 'None supplied; derive concepts from the source spans.',
+    '',
+    'Allowed source spans. Copy sourceSpanId values exactly; do not invent span IDs:',
+    formatSourceSpanRecords(sourceSpans, 'snapshot.source_spans'),
+    '',
+    'Output requirements:',
+    '- Return exactly one JSON object with a concepts array.',
+    '- Each concept must include conceptKey, title, summary, sourceSpanIds, targetDifficulties, and priority.',
+    '- conceptKey must be a stable local key using letters, numbers, dot, underscore, colon, or hyphen. Prefer lowercase kebab-case.',
+    '- sourceSpanIds must be a non-empty subset copied exactly from the allowed source spans above.',
+    '- Use the smallest sourceSpanIds set that fully grounds the concept.',
+    '- targetDifficulties must be selected from the target difficulties listed above.',
+    '- Do not emit conceptId or other backend-owned IDs; backend compilation deterministically assigns authoritative IDs.',
+  ].join('\n');
+
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: 'Output only the JSON object with the concepts array.' },
+  ];
+}
+
+export function buildTopicCardPlanMessages(snapshot: Record<string, unknown>): PromptMessage[] {
+  const concepts = requireRecordArray(snapshot.concepts, 'snapshot.concepts');
+  const cardSpecTarget = requireInteger(snapshot.card_spec_target, 'snapshot.card_spec_target');
+  const miniGameSpecTarget = requireInteger(snapshot.mini_game_spec_target, 'snapshot.mini_game_spec_target');
+  const system = [
+    'You are an Abyss Engine Topic Content planning prompt module.',
+    'Create a card and mini-game spec plan and return only JSON matching the backend-local topic-card-plan schema.',
+    '',
+    `Subject id: ${requireString(snapshot.subject_id, 'snapshot.subject_id')}`,
+    `Topic id: ${requireString(snapshot.topic_id, 'snapshot.topic_id')}`,
+    `Topic title: ${requireString(snapshot.topic_title, 'snapshot.topic_title')}`,
+    `Learning objective: ${requireString(snapshot.learning_objective, 'snapshot.learning_objective')}`,
+    `Card spec target: ${cardSpecTarget}`,
+    `Mini-game spec target: ${miniGameSpecTarget}`,
+    '',
+    'Authoritative compiled concepts and allowed grounding spans:',
+    formatConceptRecords(concepts),
+    '',
+    'Output requirements:',
+    '- Return exactly one JSON object with cardSpecs and miniGameSpecs arrays.',
+    '- Every cardSpec must include cardKey, conceptKey, cardType, difficulty, prompt, sourceSpanIds, and optionally learningObjective.',
+    '- cardType must be FLASHCARD or MULTIPLE_CHOICE.',
+    '- Every miniGameSpec must include miniGameKey, conceptKey, gameType, difficulty, prompt, sourceSpanIds, and optionally learningObjective.',
+    '- gameType must be CATEGORY_SORT, SEQUENCE_BUILD, or MATCH_PAIRS.',
+    '- conceptKey must be copied exactly from one authoritative concept above.',
+    '- sourceSpanIds for each spec must be a non-empty subset of that concept\'s allowed sourceSpanIds.',
+    '- Use explicit, narrow sourceSpanId grounding; never reference source spans from another concept.',
+    '- Do not emit cardSpecId, miniGameSpecId, conceptId, or other backend-owned IDs; backend compilation deterministically assigns authoritative IDs.',
+    '- Create specs in dependency order: foundational lower-difficulty cards first, then higher-difficulty cards, then mini-game specs.',
+  ].join('\n');
+
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: 'Output only the JSON object with cardSpecs and miniGameSpecs arrays.' },
   ];
 }
 

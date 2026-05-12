@@ -34,3 +34,17 @@ export {
   type TopicPlannedCardType,
   type TopicPlannedMiniGameType,
 } from './topicPlanCompiler';
+
+export {
+  buildTopicCardPlanSnapshot,
+  buildTopicConceptPlanSnapshot,
+  TOPIC_CARD_PLAN_SCHEMA_VERSION,
+  TOPIC_CONCEPT_PLAN_SCHEMA_VERSION,
+  TOPIC_PLAN_PROMPT_TEMPLATE_VERSION,
+  type BuildTopicCardPlanSnapshotInput,
+  type BuildTopicConceptPlanSnapshotInput,
+  type TopicCardPlanConceptSnapshot,
+  type TopicCardPlanSnapshot,
+  type TopicConceptPlanSnapshot,
+  type TopicPlanSourceSpanSnapshot,
+} from './topicPlanSnapshots';
