@@ -20,7 +20,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@contracts': path.resolve(__dirname, '../src/features/generationContracts'),
+      '@contracts': path.resolve(__dirname, '../packages/generation-contracts/src'),
     },
   },
 });

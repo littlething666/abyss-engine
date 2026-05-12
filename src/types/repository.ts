@@ -7,7 +7,7 @@ import type {
   RunEvent,
   RunInputSnapshot,
   RunStatus,
-} from '@/features/generationContracts';
+} from '@abyss/generation-contracts';
 
 export interface Manifest {
   subjects: Subject[];

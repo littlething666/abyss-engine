@@ -17,13 +17,14 @@
     "test:unit": "vitest",
     "test:unit:run": "vitest run",
     "test:unit:coverage": "vitest run --coverage",
-    "test:eval": "vitest run src/features/generationContracts/evalFixtures",
+    "test:eval": "vitest run packages/generation-contracts/src/evalFixtures",
     "generate:topic-icons": "tsx scripts/generate-topic-icon-nodes.ts",
     "check:topic-icons": "pnpm generate:topic-icons && git diff --exit-code -- src/graphics/labels/generated/topicIconNodes.ts",
     "generate:mentor-icons": "tsx scripts/generate-mentor-icon-nodes.ts",
     "check:mentor-icons": "pnpm generate:mentor-icons && git diff --exit-code -- src/graphics/labels/generated/mentorIconNodes.ts"
   },
   "dependencies": {
+    "@abyss/generation-contracts": "workspace:*",
     "@base-ui/react": "^1.4.1",
     "@react-three/drei": "11.0.0-alpha.5",
     "@react-three/fiber": "10.0.0-alpha.2",

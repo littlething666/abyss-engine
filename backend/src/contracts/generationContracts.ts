@@ -2,8 +2,8 @@
  * Worker contract adapter — single import surface for backend workflows.
  *
  * This module re-exports from `@contracts` (TS paths →
- * `../src/features/generationContracts`; Wrangler `[alias]` →
- * `.../generationContracts/index.ts` because esbuild does not resolve a
+ * `../packages/generation-contracts/src`; Wrangler `[alias]` →
+ * `.../generation-contracts/src/index.ts` because esbuild does not resolve a
  * directory alias to `index.ts`) the
  * narrow set of public APIs that the backend orchestrator needs.
  *

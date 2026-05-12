@@ -22,7 +22,7 @@ head_sampling_rate = 1
 # ---------------------------------------------------------------------------
 [alias]
 # Esbuild alias substitution does not resolve a directory to index.ts; point at the entry file.
-"@contracts" = "../src/features/generationContracts/index.ts"
+"@contracts" = "../packages/generation-contracts/src/index.ts"
 
 # ---------------------------------------------------------------------------
 # Workflow bindings — one Cloudflare Workflow class per pipeline kind.

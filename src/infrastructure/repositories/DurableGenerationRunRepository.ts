@@ -19,8 +19,8 @@
  * `durableGenerationBoundary.test.ts`).
  */
 
-import { parseRunStatus } from '@/features/generationContracts';
-import type { ArtifactEnvelope, RunEvent, RunStatus } from '@/features/generationContracts';
+import { parseRunStatus } from '@abyss/generation-contracts';
+import type { ArtifactEnvelope, RunEvent, RunStatus } from '@abyss/generation-contracts';
 import type {
   CancelReason,
   IGenerationRunRepository,

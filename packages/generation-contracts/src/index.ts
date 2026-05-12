@@ -1,5 +1,5 @@
 /**
- * Public surface for `@/features/generationContracts`.
+ * Public surface for `@abyss/generation-contracts`.
  *
  * This is the ONLY import surface for consumers — both the in-tree client
  * (`src/features/*`, `src/infrastructure/*`) and the future Worker target.

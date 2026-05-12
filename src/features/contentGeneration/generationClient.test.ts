@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { RunEvent } from '@/features/generationContracts';
+import type { RunEvent } from '@abyss/generation-contracts';
 import type { IGenerationRunRepository, RunSnapshot } from '@/types/repository';
 
 import { createGenerationClient } from './generationClient';

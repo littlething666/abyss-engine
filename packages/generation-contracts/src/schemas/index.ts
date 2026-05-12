@@ -1,5 +1,5 @@
 /**
- * Public surface for `src/features/generationContracts/schemas`.
+ * Public surface for `packages/generation-contracts/src/schemas`.
  *
  * The module-level barrel (`../index.ts`) re-exports from here. Direct
  * imports of `./schemas/<file>` from outside this directory are not

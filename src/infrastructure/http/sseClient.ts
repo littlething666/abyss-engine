@@ -15,13 +15,13 @@
  * (enforced by `durableGenerationBoundary.test.ts`).
  */
 
-import { parseRunStatus } from '@/features/generationContracts';
+import { parseRunStatus } from '@abyss/generation-contracts';
 import type {
   RunEvent,
   RunStatus,
   ArtifactReadyEventBody,
   GenerationFailureCode,
-} from '@/features/generationContracts';
+} from '@abyss/generation-contracts';
 
 export interface SseStreamOptions {
   /** Base URL of the Worker. */

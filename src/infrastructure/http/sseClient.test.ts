@@ -24,7 +24,7 @@ import { describe, expect, it } from 'vitest';
 // the Reader/TextDecoder loop.
 
 import { openSseStream, type SseStreamOptions } from './sseClient';
-import type { RunEvent } from '@/features/generationContracts';
+import type { RunEvent } from '@abyss/generation-contracts';
 
 // ---------------------------------------------------------------------------
 // Helpers

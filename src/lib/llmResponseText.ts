@@ -34,7 +34,7 @@ export function stripMarkdownJsonFenceForDisplay(raw: string): string {
  * Crystal Trial) are required by the Durable Workflow Orchestration plan to call
  * OpenRouter with strict `json_schema` mode and to fail loudly via
  * `parse:json-mode-violation` on anything that is not exact JSON. They use
- * `strictParse` from `@/features/generationContracts` and must never route
+ * `strictParse` from `@abyss/generation-contracts` and must never route
  * response text through this helper.
  *
  * Allowed remaining callers:
@@ -47,8 +47,8 @@ export function stripMarkdownJsonFenceForDisplay(raw: string): string {
  * Scheduled for removal once no supported non-pipeline display surface or
  * documented Stage B repair exception imports it.
  * The architectural boundary test in
- * `src/features/generationContracts/strictParsers/legacyParserBoundary.test.ts`
- * enforces that no file under `src/features/generationContracts/**` imports
+ * `packages/generation-contracts/src/strictParsers/legacyParserBoundary.test.ts`
+ * enforces that no file under `packages/generation-contracts/src/**` imports
  * this function.
  */
 export function extractJsonString(raw: string): string | null {

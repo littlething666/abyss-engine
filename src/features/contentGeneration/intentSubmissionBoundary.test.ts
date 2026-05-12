@@ -42,7 +42,7 @@ describe('intent-only frontend generation submission boundary', () => {
     .filter((file) => path.resolve(file) !== SELF)
     .filter((file) => !file.endsWith('.test.ts'))
     .filter((file) => !file.endsWith('.test.tsx'))
-    .filter((file) => !relative(file).startsWith('src/features/generationContracts/'));
+    .filter((file) => !relative(file).startsWith('packages/generation-contracts/src/'));
 
   it('forbids runtime imports of frontend snapshot submit builders and input hashing', () => {
     const offenders: Array<{ file: string; fragment: string }> = [];

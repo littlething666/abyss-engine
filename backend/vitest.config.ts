@@ -14,7 +14,7 @@ export default defineConfig({
     alias: {
       'cloudflare:workers': path.resolve(__dirname, './src/testStubs/cloudflareWorkers.ts'),
       'cloudflare:workflows': path.resolve(__dirname, './src/testStubs/cloudflareWorkflows.ts'),
-      '@contracts': path.resolve(__dirname, '../src/features/generationContracts'),
+      '@contracts': path.resolve(__dirname, '../packages/generation-contracts/src'),
     },
   },
 });

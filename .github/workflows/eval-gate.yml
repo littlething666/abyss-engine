@@ -6,7 +6,7 @@
 # strict parser, or eval fixture from drifting without forcing the
 # golden corpus to be regenerated in the same PR.
 #
-# The harness itself (src/features/generationContracts/evalFixtures/
+# The harness itself (packages/generation-contracts/src/evalFixtures/
 # evalHarness.test.ts) asserts ≥25 fixtures per ArtifactKind and
 # bit-for-bit identity between observed and declared outcomes. Wiring
 # it as a path-filtered required check is the single forcing function
@@ -20,7 +20,7 @@ on:
       # validators, eval fixtures, failure codes, snapshots, and any
       # future prompts/ directory. This is the durable-pipeline
       # contract that locks input_hash + content_hash identity.
-      - 'src/features/generationContracts/**'
+      - 'packages/generation-contracts/**'
       # Backend prompt modules and the remaining documented Subject
       # Graph Stage B repair exception touch model-facing generation
       # behavior and must stay lockstep with eval fixtures.

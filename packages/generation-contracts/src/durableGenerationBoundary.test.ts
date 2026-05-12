@@ -75,8 +75,6 @@ const FRONTEND_SOURCE_PREFIXES = [
   'src/infrastructure/',
 ] as const;
 
-const DURABLE_CONTRACT_SEAM_PREFIX = 'src/features/generationContracts/';
-
 /** Forbidden infrastructure adapter references — any match triggers a failure. */
 const FORBIDDEN_INFRASTRUCTURE_IMPORTS = [
   'DurableGenerationRunRepository',
@@ -344,7 +342,6 @@ describe('durable generation import boundary', () => {
     const violations: string[] = [];
 
     for (const file of sourceFiles) {
-      if (file.startsWith(DURABLE_CONTRACT_SEAM_PREFIX)) continue;
       const content = readRuntimeFile(file);
       for (const fragment of FORBIDDEN_FRONTEND_RUNTIME_FRAGMENTS) {
         if (file.includes(fragment) || content.includes(fragment)) {
@@ -377,16 +374,15 @@ describe('durable generation import boundary', () => {
     const violations: string[] = [];
 
     for (const file of sourceFiles) {
-      if (file.startsWith(DURABLE_CONTRACT_SEAM_PREFIX)) continue;
       const content = readRuntimeFile(file);
-      if (buildImportPattern('/generationContracts/snapshots').test(content)) {
+      if (buildImportPattern('generation-contracts/snapshots').test(content)) {
         violations.push(`${file}: imports generation contract snapshot internals`);
       }
-      if (buildImportPattern('/generationContracts/canonicalHash').test(content)) {
+      if (buildImportPattern('generation-contracts/canonicalHash').test(content)) {
         violations.push(`${file}: imports generation contract hash internals`);
       }
       const contractImportMatches = content.matchAll(
-        /import\s+(?:type\s+)?\{([\s\S]*?)\}\s+from\s+['"]@\/features\/generationContracts['"]/g,
+        /import\s+(?:type\s+)?\{([\s\S]*?)\}\s+from\s+['"]@abyss\/generation-contracts['"]/g,
       );
       for (const match of contractImportMatches) {
         const names = match[1].split(',').map((name) => name.trim().replace(/^type\s+/, ''));

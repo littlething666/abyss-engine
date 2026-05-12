@@ -20,6 +20,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@abyss/generation-contracts": "workspace:*",
     "hono": "^4.12.18",
     "zod": "^4.4.3"
   },

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 /**
- * Architectural guard: nothing under `src/features/generationContracts/**`
+ * Architectural guard: nothing under `packages/generation-contracts/src/**`
  * may import the legacy permissive parsers or the permissive
  * `extractJsonString()` recovery helper.
  *
@@ -24,7 +24,7 @@ import path from 'node:path';
  *   - `@/features/subjectGeneration/graph/topicLattice/parseTopicLatticeResponse`
  *   - any relative path that resolves to those files.
  *
- * The test scans this file's containing module subtree (`generationContracts/`)
+ * The test scans this file's containing module subtree (`packages/generation-contracts/src/`)
  * and asserts no source file imports a forbidden specifier. The test file
  * itself is excluded from the scan since it must mention the strings.
  */
@@ -81,17 +81,17 @@ function relativePosix(file: string): string {
   return path.relative(CONTRACTS_ROOT, file).split(path.sep).join('/');
 }
 
-describe('generationContracts → legacy permissive parser import boundary', () => {
+describe('@abyss/generation-contracts → legacy permissive parser import boundary', () => {
   const files = walkSource(CONTRACTS_ROOT).filter(
     (file) => path.resolve(file) !== SELF,
   );
 
-  it('discovers source files to scan under src/features/generationContracts/', () => {
+  it('discovers source files to scan under packages/generation-contracts/src/', () => {
     expect(files.length).toBeGreaterThan(0);
   });
 
   for (const fragment of FORBIDDEN_SPECIFIER_FRAGMENTS) {
-    it(`forbids imports referencing "${fragment}" anywhere under src/features/generationContracts/`, () => {
+    it(`forbids imports referencing "${fragment}" anywhere under packages/generation-contracts/src/`, () => {
       const pattern = buildImportPattern(fragment);
       const offenders: string[] = [];
       for (const file of files) {
@@ -102,7 +102,7 @@ describe('generationContracts → legacy permissive parser import boundary', () 
       }
       expect(
         offenders,
-        `No file under src/features/generationContracts/ may import the legacy permissive parser "${fragment}". The strict pipeline parsers must use JSON.parse + Zod directly, with no fence stripping or embedded-JSON extraction. Migrate the offending file to strictParse / strictParseArtifact instead.`,
+        `No file under packages/generation-contracts/src/ may import the legacy permissive parser "${fragment}". The strict pipeline parsers must use JSON.parse + Zod directly, with no fence stripping or embedded-JSON extraction. Migrate the offending file to strictParse / strictParseArtifact instead.`,
       ).toEqual([]);
     });
   }

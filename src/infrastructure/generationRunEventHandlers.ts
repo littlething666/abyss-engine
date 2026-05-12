@@ -30,7 +30,7 @@
 import { appEventBus, type AppEventBus } from './eventBus';
 import type { GenerationRunIntent, PipelineKind, RunSnapshot, SubmitGenerationRunInput } from '@/types/repository';
 import type { IDeckRepository } from '@/types/repository';
-import type { RunEvent } from '@/features/generationContracts';
+import type { RunEvent } from '@abyss/generation-contracts';
 import type { RunEventCursorStore } from '@/infrastructure/repositories/runEventCursorStore';
 import type { TopicLattice, TopicLatticeNode } from '@/types/topicLattice';
 import type { GenerationClient } from '@/features/contentGeneration';

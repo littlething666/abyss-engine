@@ -1,5 +1,5 @@
 /**
- * Public surface for `src/features/generationContracts/semanticValidators`.
+ * Public surface for `packages/generation-contracts/src/semanticValidators`.
  *
  * The module-level barrel (`../index.ts`) re-exports from here. Direct
  * imports of `./semanticValidators/<file>` from outside this directory

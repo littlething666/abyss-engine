@@ -1,5 +1,5 @@
 /**
- * Public surface for `src/features/generationContracts/evalFixtures`.
+ * Public surface for `packages/generation-contracts/src/evalFixtures`.
  *
  * Re-exported by the module-level barrel (`../index.ts`). Direct
  * imports of `./evalFixtures/<file>` from outside this directory are

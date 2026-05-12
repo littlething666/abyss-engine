@@ -10,7 +10,7 @@
  * requires:
  *   1. Extending the literal union here.
  *   2. Adding a strict parser + semantic validator under
- *      `src/features/generationContracts/{strictParsers,semanticValidators}/`.
+ *      `packages/generation-contracts/src/{strictParsers,semanticValidators}/`.
  *   3. Updating backend artifact application / Learning Content Store routes
  *      and frontend query invalidation where needed.
  */

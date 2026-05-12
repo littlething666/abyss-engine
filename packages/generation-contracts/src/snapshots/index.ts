@@ -1,7 +1,7 @@
 /**
  * Snapshot builders + types. Re-exported by `../index.ts`.
  *
- * Consumers MUST import from `@/features/generationContracts`, not from this
+ * Consumers MUST import from `@abyss/generation-contracts`, not from this
  * file directly. The barrel exists to keep the snapshots/ directory
  * self-contained for module-internal cross-references.
  */

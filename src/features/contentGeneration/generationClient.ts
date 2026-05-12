@@ -1,4 +1,4 @@
-import type { ArtifactEnvelope, RunEvent } from '@/features/generationContracts';
+import type { ArtifactEnvelope, RunEvent } from '@abyss/generation-contracts';
 import type {
   CancelReason,
   GenerationRunIntent,

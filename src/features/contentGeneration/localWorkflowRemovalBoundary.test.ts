@@ -42,7 +42,7 @@ const FORBIDDEN_RUNTIME_FILES = [
   'src/features/contentGeneration/pipelines/runTopicGenerationPipeline.ts',
   'src/features/crystalTrial/generateTrialQuestions.ts',
   'src/features/crystalTrial/appliers/crystalTrialApplier.ts',
-  'src/features/generationContracts/artifacts/applier.ts',
+  'packages/generation-contracts/src/artifacts/applier.ts',
 ] as const;
 
 const FORBIDDEN_RETURNED_FILE_FRAGMENTS = [

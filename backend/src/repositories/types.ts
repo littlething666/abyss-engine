@@ -82,7 +82,7 @@ export interface JobRow {
 // ---------------------------------------------------------------------------
 // events
 // ---------------------------------------------------------------------------
-/** @see src/features/generationContracts/runEvents.ts for the canonical event type union. */
+/** @see packages/generation-contracts/src/runEvents.ts for the canonical event type union. */
 export interface EventRow {
   id: string; // bigserial → string after JSON round-trip
   run_id: string;

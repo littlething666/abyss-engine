@@ -61,7 +61,7 @@ The broad frontend prompt/parser cleanup is complete for unsupported durable-gen
 
 ### 2. Final drift and boundary guards
 
-Most repository-wide guard coverage now lives in `src/features/generationContracts/durableGenerationBoundary.test.ts`:
+Most repository-wide guard coverage now lives in `packages/generation-contracts/src/durableGenerationBoundary.test.ts`:
 
 - No local generation runner files or imports return.
 - No `GenerationProgressHud`, frontend generation log/store, or store-backed generation attention surface returns.

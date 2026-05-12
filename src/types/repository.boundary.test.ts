@@ -9,11 +9,10 @@ import path from 'node:path';
  *
  * The Durable Workflow Orchestration plan (Phase 0.5 step 1) locks the
  * import surface for the contract module:
- *   - It may depend on the public `@/features/generationContracts` barrel
+ *   - It may depend on the public `@abyss/generation-contracts` package
  *     and on sibling `@/types/*` files only.
- *   - It must NOT depend on `@/features/*` internals other than
- *     `generationContracts` (no in-tab runners, no zustand stores, no
- *     orchestrators).
+ *   - It must NOT depend on `@/features/*` internals (no in-tab runners, no
+ *     zustand stores, no orchestrators).
  *   - It must NOT depend on `@/hooks/*`, `@/components/*`, or
  *     `@/infrastructure/*` runtime layers.
  *   - It must NOT reference the four legacy generation entry points listed
@@ -37,7 +36,6 @@ const SCAN_EXTENSIONS = new Set(['.ts', '.tsx']);
 // Pattern fragments concatenated at runtime so this file's own source does
 // not match the very import-statement regexes it executes against.
 const FEATURES_PREFIX = ['@', '/features/'].join('');
-const FEATURES_GENCONTRACTS_PREFIX = [FEATURES_PREFIX, 'generationContracts'].join('');
 const HOOKS_PREFIX = ['@', '/hooks/'].join('');
 const COMPONENTS_PREFIX = ['@', '/components/'].join('');
 const INFRASTRUCTURE_PREFIX = ['@', '/infrastructure/'].join('');
@@ -96,7 +94,7 @@ describe('repository contract import boundary', () => {
     ).toContain('repository.ts');
   });
 
-  it(`only allows '${FEATURES_PREFIX}*' imports that target '${FEATURES_GENCONTRACTS_PREFIX}'`, () => {
+  it('forbids imports from @/features/* (durable generation contracts live in @abyss/generation-contracts)', () => {
     const featurePattern = new RegExp(
       `(?:from\\s*|import\\s*\\(\\s*|require\\s*\\(\\s*)['"](${escapeRegex(FEATURES_PREFIX)}[^'"]+)['"]`,
       'g',
@@ -106,14 +104,12 @@ describe('repository contract import boundary', () => {
       const text = readFileSync(file, 'utf8');
       for (const match of text.matchAll(featurePattern)) {
         const specifier = match[1];
-        if (!specifier.startsWith(FEATURES_GENCONTRACTS_PREFIX)) {
-          offenders.push({ file: relativePosix(file), specifier });
-        }
+        offenders.push({ file: relativePosix(file), specifier });
       }
     }
     expect(
       offenders,
-      `The durable generation repository contract may only depend on '${FEATURES_GENCONTRACTS_PREFIX}'. Move feature-internal contracts behind that public surface, or move the consuming type out of src/types/.`,
+      `The durable generation repository contract must not import from src/features/*. Use @abyss/generation-contracts for generation contract types.`,
     ).toEqual([]);
   });
 

@@ -4,6 +4,7 @@ const nextPublicAbyssLoadingSeed = String(Date.now() >>> 0);
 
 const nextConfig = {
   reactStrictMode: true,
+  transpilePackages: ['@abyss/generation-contracts'],
   output: 'export',
   env: {
     NEXT_PUBLIC_ABYSS_LOADING_SEED: nextPublicAbyssLoadingSeed,

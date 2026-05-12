@@ -6,13 +6,13 @@ eval fixtures.
 
 ## Boundary
 
-- This module lives in the **feature layer** (`src/features/*`). The future
-  Worker (`workers/`) and any durable-orchestration adapter consume the same
-  module via TypeScript source — there is exactly one source of truth for
+- The package root is `packages/generation-contracts`. The Worker (`backend/`)
+  and the Next app consume this module as `@abyss/generation-contracts` — there
+  is exactly one source of truth for
   prompt construction, schemas, semantic validators, hash algorithms, and
   failure-code policy.
 - Public imports MUST go through `index.ts`. Cross-feature deep imports into
-  the directory tree from outside `src/features/generationContracts/` are
+  the directory tree from outside `packages/generation-contracts/src/` are
   prohibited (matches the project-level rule in the root `AGENTS.md`).
 - This module MUST NOT depend on any other feature module — only on
   `src/types/*` and pure standard-library / `zod` primitives. The Worker
@@ -28,7 +28,7 @@ eval fixtures.
 ## Layout
 
 ```
-src/features/generationContracts/
+packages/generation-contracts/src/
 ├── AGENTS.md
 ├── index.ts                         # only public import surface
 ├── canonicalHash.ts                 # deterministic input_hash + content_hash

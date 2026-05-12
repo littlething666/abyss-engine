@@ -1,5 +1,5 @@
 /**
- * Public surface for `src/features/generationContracts/strictParsers`.
+ * Public surface for `packages/generation-contracts/src/strictParsers`.
  */
 
 export {

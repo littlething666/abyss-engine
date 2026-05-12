@@ -20,12 +20,12 @@ import type { AppEventBus, AppEventMap } from './eventBus';
 import type {
   ArtifactEnvelope,
   RunEvent,
-} from '@/features/generationContracts';
+} from '@abyss/generation-contracts';
 import type { RunEventCursorStore } from '@/infrastructure/repositories/runEventCursorStore';
 import type { GenerationClient } from '@/features/contentGeneration';
 import type { GenerationRunIntent, IDeckRepository, RunSnapshot } from '@/types/repository';
 import type { PubSubClient } from './pubsub';
-import type { RunInputSnapshot } from '@/features/generationContracts';
+import type { RunInputSnapshot } from '@abyss/generation-contracts';
 
 // ---------------------------------------------------------------------------
 // Test helpers
