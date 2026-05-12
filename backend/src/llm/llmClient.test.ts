@@ -356,6 +356,14 @@ describe('callTopicContent', () => {
     expect(body.response_format.json_schema.name).toBe('topic_mini_game_category_sort');
   });
 
+  it('includes topic-content temperature when specified', async () => {
+    mockFetch(200, { choices: [{ message: { content: '{}' } }], usage: null });
+    await callTopicContent({ ...tcArgs, temperature: 0.1 }, testEnv);
+
+    const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.temperature).toBe(0.1);
+  });
+
   it('throws WorkflowFail on retryable 429', async () => {
     mockFetch(429, {});
     await expect(callTopicContent(tcArgs, testEnv)).rejects.toMatchObject({ code: 'llm:rate-limit' });

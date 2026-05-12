@@ -49,6 +49,9 @@ export {
   type TopicPlanSourceSpanSnapshot,
 } from './topicPlanSnapshots';
 
+export {
+  topicPlanJsonSchemaResponseFormat,
+} from './topicPlanResponseFormats';
 
 export {
   loadCompiledTopicCardPlanCheckpoint,

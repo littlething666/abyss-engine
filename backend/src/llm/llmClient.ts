@@ -441,7 +441,8 @@ export interface TopicContentGenerateArgs {
   messages: LlmMessage[];
   responseFormat: JsonSchemaResponseFormat;
   providerHealingRequested: boolean;
-  /** The stage being generated: theory, study-cards, or mini-games:<gameType>. */
+  temperature?: number;
+  /** The stage being generated: theory, study-cards, mini-games:<gameType>, or planning:<name>. */
   stage: string;
 }
 
@@ -458,5 +459,6 @@ export async function callTopicContent(
     messages: args.messages,
     responseFormat: args.responseFormat,
     providerHealingRequested: args.providerHealingRequested,
+    temperature: args.temperature,
   }, env);
 }

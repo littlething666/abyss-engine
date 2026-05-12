@@ -29,12 +29,39 @@ import {
   type ResolvedGenerationJobPolicy,
 } from '../generationPolicy';
 import {
+  buildTopicCardPlanMessages,
+  buildTopicConceptPlanMessages,
   buildTopicMiniGameMessages,
   buildTopicStudyCardsMessages,
   buildTopicTheoryMessages,
 } from '../prompts/generationPrompts';
 import { topicContentStageInputHash } from './topicContentStageInputHash';
 import { applyArtifactToLearningContent } from '../learningContent/artifactApplication';
+import {
+  buildTopicCardPlanSnapshot,
+  buildTopicConceptPlanSnapshot,
+  compileTopicCardPlan,
+  compileTopicConceptPlan,
+  loadCompiledTopicCardPlanCheckpoint,
+  loadCompiledTopicConceptPlanCheckpoint,
+  persistCompiledTopicCardPlanCheckpoint,
+  persistCompiledTopicConceptPlanCheckpoint,
+  topicPlanJsonSchemaResponseFormat,
+  TOPIC_CARD_PLAN_ARTIFACT_KIND,
+  TOPIC_CARD_PLAN_CHECKPOINT_STAGE,
+  TOPIC_CARD_PLAN_SCHEMA_VERSION,
+  TOPIC_CONCEPT_PLAN_ARTIFACT_KIND,
+  TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE,
+  TOPIC_CONCEPT_PLAN_SCHEMA_VERSION,
+  topicCardPlanArtifactPayloadSchema,
+  topicConceptPlanArtifactPayloadSchema,
+  type CompiledTopicCardPlan,
+  type CompiledTopicConceptSpec,
+  type TopicCardPlanArtifactPayload,
+  type TopicCardPlanCheckpointPayload,
+  type TopicConceptPlanArtifactPayload,
+  type TopicConceptPlanCheckpointPayload,
+} from '../learningContent';
 import {
   inputHash,
   contentHash,
@@ -63,6 +90,7 @@ import {
   formatTheorySourceSpansForPrompt,
   selectRelevantTheorySourceSpans,
   topicTheorySourceSpansAsJson,
+  type TopicTheorySourceSpan,
 } from '../learningContent/theorySourceSpans';
 
 // ---------------------------------------------------------------------------
@@ -103,6 +131,30 @@ interface StageRunResult {
   artifactId: string;
   contentHash: string;
   kind: ArtifactKind;
+}
+
+interface TopicPlanningState {
+  sourceSpans: TopicTheorySourceSpan[];
+  concepts: CompiledTopicConceptSpec[];
+  cardPlan: CompiledTopicCardPlan;
+  conceptCheckpoint: {
+    artifactId: string;
+    inputHash: string;
+    contentHash: string;
+    payload: TopicConceptPlanCheckpointPayload;
+  };
+  cardCheckpoint: {
+    artifactId: string;
+    inputHash: string;
+    contentHash: string;
+    payload: TopicCardPlanCheckpointPayload;
+  };
+}
+
+interface PlanningGenerationResult<TPayload> {
+  payload: TPayload;
+  promptInputHash: string;
+  jobId: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -397,10 +449,367 @@ function hasStagePromptContext(snapshot: Record<string, unknown>): boolean {
   return typeof snapshot.theory_excerpt === 'string' && Array.isArray(snapshot.syllabus_questions);
 }
 
+function parsePlanningJsonObject(raw: GenerateResult, kind: string): Record<string, unknown> {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(raw.text) as unknown;
+  } catch (err) {
+    throw new WorkflowFail('parse:zod-shape', `${kind} response is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return requireRecord(decoded, `${kind} response`);
+}
+
+function summarizePlanningIssues(error: { issues: Array<{ path: readonly unknown[]; message: string }> }): string {
+  return error.issues.map((issue) => {
+    const path = issue.path.length > 0 ? issue.path.join('.') : '<root>';
+    return `${path}: ${issue.message}`;
+  }).join('; ');
+}
+
+function parseTopicConceptPlanPayload(raw: GenerateResult): TopicConceptPlanArtifactPayload {
+  const parsed = topicConceptPlanArtifactPayloadSchema.safeParse(parsePlanningJsonObject(raw, TOPIC_CONCEPT_PLAN_ARTIFACT_KIND));
+  if (!parsed.success) {
+    throw new WorkflowFail(
+      'validation:semantic-topic-content',
+      `${TOPIC_CONCEPT_PLAN_ARTIFACT_KIND} payload is invalid: ${summarizePlanningIssues(parsed.error)}`,
+    );
+  }
+  return parsed.data;
+}
+
+function parseTopicCardPlanPayload(raw: GenerateResult): TopicCardPlanArtifactPayload {
+  const parsed = topicCardPlanArtifactPayloadSchema.safeParse(parsePlanningJsonObject(raw, TOPIC_CARD_PLAN_ARTIFACT_KIND));
+  if (!parsed.success) {
+    throw new WorkflowFail(
+      'validation:semantic-topic-content',
+      `${TOPIC_CARD_PLAN_ARTIFACT_KIND} payload is invalid: ${summarizePlanningIssues(parsed.error)}`,
+    );
+  }
+  return parsed.data;
+}
+
+function stableStringList(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
+}
+
+function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
+  const left = stableStringList(a);
+  const right = stableStringList(b);
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function assertConceptCheckpointMatchesSourceSpans(
+  checkpoint: TopicConceptPlanCheckpointPayload,
+  subjectId: string,
+  topicId: string,
+  sourceSpans: readonly TopicTheorySourceSpan[],
+): void {
+  if (checkpoint.subject_id !== subjectId || checkpoint.topic_id !== topicId) {
+    throw new WorkflowFail('validation:semantic-topic-content', `${TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE} checkpoint scope does not match current topic`);
+  }
+  const sourceSpanIds = sourceSpans.map((span) => span.spanId);
+  if (!sameStringSet(checkpoint.source_span_ids, sourceSpanIds)) {
+    throw new WorkflowFail('validation:semantic-topic-content', `${TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE} checkpoint source spans are stale for current theory artifact`);
+  }
+}
+
+function conceptRefsFromConcepts(concepts: readonly CompiledTopicConceptSpec[]): Array<{ concept_id: string; concept_key: string; source_span_ids: string[] }> {
+  return [...concepts]
+    .map((concept) => ({
+      concept_id: concept.conceptId,
+      concept_key: concept.conceptKey,
+      source_span_ids: stableStringList(concept.sourceSpanIds),
+    }))
+    .sort((a, b) => a.concept_key.localeCompare(b.concept_key) || a.concept_id.localeCompare(b.concept_id));
+}
+
+function assertCardCheckpointMatchesConcepts(
+  checkpoint: TopicCardPlanCheckpointPayload,
+  subjectId: string,
+  topicId: string,
+  concepts: readonly CompiledTopicConceptSpec[],
+): void {
+  if (checkpoint.subject_id !== subjectId || checkpoint.topic_id !== topicId) {
+    throw new WorkflowFail('validation:semantic-topic-content', `${TOPIC_CARD_PLAN_CHECKPOINT_STAGE} checkpoint scope does not match current topic`);
+  }
+  const expected = conceptRefsFromConcepts(concepts);
+  if (checkpoint.compiled_concept_refs.length !== expected.length) {
+    throw new WorkflowFail('validation:semantic-topic-content', `${TOPIC_CARD_PLAN_CHECKPOINT_STAGE} checkpoint concept refs are stale`);
+  }
+  checkpoint.compiled_concept_refs.forEach((actual, index) => {
+    const exp = expected[index];
+    if (!exp || actual.concept_id !== exp.concept_id || actual.concept_key !== exp.concept_key || !sameStringSet(actual.source_span_ids, exp.source_span_ids)) {
+      throw new WorkflowFail('validation:semantic-topic-content', `${TOPIC_CARD_PLAN_CHECKPOINT_STAGE} checkpoint concept refs are stale`);
+    }
+  });
+}
+
+async function loadTheorySourceSpansForPlanning(
+  repos: ReturnType<typeof makeRepos>,
+  snapshot: Record<string, unknown>,
+  theoryArtifactId: string,
+): Promise<TopicTheorySourceSpan[]> {
+  const artifact = await repos.artifacts.get(theoryArtifactId);
+  if (!artifact) {
+    throw new WorkflowFail('precondition:missing-topic', `topic-content theory artifact row not found: ${theoryArtifactId}`);
+  }
+  const payload = requireRecord(await repos.artifacts.getStorage(artifact.storage_key), `topic-content theory artifact ${theoryArtifactId}`);
+  return buildTopicTheorySourceSpans({
+    subjectId: requireString(snapshot.subject_id, 'snapshot.subject_id'),
+    topicId: requireString(snapshot.topic_id, 'snapshot.topic_id'),
+    payload,
+  });
+}
+
+async function runPlanningLlmStage<TPayload>(input: {
+  step: WorkflowStep;
+  repos: ReturnType<typeof makeRepos>;
+  env: Env;
+  runId: string;
+  deviceId: string;
+  stage: typeof TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE | typeof TOPIC_CARD_PLAN_CHECKPOINT_STAGE;
+  jobKind: BackendGenerationJobKind;
+  schemaVersion: number;
+  snapshot: Record<string, unknown>;
+  responseFormat: ReturnType<typeof topicPlanJsonSchemaResponseFormat>;
+  messages: ReturnType<typeof buildTopicConceptPlanMessages>;
+  parse: (raw: GenerateResult) => TPayload;
+}): Promise<PlanningGenerationResult<TPayload>> {
+  const safeStage = input.stage.replace(/:/g, '_');
+  const promptInputHash = await inputHash(input.snapshot);
+
+  await input.step.do(`start:${safeStage}`, WORKFLOW_STORAGE_STEP_RETRY, async () => {
+    await appendWorkflowEventOnce(input.repos.runs, input.runId, input.deviceId, workflowStatusEventKey('generating_stage', input.stage),
+      buildRunStatusEvent('generating_stage'),
+    );
+    await input.repos.stageCheckpoints.upsert({
+      runId: input.runId,
+      stage: input.stage,
+      status: 'generating',
+      inputHash: promptInputHash,
+      attempt: 0,
+      startedAt: new Date().toISOString(),
+    });
+  });
+
+  const generationPolicy = await resolveGenerationJobPolicy(input.deviceId, input.jobKind);
+  const llmTrace = traceLlmCall({
+    runId: input.runId,
+    deviceId: input.deviceId,
+    pipelineKind: 'topic-content',
+    stage: input.stage,
+    model: generationPolicy.modelId,
+    generationPolicyHash: generationPolicy.generationPolicyHash,
+    promptVersion: 1,
+    schemaVersion: input.schemaVersion,
+    inputHash: promptInputHash,
+    providerHealingRequested: generationPolicy.providerHealingRequested,
+  });
+
+  let raw: GenerateResult;
+  let jobId: string | null = null;
+  try {
+    raw = (await input.step.do(
+      `generate:${safeStage}`,
+      WORKFLOW_LLM_STEP_RETRY,
+      async () => {
+        try {
+          return await callTopicContent({
+            modelId: generationPolicy.modelId,
+            messages: input.messages,
+            responseFormat: input.responseFormat,
+            providerHealingRequested: generationPolicy.providerHealingRequested,
+            temperature: generationPolicy.temperature,
+            stage: input.stage,
+          }, input.env);
+        } catch (err) {
+          throw toWorkflowStepError(err);
+        }
+      },
+    )) as GenerateResult;
+    const trace = llmTrace.finalizeSuccess();
+    jobId = await recordLlmJob({
+      repos: input.repos,
+      runId: input.runId,
+      pipelineKind: 'topic-content',
+      stage: input.stage,
+      inputHash: promptInputHash,
+      model: generationPolicy.modelId,
+      status: 'success',
+      trace,
+    });
+  } catch (err) {
+    const failure = workflowFailureDetails(err, 'llm:upstream-transient');
+    const trace = llmTrace.finalizeFailure(failure.code, failure.message);
+    jobId = await recordLlmJob({
+      repos: input.repos,
+      runId: input.runId,
+      pipelineKind: 'topic-content',
+      stage: input.stage,
+      inputHash: promptInputHash,
+      model: generationPolicy.modelId,
+      status: 'failed',
+      trace,
+      errorCode: failure.code,
+      errorMessage: failure.message,
+    });
+    if (jobId) {
+      await input.repos.stageCheckpoints.linkJob(input.runId, input.stage, jobId).catch(() => undefined);
+    }
+    await input.repos.stageCheckpoints.markFailed(input.runId, input.stage, failure.code, failure.message).catch((checkpointErr) => {
+      createLogger({ runId: input.runId, deviceId: input.deviceId, pipelineKind: 'topic-content', stage: input.stage }).warn('stage_checkpoint.mark_failed.failed', {
+        errorMessage: checkpointErr instanceof Error ? checkpointErr.message : String(checkpointErr),
+      });
+    });
+    throw err;
+  }
+
+  try {
+    return { payload: input.parse(raw), promptInputHash, jobId };
+  } catch (err) {
+    const failure = workflowFailureDetails(err, 'parse:zod-shape');
+    await input.repos.stageCheckpoints.markFailed(input.runId, input.stage, failure.code, failure.message).catch((checkpointErr) => {
+      createLogger({ runId: input.runId, deviceId: input.deviceId, pipelineKind: 'topic-content', stage: input.stage }).warn('stage_checkpoint.mark_failed.failed', {
+        errorMessage: checkpointErr instanceof Error ? checkpointErr.message : String(checkpointErr),
+      });
+    });
+    throw err;
+  }
+}
+
+async function buildOrLoadTopicPlanningState(input: {
+  step: WorkflowStep;
+  repos: ReturnType<typeof makeRepos>;
+  env: Env;
+  runId: string;
+  deviceId: string;
+  snapshot: Record<string, unknown>;
+  theoryArtifactId: string | null;
+}): Promise<TopicPlanningState | null> {
+  if (!input.theoryArtifactId) return null;
+
+  const subjectId = requireString(input.snapshot.subject_id, 'snapshot.subject_id');
+  const topicId = requireString(input.snapshot.topic_id, 'snapshot.topic_id');
+  const sourceSpans = await loadTheorySourceSpansForPlanning(input.repos, input.snapshot, input.theoryArtifactId);
+  if (sourceSpans.length === 0) {
+    throw new WorkflowFail('precondition:missing-topic', 'topic-content planning requires topic theory source spans');
+  }
+
+  let conceptCheckpoint = await loadCompiledTopicConceptPlanCheckpoint({ repos: input.repos, runId: input.runId });
+  let concepts: CompiledTopicConceptSpec[];
+  if (conceptCheckpoint) {
+    assertConceptCheckpointMatchesSourceSpans(conceptCheckpoint.payload, subjectId, topicId, sourceSpans);
+    concepts = conceptCheckpoint.payload.compiled_concepts;
+  } else {
+    const generationPolicy = await resolveGenerationJobPolicy(input.deviceId, TOPIC_CONCEPT_PLAN_ARTIFACT_KIND);
+    const conceptSnapshot = buildTopicConceptPlanSnapshot({
+      subjectId,
+      topicId,
+      topicTitle: requireString(input.snapshot.topic_title, 'snapshot.topic_title'),
+      learningObjective: requireString(input.snapshot.learning_objective, 'snapshot.learning_objective'),
+      sourceSpans,
+      modelId: generationPolicy.modelId,
+      capturedAt: new Date().toISOString(),
+    });
+    const generated = await runPlanningLlmStage<TopicConceptPlanArtifactPayload>({
+      step: input.step,
+      repos: input.repos,
+      env: input.env,
+      runId: input.runId,
+      deviceId: input.deviceId,
+      stage: TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE,
+      jobKind: TOPIC_CONCEPT_PLAN_ARTIFACT_KIND,
+      schemaVersion: TOPIC_CONCEPT_PLAN_SCHEMA_VERSION,
+      snapshot: conceptSnapshot as unknown as Record<string, unknown>,
+      responseFormat: topicPlanJsonSchemaResponseFormat(TOPIC_CONCEPT_PLAN_ARTIFACT_KIND),
+      messages: buildTopicConceptPlanMessages(conceptSnapshot as unknown as Record<string, unknown>),
+      parse: parseTopicConceptPlanPayload,
+    });
+    concepts = await compileTopicConceptPlan({ subjectId, topicId, sourceSpans, payload: generated.payload });
+    conceptCheckpoint = await input.step.do(`persist:${TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => (
+      persistCompiledTopicConceptPlanCheckpoint({
+        repos: input.repos,
+        runId: input.runId,
+        deviceId: input.deviceId,
+        subjectId,
+        topicId,
+        sourceSpanIds: sourceSpans.map((span) => span.spanId),
+        planPayload: generated.payload,
+        compiledConcepts: concepts,
+      })
+    ));
+    if (generated.jobId) await input.repos.stageCheckpoints.linkJob(input.runId, TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE, generated.jobId).catch(() => undefined);
+  }
+
+  let cardCheckpoint = await loadCompiledTopicCardPlanCheckpoint({ repos: input.repos, runId: input.runId });
+  let cardPlan: CompiledTopicCardPlan;
+  if (cardCheckpoint) {
+    assertCardCheckpointMatchesConcepts(cardCheckpoint.payload, subjectId, topicId, concepts);
+    cardPlan = {
+      cardSpecs: cardCheckpoint.payload.compiled_card_specs,
+      miniGameSpecs: cardCheckpoint.payload.compiled_mini_game_specs,
+    };
+  } else {
+    const generationPolicy = await resolveGenerationJobPolicy(input.deviceId, TOPIC_CARD_PLAN_ARTIFACT_KIND);
+    const cardSnapshot = buildTopicCardPlanSnapshot({
+      subjectId,
+      topicId,
+      topicTitle: requireString(input.snapshot.topic_title, 'snapshot.topic_title'),
+      learningObjective: requireString(input.snapshot.learning_objective, 'snapshot.learning_objective'),
+      sourceSpans,
+      concepts,
+      modelId: generationPolicy.modelId,
+      capturedAt: new Date().toISOString(),
+    });
+    const generated = await runPlanningLlmStage<TopicCardPlanArtifactPayload>({
+      step: input.step,
+      repos: input.repos,
+      env: input.env,
+      runId: input.runId,
+      deviceId: input.deviceId,
+      stage: TOPIC_CARD_PLAN_CHECKPOINT_STAGE,
+      jobKind: TOPIC_CARD_PLAN_ARTIFACT_KIND,
+      schemaVersion: TOPIC_CARD_PLAN_SCHEMA_VERSION,
+      snapshot: cardSnapshot as unknown as Record<string, unknown>,
+      responseFormat: topicPlanJsonSchemaResponseFormat(TOPIC_CARD_PLAN_ARTIFACT_KIND),
+      messages: buildTopicCardPlanMessages(cardSnapshot as unknown as Record<string, unknown>),
+      parse: parseTopicCardPlanPayload,
+    });
+    cardPlan = await compileTopicCardPlan({ subjectId, topicId, concepts, payload: generated.payload });
+    cardCheckpoint = await input.step.do(`persist:${TOPIC_CARD_PLAN_CHECKPOINT_STAGE.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => (
+      persistCompiledTopicCardPlanCheckpoint({
+        repos: input.repos,
+        runId: input.runId,
+        deviceId: input.deviceId,
+        subjectId,
+        topicId,
+        concepts,
+        planPayload: generated.payload,
+        compiledPlan: cardPlan,
+      })
+    ));
+    if (generated.jobId) await input.repos.stageCheckpoints.linkJob(input.runId, TOPIC_CARD_PLAN_CHECKPOINT_STAGE, generated.jobId).catch(() => undefined);
+  }
+
+  return { sourceSpans, concepts, cardPlan, conceptCheckpoint, cardCheckpoint };
+}
+
+function sourceSpanIdsForCardPlan(cardPlan: CompiledTopicCardPlan, gameType?: MiniGameType): string[] {
+  const ids = gameType === undefined
+    ? cardPlan.cardSpecs.flatMap((spec) => spec.sourceSpanIds)
+    : cardPlan.miniGameSpecs.filter((spec) => spec.gameType === gameType).flatMap((spec) => spec.sourceSpanIds);
+  if (ids.length > 0) return stableStringList(ids);
+  return stableStringList([
+    ...cardPlan.cardSpecs.flatMap((spec) => spec.sourceSpanIds),
+    ...cardPlan.miniGameSpecs.flatMap((spec) => spec.sourceSpanIds),
+  ]);
+}
+
 async function buildTopicCardPromptSnapshot(
   repos: ReturnType<typeof makeRepos>,
   snapshot: Record<string, unknown>,
   theoryArtifactId: string | null,
+  preferredSourceSpanIds?: readonly string[],
 ): Promise<Record<string, unknown>> {
   if (hasStagePromptContext(snapshot)) return snapshot;
   if (!theoryArtifactId) {
@@ -422,7 +831,14 @@ async function buildTopicCardPromptSnapshot(
   const targetDifficulty = typeof snapshot.target_difficulty === 'number' ? snapshot.target_difficulty : 1;
   const syllabusQuestions = requireStringArray(questionsByDifficulty[String(targetDifficulty)], `topic-content theory artifact.coreQuestionsByDifficulty.${targetDifficulty}`);
   const sourceSpans = await buildTopicTheorySourceSpans({ subjectId, topicId, payload });
-  const selectedSourceSpans = selectRelevantTheorySourceSpans({ spans: sourceSpans, queries: syllabusQuestions });
+  const preferredIds = preferredSourceSpanIds === undefined ? [] : stableStringList(preferredSourceSpanIds);
+  const preferredIdSet = new Set(preferredIds);
+  const plannedSourceSpans = preferredIds.length > 0
+    ? sourceSpans.filter((span) => preferredIdSet.has(span.spanId))
+    : [];
+  const selectedSourceSpans = plannedSourceSpans.length > 0
+    ? plannedSourceSpans
+    : selectRelevantTheorySourceSpans({ spans: sourceSpans, queries: syllabusQuestions });
 
   return {
     ...snapshot,
@@ -433,6 +849,7 @@ async function buildTopicCardPromptSnapshot(
     syllabus_questions: syllabusQuestions,
     target_difficulty: targetDifficulty,
     grounding_source_count: selectedSourceSpans.length,
+    grounding_source_selection: plannedSourceSpans.length > 0 ? 'compiled-plan' : 'lexical-fallback',
     has_authoritative_primary_source: false,
   };
 }
@@ -566,6 +983,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
               messages: buildTopicTheoryMessages(snapshot),
               responseFormat: theoryResponseFormat,
               providerHealingRequested: generationPolicy.providerHealingRequested,
+              temperature: generationPolicy.temperature,
               stage: 'theory',
             },
             this.env,
@@ -590,17 +1008,35 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         theoryContentHash = await loadStageArtifactContentHash(repos, theoryArtifactId, 'theory');
       }
 
+      const downstreamStagesNeedPlanning = wantedStages.includes('study-cards') || wantedStages.some((stage) => stage.startsWith('mini-games:'));
+      if (downstreamStagesNeedPlanning) await checkCancel('before-topic-planning');
+      const planningState = downstreamStagesNeedPlanning
+        ? await buildOrLoadTopicPlanningState({
+          step,
+          repos,
+          env: this.env,
+          runId,
+          deviceId,
+          snapshot,
+          theoryArtifactId,
+        })
+        : null;
+      const plannedCardSourceSpanIds = planningState ? sourceSpanIdsForCardPlan(planningState.cardPlan) : undefined;
+
       // ---- 3. STUDY CARDS ----
       if (wantedStages.includes('study-cards')) {
         await checkCancel('before-study-cards');
 
         const cardsResponseFormat = jsonSchemaResponseFormat('topic-study-cards');
         const cardsSchemaVersion = (snapshot.schema_version as number) ?? topicStudyCardsSchemaVersion;
+        const studyCardsParentContentHashes: Record<string, string> = {};
+        if (bindParentArtifactHashes && theoryContentHash) studyCardsParentContentHashes.theory = theoryContentHash;
+        if (bindParentArtifactHashes && planningState) studyCardsParentContentHashes.cardPlan = planningState.cardCheckpoint.contentHash;
         const studyCardsInputHash = await topicContentStageInputHash({
           snapshot,
           baseInputHash: _inputHash,
           stage: 'study-cards',
-          parentContentHashes: bindParentArtifactHashes && theoryContentHash ? { theory: theoryContentHash } : undefined,
+          parentContentHashes: Object.keys(studyCardsParentContentHashes).length > 0 ? studyCardsParentContentHashes : undefined,
         });
 
         const studyCardsResult = (await useCachedStage(
@@ -609,7 +1045,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
           step, repos, runId, deviceId, 'study-cards', 'topic-study-cards',
           snapshot, studyCardsInputHash, cardsSchemaVersion,
           async (generationPolicy) => {
-            const promptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId);
+            const promptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId, plannedCardSourceSpanIds);
 
             return callTopicContent(
               {
@@ -617,6 +1053,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
                 messages: buildTopicStudyCardsMessages(promptSnapshot),
                 responseFormat: cardsResponseFormat,
                 providerHealingRequested: generationPolicy.providerHealingRequested,
+                temperature: generationPolicy.temperature,
                 stage: 'study-cards',
               },
               this.env,
@@ -660,6 +1097,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
             const parentContentHashes: Record<string, string> = {};
             if (bindParentArtifactHashes && theoryContentHash) parentContentHashes.theory = theoryContentHash;
             if (bindParentArtifactHashes && studyCardsContentHash) parentContentHashes.studyCards = studyCardsContentHash;
+            if (bindParentArtifactHashes && planningState) parentContentHashes.cardPlan = planningState.cardCheckpoint.contentHash;
             const miniGameInputHash = await topicContentStageInputHash({
               snapshot,
               baseInputHash: _inputHash,
@@ -676,7 +1114,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
                 const promptSnapshot = await buildTopicCardPromptSnapshot(repos, {
                   ...snapshot,
                   pipeline_kind: kind,
-                }, theoryArtifactId);
+                }, theoryArtifactId, planningState ? sourceSpanIdsForCardPlan(planningState.cardPlan, gameType) : undefined);
 
                 return callTopicContent(
                   {
@@ -684,6 +1122,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
                     messages: buildTopicMiniGameMessages(promptSnapshot),
                     responseFormat,
                     providerHealingRequested: generationPolicy.providerHealingRequested,
+                    temperature: generationPolicy.temperature,
                     stage: miniStage,
                   },
                   this.env,

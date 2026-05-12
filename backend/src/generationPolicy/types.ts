@@ -3,6 +3,8 @@ export const BACKEND_GENERATION_JOB_KINDS = [
   'subject-graph-edges',
   'topic-theory',
   'topic-study-cards',
+  'topic-concept-plan',
+  'topic-card-plan',
   'topic-mini-game-category-sort',
   'topic-mini-game-sequence-build',
   'topic-mini-game-match-pairs',
