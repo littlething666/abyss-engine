@@ -12,7 +12,7 @@
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort, toWorkflowStepError, workflowFailureDetails } from '../lib/workflowErrors';
-import { callTopicExpansion } from '../llm/openrouterClient';
+import { callTopicExpansion } from '../llm/llmClient';
 import { traceLlmCall, recordLlmJob } from './shared/workflowObservability';
 import {
   WORKFLOW_LLM_STEP_RETRY,

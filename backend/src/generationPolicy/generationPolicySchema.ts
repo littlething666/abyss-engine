@@ -3,7 +3,7 @@ import { BACKEND_GENERATION_JOB_KINDS } from './types';
 
 export const generationJobPolicySchema = z
   .object({
-    /** OpenRouter chat model id: `provider/model` (e.g. `google/gemini-3.1-flash-lite-preview`). Provider field is `openrouter`. */
+    /** OpenAI-compatible chat model id: `provider/model` (e.g. `google/gemini-3.1-flash-lite-preview`). Provider field is `openai-compatible`. */
     modelId: z
       .string()
       .trim()
@@ -25,7 +25,7 @@ const generationJobsSchema = z
 export const generationPolicySchema = z
   .object({
     version: z.literal(1),
-    provider: z.literal('openrouter'),
+    provider: z.literal('openai-compatible'),
     responseHealing: z
       .object({
         enabled: z.literal(true),

@@ -29,7 +29,7 @@ export interface LlmCallTrace {
   pipelineKind: PipelineKind;
   /** Stage identifier within the pipeline (e.g. 'generate', 'theory', 'mini-games:CATEGORY_SORT'). */
   stage: string;
-  /** Model identifier sent to OpenRouter. */
+  /** Model identifier sent to the configured LLM gateway. */
   model: string;
   /** Backend generation policy hash resolved for this LLM call. */
   generationPolicyHash: string | null;
@@ -39,7 +39,7 @@ export interface LlmCallTrace {
   schemaVersion: number;
   /** Deterministic input hash of the snapshot that produced the prompt. */
   inputHash: string;
-  /** Whether the OpenRouter response-healing plugin was requested. */
+  /** Whether provider response-healing was requested. */
   providerHealingRequested: boolean;
   /** ISO-8601 start timestamp. */
   startedAt: string;

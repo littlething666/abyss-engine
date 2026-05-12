@@ -16,7 +16,7 @@ function deviceRow() {
 function env(db: D1Database) {
   return {
     GENERATION_DB: db,
-    OPENROUTER_API_KEY: 'sk-or-test',
+    LLM_API_KEY: 'sk-or-test',
     ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
   };
 }
@@ -87,7 +87,7 @@ describe('run route validation', () => {
     ['model', { model: 'openai/gpt-4.1' }],
     ['modelId', { modelId: 'openai/gpt-4.1' }],
     ['model_id', { model_id: 'openai/gpt-4.1' }],
-    ['provider', { provider: 'openrouter' }],
+    ['provider', { provider: 'openai-compatible' }],
     ['providerHealingRequested', { providerHealingRequested: true }],
     ['responseHealing', { responseHealing: true }],
     ['plugins', { plugins: ['search'] }],
@@ -123,7 +123,7 @@ describe('run route validation', () => {
 
   it.each<[string, Record<string, unknown>]>([
     ['modelId', { modelId: 'openai/gpt-4.1' }],
-    ['provider', { provider: 'openrouter' }],
+    ['provider', { provider: 'openai-compatible' }],
     ['response_format', { response_format: { type: 'json_schema' } }],
   ])('rejects top-level backend generation policy field %s at POST /v1/runs', async (field, policyFragment) => {
     const { db, calls } = createFakeD1([q(deviceRow())]);

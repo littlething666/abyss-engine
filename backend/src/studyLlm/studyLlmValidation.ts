@@ -10,7 +10,7 @@ const FORBIDDEN_PROVIDER_FIELD_NAMES = new Set([
   'plugins',
   'tools',
   'reasoning',
-  'includeOpenRouterReasoning',
+  'includeProviderReasoning',
   'enableReasoning',
   'apiKey',
 ]);

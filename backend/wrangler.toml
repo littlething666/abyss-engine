@@ -1,7 +1,7 @@
 # abyss-durable-orchestrator — Phase 4 Cloudflare-native durable backend
 #
 # Secrets (set via `wrangler secret put`):
-#   OPENROUTER_API_KEY      — OpenRouter API key for LLM calls
+#   LLM_API_KEY             — API key for the configured OpenAI-compatible LLM gateway
 # D1/R2:
 #   Create/bind the database and bucket named below before deployment.
 #   R2 (matches [[r2_buckets]] bucket_name): pnpm r2:bucket:create
@@ -74,4 +74,8 @@ bucket_name = "abyss-generation-artifacts"
 # Allowed CORS origins for the API surface (comma-separated).
 # Production origin(s) go first; localhost is always included for dev.
 ALLOWED_ORIGINS = "https://abyss.globesoul.com,https://littlething666.github.io,http://localhost:3000"
+LLM_PROVIDER = "openrouter"
+LLM_BASE_URL = "https://openrouter.ai/api/v1"
+LLM_REFERRER = "https://abyss.globesoul.com"
+LLM_TITLE = "Abyss Engine Durable Orchestrator"
 

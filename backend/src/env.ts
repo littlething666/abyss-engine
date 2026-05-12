@@ -4,8 +4,8 @@
 type Workflow = any;
 export interface Env {
   // ---- secrets ----
-  /** OpenRouter API key for server-side LLM calls. */
-  OPENROUTER_API_KEY: string;
+  /** API key for the configured OpenAI-compatible LLM gateway. */
+  LLM_API_KEY: string;
 
   // ---- storage bindings ----
   /** Cloudflare D1 database for queryable durable run/content state. */
@@ -16,8 +16,14 @@ export interface Env {
   // ---- non-secret vars ----
   /** Comma-separated CORS allowlist (from wrangler.toml `[vars]`). */
   ALLOWED_ORIGINS: string;
-  /** OpenRouter referrer URL for attribution headers. */
-  OPENROUTER_REFERRER?: string;
+  /** OpenAI-compatible gateway base URL, without trailing `/chat/completions`. */
+  LLM_BASE_URL?: string;
+  /** Gateway/provider flavor for provider-specific compatibility features. */
+  LLM_PROVIDER?: 'openrouter' | 'openai-compatible';
+  /** Optional referrer URL for providers that support attribution headers. */
+  LLM_REFERRER?: string;
+  /** Optional app title for providers that support attribution headers. */
+  LLM_TITLE?: string;
 
   // ---- workflow bindings ----
   CRYSTAL_TRIAL_WORKFLOW: Workflow;

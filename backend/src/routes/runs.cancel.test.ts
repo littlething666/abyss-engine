@@ -169,7 +169,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
       }),
       {
         GENERATION_DB: mockClient,
-        OPENROUTER_API_KEY: 'sk-or-test',
+        LLM_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
     );
@@ -216,7 +216,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
       }),
       {
         GENERATION_DB: mockClient,
-        OPENROUTER_API_KEY: 'sk-or-test',
+        LLM_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
     );
@@ -264,7 +264,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
       }),
       {
         GENERATION_DB: mockClient,
-        OPENROUTER_API_KEY: 'sk-or-test',
+        LLM_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
     );
@@ -329,7 +329,7 @@ describe('POST /v1/runs/:id/cancel — cancel race tests', () => {
       }),
       {
         GENERATION_DB: mockClient,
-        OPENROUTER_API_KEY: 'sk-or-test',
+        LLM_API_KEY: 'sk-or-test',
         ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
       },
     );
@@ -405,7 +405,7 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
           }),
           {
             GENERATION_DB: mockClient,
-            OPENROUTER_API_KEY: 'sk-or-test',
+            LLM_API_KEY: 'sk-or-test',
             ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
           },
         );
@@ -450,7 +450,7 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
           }),
           {
             GENERATION_DB: mockClient,
-            OPENROUTER_API_KEY: 'sk-or-test',
+            LLM_API_KEY: 'sk-or-test',
             ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
           },
         );
@@ -505,7 +505,7 @@ describe('Cross-pipeline cancel race tests (all 4 pipeline kinds)', () => {
           }),
           {
             GENERATION_DB: mockClient,
-            OPENROUTER_API_KEY: 'sk-or-test',
+            LLM_API_KEY: 'sk-or-test',
             ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
           },
         );

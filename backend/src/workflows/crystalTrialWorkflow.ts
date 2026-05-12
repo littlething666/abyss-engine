@@ -3,7 +3,7 @@
  *
  * Six orchestrated steps executed durably on Cloudflare Workflows:
  *   1. plan      — validate snapshot, cache-hit check (budget reserved at route)
- *   2. generate  — OpenRouter call with strict json_schema (retries: 2)
+ *   2. generate  — LLM call with strict json_schema (retries: 2)
  *   3. parse     — strictParseArtifact('crystal-trial', raw) via contracts
  *   4. validate  — semanticValidateArtifact('crystal-trial', payload, ctx)
  *   5. persist   — contentHash(payload), R2 put + artifacts upsert
@@ -16,7 +16,7 @@
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort, toWorkflowStepError, workflowFailureDetails } from '../lib/workflowErrors';
-import { callCrystalTrial } from '../llm/openrouterClient';
+import { callCrystalTrial } from '../llm/llmClient';
 import { traceLlmCall, recordLlmJob } from './shared/workflowObservability';
 import {
   WORKFLOW_LLM_STEP_RETRY,

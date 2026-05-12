@@ -1,12 +1,12 @@
 /**
- * Server-side OpenRouter client for the durable orchestrator Worker.
+ * Server-side OpenAI-compatible LLM client for the durable orchestrator Worker.
  *
  * The Worker holds the API key and never exposes it. All durable pipeline adapters route
- * through `callOpenRouterChat`, preserving one canonical strict `json_schema`
+ * through `callLlmChat`, preserving one canonical strict `json_schema`
  * request shape while keeping per-pipeline typed seams at workflow call sites.
  *
  * Phase 4: Backend Generation Policy owns model id and provider-healing posture.
- * The OpenRouter boundary fails loudly on malformed provider wrappers; it does
+ * The LLM boundary fails loudly on malformed provider wrappers; it does
  * not apply downstream parser recovery or `json_object` fallbacks.
  */
 
@@ -14,23 +14,33 @@ import { WorkflowFail } from '../lib/workflowErrors';
 import type { JsonSchemaResponseFormat } from '../contracts/generationContracts';
 import type { Env } from '../env';
 
-const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const REFERRER = 'https://abyss.globesoul.com';
-const X_TITLE = 'Abyss Engine Durable Orchestrator';
+const DEFAULT_LLM_BASE_URL = 'https://openrouter.ai/api/v1';
 
-export type OpenRouterMessage = { role: string; content: string };
-export type OpenRouterJobKind = 'crystal-trial' | 'topic-expansion' | 'subject-graph' | 'topic-content';
+export type LlmMessage = { role: string; content: string };
+export type LlmJobKind = 'crystal-trial' | 'topic-expansion' | 'subject-graph' | 'topic-content';
 
-function openRouterHeaders(env: Env): HeadersInit {
-  return {
-    authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-    'content-type': 'application/json',
-    'http-referer': env.OPENROUTER_REFERRER ?? REFERRER,
-    'x-title': X_TITLE,
-  };
+function llmChatUrl(env: Env): string {
+  const baseUrl = (env.LLM_BASE_URL || DEFAULT_LLM_BASE_URL).replace(/\/+$/, '');
+  return `${baseUrl}/chat/completions`;
 }
 
-function openRouterFailureCode(status: number, bodyText = ''): string {
+function llmHeaders(env: Env): HeadersInit {
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${env.LLM_API_KEY}`,
+    'content-type': 'application/json',
+  };
+
+  if (env.LLM_REFERRER) headers['http-referer'] = env.LLM_REFERRER;
+  if (env.LLM_TITLE) headers['x-title'] = env.LLM_TITLE;
+
+  return headers;
+}
+
+function shouldUseProviderPlugins(env: Env): boolean {
+  return env.LLM_PROVIDER === 'openrouter' || (env.LLM_BASE_URL ?? DEFAULT_LLM_BASE_URL).includes('openrouter.ai');
+}
+
+function llmFailureCode(status: number, bodyText = ''): string {
   const normalizedBody = bodyText.toLowerCase();
   const quotaExhausted = /\b(insufficient[_ -]?quota|quota|credits?|billing|payment)\b/.test(normalizedBody);
 
@@ -45,7 +55,7 @@ function openRouterFailureCode(status: number, bodyText = ''): string {
   return 'validation:provider-request';
 }
 
-function formatOpenRouterErrorBody(bodyText: string): string {
+function formatLlmErrorBody(bodyText: string): string {
   const trimmed = bodyText.trim();
   if (!trimmed) return '';
 
@@ -56,28 +66,28 @@ function formatOpenRouterErrorBody(bodyText: string): string {
   }
 }
 
-async function openRouterFailureDetails(res: Response): Promise<{ code: string; message: string }> {
+async function llmFailureDetails(res: Response): Promise<{ code: string; message: string }> {
   let bodyText = '';
   try {
     bodyText = await res.text();
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     return {
-      code: openRouterFailureCode(res.status),
-      message: `openrouter ${res.status}: failed to read error body: ${reason}`,
+      code: llmFailureCode(res.status),
+      message: `llm ${res.status}: failed to read error body: ${reason}`,
     };
   }
 
-  const body = formatOpenRouterErrorBody(bodyText);
+  const body = formatLlmErrorBody(bodyText);
   return {
-    code: openRouterFailureCode(res.status, bodyText),
-    message: body ? `openrouter ${res.status}: ${body}` : `openrouter ${res.status}`,
+    code: llmFailureCode(res.status, bodyText),
+    message: body ? `llm ${res.status}: ${body}` : `llm ${res.status}`,
   };
 }
 
-async function throwIfOpenRouterFailed(res: Response): Promise<void> {
+async function throwIfLlmFailed(res: Response): Promise<void> {
   if (res.ok) return;
-  const failure = await openRouterFailureDetails(res);
+  const failure = await llmFailureDetails(res);
   throw new WorkflowFail(failure.code, failure.message);
 }
 
@@ -85,74 +95,75 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-async function parseOpenRouterChatResponse(
+async function parseLlmChatResponse(
   res: Response,
-  jobKind: OpenRouterJobKind,
-): Promise<OpenRouterCallResult> {
+  jobKind: LlmJobKind,
+): Promise<LlmChatResult> {
   let json: unknown;
   try {
     json = await res.json();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new WorkflowFail('parse:zod-shape', `invalid OpenRouter JSON response for ${jobKind}: ${message}`);
+    throw new WorkflowFail('parse:zod-shape', `invalid LLM JSON response for ${jobKind}: ${message}`);
   }
 
   if (!isRecord(json) || !Array.isArray(json.choices)) {
-    throw new WorkflowFail('parse:zod-shape', `invalid OpenRouter response wrapper for ${jobKind}`);
+    throw new WorkflowFail('parse:zod-shape', `invalid LLM response wrapper for ${jobKind}`);
   }
 
   const firstChoice = json.choices[0];
   if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) {
-    throw new WorkflowFail('parse:zod-shape', `missing assistant content in OpenRouter response for ${jobKind}`);
+    throw new WorkflowFail('parse:zod-shape', `missing assistant content in LLM response for ${jobKind}`);
   }
 
   const text = firstChoice.message.content;
   if (typeof text !== 'string') {
-    throw new WorkflowFail('parse:zod-shape', `missing assistant content in OpenRouter response for ${jobKind}`);
+    throw new WorkflowFail('parse:zod-shape', `missing assistant content in LLM response for ${jobKind}`);
   }
 
   return { text };
 }
 
-export interface OpenRouterCallResult {
+export interface LlmChatResult {
   text: string;
 }
 
-export interface OpenRouterChatArgs {
-  jobKind: OpenRouterJobKind;
+export interface LlmChatArgs {
+  jobKind: LlmJobKind;
   modelId: string;
-  messages: OpenRouterMessage[];
+  messages: LlmMessage[];
   /** Contract-owned JSON Schema response format (from `jsonSchemaResponseFormat(...)`). */
   responseFormat: JsonSchemaResponseFormat;
-  /** Backend Generation Policy-owned OpenRouter response-healing posture. */
+  /** Backend Generation Policy-owned provider response-healing posture. */
   providerHealingRequested: boolean;
   temperature?: number;
 }
 
 /**
- * Canonical OpenRouter chat-completions call for durable pipeline jobs.
+ * Canonical OpenAI-compatible chat-completions call for durable pipeline jobs.
  *
  * All pipeline-specific adapters below route through this helper so request
  * construction cannot drift: strict `json_schema`, optional provider-healing
- * plugin, optional temperature, no streaming, and no
- * `json_object` fallback.
+ * plugin when supported by the configured gateway, optional temperature,
+ * no streaming, and no `json_object` fallback.
  */
-export async function callOpenRouterChat(
-  args: OpenRouterChatArgs,
+export async function callLlmChat(
+  args: LlmChatArgs,
   env: Env,
-): Promise<OpenRouterCallResult> {
-  if (!env.OPENROUTER_API_KEY) {
-    throw new WorkflowFail('config:invalid', 'missing OPENROUTER_API_KEY');
+): Promise<LlmChatResult> {
+  if (!env.LLM_API_KEY) {
+    throw new WorkflowFail('config:invalid', 'missing LLM_API_KEY');
   }
 
   const body: Record<string, unknown> = {
     model: args.modelId,
     messages: args.messages,
     response_format: args.responseFormat,
-    plugins: args.providerHealingRequested
-      ? [{ id: 'response-healing' }]
-      : undefined,
   };
+
+  if (args.providerHealingRequested && shouldUseProviderPlugins(env)) {
+    body.plugins = [{ id: 'response-healing' }];
+  }
 
   if (args.temperature !== undefined) {
     body.temperature = args.temperature;
@@ -160,9 +171,9 @@ export async function callOpenRouterChat(
 
   let res: Response;
   try {
-    res = await fetch(OPENROUTER_CHAT_URL, {
+    res = await fetch(llmChatUrl(env), {
       method: 'POST',
-      headers: openRouterHeaders(env),
+      headers: llmHeaders(env),
       body: JSON.stringify(body),
     });
   } catch (err) {
@@ -172,18 +183,18 @@ export async function callOpenRouterChat(
     );
   }
 
-  await throwIfOpenRouterFailed(res);
-  return parseOpenRouterChatResponse(res, args.jobKind);
+  await throwIfLlmFailed(res);
+  return parseLlmChatResponse(res, args.jobKind);
 }
 
 
-export type OpenRouterStudyStreamChunk =
+export type LlmStudyStreamChunk =
   | { type: 'content'; text: string }
   | { type: 'reasoning'; text: string };
 
-export interface OpenRouterStudyStreamArgs {
+export interface LlmStudyStreamArgs {
   modelId: string;
-  messages: OpenRouterMessage[];
+  messages: LlmMessage[];
   temperature?: number;
   requestReasoning: boolean;
 }
@@ -192,7 +203,7 @@ function hasNonWhitespaceText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function formatOpenRouterReasoningDetails(details: unknown): string | null {
+function formatProviderReasoningDetails(details: unknown): string | null {
   if (!Array.isArray(details) || details.length === 0) return null;
   const parts: string[] = [];
   for (const item of details) {
@@ -219,23 +230,23 @@ function formatOpenRouterReasoningDetails(details: unknown): string | null {
   return parts.length > 0 ? parts.join('\n\n') : null;
 }
 
-function reasoningTextFromOpenRouterDelta(delta: Record<string, unknown>): string | null {
+function reasoningTextFromProviderDelta(delta: Record<string, unknown>): string | null {
   if (hasNonWhitespaceText(delta.reasoning)) return delta.reasoning;
-  return formatOpenRouterReasoningDetails(delta.reasoning_details);
+  return formatProviderReasoningDetails(delta.reasoning_details);
 }
 
 function providerErrorMessage(errorValue: unknown): string {
-  if (!isRecord(errorValue)) return 'OpenRouter stream error';
+  if (!isRecord(errorValue)) return 'LLM stream error';
   const message = errorValue.message;
   if (typeof message === 'string' && message.trim()) return message;
   try {
     return JSON.stringify(errorValue);
   } catch {
-    return 'OpenRouter stream error';
+    return 'LLM stream error';
   }
 }
 
-export function parseOpenRouterStudyStreamSseDataLine(rawLine: string): OpenRouterStudyStreamChunk[] {
+export function parseLlmStudyStreamSseDataLine(rawLine: string): LlmStudyStreamChunk[] {
   const line = rawLine.trim();
   if (!line.startsWith('data:')) return [];
   const payload = line.slice(5).trim();
@@ -246,11 +257,11 @@ export function parseOpenRouterStudyStreamSseDataLine(rawLine: string): OpenRout
     parsed = JSON.parse(payload);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new WorkflowFail('parse:zod-shape', `invalid OpenRouter stream JSON: ${message}`);
+    throw new WorkflowFail('parse:zod-shape', `invalid LLM stream JSON: ${message}`);
   }
 
   if (!isRecord(parsed)) {
-    throw new WorkflowFail('parse:zod-shape', 'invalid OpenRouter stream wrapper');
+    throw new WorkflowFail('parse:zod-shape', 'invalid LLM stream wrapper');
   }
   if (parsed.error !== undefined && parsed.error !== null) {
     throw new WorkflowFail('llm:upstream-transient', providerErrorMessage(parsed.error));
@@ -264,8 +275,8 @@ export function parseOpenRouterStudyStreamSseDataLine(rawLine: string): OpenRout
   }
   if (!isRecord(firstChoice.delta)) return [];
 
-  const out: OpenRouterStudyStreamChunk[] = [];
-  const reasoningText = reasoningTextFromOpenRouterDelta(firstChoice.delta);
+  const out: LlmStudyStreamChunk[] = [];
+  const reasoningText = reasoningTextFromProviderDelta(firstChoice.delta);
   if (reasoningText) out.push({ type: 'reasoning', text: reasoningText });
   if (typeof firstChoice.delta.content === 'string' && firstChoice.delta.content.length > 0) {
     out.push({ type: 'content', text: firstChoice.delta.content });
@@ -273,7 +284,7 @@ export function parseOpenRouterStudyStreamSseDataLine(rawLine: string): OpenRout
   return out;
 }
 
-async function* parseOpenRouterStudyStreamBody(body: ReadableStream<Uint8Array>): AsyncGenerator<OpenRouterStudyStreamChunk> {
+async function* parseLlmStudyStreamBody(body: ReadableStream<Uint8Array>): AsyncGenerator<LlmStudyStreamChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -287,7 +298,7 @@ async function* parseOpenRouterStudyStreamBody(body: ReadableStream<Uint8Array>)
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
       for (const rawLine of lines) {
-        for (const chunk of parseOpenRouterStudyStreamSseDataLine(rawLine)) {
+        for (const chunk of parseLlmStudyStreamSseDataLine(rawLine)) {
           sawAnyChunk = true;
           yield chunk;
         }
@@ -295,7 +306,7 @@ async function* parseOpenRouterStudyStreamBody(body: ReadableStream<Uint8Array>)
     }
 
     buffer += decoder.decode();
-    for (const chunk of parseOpenRouterStudyStreamSseDataLine(buffer)) {
+    for (const chunk of parseLlmStudyStreamSseDataLine(buffer)) {
       sawAnyChunk = true;
       yield chunk;
     }
@@ -304,21 +315,21 @@ async function* parseOpenRouterStudyStreamBody(body: ReadableStream<Uint8Array>)
   }
 
   if (!sawAnyChunk) {
-    throw new WorkflowFail('parse:zod-shape', 'OpenRouter study stream ended with no assistant content');
+    throw new WorkflowFail('parse:zod-shape', 'LLM study stream ended with no assistant content');
   }
 }
 
 /**
- * Opens a backend-owned OpenRouter streaming call for study explanation routes.
+ * Opens a backend-owned OpenAI-compatible streaming call for study explanation routes.
  * Fetch, auth, failure classification, model id, reasoning, and request shape are
  * owned entirely by the Worker before a browser SSE response is returned.
  */
-export async function callOpenRouterStudyStream(
-  args: OpenRouterStudyStreamArgs,
+export async function callLlmStudyStream(
+  args: LlmStudyStreamArgs,
   env: Env,
-): Promise<AsyncIterable<OpenRouterStudyStreamChunk>> {
-  if (!env.OPENROUTER_API_KEY) {
-    throw new WorkflowFail('config:invalid', 'missing OPENROUTER_API_KEY');
+): Promise<AsyncIterable<LlmStudyStreamChunk>> {
+  if (!env.LLM_API_KEY) {
+    throw new WorkflowFail('config:invalid', 'missing LLM_API_KEY');
   }
 
   const body: Record<string, unknown> = {
@@ -331,9 +342,9 @@ export async function callOpenRouterStudyStream(
 
   let res: Response;
   try {
-    res = await fetch(OPENROUTER_CHAT_URL, {
+    res = await fetch(llmChatUrl(env), {
       method: 'POST',
-      headers: openRouterHeaders(env),
+      headers: llmHeaders(env),
       body: JSON.stringify(body),
     });
   } catch (err) {
@@ -343,23 +354,23 @@ export async function callOpenRouterStudyStream(
     );
   }
 
-  await throwIfOpenRouterFailed(res);
+  await throwIfLlmFailed(res);
   if (!res.body) {
-    throw new WorkflowFail('parse:zod-shape', 'OpenRouter study stream missing response body');
+    throw new WorkflowFail('parse:zod-shape', 'LLM study stream missing response body');
   }
 
-  return parseOpenRouterStudyStreamBody(res.body);
+  return parseLlmStudyStreamBody(res.body);
 }
 
 export interface CrystalTrialGenerateArgs {
   modelId: string;
-  messages: OpenRouterMessage[];
+  messages: LlmMessage[];
   responseFormat: JsonSchemaResponseFormat;
   providerHealingRequested: boolean;
 }
 
 /**
- * Call OpenRouter for Crystal Trial generation with strict json_schema.
+ * Call the configured LLM gateway for Crystal Trial generation with strict json_schema.
  *
  * Returns the raw assistant text. The caller (workflow step) is
  * responsible for strict-parsing the text through the contracts module.
@@ -367,8 +378,8 @@ export interface CrystalTrialGenerateArgs {
 export async function callCrystalTrial(
   args: CrystalTrialGenerateArgs,
   env: Env,
-): Promise<OpenRouterCallResult> {
-  return callOpenRouterChat({
+): Promise<LlmChatResult> {
+  return callLlmChat({
     jobKind: 'crystal-trial',
     modelId: args.modelId,
     messages: args.messages,
@@ -379,19 +390,19 @@ export async function callCrystalTrial(
 
 export interface TopicExpansionGenerateArgs {
   modelId: string;
-  messages: OpenRouterMessage[];
+  messages: LlmMessage[];
   responseFormat: JsonSchemaResponseFormat;
   providerHealingRequested: boolean;
 }
 
 /**
- * Call OpenRouter for Topic Expansion generation with strict json_schema.
+ * Call the configured LLM gateway for Topic Expansion generation with strict json_schema.
  */
 export async function callTopicExpansion(
   args: TopicExpansionGenerateArgs,
   env: Env,
-): Promise<OpenRouterCallResult> {
-  return callOpenRouterChat({
+): Promise<LlmChatResult> {
+  return callLlmChat({
     jobKind: 'topic-expansion',
     modelId: args.modelId,
     messages: args.messages,
@@ -402,20 +413,20 @@ export async function callTopicExpansion(
 
 export interface SubjectGraphGenerateArgs {
   modelId: string;
-  messages: OpenRouterMessage[];
+  messages: LlmMessage[];
   responseFormat: JsonSchemaResponseFormat;
   providerHealingRequested: boolean;
   temperature?: number;
 }
 
 /**
- * Call OpenRouter for Subject Graph generation with strict json_schema.
+ * Call the configured LLM gateway for Subject Graph generation with strict json_schema.
  */
 export async function callSubjectGraph(
   args: SubjectGraphGenerateArgs,
   env: Env,
-): Promise<OpenRouterCallResult> {
-  return callOpenRouterChat({
+): Promise<LlmChatResult> {
+  return callLlmChat({
     jobKind: 'subject-graph',
     modelId: args.modelId,
     messages: args.messages,
@@ -427,7 +438,7 @@ export async function callSubjectGraph(
 
 export interface TopicContentGenerateArgs {
   modelId: string;
-  messages: OpenRouterMessage[];
+  messages: LlmMessage[];
   responseFormat: JsonSchemaResponseFormat;
   providerHealingRequested: boolean;
   /** The stage being generated: theory, study-cards, or mini-games:<gameType>. */
@@ -435,13 +446,13 @@ export interface TopicContentGenerateArgs {
 }
 
 /**
- * Call OpenRouter for Topic Content generation with strict json_schema.
+ * Call the configured LLM gateway for Topic Content generation with strict json_schema.
  */
 export async function callTopicContent(
   args: TopicContentGenerateArgs,
   env: Env,
-): Promise<OpenRouterCallResult> {
-  return callOpenRouterChat({
+): Promise<LlmChatResult> {
+  return callLlmChat({
     jobKind: 'topic-content',
     modelId: args.modelId,
     messages: args.messages,

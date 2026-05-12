@@ -29,7 +29,7 @@ async function fetchWorker(
   const url = new URL(path, 'https://fakehost');
   const request = new Request(url.toString(), init);
   return app.fetch(request, {
-    OPENROUTER_API_KEY: 'sk-or-test',
+    LLM_API_KEY: 'sk-or-test',
     ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
   });
 }
@@ -54,7 +54,7 @@ describe('deviceId middleware', () => {
     const url = new URL('/v1/runs', 'https://fakehost');
     const request = new Request(url.toString());
     const response = await app.fetch(request, {
-      OPENROUTER_API_KEY: 'sk-or-test',
+      LLM_API_KEY: 'sk-or-test',
       ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
     });
     expect(response.status).toBe(400);

@@ -4,12 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../env';
 import { studyLlm } from './studyLlm';
 
-const { callOpenRouterStudyStreamMock } = vi.hoisted(() => ({
-  callOpenRouterStudyStreamMock: vi.fn(),
+const { callLlmStudyStreamMock } = vi.hoisted(() => ({
+  callLlmStudyStreamMock: vi.fn(),
 }));
 
-vi.mock('../llm/openrouterClient', () => ({
-  callOpenRouterStudyStream: callOpenRouterStudyStreamMock,
+vi.mock('../llm/llmClient', () => ({
+  callLlmStudyStream: callLlmStudyStreamMock,
 }));
 
 function testApp() {
@@ -30,7 +30,7 @@ async function responseText(response: Response): Promise<string> {
 
 describe('studyLlm route', () => {
   beforeEach(() => {
-    callOpenRouterStudyStreamMock.mockReset();
+    callLlmStudyStreamMock.mockReset();
   });
 
   it('requires X-Abyss-Device at the v1 boundary', async () => {
@@ -63,11 +63,11 @@ describe('studyLlm route', () => {
 
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ error: 'provider_field_forbidden' });
-    expect(callOpenRouterStudyStreamMock).not.toHaveBeenCalled();
+    expect(callLlmStudyStreamMock).not.toHaveBeenCalled();
   });
 
   it('streams normalized content and reasoning events from backend policy-owned call', async () => {
-    callOpenRouterStudyStreamMock.mockResolvedValue((async function* () {
+    callLlmStudyStreamMock.mockResolvedValue((async function* () {
       yield { type: 'reasoning', text: 'plan' };
       yield { type: 'content', text: 'answer' };
     })());
@@ -96,8 +96,8 @@ describe('studyLlm route', () => {
         + 'data: {"type":"content","text":"answer"}\n\n'
         + 'data: {"type":"done"}\n\n',
     );
-    expect(callOpenRouterStudyStreamMock).toHaveBeenCalledTimes(1);
-    expect(callOpenRouterStudyStreamMock.mock.calls[0][0]).toMatchObject({
+    expect(callLlmStudyStreamMock).toHaveBeenCalledTimes(1);
+    expect(callLlmStudyStreamMock.mock.calls[0][0]).toMatchObject({
       modelId: expect.any(String),
       requestReasoning: true,
       messages: expect.any(Array),
@@ -105,7 +105,7 @@ describe('studyLlm route', () => {
   });
 
   it('accepts question explanation intent and sends backend-built messages', async () => {
-    callOpenRouterStudyStreamMock.mockResolvedValue((async function* () {
+    callLlmStudyStreamMock.mockResolvedValue((async function* () {
       yield { type: 'content', text: 'answer' };
     })());
 
@@ -126,7 +126,7 @@ describe('studyLlm route', () => {
     });
 
     expect(res.status).toBe(200);
-    const args = callOpenRouterStudyStreamMock.mock.calls[0][0];
+    const args = callLlmStudyStreamMock.mock.calls[0][0];
     expect(args.messages[0].content).toContain('Derivatives');
     expect(args.messages[0].content).toContain('What is slope?');
     expect(args.messages[0].content).toContain('Be concise.');

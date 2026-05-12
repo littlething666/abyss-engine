@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 
 import type { Env } from '../env';
 import { WorkflowFail } from '../lib/workflowErrors';
-import { callOpenRouterStudyStream } from '../llm/openrouterClient';
+import { callLlmStudyStream } from '../llm/llmClient';
 import { buildStudyLlmMessages } from '../studyLlm/studyLlmPrompts';
 import { resolveStudyLlmPolicy } from '../studyLlm/studyLlmPolicy';
 import { encodeStudyLlmSseEvent } from '../studyLlm/studyLlmStream';
@@ -50,7 +50,7 @@ studyLlm.post('/study-llm/stream', async (c) => {
 
   let upstreamChunks: AsyncIterable<{ type: 'content' | 'reasoning'; text: string }>;
   try {
-    upstreamChunks = await callOpenRouterStudyStream(
+    upstreamChunks = await callLlmStudyStream(
       {
         modelId: policy.modelId,
         messages,

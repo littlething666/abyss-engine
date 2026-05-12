@@ -58,7 +58,7 @@ async function seedFailedParentRun(runId: string): Promise<void> {
       subject_id: 'runtime-subject',
       schema_version: 1,
       prompt_template_version: 'v1',
-      model_id: 'openrouter/test/model',
+      model_id: 'provider/test-model',
       captured_at: now,
     }),
   ).run();
@@ -80,7 +80,7 @@ describe('runtime Worker run routes', () => {
       headers: headers({ 'idempotency-key': 'idem-runtime-invalid' }),
       body: JSON.stringify({
         kind: 'subject-graph',
-        intent: { subjectId: 'runtime-subject', modelId: 'openrouter/bad/model' },
+        intent: { subjectId: 'runtime-subject', modelId: 'provider/bad-model' },
         snapshot: {},
       }),
     }), env);

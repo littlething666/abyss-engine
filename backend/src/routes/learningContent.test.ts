@@ -27,7 +27,7 @@ function workflowStub() {
 
 function envWithDb(db: D1Database): Env {
   return {
-    OPENROUTER_API_KEY: 'sk-or-test',
+    LLM_API_KEY: 'sk-or-test',
     ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
     GENERATION_DB: db,
     CRYSTAL_TRIAL_WORKFLOW: workflowStub(),

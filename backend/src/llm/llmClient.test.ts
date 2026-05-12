@@ -1,19 +1,19 @@
 /**
- * OpenRouter client tests — Phase 1 PR-D.
+ * LLM client tests.
  *
- * Tests the server-side `callCrystalTrial` with mocked `fetch`.
+ * Tests the server-side LLM adapters with mocked `fetch`.
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  callOpenRouterChat,
-  callOpenRouterStudyStream,
+  callLlmChat,
+  callLlmStudyStream,
   callCrystalTrial,
   callTopicExpansion,
   callSubjectGraph,
   callTopicContent,
-  parseOpenRouterStudyStreamSseDataLine,
-} from '../llm/openrouterClient';
+  parseLlmStudyStreamSseDataLine,
+} from '../llm/llmClient';
 import type { Env } from '../env';
 
 const originalFetch = globalThis.fetch;
@@ -23,7 +23,11 @@ afterEach(() => {
 });
 
 const testEnv: Env = {
-  OPENROUTER_API_KEY: 'sk-or-test',
+  LLM_API_KEY: 'sk-or-test',
+  LLM_BASE_URL: 'https://openrouter.ai/api/v1',
+  LLM_PROVIDER: 'openrouter',
+  LLM_REFERRER: 'https://abyss.globesoul.com',
+  LLM_TITLE: 'Abyss Engine Durable Orchestrator',
   ALLOWED_ORIGINS: 'https://abyss.globesoul.com',
 };
 
@@ -50,14 +54,14 @@ function mockFetch(status: number, body: unknown) {
   });
 }
 
-describe('callOpenRouterChat', () => {
+describe('callLlmChat', () => {
   it('builds the canonical shared request body without leaking jobKind', async () => {
     mockFetch(200, {
       choices: [{ message: { content: '{}' } }],
       usage: null,
     });
 
-    await callOpenRouterChat({ ...testArgs, jobKind: 'subject-graph', temperature: 0.25 }, testEnv);
+    await callLlmChat({ ...testArgs, jobKind: 'subject-graph', temperature: 0.25 }, testEnv);
 
     const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     const body = JSON.parse(fetchCall[1].body);
@@ -71,25 +75,25 @@ describe('callOpenRouterChat', () => {
     expect(body.stream).toBeUndefined();
   });
 
-  it('fails loudly when the OpenRouter response wrapper is malformed', async () => {
+  it('fails loudly when the LLM response wrapper is malformed', async () => {
     mockFetch(200, { choices: null });
 
     await expect(
-      callOpenRouterChat({ ...testArgs, jobKind: 'crystal-trial' }, testEnv),
+      callLlmChat({ ...testArgs, jobKind: 'crystal-trial' }, testEnv),
     ).rejects.toMatchObject({
       code: 'parse:zod-shape',
-      message: 'invalid OpenRouter response wrapper for crystal-trial',
+      message: 'invalid LLM response wrapper for crystal-trial',
     });
   });
 
-  it('ignores malformed OpenRouter usage accounting', async () => {
+  it('ignores malformed provider usage accounting', async () => {
     mockFetch(200, {
       choices: [{ message: { content: '{}' } }],
       usage: { prompt_tokens: 1, completion_tokens: '2', total_tokens: 3 },
     });
 
     await expect(
-      callOpenRouterChat({ ...testArgs, jobKind: 'topic-content' }, testEnv),
+      callLlmChat({ ...testArgs, jobKind: 'topic-content' }, testEnv),
     ).resolves.toEqual({ text: '{}' });
   });
 
@@ -98,7 +102,7 @@ describe('callOpenRouterChat', () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('connection reset'));
 
     await expect(
-      callOpenRouterChat({ ...testArgs, jobKind: 'topic-content' }, testEnv),
+      callLlmChat({ ...testArgs, jobKind: 'topic-content' }, testEnv),
     ).rejects.toMatchObject({
       code: 'llm:network',
       message: 'fetch failed: connection reset',
@@ -130,7 +134,7 @@ describe('callCrystalTrial', () => {
     expect(body.response_format.json_schema.strict).toBe(true);
   });
 
-  it('sends ASCII-safe OpenRouter attribution headers', async () => {
+  it('sends ASCII-safe provider attribution headers', async () => {
     mockFetch(200, {
       choices: [{ message: { content: '{}' } }],
       usage: null,
@@ -175,7 +179,7 @@ describe('callCrystalTrial', () => {
 
     await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({
       code: 'llm:rate-limit',
-      message: 'openrouter 429: {}',
+      message: 'llm 429: {}',
     });
   });
 
@@ -184,7 +188,7 @@ describe('callCrystalTrial', () => {
 
     await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({
       code: 'config:quota-exhausted',
-      message: 'openrouter 429: {"error":{"message":"insufficient_quota: credits exhausted"}}',
+      message: 'llm 429: {"error":{"message":"insufficient_quota: credits exhausted"}}',
     });
   });
 
@@ -199,7 +203,7 @@ describe('callCrystalTrial', () => {
     await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({ code: 'llm:upstream-transient' });
   });
 
-  it('includes OpenRouter error response body and treats 400 as non-retryable provider request validation', async () => {
+  it('includes LLM error response body and treats 400 as non-retryable provider request validation', async () => {
     mockFetch(400, {
       error: {
         message: 'Provider rejected json_schema',
@@ -209,7 +213,7 @@ describe('callCrystalTrial', () => {
 
     await expect(callCrystalTrial(testArgs, testEnv)).rejects.toMatchObject({
       code: 'validation:provider-request',
-      message: 'openrouter 400: {"error":{"message":"Provider rejected json_schema","code":400}}',
+      message: 'llm 400: {"error":{"message":"Provider rejected json_schema","code":400}}',
     });
   });
 
@@ -230,12 +234,12 @@ describe('callCrystalTrial', () => {
     await expect(callCrystalTrial(testArgs, testEnv)).rejects.toThrow('missing assistant content');
   });
 
-  it('throws WorkflowFail when OPENROUTER_API_KEY is missing', async () => {
+  it('throws WorkflowFail when LLM_API_KEY is missing', async () => {
     mockFetch(200, { choices: [{ message: { content: '{}' } }] });
 
     await expect(
-      callCrystalTrial(testArgs, { ...testEnv, OPENROUTER_API_KEY: '' }),
-    ).rejects.toThrow('missing OPENROUTER_API_KEY');
+      callCrystalTrial(testArgs, { ...testEnv, LLM_API_KEY: '' }),
+    ).rejects.toThrow('missing LLM_API_KEY');
   });
 });
 
@@ -374,11 +378,11 @@ function mockStreamingFetch(status: number, bodyText: string) {
   });
 }
 
-describe('callOpenRouterStudyStream', () => {
+describe('callLlmStudyStream', () => {
   it('builds backend policy-owned streaming request shape', async () => {
     mockStreamingFetch(200, 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n');
 
-    const stream = await callOpenRouterStudyStream({
+    const stream = await callLlmStudyStream({
       modelId: 'google/gemini-3.1-flash-lite-preview',
       messages: [{ role: 'system', content: 'Explain question.' }],
       temperature: 0.2,
@@ -403,8 +407,8 @@ describe('callOpenRouterStudyStream', () => {
     expect(body.tools).toBeUndefined();
   });
 
-  it('normalizes OpenRouter streaming content and reasoning chunks', () => {
-    expect(parseOpenRouterStudyStreamSseDataLine(
+  it('normalizes provider streaming content and reasoning chunks', () => {
+    expect(parseLlmStudyStreamSseDataLine(
       'data: {"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.text","text":"plan"}],"content":"answer"}}]}',
     )).toEqual([
       { type: 'reasoning', text: 'plan' },
@@ -415,13 +419,13 @@ describe('callOpenRouterStudyStream', () => {
   it('classifies provider failure before returning a browser stream', async () => {
     mockStreamingFetch(429, '{"error":{"message":"rate limit"}}');
 
-    await expect(callOpenRouterStudyStream({
+    await expect(callLlmStudyStream({
       modelId: 'google/gemini-3.1-flash-lite-preview',
       messages: [{ role: 'system', content: 'Explain question.' }],
       requestReasoning: false,
     }, testEnv)).rejects.toMatchObject({
       code: 'llm:rate-limit',
-      message: 'openrouter 429: {"error":{"message":"rate limit"}}',
+      message: 'llm 429: {"error":{"message":"rate limit"}}',
     });
   });
 });

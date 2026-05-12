@@ -42,7 +42,7 @@ const FORBIDDEN_POLICY_FIELDS = new Set([
   'provider',
   'providerHealingRequested',
   'responseHealing',
-  'openRouterResponseHealing',
+  'providerResponseHealing',
   'plugins',
   'response_format',
 ]);

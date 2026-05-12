@@ -42,7 +42,7 @@ describe('parseGenerationPolicy', () => {
     const parsed = parseGenerationPolicy(DEFAULT_GENERATION_POLICY);
 
     expect(parsed.version).toBe(1);
-    expect(parsed.provider).toBe('openrouter');
+    expect(parsed.provider).toBe('openai-compatible');
     expect(parsed.responseHealing).toEqual({ enabled: true });
     expect(Object.keys(parsed.jobs).sort()).toEqual([...BACKEND_GENERATION_JOB_KINDS].sort());
   });
@@ -86,7 +86,7 @@ describe('parseGenerationPolicy', () => {
     );
   });
 
-  it('accepts canonical OpenRouter model ids (provider/model)', () => {
+  it('accepts canonical OpenAI-compatible model ids (provider/model)', () => {
     const policy = clonePolicy();
     policy.jobs['topic-theory'] = { modelId: 'anthropic/claude-3.5-sonnet' };
     expect(parseGenerationPolicy(policy).jobs['topic-theory'].modelId).toBe('anthropic/claude-3.5-sonnet');
@@ -141,7 +141,7 @@ describe('resolveGenerationJobPolicy', () => {
       const resolved = await resolveGenerationJobPolicy('00000000-0000-0000-0000-000000000001', jobKind);
 
       expect(resolved.jobKind).toBe(jobKind);
-      expect(resolved.provider).toBe('openrouter');
+      expect(resolved.provider).toBe('openai-compatible');
       expect(resolved.modelId).toBe(DEFAULT_GENERATION_POLICY.jobs[jobKind].modelId);
       expect(resolved.providerHealingRequested).toBe(true);
       expect(resolved.policyVersion).toBe(1);

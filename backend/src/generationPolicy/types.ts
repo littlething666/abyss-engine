@@ -13,7 +13,7 @@ export const BACKEND_GENERATION_JOB_KINDS = [
 export type BackendGenerationJobKind = (typeof BACKEND_GENERATION_JOB_KINDS)[number];
 
 export type GenerationPolicyVersion = 1;
-export type GenerationProvider = 'openrouter';
+export type GenerationProvider = 'openai-compatible';
 
 export interface GenerationJobPolicy {
   modelId: string;

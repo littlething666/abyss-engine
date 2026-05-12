@@ -69,14 +69,14 @@ describe('tracer', () => {
 
     tracer.finalizeTrace(trace, false, {
       errorCode: 'llm:rate-limit',
-      errorMessage: 'openrouter 429: rate limited',
+      errorMessage: 'llm 429: rate limited',
     });
 
     expect(traces).toHaveLength(1);
     const t = traces[0];
     expect(t.success).toBe(false);
     expect(t.errorCode).toBe('llm:rate-limit');
-    expect(t.errorMessage).toBe('openrouter 429: rate limited');
+    expect(t.errorMessage).toBe('llm 429: rate limited');
     expect(t.promptVersion).toBe(0); // default
     expect(t.schemaVersion).toBe(0); // default
   });
