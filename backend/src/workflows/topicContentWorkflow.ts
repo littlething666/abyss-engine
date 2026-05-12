@@ -4,7 +4,7 @@
  * Three-stage durable pipeline mirroring `runTopicGenerationPipeline.ts`:
  * theory → study-cards → mini-games (×3 in parallel).
  *
- * Phase 3.6: Budget reserved at route level (single owner). Typed event
+ * Phase 3.6: Typed event
  * builders and transport statuses throughout.
  */
 
@@ -12,7 +12,7 @@ import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:work
 import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort, toWorkflowStepError, workflowFailureDetails } from '../lib/workflowErrors';
 import { callTopicContent } from '../llm/openrouterClient';
-import { traceLlmCall, recordTokensRobust, recordLlmJob } from './shared/workflowObservability';
+import { traceLlmCall, recordLlmJob } from './shared/workflowObservability';
 import {
   WORKFLOW_LLM_STEP_RETRY,
   WORKFLOW_STORAGE_STEP_RETRY,
@@ -91,7 +91,6 @@ type PlanOutcome = PlanOutcomeOk | PlanOutcomeCached;
 
 interface GenerateResult {
   text: string;
-  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
 }
 
 interface StageRunResult {
@@ -160,7 +159,7 @@ async function runStage(
         }
       },
     )) as GenerateResult;
-    const trace = llmTrace.finalizeSuccess(raw.usage);
+    const trace = llmTrace.finalizeSuccess();
     const jobId = await recordLlmJob({ repos, runId, pipelineKind: 'topic-content', stage, inputHash: _inputHash, model: generationPolicy.modelId, status: 'success', trace });
     if (jobId) {
       await repos.stageCheckpoints.linkJob(runId, stage, jobId);
@@ -205,10 +204,6 @@ async function runStage(
     );
 
     await repos.stageCheckpoints.markReady(runId, stage, artifactId);
-
-    if (result.usage) {
-      await recordTokensRobust(deviceId, repos, llmTrace.trace, result.usage);
-    }
 
     return { artifactId, contentHash: _contentHash, kind };
   })) as StageRunResult;

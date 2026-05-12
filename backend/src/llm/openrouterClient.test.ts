@@ -65,7 +65,7 @@ describe('callOpenRouterChat', () => {
     expect(body.messages).toEqual(testArgs.messages);
     expect(body.response_format).toEqual(testArgs.responseFormat);
     expect(body.plugins).toEqual([{ id: 'response-healing' }]);
-    expect(body.usage).toEqual({ include: true });
+    expect(body.usage).toBeUndefined();
     expect(body.temperature).toBe(0.25);
     expect(body.jobKind).toBeUndefined();
     expect(body.stream).toBeUndefined();
@@ -82,7 +82,7 @@ describe('callOpenRouterChat', () => {
     });
   });
 
-  it('fails loudly when OpenRouter usage accounting is malformed', async () => {
+  it('ignores malformed OpenRouter usage accounting', async () => {
     mockFetch(200, {
       choices: [{ message: { content: '{}' } }],
       usage: { prompt_tokens: 1, completion_tokens: '2', total_tokens: 3 },
@@ -90,10 +90,7 @@ describe('callOpenRouterChat', () => {
 
     await expect(
       callOpenRouterChat({ ...testArgs, jobKind: 'topic-content' }, testEnv),
-    ).rejects.toMatchObject({
-      code: 'parse:zod-shape',
-      message: 'invalid OpenRouter usage wrapper for topic-content',
-    });
+    ).resolves.toEqual({ text: '{}' });
   });
 
 
@@ -110,15 +107,13 @@ describe('callOpenRouterChat', () => {
 });
 
 describe('callCrystalTrial', () => {
-  it('returns text and usage on success', async () => {
+  it('returns text on success', async () => {
     mockFetch(200, {
       choices: [{ message: { content: '{"questions":[]}' } }],
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
     });
 
     const result = await callCrystalTrial(testArgs, testEnv);
     expect(result.text).toBe('{"questions":[]}');
-    expect(result.usage?.total_tokens).toBe(15);
   });
 
   it('sets response_format to json_schema with strict', async () => {
@@ -253,15 +248,13 @@ describe('callTopicExpansion', () => {
     providerHealingRequested: true,
   };
 
-  it('returns text and usage on success', async () => {
+  it('returns text on success', async () => {
     mockFetch(200, {
       choices: [{ message: { content: '{"cards":[]}' } }],
-      usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 },
     });
 
     const result = await callTopicExpansion(expansionArgs, testEnv);
     expect(result.text).toBe('{"cards":[]}');
-    expect(result.usage?.total_tokens).toBe(30);
   });
 
   it('uses contract-owned response format with topic_expansion name', async () => {
@@ -293,15 +286,13 @@ describe('callSubjectGraph', () => {
     providerHealingRequested: true,
   };
 
-  it('returns text and usage on success', async () => {
+  it('returns text on success', async () => {
     mockFetch(200, {
       choices: [{ message: { content: '{"topics":[]}' } }],
-      usage: { prompt_tokens: 30, completion_tokens: 15, total_tokens: 45 },
     });
 
     const result = await callSubjectGraph(sgArgs, testEnv);
     expect(result.text).toBe('{"topics":[]}');
-    expect(result.usage?.total_tokens).toBe(45);
   });
 
   it('includes temperature when specified', async () => {
@@ -331,15 +322,13 @@ describe('callTopicContent', () => {
     stage: 'theory',
   };
 
-  it('returns text and usage on success', async () => {
+  it('returns text on success', async () => {
     mockFetch(200, {
       choices: [{ message: { content: '{"coreConcept":"test"}' } }],
-      usage: { prompt_tokens: 40, completion_tokens: 20, total_tokens: 60 },
     });
 
     const result = await callTopicContent(tcArgs, testEnv);
     expect(result.text).toBe('{"coreConcept":"test"}');
-    expect(result.usage?.total_tokens).toBe(60);
   });
 
   it('includes stage in schema name', async () => {

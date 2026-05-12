@@ -33,9 +33,7 @@ describe('tracer', () => {
       providerHealingRequested: true,
     });
 
-    tracer.finalizeTrace(trace, true, {
-      usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
-    });
+    tracer.finalizeTrace(trace, true);
 
     expect(traces).toHaveLength(1);
     const t = traces[0];
@@ -53,7 +51,6 @@ describe('tracer', () => {
     expect(t.success).toBe(true);
     expect(t.errorCode).toBeNull();
     expect(t.errorMessage).toBeNull();
-    expect(t.usage).toEqual({ promptTokens: 100, completionTokens: 50, totalTokens: 150 });
     expect(t.finishedAt).toBeDefined();
     expect(t.durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -80,7 +77,6 @@ describe('tracer', () => {
     expect(t.success).toBe(false);
     expect(t.errorCode).toBe('llm:rate-limit');
     expect(t.errorMessage).toBe('openrouter 429: rate limited');
-    expect(t.usage).toBeNull();
     expect(t.promptVersion).toBe(0); // default
     expect(t.schemaVersion).toBe(0); // default
   });
@@ -125,7 +121,7 @@ describe('tracer', () => {
     expect(traces[0].traceId).not.toBe(traces[1].traceId);
   });
 
-  it('includes all required trace fields when finalized as failure without usage', () => {
+  it('includes all required trace fields when finalized as failure', () => {
     const tracer = createTracer();
     const trace = tracer.startTrace({
       runId: 'run-004', deviceId: 'dev-004', pipelineKind: 'subject-graph',
@@ -142,7 +138,6 @@ describe('tracer', () => {
     expect(t.success).toBe(false);
     expect(t.errorCode).toBe('parse:json-mode-violation');
     expect(t.errorMessage).toBeNull();
-    expect(t.usage).toBeNull();
     expect(t.finishedAt).toBeDefined();
     expect(t.durationMs).toBeGreaterThanOrEqual(0);
   });

@@ -23,8 +23,6 @@ export interface AtomicSubmitRunInput {
   topicId: string | null;
   snapshotJson: Record<string, unknown>;
   parentRunId: string | null;
-  runCap: number;
-  tokenCap: number;
   startedAt: string | null;
   finishedAt: string | null;
   errorCode?: string | null;
@@ -33,10 +31,8 @@ export interface AtomicSubmitRunInput {
 
 export interface AtomicSubmitRunResult {
   runId?: string;
-  status: 'created' | 'hit' | 'budget_exceeded';
+  status: 'created' | 'hit';
   existing: boolean;
-  code?: string;
-  message?: string;
 }
 
 export interface IRunsRepo {
@@ -149,21 +145,9 @@ export function createRunsRepo(db: D1Database): IRunsRepo {
         db.prepare('delete from idempotency_records where device_id = ? and key = ? and expires_at <= ?')
           .bind(input.deviceId, input.idempotencyKey, now),
         db.prepare(`
-          insert or ignore into usage_counters (device_id, day, tokens_in, tokens_out, runs_started)
-          values (?, ?, 0, 0, 0)
-        `).bind(input.deviceId, now.slice(0, 10)),
-        db.prepare(`
           insert or ignore into idempotency_records (device_id, key, run_id, created_at, expires_at)
           values (?, ?, ?, ?, ?)
         `).bind(input.deviceId, input.idempotencyKey, runId, now, expiresAt),
-        db.prepare(`
-          update usage_counters
-          set runs_started = runs_started + 1
-          where device_id = ? and day = ?
-            and runs_started < ?
-            and (tokens_in + tokens_out) < ?
-            and changes() = 1
-        `).bind(input.deviceId, now.slice(0, 10), input.runCap, input.tokenCap),
         db.prepare(`
           insert into runs (
             id, device_id, kind, status, input_hash, idempotency_key,
@@ -193,8 +177,8 @@ export function createRunsRepo(db: D1Database): IRunsRepo {
         ),
       ]);
 
-      const idempotencyInserted = changes(results[2]);
-      const runInserted = changes(results[4]);
+      const idempotencyInserted = changes(results[1]);
+      const runInserted = changes(results[2]);
 
       if (idempotencyInserted === 0) {
         const existing = await db.prepare(`
@@ -211,12 +195,7 @@ export function createRunsRepo(db: D1Database): IRunsRepo {
         await db.prepare('delete from idempotency_records where device_id = ? and key = ? and run_id = ?')
           .bind(input.deviceId, input.idempotencyKey, runId)
           .run();
-        return {
-          status: 'budget_exceeded',
-          existing: false,
-          code: 'budget:over-cap',
-          message: 'daily run or token cap exceeded',
-        };
+        throw new Error('D1 runs.atomicSubmitRun: idempotency inserted but run insert failed');
       }
 
       return { runId, status: 'created', existing: false };

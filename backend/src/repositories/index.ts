@@ -8,7 +8,6 @@ import { requireD1 } from './d1';
 import { createDevicesRepo, type IDevicesRepo } from './devicesRepo';
 import { createRunsRepo, type IRunsRepo } from './runsRepo';
 import { createArtifactsRepo, type IArtifactsRepo } from './artifactsRepo';
-import { createUsageCountersRepo, type IUsageCountersRepo } from './usageCountersRepo';
 import {
   createStageCheckpointsRepo,
   type IStageCheckpointsRepo,
@@ -22,7 +21,6 @@ export interface Repos {
   devices: IDevicesRepo;
   runs: IRunsRepo;
   artifacts: IArtifactsRepo;
-  usage: IUsageCountersRepo;
   stageCheckpoints: IStageCheckpointsRepo;
   /** Backend-authoritative generated learning-content read model. */
   learningContent: ILearningContentRepo;
@@ -36,7 +34,6 @@ export function makeRepos(env: Env): Repos {
     devices: createDevicesRepo(db),
     runs: createRunsRepo(db),
     artifacts: createArtifactsRepo(db, env.GENERATION_ARTIFACTS_BUCKET),
-    usage: createUsageCountersRepo(db),
     stageCheckpoints: createStageCheckpointsRepo(db),
     learningContent: createLearningContentRepo(db),
     db,

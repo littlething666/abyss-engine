@@ -3,8 +3,7 @@
  *
  * Phase 3: Worker-only tracing for every LLM call. Captures device_id,
  * run_id, model, generation policy hash, prompt version, schema version,
- * input hash, output hash, provider-healing requested flag, token usage,
- * duration, and status.
+ * input hash, output hash, provider-healing requested flag, duration, and status.
  *
  * Traces are emitted as structured JSON to the Worker's `console` (which
  * Cloudflare ships to tail workers / logpush / dashboards). A future
@@ -52,8 +51,6 @@ export interface LlmCallTrace {
   errorCode: string | null;
   /** Human-readable error message (null if success). */
   errorMessage: string | null;
-  /** Token usage from OpenRouter response (null if fetch never reached provider). */
-  usage: { promptTokens: number; completionTokens: number; totalTokens: number } | null;
   /** Duration in milliseconds (computed after finishedAt is set). */
   durationMs: number | null;
 }
@@ -96,7 +93,6 @@ export function createTracer() {
       success: false,
       errorCode: null,
       errorMessage: null,
-      usage: null,
       durationMs: null,
     };
 
@@ -120,7 +116,6 @@ export function createTracer() {
   }
 
   function finalizeTrace(trace: LlmCallTrace, success: boolean, opts?: {
-    usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
     errorCode?: string;
     errorMessage?: string;
   }) {
@@ -129,14 +124,6 @@ export function createTracer() {
     trace.success = success;
     trace.errorCode = opts?.errorCode ?? null;
     trace.errorMessage = opts?.errorMessage ?? null;
-
-    if (opts?.usage) {
-      trace.usage = {
-        promptTokens: opts.usage.prompt_tokens,
-        completionTokens: opts.usage.completion_tokens,
-        totalTokens: opts.usage.total_tokens,
-      };
-    }
 
     createLogger({
       traceId: trace.traceId,
@@ -156,11 +143,7 @@ export function createTracer() {
       success: trace.success,
       errorCode: trace.errorCode,
       errorMessage: trace.errorMessage,
-      usage: trace.usage,
       durationMs: trace.durationMs,
-      tokensIn: trace.usage?.promptTokens ?? null,
-      tokensOut: trace.usage?.completionTokens ?? null,
-      totalTokens: trace.usage?.totalTokens ?? null,
     });
   }
 

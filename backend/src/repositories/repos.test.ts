@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { createDevicesRepo } from './devicesRepo';
 import { createRunsRepo } from './runsRepo';
 import { createArtifactsRepo, type ArtifactObjectStore } from './artifactsRepo';
-import { createUsageCountersRepo, utcDay } from './usageCountersRepo';
 import type { RunRow, EventRow, DeviceRow, ArtifactRow } from './types';
 import { createFakeD1, q } from '../testStubs/fakeD1';
 
@@ -81,12 +80,12 @@ describe('createRunsRepo', () => {
     expect(calls.filter((call) => call.sql.toLowerCase().includes('insert into events'))).toHaveLength(1);
   });
 
-  it('reserves idempotency and budget in atomicSubmitRun batch', async () => {
-    const { db } = createFakeD1([q(null, 0), q(null, 0), q(null, 1), q(null, 1), q(null, 1)]);
+  it('reserves idempotency and creates a run in atomicSubmitRun batch', async () => {
+    const { db } = createFakeD1([q(null, 0), q(null, 1), q(null, 1)]);
     const result = await createRunsRepo(db).atomicSubmitRun({
       deviceId: 'dev-1', idempotencyKey: 'idem-1', kind: 'crystal-trial', inputHash: 'inp_abc123', status: 'queued',
       supersedesKey: null, subjectId: 'subj-1', topicId: 'top-1', snapshotJson: { subject_id: 'subj-1' }, parentRunId: null,
-      runCap: 10, tokenCap: 500_000, startedAt: null, finishedAt: null,
+      startedAt: null, finishedAt: null,
     });
     expect(result.status).toBe('created');
     expect(result.runId).toBeTruthy();
@@ -94,12 +93,12 @@ describe('createRunsRepo', () => {
 
   it('returns idempotency hits without creating duplicate runs', async () => {
     const { db } = createFakeD1([
-      q(null, 0), q(null, 0), q(null, 0), q(null, 0), q(null, 0), q({ run_id: 'run-existing' }),
+      q(null, 0), q(null, 0), q(null, 0), q({ run_id: 'run-existing' }),
     ]);
     const result = await createRunsRepo(db).atomicSubmitRun({
       deviceId: 'dev-1', idempotencyKey: 'idem-1', kind: 'crystal-trial', inputHash: 'inp_abc123', status: 'queued',
       supersedesKey: null, subjectId: null, topicId: null, snapshotJson: {}, parentRunId: null,
-      runCap: 10, tokenCap: 500_000, startedAt: null, finishedAt: null,
+      startedAt: null, finishedAt: null,
     });
     expect(result).toEqual({ runId: 'run-existing', status: 'hit', existing: true });
   });
@@ -144,20 +143,5 @@ describe('createArtifactsRepo', () => {
     await objectStore.put('abyss/dev-1/crystal-trial/1/inp_abc123.json', JSON.stringify({ mocked: true }));
     const { db } = createFakeD1();
     await expect(createArtifactsRepo(db, objectStore).getStorage('abyss/dev-1/crystal-trial/1/inp_abc123.json')).resolves.toEqual({ mocked: true });
-  });
-});
-
-describe('createUsageCountersRepo', () => {
-  it('utcDay returns YYYY-MM-DD and handles UTC rollover', () => {
-    expect(utcDay(new Date('2026-05-05T12:00:00Z'))).toBe('2026-05-05');
-    expect(utcDay(new Date('2026-05-05T23:59:59Z'))).toBe('2026-05-05');
-    expect(utcDay(new Date('2026-05-06T00:00:01Z'))).toBe('2026-05-06');
-  });
-
-  it('records tokens through D1 upsert increments', async () => {
-    const { db } = createFakeD1([q(null, 1), q(null, 1)]);
-    const repo = createUsageCountersRepo(db);
-    await expect(repo.recordTokens('dev-1', '2026-05-05', { prompt_tokens: 100, completion_tokens: 50 })).resolves.toBeUndefined();
-    await expect(repo.recordTokens('dev-1', '2026-05-05', {})).resolves.toBeUndefined();
   });
 });

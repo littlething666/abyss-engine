@@ -10,7 +10,6 @@ drop table if exists subject_graphs;
 drop table if exists subjects;
 drop table if exists idempotency_records;
 drop table if exists stage_checkpoints;
-drop table if exists usage_counters;
 drop table if exists artifacts;
 drop table if exists events;
 drop table if exists jobs;

@@ -17,7 +17,7 @@ import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:work
 import { makeRepos } from '../repositories';
 import { WorkflowFail, WorkflowAbort, toWorkflowStepError, workflowFailureDetails } from '../lib/workflowErrors';
 import { callCrystalTrial } from '../llm/openrouterClient';
-import { traceLlmCall, recordTokensRobust, recordLlmJob } from './shared/workflowObservability';
+import { traceLlmCall, recordLlmJob } from './shared/workflowObservability';
 import {
   WORKFLOW_LLM_STEP_RETRY,
   WORKFLOW_STORAGE_STEP_RETRY,
@@ -66,7 +66,6 @@ type PlanOutcome = PlanOutcomeOk | PlanOutcomeCached;
 
 interface GenerateResult {
   text: string;
-  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
 }
 
 interface ValidatedGenerateResult extends GenerateResult {
@@ -223,7 +222,7 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
             }
           },
         )) as GenerateResult;
-        const trace = llmTrace.finalizeSuccess(raw.usage);
+        const trace = llmTrace.finalizeSuccess();
         await recordLlmJob({ repos, runId, pipelineKind: 'crystal-trial', stage: 'generate', inputHash: _inputHash, model: generationPolicy.modelId, status: 'success', trace });
 
         await step.do('status:parse', WORKFLOW_STORAGE_STEP_RETRY, async () => {
@@ -281,10 +280,6 @@ export class CrystalTrialWorkflow extends WorkflowEntrypoint<Env, { runId: strin
           (snapshot.schema_version as number) ?? crystalTrialSchemaVersion,
           runId,
         );
-
-        if (genResult.usage) {
-          await recordTokensRobust(deviceId, repos, llmTrace.trace, genResult.usage);
-        }
 
         return { artifactId, contentHash: _contentHash };
       })) as PersistResult;

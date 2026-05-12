@@ -84,14 +84,6 @@ create table if not exists artifacts (
   unique (device_id, kind, input_hash)
 );
 
-create table if not exists usage_counters (
-  device_id text not null references devices(id) on delete cascade,
-  day text not null,
-  tokens_in integer not null default 0,
-  tokens_out integer not null default 0,
-  runs_started integer not null default 0,
-  primary key (device_id, day)
-);
 
 create table if not exists stage_checkpoints (
   run_id text not null references runs(id) on delete cascade,

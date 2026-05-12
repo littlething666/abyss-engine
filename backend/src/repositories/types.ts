@@ -110,17 +110,6 @@ export interface ArtifactRow {
 }
 
 // ---------------------------------------------------------------------------
-// usage_counters
-// ---------------------------------------------------------------------------
-export interface UsageCounterRow {
-  device_id: string;
-  day: string; // YYYY-MM-DD UTC
-  tokens_in: number;
-  tokens_out: number;
-  runs_started: number;
-}
-
-// ---------------------------------------------------------------------------
 // stage_checkpoints
 // ---------------------------------------------------------------------------
 export type StageCheckpointStatus =
@@ -144,13 +133,4 @@ export interface StageCheckpointRow {
   finished_at: string | null;
   error_code: string | null;
   error_message: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// OpenRouter usage (from the chat-completions response)
-// ---------------------------------------------------------------------------
-export interface OpenRouterUsage {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
 }

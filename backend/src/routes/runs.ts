@@ -2,7 +2,7 @@
  * Run routes — POST /v1/runs, GET /v1/runs, GET /v1/runs/:id,
  * POST /v1/runs/:id/cancel, POST /v1/runs/:id/retry.
  *
- * Phase 4: Cloudflare D1 owns idempotency, budget, and run metadata.
+ * Phase 4: Cloudflare D1 owns idempotency and run metadata.
  * Initial submission accepts backend-expanded intents, not client-built
  * snapshots. Typed events, transport statuses, and retry checkpoint lineage
  * remain repository-mediated.
@@ -10,7 +10,6 @@
 
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
-import { assertBelowDailyCap, PIPELINE_BUDGET_CAPS } from '../budget/budgetGuard';
 import { inputHash, type ArtifactKind } from '../contracts/generationContracts';
 import { expandRunIntent, assertNoForbiddenPolicyFields } from '../runIntents/runIntentExpansion';
 import { buildRetryRunSnapshot } from './retryPlanning';
@@ -117,7 +116,7 @@ const runs = new Hono<{ Bindings: Env; Variables: { deviceId: string; idempotenc
  * POST /v1/runs — submit a new run.
  *
  * Phase 4: the Worker expands `{ kind, intent }` into a backend-owned
- * snapshot before D1 owns idempotency + budget + run creation through the
+ * snapshot before D1 owns idempotency + run creation through the
  * `runs.atomicSubmitRun` adapter method. Workflow dispatch remains separate
  * because Cloudflare Workflows need the D1 run row to exist first.
  */
@@ -193,8 +192,7 @@ runs.post('/', async (c) => {
     supersededRunId = await repos.runs.cancelSupersededRun(deviceId, supersedesKey);
   }
 
-  // 7. Atomic submit — idempotency + budget + run creation at the D1 boundary.
-  const caps = PIPELINE_BUDGET_CAPS[kind];
+  // 7. Atomic submit — idempotency + run creation at the D1 boundary.
   const now = new Date().toISOString();
   const snapshotRecord = expanded.snapshot;
 
@@ -209,15 +207,10 @@ runs.post('/', async (c) => {
     topicId: expanded.topicId,
     snapshotJson: snapshotRecord,
     parentRunId: null,
-    runCap: caps.runsPerDay,
-    tokenCap: caps.tokensPerDay,
     startedAt: cached ? now : null,
     finishedAt: cached ? now : null,
   });
 
-  if (submit.status === 'budget_exceeded') {
-    return c.json({ code: submit.code, message: submit.message }, 429);
-  }
 
   // If idempotency hit (serialised race winner), return the winner's runId.
   if (submit.existing) {
@@ -418,7 +411,7 @@ runs.post('/:id/cancel', async (c) => {
 /**
  * POST /v1/runs/:id/retry — retry a terminal run.
  *
- * Phase 3.6 Step 3: Follows the same budget reservation, workflow dispatch,
+ * Phase 3.6 Step 3: Follows the same workflow dispatch,
  * enqueue-failure, and event contract as initial submission.
  * Returns `{ runId }` on success. Dispatch failure marks the retry run
  * `failed_final` and returns 502 (no stranded queued runs).
@@ -455,15 +448,6 @@ runs.post('/:id/retry', async (c) => {
     return c.json({ error: 'not_found' }, 404);
   }
 
-  // Phase 3.6 Step 4: Budget reservation for retry (single owner).
-  const budget = await assertBelowDailyCap(
-    deviceId,
-    repos.db,
-    run.kind as PipelineKind,
-  );
-  if (!budget.ok) {
-    return c.json({ code: budget.code, message: budget.message }, 429);
-  }
 
   // Phase 3.6 Step 3: Build the retry snapshot from retryOpts instead of
   // blindly copying the parent snapshot.

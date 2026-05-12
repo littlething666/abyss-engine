@@ -85,31 +85,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function finiteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
-function parseOpenRouterUsage(jobKind: OpenRouterJobKind, usage: unknown): OpenRouterCallResult['usage'] {
-  if (usage === undefined || usage === null) return null;
-  if (!isRecord(usage)) {
-    throw new WorkflowFail('parse:zod-shape', `invalid OpenRouter usage wrapper for ${jobKind}`);
-  }
-
-  const promptTokens = usage.prompt_tokens;
-  const completionTokens = usage.completion_tokens;
-  const totalTokens = usage.total_tokens;
-
-  if (!finiteNumber(promptTokens) || !finiteNumber(completionTokens) || !finiteNumber(totalTokens)) {
-    throw new WorkflowFail('parse:zod-shape', `invalid OpenRouter usage wrapper for ${jobKind}`);
-  }
-
-  return {
-    prompt_tokens: promptTokens,
-    completion_tokens: completionTokens,
-    total_tokens: totalTokens,
-  };
-}
-
 async function parseOpenRouterChatResponse(
   res: Response,
   jobKind: OpenRouterJobKind,
@@ -136,16 +111,11 @@ async function parseOpenRouterChatResponse(
     throw new WorkflowFail('parse:zod-shape', `missing assistant content in OpenRouter response for ${jobKind}`);
   }
 
-  return { text, usage: parseOpenRouterUsage(jobKind, json.usage) };
+  return { text };
 }
 
 export interface OpenRouterCallResult {
   text: string;
-  usage: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  } | null;
 }
 
 export interface OpenRouterChatArgs {
@@ -164,7 +134,7 @@ export interface OpenRouterChatArgs {
  *
  * All pipeline-specific adapters below route through this helper so request
  * construction cannot drift: strict `json_schema`, optional provider-healing
- * plugin, optional temperature, token-usage accounting, no streaming, and no
+ * plugin, optional temperature, no streaming, and no
  * `json_object` fallback.
  */
 export async function callOpenRouterChat(
@@ -182,7 +152,6 @@ export async function callOpenRouterChat(
     plugins: args.providerHealingRequested
       ? [{ id: 'response-healing' }]
       : undefined,
-    usage: { include: true },
   };
 
   if (args.temperature !== undefined) {
@@ -392,7 +361,7 @@ export interface CrystalTrialGenerateArgs {
 /**
  * Call OpenRouter for Crystal Trial generation with strict json_schema.
  *
- * Returns the raw assistant text and usage. The caller (workflow step) is
+ * Returns the raw assistant text. The caller (workflow step) is
  * responsible for strict-parsing the text through the contracts module.
  */
 export async function callCrystalTrial(

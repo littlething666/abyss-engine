@@ -28,8 +28,6 @@ export function buildAtomicSubmitInput(
       generationPolicy: { version: 1 },
     },
     parentRunId: null,
-    runCap: 100,
-    tokenCap: 1_000_000,
     startedAt: null,
     finishedAt: null,
     ...overrides,

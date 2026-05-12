@@ -21,12 +21,9 @@ describe('runtime D1 atomicSubmitRun', () => {
     expect(runIds.size).toBe(1);
     expect(await scalar(env.GENERATION_DB, 'select count(*) as value from runs')).toBe(1);
     expect(await scalar(env.GENERATION_DB, 'select count(*) as value from idempotency_records')).toBe(1);
-    expect(
-      await scalar(env.GENERATION_DB, 'select runs_started as value from usage_counters where device_id = ?', input.deviceId),
-    ).toBe(1);
   });
 
-  it('idempotency hit does not reserve budget twice', async () => {
+  it('idempotency hit does not create a duplicate run', async () => {
     const repos = createRunsRepo(env.GENERATION_DB);
     const input = buildAtomicSubmitInput();
 
@@ -36,19 +33,6 @@ describe('runtime D1 atomicSubmitRun', () => {
     expect(second).toMatchObject({ status: 'hit', existing: true, runId: first.runId });
     expect(await scalar(env.GENERATION_DB, 'select count(*) as value from runs')).toBe(1);
     expect(await scalar(env.GENERATION_DB, 'select count(*) as value from idempotency_records')).toBe(1);
-    expect(
-      await scalar(env.GENERATION_DB, 'select runs_started as value from usage_counters where device_id = ?', input.deviceId),
-    ).toBe(1);
-  });
-
-  it('budget failure leaves no idempotency record', async () => {
-    const repos = createRunsRepo(env.GENERATION_DB);
-    const input = buildAtomicSubmitInput({ runCap: 0 });
-
-    await expect(repos.atomicSubmitRun(input)).resolves.toMatchObject({ status: 'budget_exceeded' });
-
-    expect(await scalar(env.GENERATION_DB, 'select count(*) as value from runs')).toBe(0);
-    expect(await scalar(env.GENERATION_DB, 'select count(*) as value from idempotency_records')).toBe(0);
   });
 
   it('run creation failure rolls back idempotency reservation', async () => {
@@ -59,8 +43,5 @@ describe('runtime D1 atomicSubmitRun', () => {
 
     expect(await scalar(env.GENERATION_DB, 'select count(*) as value from runs')).toBe(0);
     expect(await scalar(env.GENERATION_DB, 'select count(*) as value from idempotency_records')).toBe(0);
-    expect(
-      await scalar(env.GENERATION_DB, 'select coalesce(max(runs_started), 0) as value from usage_counters where device_id = ?', input.deviceId),
-    ).toBe(0);
   });
 });
