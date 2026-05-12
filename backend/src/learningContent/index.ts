@@ -48,3 +48,26 @@ export {
   type TopicConceptPlanSnapshot,
   type TopicPlanSourceSpanSnapshot,
 } from './topicPlanSnapshots';
+
+
+export {
+  loadCompiledTopicCardPlanCheckpoint,
+  loadCompiledTopicConceptPlanCheckpoint,
+  persistCompiledTopicCardPlanCheckpoint,
+  persistCompiledTopicConceptPlanCheckpoint,
+  TOPIC_CARD_PLAN_CHECKPOINT_KIND,
+  TOPIC_CARD_PLAN_CHECKPOINT_STAGE,
+  TOPIC_CONCEPT_PLAN_CHECKPOINT_KIND,
+  TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE,
+  TOPIC_PLAN_CHECKPOINT_SCHEMA_VERSION,
+  topicCardPlanCheckpointInputHash,
+  topicConceptPlanCheckpointInputHash,
+  type LoadTopicPlanCheckpointInput,
+  type PersistedTopicPlanCheckpoint,
+  type PersistTopicCardPlanCheckpointInput,
+  type PersistTopicConceptPlanCheckpointInput,
+  type TopicCardPlanCheckpointPayload,
+  type TopicConceptPlanCheckpointPayload,
+  type TopicPlanCheckpointKind,
+  type TopicPlanCheckpointRepos,
+} from './topicPlanCheckpoints';

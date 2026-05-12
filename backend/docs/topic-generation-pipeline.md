@@ -80,6 +80,25 @@ Completed:
 
 This still does not persist planning artifacts or fan out per-spec content jobs. The implementation remains backend-local and deterministic so the next workflow slice can checkpoint compiled specs before invoking per-card or per-mini-game generation.
 
+### Backend-local compiled planning checkpoints
+
+This patch adds the next dependency slice before workflow fan-out: reusable checkpoint helpers for compiled planning outputs.
+
+Completed:
+
+- Added backend-local checkpoint artifact payloads for compiled planning state:
+  - `topic-concept-plan-checkpoint`
+  - `topic-card-plan-checkpoint`
+- Added deterministic checkpoint input hashes for compiled concept plans from subject/topic scope, source-span IDs, and the parsed concept-plan payload.
+- Added deterministic checkpoint input hashes for compiled card plans from subject/topic scope, compiled concept references, and the parsed card-plan payload.
+- Added persistence helpers that store compiled planning checkpoints through the existing artifacts repository and mark ready stage checkpoints:
+  - `planning:concepts`
+  - `planning:card-specs`
+- Added load helpers that read ready checkpoints by run/stage, optionally reject stale input hashes, and validate the stored compiled concept/card/mini-game spec shape before returning it.
+- Added tests for checkpoint persistence, stored artifact payload shape, ready stage-checkpoint writes, ready checkpoint load, and stale-hash rejection.
+
+This still does not invoke the planning LLM stages from `TopicContentWorkflow`. The helper seam is intentionally workflow-neutral so the next wiring slice can use copied ready checkpoints on retry runs before generating or compiling a new plan.
+
 ## Deterministic materialization policy
 
 For legacy broad artifacts, the backend currently derives:
@@ -94,15 +113,17 @@ For theory artifacts, the backend currently derives:
 - `theory_span_id` from subject/topic scope, span kind, span index, optional difficulty, and span text.
 - selected downstream grounding spans from deterministic token overlap against the target syllabus questions.
 
-For planning artifacts, backend-local snapshots and the compiler currently derive:
+For planning artifacts, backend-local snapshots, the compiler, and checkpoint helpers currently derive:
 
 - `topic-concept-plan` input snapshots from backend-owned source spans, derived syllabus questions, and target difficulties.
 - `concept_id` from subject/topic scope, normalized local concept key, and selected source spans.
 - `card_spec_id` from compiled concept, normalized local card key, card type, difficulty, and selected source spans.
 - `mini_game_spec_id` from compiled concept, normalized local mini-game key, game type, difficulty, and selected source spans.
 - `topic-card-plan` input snapshots from compiled concept specs plus each concept's allowed source-span subset.
+- `topic-concept-plan-checkpoint` input hashes from subject/topic scope, source-span IDs, and the parsed concept-plan payload.
+- `topic-card-plan-checkpoint` input hashes from subject/topic scope, compiled concept references, and the parsed card-plan payload.
 
-This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, and establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow.
+This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow, and adding a retry-safe persistence seam for compiled planning outputs.
 
 ## Target pipeline still intended
 
@@ -126,12 +147,12 @@ backend materialization
    - `topic-card-plan`
    - `topic-card-content`
    - `topic-mini-game-content`
-2. Persist or checkpoint compiled concept/card/mini-game specs so workflow retries reuse the same authoritative IDs.
-3. Wire `TopicContentWorkflow` through the new plan snapshots in dependency order: theory source spans → concept plan → compiled concepts → card plan → compiled specs.
-4. Replace the broad `study-cards` artifact in `TopicContentWorkflow` with per-card-spec jobs.
-5. Replace unconditional mini-game fan-out with mini-game specs emitted by the compiled card plan.
-6. Add bounded concurrency for per-spec content jobs once the workflow fans out beyond the current three mini-game stages.
-7. Replace lexical source-span selection in downstream broad content prompts with explicit plan-selected `sourceSpanId[]` from compiled specs, then retire the lexical fallback after per-spec jobs are live.
+2. Wire `TopicContentWorkflow` through the new plan snapshots and checkpoint helpers in dependency order: theory source spans → concept plan → compiled concepts checkpoint → card plan → compiled specs checkpoint.
+3. Replace the broad `study-cards` artifact in `TopicContentWorkflow` with per-card-spec jobs.
+4. Replace unconditional mini-game fan-out with mini-game specs emitted by the compiled card plan.
+5. Add bounded concurrency for per-spec content jobs once the workflow fans out beyond the current three mini-game stages.
+6. Replace lexical source-span selection in downstream broad content prompts with explicit plan-selected `sourceSpanId[]` from compiled specs, then retire the lexical fallback after per-spec jobs are live.
+7. Use copied ready `planning:concepts` and `planning:card-specs` checkpoints in retry child runs before invoking new planning LLM calls.
 8. Make topic readiness explicit, for example `theory`, `deck`, and `enrichment` readiness instead of a single `ready` flag.
 9. Remove temporary LLM ID compatibility from external generation contracts once the contract source is updated to allow ID-free content outputs.
 10. Add duplicate-repair retry jobs that regenerate only the failed card spec when `question_signature` conflicts.
