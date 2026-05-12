@@ -67,4 +67,45 @@ describe('topicContentStageInputHash', () => {
     expect(categorySort).not.toBe(sequenceBuild);
     expect(categorySort).not.toBe(changedCards);
   });
+
+  it('binds study-card hashes to the compiled card-plan checkpoint content hash', async () => {
+    const baseInputHash = await inputHash(snapshot);
+
+    const first = await topicContentStageInputHash({
+      snapshot,
+      baseInputHash,
+      stage: 'study-cards',
+      parentContentHashes: { theory: 'cnt_theory', cardPlan: 'cnt_card_plan_a' },
+    });
+    const second = await topicContentStageInputHash({
+      snapshot,
+      baseInputHash,
+      stage: 'study-cards',
+      parentContentHashes: { theory: 'cnt_theory', cardPlan: 'cnt_card_plan_b' },
+    });
+
+    expect(first).not.toBe(baseInputHash);
+    expect(first).not.toBe(second);
+  });
+
+  it('binds mini-game hashes to the compiled card-plan checkpoint content hash', async () => {
+    const baseInputHash = await inputHash(snapshot);
+
+    const first = await topicContentStageInputHash({
+      snapshot,
+      baseInputHash,
+      stage: 'mini-games:MATCH_PAIRS',
+      parentContentHashes: { theory: 'cnt_theory', studyCards: 'cnt_cards', cardPlan: 'cnt_card_plan_a' },
+    });
+    const second = await topicContentStageInputHash({
+      snapshot,
+      baseInputHash,
+      stage: 'mini-games:MATCH_PAIRS',
+      parentContentHashes: { theory: 'cnt_theory', studyCards: 'cnt_cards', cardPlan: 'cnt_card_plan_b' },
+    });
+
+    expect(first).not.toBe(baseInputHash);
+    expect(first).not.toBe(second);
+  });
+
 });

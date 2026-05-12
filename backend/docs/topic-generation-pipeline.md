@@ -126,6 +126,21 @@ Completed:
 
 This still does not replace the broad `topic-study-cards` artifact with per-card-spec content jobs, and mini-game generation still uses the existing broad artifact contracts. The workflow now has durable compiled planning state available for the later fan-out slice.
 
+### Workflow-level planning checkpoint reuse guards
+
+This patch adds the next low-risk workflow hardening slice: explicit planning checkpoint reuse guards and regression coverage around planning-bound stage hashes.
+
+Completed:
+
+- Extracted workflow-local checkpoint compatibility checks for compiled planning checkpoints into a testable module.
+- `TopicContentWorkflow` now treats stale compiled planning checkpoints as non-reusable and regenerates the affected planning stage instead of terminally failing the run solely because a ready checkpoint was present.
+- Concept-plan checkpoint reuse is allowed only when subject/topic scope and backend-owned theory `sourceSpanId[]` match the current theory artifact.
+- Card-plan checkpoint reuse is allowed only when subject/topic scope and compiled concept references match the current compiled concepts, including each concept's backend-owned ID, local concept key, and source-span set.
+- Added workflow-level unit coverage for reusable versus stale planning checkpoints.
+- Added stage input-hash coverage proving broad study-card and mini-game artifacts bind to the compiled card-plan checkpoint content hash, not just theory and study-card parent content.
+
+This keeps the current broad-artifact workflow path operational while making retry/child-run planning reuse safer: stale checkpoint rows are ignored and overwritten by newly persisted checkpoints when the workflow regenerates the planning stage.
+
 ## Deterministic materialization policy
 
 For legacy broad artifacts, the backend currently derives:
@@ -150,8 +165,9 @@ For planning artifacts, backend-local snapshots, the compiler, checkpoint helper
 - `topic-concept-plan-checkpoint` input hashes from subject/topic scope, source-span IDs, and the parsed concept-plan payload.
 - `topic-card-plan-checkpoint` input hashes from subject/topic scope, compiled concept references, and the parsed card-plan payload.
 - broad content-stage input hashes from the compiled card-plan checkpoint content hash when full-pipeline stages consume planning state.
+- planning checkpoint reuse from current subject/topic scope plus current theory source spans or compiled concept references.
 
-This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow, adding a retry-safe persistence seam for compiled planning outputs, and wiring that seam into the current broad-artifact workflow path.
+This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow, adding a retry-safe persistence seam for compiled planning outputs, wiring that seam into the current broad-artifact workflow path, and preventing stale compiled planning checkpoints from being reused across changed theory or concept inputs.
 
 ## Target pipeline still intended
 
@@ -182,4 +198,4 @@ backend materialization
 6. Make topic readiness explicit, for example `theory`, `deck`, and `enrichment` readiness instead of a single `ready` flag.
 7. Remove temporary LLM ID compatibility from external generation contracts once the contract source is updated to allow ID-free content outputs.
 8. Add duplicate-repair retry jobs that regenerate only the failed card spec when `question_signature` conflicts.
-9. Add workflow-level tests around planning checkpoint reuse, stale checkpoint rejection, and broad-stage input-hash binding to compiled card-plan checkpoint content.
+9. Add end-to-end Worker/runtime tests with a mocked LLM provider for the full planning path, including stale checkpoint regeneration in a real D1/R2-backed workflow environment.

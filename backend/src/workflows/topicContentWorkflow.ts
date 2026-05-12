@@ -92,6 +92,10 @@ import {
   topicTheorySourceSpansAsJson,
   type TopicTheorySourceSpan,
 } from '../learningContent/theorySourceSpans';
+import {
+  isTopicCardPlanCheckpointReusable,
+  isTopicConceptPlanCheckpointReusable,
+} from './topicPlanningCheckpointReuse';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -492,58 +496,6 @@ function stableStringList(values: readonly string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
 }
 
-function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
-  const left = stableStringList(a);
-  const right = stableStringList(b);
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function assertConceptCheckpointMatchesSourceSpans(
-  checkpoint: TopicConceptPlanCheckpointPayload,
-  subjectId: string,
-  topicId: string,
-  sourceSpans: readonly TopicTheorySourceSpan[],
-): void {
-  if (checkpoint.subject_id !== subjectId || checkpoint.topic_id !== topicId) {
-    throw new WorkflowFail('validation:semantic-topic-content', `${TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE} checkpoint scope does not match current topic`);
-  }
-  const sourceSpanIds = sourceSpans.map((span) => span.spanId);
-  if (!sameStringSet(checkpoint.source_span_ids, sourceSpanIds)) {
-    throw new WorkflowFail('validation:semantic-topic-content', `${TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE} checkpoint source spans are stale for current theory artifact`);
-  }
-}
-
-function conceptRefsFromConcepts(concepts: readonly CompiledTopicConceptSpec[]): Array<{ concept_id: string; concept_key: string; source_span_ids: string[] }> {
-  return [...concepts]
-    .map((concept) => ({
-      concept_id: concept.conceptId,
-      concept_key: concept.conceptKey,
-      source_span_ids: stableStringList(concept.sourceSpanIds),
-    }))
-    .sort((a, b) => a.concept_key.localeCompare(b.concept_key) || a.concept_id.localeCompare(b.concept_id));
-}
-
-function assertCardCheckpointMatchesConcepts(
-  checkpoint: TopicCardPlanCheckpointPayload,
-  subjectId: string,
-  topicId: string,
-  concepts: readonly CompiledTopicConceptSpec[],
-): void {
-  if (checkpoint.subject_id !== subjectId || checkpoint.topic_id !== topicId) {
-    throw new WorkflowFail('validation:semantic-topic-content', `${TOPIC_CARD_PLAN_CHECKPOINT_STAGE} checkpoint scope does not match current topic`);
-  }
-  const expected = conceptRefsFromConcepts(concepts);
-  if (checkpoint.compiled_concept_refs.length !== expected.length) {
-    throw new WorkflowFail('validation:semantic-topic-content', `${TOPIC_CARD_PLAN_CHECKPOINT_STAGE} checkpoint concept refs are stale`);
-  }
-  checkpoint.compiled_concept_refs.forEach((actual, index) => {
-    const exp = expected[index];
-    if (!exp || actual.concept_id !== exp.concept_id || actual.concept_key !== exp.concept_key || !sameStringSet(actual.source_span_ids, exp.source_span_ids)) {
-      throw new WorkflowFail('validation:semantic-topic-content', `${TOPIC_CARD_PLAN_CHECKPOINT_STAGE} checkpoint concept refs are stale`);
-    }
-  });
-}
-
 async function loadTheorySourceSpansForPlanning(
   repos: ReturnType<typeof makeRepos>,
   snapshot: Record<string, unknown>,
@@ -696,9 +648,17 @@ async function buildOrLoadTopicPlanningState(input: {
   }
 
   let conceptCheckpoint = await loadCompiledTopicConceptPlanCheckpoint({ repos: input.repos, runId: input.runId });
+  if (conceptCheckpoint && !isTopicConceptPlanCheckpointReusable({
+    checkpoint: conceptCheckpoint.payload,
+    subjectId,
+    topicId,
+    sourceSpanIds: sourceSpans.map((span) => span.spanId),
+  })) {
+    conceptCheckpoint = null;
+  }
+
   let concepts: CompiledTopicConceptSpec[];
   if (conceptCheckpoint) {
-    assertConceptCheckpointMatchesSourceSpans(conceptCheckpoint.payload, subjectId, topicId, sourceSpans);
     concepts = conceptCheckpoint.payload.compiled_concepts;
   } else {
     const generationPolicy = await resolveGenerationJobPolicy(input.deviceId, TOPIC_CONCEPT_PLAN_ARTIFACT_KIND);
@@ -742,9 +702,17 @@ async function buildOrLoadTopicPlanningState(input: {
   }
 
   let cardCheckpoint = await loadCompiledTopicCardPlanCheckpoint({ repos: input.repos, runId: input.runId });
+  if (cardCheckpoint && !isTopicCardPlanCheckpointReusable({
+    checkpoint: cardCheckpoint.payload,
+    subjectId,
+    topicId,
+    concepts,
+  })) {
+    cardCheckpoint = null;
+  }
+
   let cardPlan: CompiledTopicCardPlan;
   if (cardCheckpoint) {
-    assertCardCheckpointMatchesConcepts(cardCheckpoint.payload, subjectId, topicId, concepts);
     cardPlan = {
       cardSpecs: cardCheckpoint.payload.compiled_card_specs,
       miniGameSpecs: cardCheckpoint.payload.compiled_mini_game_specs,
