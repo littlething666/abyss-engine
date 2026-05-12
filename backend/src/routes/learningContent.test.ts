@@ -25,6 +25,40 @@ function workflowStub() {
   return { create: async () => ({ id: 'workflow-stub' }) };
 }
 
+function topicCardRow(overrides: Partial<Record<string, unknown>> = {}) {
+  const cardId = String(overrides.card_id ?? 'card-1');
+  const conceptId = String(overrides.concept_id ?? 'concept-1');
+  const cardSpecId = overrides.card_spec_id === undefined ? 'card-spec-1' : overrides.card_spec_id;
+  const miniGameSpecId = overrides.mini_game_spec_id === undefined ? null : overrides.mini_game_spec_id;
+  const questionSignature = String(overrides.question_signature ?? `qsig-${cardId}`);
+  const card = overrides.card_json
+    ? undefined
+    : {
+        id: cardId,
+        conceptId,
+        ...(typeof cardSpecId === 'string' ? { cardSpecId } : {}),
+        ...(typeof miniGameSpecId === 'string' ? { miniGameSpecId } : {}),
+        questionSignature,
+        type: 'FLASHCARD',
+      };
+  return {
+    device_id: DEVICE_ID,
+    subject_id: 'math',
+    topic_id: 'limits',
+    card_id: cardId,
+    concept_id: conceptId,
+    card_spec_id: cardSpecId,
+    mini_game_spec_id: miniGameSpecId,
+    question_signature: questionSignature,
+    card_json: card ? JSON.stringify(card) : overrides.card_json,
+    difficulty: 2,
+    source_artifact_kind: 'topic-study-cards',
+    created_by_run_id: 'run-cards',
+    created_at: '2026-05-07T00:00:00Z',
+    ...overrides,
+  };
+}
+
 function envWithDb(db: D1Database): Env {
   return {
     LLM_API_KEY: 'sk-or-test',
@@ -210,17 +244,7 @@ describe('Learning Content Store routes', () => {
         updated_at: '2026-05-07T00:00:00Z',
       }),
       q([
-        {
-          device_id: DEVICE_ID,
-          subject_id: 'math',
-          topic_id: 'limits',
-          card_id: 'card-1',
-          card_json: JSON.stringify({ id: 'card-1', type: 'FLASHCARD' }),
-          difficulty: 2,
-          source_artifact_kind: 'topic-study-cards',
-          created_by_run_id: 'run-cards',
-          created_at: '2026-05-07T00:00:00Z',
-        },
+        topicCardRow(),
       ]),
     ]);
 
@@ -234,7 +258,11 @@ describe('Learning Content Store routes', () => {
           subjectId: 'math',
           topicId: 'limits',
           cardId: 'card-1',
-          card: { id: 'card-1', type: 'FLASHCARD' },
+          conceptId: 'concept-1',
+          cardSpecId: 'card-spec-1',
+          miniGameSpecId: null,
+          questionSignature: 'qsig-card-1',
+          card: { id: 'card-1', conceptId: 'concept-1', cardSpecId: 'card-spec-1', questionSignature: 'qsig-card-1', type: 'FLASHCARD' },
           difficulty: 2,
           sourceArtifactKind: 'topic-study-cards',
           createdByRunId: 'run-cards',
@@ -305,28 +333,8 @@ describe('Learning Content Store routes', () => {
     const { db, calls } = createFakeD1([
       q(deviceRow(DEVICE_ID)),
       q([
-        {
-          device_id: DEVICE_ID,
-          subject_id: 'math',
-          topic_id: 'limits',
-          card_id: 'card-b',
-          card_json: JSON.stringify({ id: 'card-b' }),
-          difficulty: 3,
-          source_artifact_kind: 'topic-expansion-cards',
-          created_by_run_id: 'run-cards',
-          created_at: '2026-05-07T00:00:00Z',
-        },
-        {
-          device_id: DEVICE_ID,
-          subject_id: 'math',
-          topic_id: 'limits',
-          card_id: 'card-a',
-          card_json: JSON.stringify({ id: 'card-a' }),
-          difficulty: 3,
-          source_artifact_kind: 'topic-expansion-cards',
-          created_by_run_id: 'run-cards',
-          created_at: '2026-05-07T00:00:00Z',
-        },
+        topicCardRow({ card_id: 'card-b', card_spec_id: 'card-spec-b', question_signature: 'qsig-card-b', difficulty: 3, source_artifact_kind: 'topic-expansion-cards' }),
+        topicCardRow({ card_id: 'card-a', card_spec_id: 'card-spec-a', question_signature: 'qsig-card-a', difficulty: 3, source_artifact_kind: 'topic-expansion-cards' }),
       ]),
       q({
         device_id: DEVICE_ID,
@@ -426,17 +434,7 @@ describe('Learning Content Store routes', () => {
           updated_by_run_id: 'run-topic',
           updated_at: '2026-05-07T00:00:00Z',
         }),
-        q([{
-          device_id: DEVICE_ID,
-          subject_id: 'math',
-          topic_id: 'limits',
-          card_id: 'card-1',
-          card_json: JSON.stringify({ id: 'other-card' }),
-          difficulty: 2,
-          source_artifact_kind: 'topic-study-cards',
-          created_by_run_id: 'run-cards',
-          created_at: '2026-05-07T00:00:00Z',
-        }]),
+        q([topicCardRow({ card_json: JSON.stringify({ id: 'other-card', conceptId: 'concept-1', cardSpecId: 'card-spec-1', questionSignature: 'qsig-card-1' }) })]),
       ],
     },
     {

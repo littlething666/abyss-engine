@@ -12,6 +12,22 @@ const validSubjectGraph = {
   nodes: [{ topicId: 'limits', title: 'Limits', iconName: 'Sigma', tier: 1, prerequisites: [] }],
 };
 
+const cardMetadata = {
+  cardId: 'card-1',
+  conceptId: 'concept-1',
+  cardSpecId: 'card-spec-1',
+  miniGameSpecId: null,
+  questionSignature: 'qsig-1',
+};
+
+const validCard = {
+  id: cardMetadata.cardId,
+  conceptId: cardMetadata.conceptId,
+  cardSpecId: cardMetadata.cardSpecId,
+  questionSignature: cardMetadata.questionSignature,
+  type: 'FLASHCARD',
+};
+
 describe('createLearningContentRepo', () => {
   it('loads a per-device manifest from D1 subjects', async () => {
     const { db, calls } = createFakeD1([q([
@@ -74,10 +90,10 @@ describe('createLearningContentRepo', () => {
 
   it('reads topic cards through the full device subject topic scope', async () => {
     const { db, calls } = createFakeD1([q([
-      { device_id: 'dev-1', subject_id: 'math', topic_id: 'limits', card_id: 'card-1', card_json: JSON.stringify({ id: 'card-1', type: 'FLASHCARD' }), difficulty: 2, source_artifact_kind: 'topic-study-cards', created_by_run_id: 'run-1', created_at: '2026-05-07T00:00:00Z' },
+      { device_id: 'dev-1', subject_id: 'math', topic_id: 'limits', card_id: cardMetadata.cardId, concept_id: cardMetadata.conceptId, card_spec_id: cardMetadata.cardSpecId, mini_game_spec_id: cardMetadata.miniGameSpecId, question_signature: cardMetadata.questionSignature, card_json: JSON.stringify(validCard), difficulty: 2, source_artifact_kind: 'topic-study-cards', created_by_run_id: 'run-1', created_at: '2026-05-07T00:00:00Z' },
     ])]);
     await expect(createLearningContentRepo(db).getTopicCards('dev-1', 'math', 'limits')).resolves.toEqual([
-      { deviceId: 'dev-1', subjectId: 'math', topicId: 'limits', cardId: 'card-1', card: { id: 'card-1', type: 'FLASHCARD' }, difficulty: 2, sourceArtifactKind: 'topic-study-cards', createdByRunId: 'run-1', createdAt: '2026-05-07T00:00:00Z' },
+      { deviceId: 'dev-1', subjectId: 'math', topicId: 'limits', cardId: cardMetadata.cardId, conceptId: cardMetadata.conceptId, cardSpecId: cardMetadata.cardSpecId, miniGameSpecId: cardMetadata.miniGameSpecId, questionSignature: cardMetadata.questionSignature, card: validCard, difficulty: 2, sourceArtifactKind: 'topic-study-cards', createdByRunId: 'run-1', createdAt: '2026-05-07T00:00:00Z' },
     ]);
     expect(calls[0].args).toEqual(['dev-1', 'math', 'limits']);
   });
@@ -91,9 +107,22 @@ describe('createLearningContentRepo', () => {
     const { db, calls } = createFakeD1([q(null)]);
     await createLearningContentRepo(db).upsertTopicCards({
       deviceId: 'dev-1', subjectId: 'math', topicId: 'limits', createdByRunId: 'run-1',
-      cards: [{ cardId: 'card-1', card: { id: 'card-1' }, difficulty: 2, sourceArtifactKind: 'topic-study-cards' }],
+      cards: [{ ...cardMetadata, card: validCard, difficulty: 2, sourceArtifactKind: 'topic-study-cards' }],
     });
-    expect(calls[0].args).toEqual(expect.arrayContaining(['dev-1', 'math', 'limits', 'card-1', JSON.stringify({ id: 'card-1' }), 2, 'topic-study-cards', 'run-1']));
+    expect(calls[0].args).toEqual(expect.arrayContaining([
+      'dev-1',
+      'math',
+      'limits',
+      cardMetadata.cardId,
+      cardMetadata.conceptId,
+      cardMetadata.cardSpecId,
+      cardMetadata.miniGameSpecId,
+      cardMetadata.questionSignature,
+      JSON.stringify(validCard),
+      2,
+      'topic-study-cards',
+      'run-1',
+    ]));
   });
 
   it('upserts and reads crystal trial sets by card-pool hash', async () => {

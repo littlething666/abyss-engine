@@ -1,4 +1,5 @@
 import { nowIso, parseJsonObject, stringifyJson } from '../repositories/d1';
+import { WorkflowFail } from '../lib/workflowErrors';
 import {
   validateCrystalTrialQuestionsEnvelope,
   validateSubjectGraphEnvelope,
@@ -60,6 +61,10 @@ interface TopicCardRow {
   subject_id: string;
   topic_id: string;
   card_id: string;
+  concept_id: string;
+  card_spec_id: string | null;
+  mini_game_spec_id: string | null;
+  question_signature: string;
   card_json: string;
   difficulty: number;
   source_artifact_kind: string;
@@ -138,13 +143,23 @@ function topicDetailsFromRow(row: TopicContentRow): TopicDetailsContent {
 }
 
 function topicCardFromRow(row: TopicCardRow): TopicCardContent {
-  validateTopicCardRowInvariants(row.difficulty, row.source_artifact_kind);
+  validateTopicCardRowInvariants(row.difficulty, row.source_artifact_kind, row.question_signature);
   return {
     deviceId: row.device_id,
     subjectId: row.subject_id,
     topicId: row.topic_id,
     cardId: row.card_id,
-    card: validateTopicCardEnvelope(parseJsonObject(row.card_json, 'topic_cards.card_json'), row.card_id),
+    conceptId: row.concept_id,
+    cardSpecId: row.card_spec_id,
+    miniGameSpecId: row.mini_game_spec_id,
+    questionSignature: row.question_signature,
+    card: validateTopicCardEnvelope(parseJsonObject(row.card_json, 'topic_cards.card_json'), {
+      cardId: row.card_id,
+      conceptId: row.concept_id,
+      cardSpecId: row.card_spec_id,
+      miniGameSpecId: row.mini_game_spec_id,
+      questionSignature: row.question_signature,
+    }),
     difficulty: row.difficulty,
     sourceArtifactKind: row.source_artifact_kind,
     createdByRunId: row.created_by_run_id,
@@ -372,17 +387,35 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
 
     async upsertTopicCards(input) {
       requireNonEmptyRows(input.cards, 'upsertTopicCards');
+      const signatures = new Set<string>();
+      for (const card of input.cards) {
+        if (signatures.has(card.questionSignature)) {
+          throw new WorkflowFail('validation:lcs-envelope', `upsertTopicCards duplicate question_signature ${card.questionSignature}`);
+        }
+        signatures.add(card.questionSignature);
+      }
       const cards = input.cards.map((card) => {
-        validateTopicCardRowInvariants(card.difficulty, card.sourceArtifactKind);
-        return { ...card, card: validateTopicCardEnvelope(card.card, card.cardId) };
+        validateTopicCardRowInvariants(card.difficulty, card.sourceArtifactKind, card.questionSignature);
+        return { ...card, card: validateTopicCardEnvelope(card.card, {
+          cardId: card.cardId,
+          conceptId: card.conceptId,
+          cardSpecId: card.cardSpecId ?? null,
+          miniGameSpecId: card.miniGameSpecId ?? null,
+          questionSignature: card.questionSignature,
+        }) };
       });
       const now = nowIso();
       await db.batch(cards.map((card) => db.prepare(`
         insert into topic_cards (
-          device_id, subject_id, topic_id, card_id, card_json, difficulty,
+          device_id, subject_id, topic_id, card_id, concept_id, card_spec_id,
+          mini_game_spec_id, question_signature, card_json, difficulty,
           source_artifact_kind, created_by_run_id, created_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         on conflict(device_id, subject_id, topic_id, card_id) do update set
+          concept_id = excluded.concept_id,
+          card_spec_id = excluded.card_spec_id,
+          mini_game_spec_id = excluded.mini_game_spec_id,
+          question_signature = excluded.question_signature,
           card_json = excluded.card_json,
           difficulty = excluded.difficulty,
           source_artifact_kind = excluded.source_artifact_kind,
@@ -392,6 +425,10 @@ export function createLearningContentRepo(db: D1Database): ILearningContentRepo 
         input.subjectId,
         input.topicId,
         card.cardId,
+        card.conceptId,
+        card.cardSpecId ?? null,
+        card.miniGameSpecId ?? null,
+        card.questionSignature,
         stringifyJson(card.card, 'topic_cards.card_json'),
         card.difficulty,
         card.sourceArtifactKind,

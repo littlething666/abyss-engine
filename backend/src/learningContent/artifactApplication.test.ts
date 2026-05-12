@@ -48,8 +48,14 @@ function makeRepo(overrides: Partial<ILearningContentRepo> = {}): ILearningConte
     getTopicCards: vi.fn(async () => []),
     upsertTopicCards: vi.fn(async (input) => {
       input.cards.forEach((card) => {
-        validateTopicCardRowInvariants(card.difficulty, card.sourceArtifactKind);
-        validateTopicCardEnvelope(card.card, card.cardId);
+        validateTopicCardRowInvariants(card.difficulty, card.sourceArtifactKind, card.questionSignature);
+        validateTopicCardEnvelope(card.card, {
+          cardId: card.cardId,
+          conceptId: card.conceptId,
+          cardSpecId: card.cardSpecId ?? null,
+          miniGameSpecId: card.miniGameSpecId ?? null,
+          questionSignature: card.questionSignature,
+        });
       });
     }),
     getCrystalTrialSet: vi.fn(async () => null),
@@ -129,8 +135,22 @@ describe('applyArtifactToLearningContent', () => {
       topicId: 'limits',
       createdByRunId: 'run-1',
       cards: [
-        expect.objectContaining({ cardId: 'flash-1', difficulty: 1, sourceArtifactKind: artifactKind }),
-        expect.objectContaining({ cardId: 'mc-1', difficulty: 2, sourceArtifactKind: artifactKind }),
+        expect.objectContaining({
+          cardId: expect.stringMatching(/^card_[0-9a-f]{64}$/),
+          conceptId: expect.stringMatching(/^concept_[0-9a-f]{64}$/),
+          cardSpecId: expect.stringMatching(/^card_spec_[0-9a-f]{64}$/),
+          questionSignature: expect.stringMatching(/^qsig_[0-9a-f]{64}$/),
+          difficulty: 1,
+          sourceArtifactKind: artifactKind,
+        }),
+        expect.objectContaining({
+          cardId: expect.stringMatching(/^card_[0-9a-f]{64}$/),
+          conceptId: expect.stringMatching(/^concept_[0-9a-f]{64}$/),
+          cardSpecId: expect.stringMatching(/^card_spec_[0-9a-f]{64}$/),
+          questionSignature: expect.stringMatching(/^qsig_[0-9a-f]{64}$/),
+          difficulty: 2,
+          sourceArtifactKind: artifactKind,
+        }),
       ],
     });
   });
@@ -157,8 +177,37 @@ describe('applyArtifactToLearningContent', () => {
     });
 
     expect(repo.upsertTopicCards).toHaveBeenCalledWith(expect.objectContaining({
-      cards: [expect.objectContaining({ cardId: 'game-1', difficulty: 2, sourceArtifactKind: artifactKind })],
+      cards: [expect.objectContaining({
+        cardId: expect.stringMatching(/^card_[0-9a-f]{64}$/),
+        conceptId: expect.stringMatching(/^concept_[0-9a-f]{64}$/),
+        miniGameSpecId: expect.stringMatching(/^mini_game_spec_[0-9a-f]{64}$/),
+        questionSignature: expect.stringMatching(/^qsig_[0-9a-f]{64}$/),
+        difficulty: 2,
+        sourceArtifactKind: artifactKind,
+      })],
     }));
+  });
+
+
+  it('rejects duplicate question signatures within one generated card artifact', async () => {
+    const repo = makeRepo();
+
+    await expect(applyArtifactToLearningContent({
+      learningContent: repo,
+      deviceId: 'dev-1',
+      runId: 'run-1',
+      artifactKind: 'topic-study-cards',
+      snapshot: { subject_id: 'math', topic_id: 'limits' },
+      contentHash: 'cnt_cards',
+      payload: {
+        cards: [
+          { id: 'llm-1', topicId: 'limits', type: 'FLASHCARD', difficulty: 1, content: { front: 'What is a limit?', back: 'Approach behavior.' } },
+          { id: 'llm-2', topicId: 'limits', type: 'FLASHCARD', difficulty: 1, content: { front: ' what is a limit? ', back: 'Approach behavior.' } },
+        ],
+      },
+    })).rejects.toMatchObject({ code: 'validation:semantic-topic-content' });
+
+    expect(repo.upsertTopicCards).not.toHaveBeenCalled();
   });
 
   it('materializes crystal trial sets under the snapshot target level and card-pool hash', async () => {

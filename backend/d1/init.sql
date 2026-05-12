@@ -152,12 +152,17 @@ create table if not exists topic_cards (
   subject_id text not null,
   topic_id text not null,
   card_id text not null,
+  concept_id text not null,
+  card_spec_id text null,
+  mini_game_spec_id text null,
+  question_signature text not null,
   card_json text not null,
   difficulty integer not null,
   source_artifact_kind text not null,
   created_by_run_id text not null references runs(id) on delete cascade,
   created_at text not null,
   primary key (device_id, subject_id, topic_id, card_id),
+  unique (device_id, subject_id, topic_id, question_signature),
   foreign key (device_id, subject_id) references subjects(device_id, subject_id) on delete cascade
 );
 
@@ -186,4 +191,5 @@ create index if not exists idx_stage_checkpoints_run on stage_checkpoints(run_id
 create index if not exists idx_idempotency_records_expires on idempotency_records(expires_at);
 create index if not exists idx_subjects_device_updated on subjects(device_id, updated_at desc);
 create index if not exists idx_topic_cards_scope on topic_cards(device_id, subject_id, topic_id);
+create index if not exists idx_topic_cards_concept on topic_cards(device_id, subject_id, topic_id, concept_id);
 create index if not exists idx_trial_sets_scope on crystal_trial_sets(device_id, subject_id, topic_id, target_level);

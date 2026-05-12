@@ -52,6 +52,10 @@ export const topicDetailsEnvelopeSchema = jsonObjectSchema.superRefine((value, c
 
 export const topicCardEnvelopeSchema = jsonObjectSchema.extend({
   id: z.string().trim().min(1),
+  conceptId: z.string().trim().min(1),
+  questionSignature: z.string().trim().min(1),
+  cardSpecId: z.string().trim().min(1).optional(),
+  miniGameSpecId: z.string().trim().min(1).optional(),
 });
 
 export const crystalTrialQuestionsEnvelopeSchema = z.object({

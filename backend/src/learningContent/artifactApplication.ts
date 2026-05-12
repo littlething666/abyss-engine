@@ -2,6 +2,7 @@ import { WorkflowFail } from '../lib/workflowErrors';
 import { contentHash as computeContentHash, type ArtifactKind } from '../contracts/generationContracts';
 import type { ILearningContentRepo } from './learningContentRepo';
 import type { JsonObject, PutTopicCardInput, TopicDetailsContent } from './types';
+import { buildTopicCardMaterializationIds } from './deterministicIds';
 
 const TOPIC_CARD_ARTIFACT_KINDS = new Set<ArtifactKind>([
   'topic-study-cards',
@@ -102,14 +103,12 @@ function topicDetailsFromTheory(
 }
 
 function deckStudyCardFromCanonical(card: Record<string, unknown>, label: string): JsonObject | null {
-  const id = requireString(card.id, `${label}.id`);
   const difficulty = requirePositiveInteger(card.difficulty, `${label}.difficulty`);
   const type = requireString(card.type, `${label}.type`);
   const content = requireRecord(card.content, `${label}.content`);
 
   if (type === 'FLASHCARD') {
     return {
-      id,
       type: 'FLASHCARD',
       difficulty,
       content: {
@@ -122,7 +121,6 @@ function deckStudyCardFromCanonical(card: Record<string, unknown>, label: string
   if (type === 'MULTIPLE_CHOICE') {
     if (typeof content.correctAnswer === 'string') {
       return {
-        id,
         type: 'SINGLE_CHOICE',
         difficulty,
         content: {
@@ -136,7 +134,6 @@ function deckStudyCardFromCanonical(card: Record<string, unknown>, label: string
 
     if (Array.isArray(content.correctAnswers)) {
       return {
-        id,
         type: 'MULTI_CHOICE',
         difficulty,
         content: {
@@ -160,33 +157,67 @@ function deckStudyCardFromCanonical(card: Record<string, unknown>, label: string
 }
 
 function deckMiniGameCardFromCanonical(card: Record<string, unknown>, label: string): JsonObject {
-  const id = requireString(card.id, `${label}.id`);
   const difficulty = requirePositiveInteger(card.difficulty, `${label}.difficulty`);
   const content = requireRecord(card.content, `${label}.content`);
   requireString(content.gameType, `${label}.content.gameType`);
-  return { id, type: 'MINI_GAME', difficulty, content };
+  return { type: 'MINI_GAME', difficulty, content };
 }
 
-function cardRowsFromPayload(artifactKind: ArtifactKind, payload: Record<string, unknown>): PutTopicCardInput[] {
+async function cardRowsFromPayload(
+  artifactKind: ArtifactKind,
+  payload: Record<string, unknown>,
+  input: { subjectId: string; topicId: string },
+): Promise<PutTopicCardInput[]> {
   const cards = payload.cards;
   if (!Array.isArray(cards)) {
     throw new WorkflowFail('validation:semantic-topic-content', `${artifactKind}.cards must be an array`);
   }
 
   const rows: PutTopicCardInput[] = [];
-  cards.forEach((value, index) => {
+  const seenSignatures = new Set<string>();
+  for (const [index, value] of cards.entries()) {
     const canonical = requireRecord(value, `${artifactKind}.cards[${index}]`);
     const deckCard = artifactKind === 'topic-study-cards' || artifactKind === 'topic-expansion-cards'
       ? deckStudyCardFromCanonical(canonical, `${artifactKind}.cards[${index}]`)
       : deckMiniGameCardFromCanonical(canonical, `${artifactKind}.cards[${index}]`);
-    if (!deckCard) return;
-    rows.push({
-      cardId: requireString(deckCard.id, `${artifactKind}.cards[${index}].id`),
+    if (!deckCard) continue;
+
+    const ids = await buildTopicCardMaterializationIds({
+      subjectId: input.subjectId,
+      topicId: input.topicId,
+      artifactKind,
+      cardIndex: index,
       card: deckCard,
+    });
+
+    if (seenSignatures.has(ids.questionSignature)) {
+      throw new WorkflowFail(
+        'validation:semantic-topic-content',
+        `${artifactKind}.cards[${index}] duplicates question_signature ${ids.questionSignature}`,
+      );
+    }
+    seenSignatures.add(ids.questionSignature);
+
+    const card = {
+      ...deckCard,
+      id: ids.cardId,
+      conceptId: ids.conceptId,
+      ...(ids.cardSpecId ? { cardSpecId: ids.cardSpecId } : {}),
+      ...(ids.miniGameSpecId ? { miniGameSpecId: ids.miniGameSpecId } : {}),
+      questionSignature: ids.questionSignature,
+    } as JsonObject;
+
+    rows.push({
+      cardId: ids.cardId,
+      conceptId: ids.conceptId,
+      cardSpecId: ids.cardSpecId,
+      miniGameSpecId: ids.miniGameSpecId,
+      questionSignature: ids.questionSignature,
+      card,
       difficulty: requirePositiveInteger(deckCard.difficulty, `${artifactKind}.cards[${index}].difficulty`),
       sourceArtifactKind: artifactKind,
     });
-  });
+  }
 
   if (rows.length === 0) {
     throw new WorkflowFail('validation:semantic-topic-content', `${artifactKind} produced no deck-compatible cards`);
@@ -233,7 +264,7 @@ async function applyTopicCards(input: ApplyArtifactToLearningContentInput): Prom
     deviceId: input.deviceId,
     subjectId,
     topicId,
-    cards: cardRowsFromPayload(input.artifactKind, input.payload),
+    cards: await cardRowsFromPayload(input.artifactKind, input.payload, { subjectId, topicId }),
     createdByRunId: input.runId,
   });
   if (input.artifactKind === 'topic-study-cards') {

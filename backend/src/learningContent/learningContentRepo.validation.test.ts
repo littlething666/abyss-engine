@@ -8,6 +8,21 @@ const validGraph = {
   nodes: [{ topicId: 'limits', title: 'Limits', iconName: 'Sigma', tier: 1, prerequisites: [] }],
 };
 
+const validCardMetadata = {
+  cardId: 'card-1',
+  conceptId: 'concept-1',
+  cardSpecId: 'card-spec-1',
+  miniGameSpecId: null,
+  questionSignature: 'qsig-1',
+};
+
+const validCard = {
+  id: validCardMetadata.cardId,
+  conceptId: validCardMetadata.conceptId,
+  cardSpecId: validCardMetadata.cardSpecId,
+  questionSignature: validCardMetadata.questionSignature,
+};
+
 describe('Learning Content Store envelope validation', () => {
   it('rejects malformed persisted subject metadata on read', async () => {
     const { db } = createFakeD1([q([
@@ -35,7 +50,7 @@ describe('Learning Content Store envelope validation', () => {
       subjectId: 'math',
       topicId: 'limits',
       createdByRunId: 'run-1',
-      cards: [{ cardId: 'card-1', card: { id: 'other-card' }, difficulty: 2, sourceArtifactKind: 'topic-study-cards' }],
+      cards: [{ ...validCardMetadata, card: { ...validCard, id: 'other-card' }, difficulty: 2, sourceArtifactKind: 'topic-study-cards' }],
     })).rejects.toMatchObject({ code: 'validation:lcs-envelope' });
 
     await expect(createLearningContentRepo(db).upsertTopicCards({
@@ -43,7 +58,7 @@ describe('Learning Content Store envelope validation', () => {
       subjectId: 'math',
       topicId: 'limits',
       createdByRunId: 'run-1',
-      cards: [{ cardId: 'card-1', card: { id: 'card-1' }, difficulty: 2, sourceArtifactKind: 'legacy-kind' }],
+      cards: [{ ...validCardMetadata, card: validCard, difficulty: 2, sourceArtifactKind: 'legacy-kind' }],
     })).rejects.toMatchObject({ code: 'validation:lcs-envelope' });
   });
 
@@ -53,7 +68,7 @@ describe('Learning Content Store envelope validation', () => {
 
     await repo.putSubjectGraph({ deviceId: 'dev-1', subjectId: 'math', graph: validGraph, contentHash: 'cnt_graph', updatedByRunId: 'run-1' });
     await repo.putTopicDetails({ deviceId: 'dev-1', subjectId: 'math', topicId: 'limits', details: { topicId: 'limits', title: 'Limits' }, contentHash: 'cnt_details', status: 'ready', updatedByRunId: 'run-1' });
-    await repo.upsertTopicCards({ deviceId: 'dev-1', subjectId: 'math', topicId: 'limits', createdByRunId: 'run-1', cards: [{ cardId: 'card-1', card: { id: 'card-1' }, difficulty: 2, sourceArtifactKind: 'topic-study-cards' }] });
+    await repo.upsertTopicCards({ deviceId: 'dev-1', subjectId: 'math', topicId: 'limits', createdByRunId: 'run-1', cards: [{ ...validCardMetadata, card: validCard, difficulty: 2, sourceArtifactKind: 'topic-study-cards' }] });
     await repo.putCrystalTrialSet({ deviceId: 'dev-1', subjectId: 'math', topicId: 'limits', targetLevel: 3, cardPoolHash: 'pool-1', questions: { questions: [] }, contentHash: 'cnt_trial', createdByRunId: 'run-1' });
   });
 });

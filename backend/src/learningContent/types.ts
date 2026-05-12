@@ -49,6 +49,10 @@ export interface TopicCardContent {
   subjectId: string;
   topicId: string;
   cardId: string;
+  conceptId: string;
+  cardSpecId: string | null;
+  miniGameSpecId: string | null;
+  questionSignature: string;
   card: JsonObject;
   difficulty: number;
   sourceArtifactKind: string;
@@ -103,6 +107,10 @@ export interface PublishGeneratedSubjectGraphInput {
 
 export interface PutTopicCardInput {
   cardId: string;
+  conceptId: string;
+  cardSpecId?: string | null;
+  miniGameSpecId?: string | null;
+  questionSignature: string;
   card: JsonObject;
   difficulty: number;
   sourceArtifactKind: string;

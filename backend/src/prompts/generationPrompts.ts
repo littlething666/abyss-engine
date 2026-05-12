@@ -69,7 +69,8 @@ function formatStudyCardSemanticRules(topicId: string, difficulty: number, optio
     ...(options.includeMinimum ? [`- Generate at least ${SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE} deck-compatible cards.`] : []),
     '- Allowed card.type values: FLASHCARD and MULTIPLE_CHOICE only.',
     '- Do not generate CLOZE cards; the current deck read model does not materialize CLOZE.',
-    '- Every card object must include id, topicId, type, difficulty, and content.',
+    '- Backend materialization deterministically assigns persisted card IDs; any model-generated id is temporary and will be ignored.',
+    '- Every card object must include topicId, type, difficulty, and content.',
     '- Every card.topicId must equal the snapshot topic id.',
     `- Every card.difficulty must equal ${difficulty}.`,
     '- FLASHCARD content must contain non-empty string fields front and back.',
@@ -80,10 +81,10 @@ function formatStudyCardSemanticRules(topicId: string, difficulty: number, optio
     '- Do not use alternate content keys such as prompt, answer, term, definition, choices, correctOption, or rationale.',
     '',
     'Valid FLASHCARD shape:',
-    `{"id":"${topicId}-card-001","topicId":"${topicId}","type":"FLASHCARD","difficulty":${difficulty},"content":{"front":"<question or term>","back":"<answer or explanation>"}}`,
+    `{"id":"temporary-id-ignored-by-backend","topicId":"${topicId}","type":"FLASHCARD","difficulty":${difficulty},"content":{"front":"<question or term>","back":"<answer or explanation>"}}`,
     '',
     'Valid MULTIPLE_CHOICE shape:',
-    `{"id":"${topicId}-card-002","topicId":"${topicId}","type":"MULTIPLE_CHOICE","difficulty":${difficulty},"content":{"question":"<question>","options":["<option A>","<option B>","<option C>"],"correctAnswer":"<one option copied exactly>","explanation":"<why the answer is correct>"}}`,
+    `{"id":"temporary-id-ignored-by-backend","topicId":"${topicId}","type":"MULTIPLE_CHOICE","difficulty":${difficulty},"content":{"question":"<question>","options":["<option A>","<option B>","<option C>"],"correctAnswer":"<one option copied exactly>","explanation":"<why the answer is correct>"}}`,
   ].join('\n');
 }
 
@@ -260,6 +261,7 @@ export function buildTopicMiniGameMessages(snapshot: Record<string, unknown>): P
     'Theory excerpt:',
     requireString(snapshot.theory_excerpt, 'snapshot.theory_excerpt'),
     '',
+    'Backend materialization deterministically assigns persisted card IDs; any model-generated id is temporary and will be ignored.',
     `Every card must have type MINI_GAME, content.gameType ${expectedGameType}, and topicId equal to the snapshot topic id.`,
   ].join('\n');
 

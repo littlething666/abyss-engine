@@ -129,6 +129,8 @@ describe('backend generation prompt modules', () => {
     expect(content).toContain(`at least ${SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE} deck-compatible`);
     expect(content).toContain('Allowed card.type values: FLASHCARD and MULTIPLE_CHOICE only.');
     expect(content).toContain('Do not generate CLOZE cards');
+    expect(content).toContain('Backend materialization deterministically assigns persisted card IDs');
+    expect(content).toContain('Every card object must include topicId, type, difficulty, and content.');
     expect(content).toContain('Every card.difficulty must equal 2.');
     expect(content).toContain('FLASHCARD content must contain non-empty string fields front and back.');
     expect(content).toContain('MULTIPLE_CHOICE content must contain question, options, explanation, and correctAnswer or correctAnswers.');
