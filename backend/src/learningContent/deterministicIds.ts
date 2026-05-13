@@ -110,6 +110,15 @@ export interface BuildTopicCardMaterializationIdsInput {
   card: JsonObject;
 }
 
+export interface BuildPlannedTopicCardMaterializationIdsInput {
+  subjectId: string;
+  topicId: string;
+  card: JsonObject;
+  conceptId: string;
+  cardSpecId?: string;
+  miniGameSpecId?: string;
+}
+
 export interface TopicCardMaterializationIds {
   conceptId: string;
   cardSpecId?: string;
@@ -161,5 +170,32 @@ export async function buildTopicCardMaterializationIds(
     cardSpecId,
     questionSignature,
     cardId: await stableLearningContentId('card', 'study-card:v1', input.subjectId, input.topicId, cardSpecId, questionSignature),
+  };
+}
+
+export async function buildPlannedTopicCardMaterializationIds(
+  input: BuildPlannedTopicCardMaterializationIdsInput,
+): Promise<TopicCardMaterializationIds> {
+  const questionSignature = await computeQuestionSignature(input.card);
+  if (input.card.type === 'MINI_GAME') {
+    if (!input.miniGameSpecId) {
+      throw new WorkflowFail('validation:semantic-topic-content', 'planned MINI_GAME materialization requires miniGameSpecId');
+    }
+    return {
+      conceptId: input.conceptId,
+      miniGameSpecId: input.miniGameSpecId,
+      questionSignature,
+      cardId: await stableLearningContentId('card', 'mini-game-card:v1', input.subjectId, input.topicId, input.miniGameSpecId, questionSignature),
+    };
+  }
+
+  if (!input.cardSpecId) {
+    throw new WorkflowFail('validation:semantic-topic-content', 'planned study-card materialization requires cardSpecId');
+  }
+  return {
+    conceptId: input.conceptId,
+    cardSpecId: input.cardSpecId,
+    questionSignature,
+    cardId: await stableLearningContentId('card', 'study-card:v1', input.subjectId, input.topicId, input.cardSpecId, questionSignature),
   };
 }

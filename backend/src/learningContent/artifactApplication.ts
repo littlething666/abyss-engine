@@ -2,7 +2,7 @@ import { WorkflowFail } from '../lib/workflowErrors';
 import { contentHash as computeContentHash, type ArtifactKind } from '../contracts/generationContracts';
 import type { ILearningContentRepo } from './learningContentRepo';
 import type { JsonObject, PutTopicCardInput, TopicDetailsContent } from './types';
-import { buildTopicCardMaterializationIds } from './deterministicIds';
+import { buildPlannedTopicCardMaterializationIds, buildTopicCardMaterializationIds } from './deterministicIds';
 import { buildTopicTheorySourceSpans, topicTheorySourceSpansAsJson } from './theorySourceSpans';
 
 const TOPIC_CARD_ARTIFACT_KINDS = new Set<ArtifactKind>([
@@ -68,12 +68,81 @@ function requirePositiveInteger(value: unknown, label: string): number {
   return value as number;
 }
 
+function requireArray(value: unknown, label: string): unknown[] {
+  if (!Array.isArray(value)) {
+    throw new WorkflowFail('precondition:missing-topic', `${label} must be an array`);
+  }
+  return value;
+}
+
 function snapshotSubjectId(snapshot: Record<string, unknown>): string {
   return requireString(snapshot.subject_id, 'snapshot.subject_id');
 }
 
 function snapshotTopicId(snapshot: Record<string, unknown>): string {
   return requireString(snapshot.topic_id, 'snapshot.topic_id');
+}
+
+interface PlannedStudyCardBinding {
+  conceptId: string;
+  cardSpecId: string;
+  cardType: string;
+  difficulty: number;
+}
+
+interface PlannedMiniGameBinding {
+  conceptId: string;
+  miniGameSpecId: string;
+  gameType: string;
+  difficulty: number;
+}
+
+type PlannedCardBinding = PlannedStudyCardBinding | PlannedMiniGameBinding;
+
+function optionalRecordArray(value: unknown, label: string): Record<string, unknown>[] {
+  if (value === undefined) return [];
+  const items = requireArray(value, label);
+  return items.map((item, index) => requireRecord(item, `${label}[${index}]`));
+}
+
+function plannedStudyCardBindingsFromSnapshot(snapshot: Record<string, unknown>): PlannedStudyCardBinding[] {
+  return optionalRecordArray(snapshot.compiled_study_card_specs, 'snapshot.compiled_study_card_specs').map((spec, index) => ({
+    conceptId: requireString(spec.concept_id, `snapshot.compiled_study_card_specs[${index}].concept_id`),
+    cardSpecId: requireString(spec.card_spec_id, `snapshot.compiled_study_card_specs[${index}].card_spec_id`),
+    cardType: requireString(spec.card_type, `snapshot.compiled_study_card_specs[${index}].card_type`),
+    difficulty: requirePositiveInteger(spec.difficulty, `snapshot.compiled_study_card_specs[${index}].difficulty`),
+  }));
+}
+
+function plannedMiniGameBindingsFromSnapshot(snapshot: Record<string, unknown>): PlannedMiniGameBinding[] {
+  return optionalRecordArray(snapshot.compiled_mini_game_specs, 'snapshot.compiled_mini_game_specs').map((spec, index) => ({
+    conceptId: requireString(spec.concept_id, `snapshot.compiled_mini_game_specs[${index}].concept_id`),
+    miniGameSpecId: requireString(spec.mini_game_spec_id, `snapshot.compiled_mini_game_specs[${index}].mini_game_spec_id`),
+    gameType: requireString(spec.game_type, `snapshot.compiled_mini_game_specs[${index}].game_type`),
+    difficulty: requirePositiveInteger(spec.difficulty, `snapshot.compiled_mini_game_specs[${index}].difficulty`),
+  }));
+}
+
+function plannedBindingsForArtifactKind(
+  artifactKind: ArtifactKind,
+  snapshot: Record<string, unknown>,
+): PlannedCardBinding[] {
+  if (artifactKind === 'topic-study-cards') return plannedStudyCardBindingsFromSnapshot(snapshot);
+  if (
+    artifactKind === 'topic-mini-game-category-sort'
+    || artifactKind === 'topic-mini-game-sequence-build'
+    || artifactKind === 'topic-mini-game-match-pairs'
+  ) {
+    return plannedMiniGameBindingsFromSnapshot(snapshot);
+  }
+  return [];
+}
+
+function expectedMiniGameContentGameType(plannedGameType: string): string {
+  if (plannedGameType === 'CATEGORY_SORT') return 'category-sort';
+  if (plannedGameType === 'SEQUENCE_BUILD') return 'sequence-build';
+  if (plannedGameType === 'MATCH_PAIRS') return 'match-pairs';
+  return plannedGameType;
 }
 
 function checklistFromSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
@@ -172,29 +241,80 @@ function deckMiniGameCardFromCanonical(card: Record<string, unknown>, label: str
 async function cardRowsFromPayload(
   artifactKind: ArtifactKind,
   payload: Record<string, unknown>,
-  input: { subjectId: string; topicId: string },
+  input: { subjectId: string; topicId: string; snapshot: Record<string, unknown> },
 ): Promise<PutTopicCardInput[]> {
   const cards = payload.cards;
   if (!Array.isArray(cards)) {
     throw new WorkflowFail('validation:semantic-topic-content', `${artifactKind}.cards must be an array`);
   }
 
+  const plannedBindings = plannedBindingsForArtifactKind(artifactKind, input.snapshot);
+  if (plannedBindings.length > 0 && cards.length !== plannedBindings.length) {
+    throw new WorkflowFail(
+      'validation:semantic-topic-content',
+      `${artifactKind}.cards length ${cards.length} must match compiled spec count ${plannedBindings.length}`,
+    );
+  }
+
   const rows: PutTopicCardInput[] = [];
   const seenSignatures = new Set<string>();
   for (const [index, value] of cards.entries()) {
     const canonical = requireRecord(value, `${artifactKind}.cards[${index}]`);
+    const plannedBinding = plannedBindings[index];
     const deckCard = artifactKind === 'topic-study-cards' || artifactKind === 'topic-expansion-cards'
       ? deckStudyCardFromCanonical(canonical, `${artifactKind}.cards[${index}]`)
       : deckMiniGameCardFromCanonical(canonical, `${artifactKind}.cards[${index}]`);
-    if (!deckCard) continue;
+    if (!deckCard) {
+      if (plannedBinding) {
+        throw new WorkflowFail('validation:semantic-topic-content', `${artifactKind}.cards[${index}] is not deck-compatible for compiled spec materialization`);
+      }
+      continue;
+    }
 
-    const ids = await buildTopicCardMaterializationIds({
-      subjectId: input.subjectId,
-      topicId: input.topicId,
-      artifactKind,
-      cardIndex: index,
-      card: deckCard,
-    });
+    if (plannedBinding) {
+      if ('cardSpecId' in plannedBinding) {
+        const generatedType = requireString(canonical.type, `${artifactKind}.cards[${index}].type`);
+        if (generatedType !== plannedBinding.cardType) {
+          throw new WorkflowFail(
+            'validation:semantic-topic-content',
+            `${artifactKind}.cards[${index}].type ${generatedType} must match compiled card spec type ${plannedBinding.cardType}`,
+          );
+        }
+      } else {
+        const content = requireRecord(canonical.content, `${artifactKind}.cards[${index}].content`);
+        const expectedGameType = expectedMiniGameContentGameType(plannedBinding.gameType);
+        if (requireString(content.gameType, `${artifactKind}.cards[${index}].content.gameType`) !== expectedGameType) {
+          throw new WorkflowFail(
+            'validation:semantic-topic-content',
+            `${artifactKind}.cards[${index}].content.gameType must match compiled mini-game spec type ${expectedGameType}`,
+          );
+        }
+      }
+      if (requirePositiveInteger(deckCard.difficulty, `${artifactKind}.cards[${index}].difficulty`) !== plannedBinding.difficulty) {
+        throw new WorkflowFail(
+          'validation:semantic-topic-content',
+          `${artifactKind}.cards[${index}].difficulty must match compiled spec difficulty ${plannedBinding.difficulty}`,
+        );
+      }
+    }
+
+    const ids = plannedBinding
+      ? await buildPlannedTopicCardMaterializationIds({
+        subjectId: input.subjectId,
+        topicId: input.topicId,
+        card: deckCard,
+        conceptId: plannedBinding.conceptId,
+        ...('cardSpecId' in plannedBinding
+          ? { cardSpecId: plannedBinding.cardSpecId }
+          : { miniGameSpecId: plannedBinding.miniGameSpecId }),
+      })
+      : await buildTopicCardMaterializationIds({
+        subjectId: input.subjectId,
+        topicId: input.topicId,
+        artifactKind,
+        cardIndex: index,
+        card: deckCard,
+      });
 
     if (seenSignatures.has(ids.questionSignature)) {
       throw new WorkflowFail(
@@ -270,7 +390,7 @@ async function applyTopicCards(input: ApplyArtifactToLearningContentInput): Prom
     deviceId: input.deviceId,
     subjectId,
     topicId,
-    cards: await cardRowsFromPayload(input.artifactKind, input.payload, { subjectId, topicId }),
+    cards: await cardRowsFromPayload(input.artifactKind, input.payload, { subjectId, topicId, snapshot: input.snapshot }),
     createdByRunId: input.runId,
   });
   if (input.artifactKind === 'topic-study-cards') {

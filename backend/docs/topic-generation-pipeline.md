@@ -170,7 +170,23 @@ Completed:
 - The legacy fallback path is preserved when no compiled card-plan checkpoint is available.
 - Added unit coverage for deterministic study-card spec ordering, source-span selection, and prompt text containing the compiled-spec rules.
 
-This still does not create one durable `topic-card-content` artifact per `cardSpecId`, and current broad study-card materialization still derives legacy deterministic `card_spec_id` values from generated card content and position. The workflow now passes explicit compiled-spec intent into the broad study-card job so the later per-card fan-out slice can replace the broad artifact with narrower content jobs.
+This still does not create one durable `topic-card-content` artifact per `cardSpecId`. The workflow now passes explicit compiled-spec intent into the broad study-card job so the later per-card fan-out slice can replace the broad artifact with narrower content jobs.
+
+### Plan-bound legacy card materialization IDs
+
+This patch closes the ID-boundary gap left by the plan-guided broad artifact compatibility path: generated broad artifacts can now materialize cards against compiled planning IDs when a compiled-spec prompt snapshot is present.
+
+Completed:
+
+- `TopicContentWorkflow` now passes the exact plan-guided prompt snapshot into both generation and Learning Content Store application for broad study-card and plan-gated mini-game stages.
+- Cached broad study-card and mini-game artifacts are also applied with the same compiled-spec snapshot context, so retry/cache paths use the same materialization boundary as fresh generation.
+- `topic-study-cards` materialization now binds generated cards to compiled `conceptId` and `cardSpecId` values from `compiled_study_card_specs` when present.
+- Legacy broad mini-game materialization now binds generated cards to compiled `conceptId` and `miniGameSpecId` values from `compiled_mini_game_specs` when present.
+- Plan-bound materialization enforces that generated output count matches compiled spec count, generated study-card type matches the compiled `cardType`, generated mini-game `content.gameType` matches the compiled `gameType`, and generated difficulty matches the compiled spec difficulty.
+- Prompt rules for plan-guided broad study-card and mini-game stages now require exactly one generated card per compiled spec, in compiled-spec order.
+- Legacy fallback remains unchanged for unplanned broad artifacts and expansion cards: those paths still derive deterministic placeholder concept/spec IDs from generated card content and position.
+
+This still does not create one durable `topic-card-content` artifact per `cardSpecId` or one durable `topic-mini-game-content` artifact per `miniGameSpecId`. It does, however, ensure the current compatibility broad artifacts no longer overwrite compiled planning IDs during Learning Content Store materialization.
 
 ## Deterministic materialization policy
 
@@ -199,8 +215,9 @@ For planning artifacts, backend-local snapshots, the compiler, checkpoint helper
 - planning checkpoint reuse from current subject/topic scope plus current theory source spans or compiled concept references.
 - legacy broad study-card prompt grounding and instructions from compiled `cardSpecs` when planning state is available.
 - legacy broad mini-game stage selection from compiled `miniGameSpecs.gameType` values when planning state is available.
+- legacy broad study-card and mini-game materialization from compiled `conceptId`, `cardSpecId`, and `miniGameSpecId` values when compiled-spec snapshots are present.
 
-This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow, adding a retry-safe persistence seam for compiled planning outputs, wiring that seam into the current broad-artifact workflow path, preventing stale compiled planning checkpoints from being reused across changed theory or concept inputs, guiding legacy study-card generation by compiled card specs, and gating legacy mini-game fan-out by compiled mini-game specs.
+This keeps existing stages operational while preventing LLM-generated IDs from entering the Learning Content Store, beginning to reduce downstream LLM context size, establishing the deterministic spec compiler needed before per-spec content jobs are wired into the workflow, adding a retry-safe persistence seam for compiled planning outputs, wiring that seam into the current broad-artifact workflow path, preventing stale compiled planning checkpoints from being reused across changed theory or concept inputs, guiding legacy study-card generation by compiled card specs, gating legacy mini-game fan-out by compiled mini-game specs, and binding plan-guided broad materialization to compiled spec IDs when planning state is available.
 
 ## Target pipeline still intended
 
@@ -224,9 +241,9 @@ backend materialization
    - `topic-card-plan`
    - `topic-card-content`
    - `topic-mini-game-content`
-2. Replace the plan-guided broad `study-cards` artifact in `TopicContentWorkflow` with per-card-spec jobs driven by compiled `cardSpecId` values. The broad prompt now receives compiled specs, but materialization still uses legacy broad-artifact IDs.
+2. Replace the plan-guided broad `study-cards` artifact in `TopicContentWorkflow` with per-card-spec jobs driven by compiled `cardSpecId` values. The broad prompt and Learning Content Store materialization now use compiled specs when present, but the durable artifact remains the legacy broad `topic-study-cards` payload.
 3. Promote plan-gated legacy mini-game jobs to one durable `topic-mini-game-content` job per compiled `miniGameSpecId`.
-4. Bind per-spec generated content materialization to compiled `cardSpecId` / `miniGameSpecId` values once the durable per-spec artifact kinds exist.
+4. Promote the new plan-bound legacy materialization guard into the future per-spec content path so each `topic-card-content` / `topic-mini-game-content` artifact persists exactly one compiled spec's generated card.
 5. Add bounded concurrency for per-spec content jobs once the workflow fans out beyond the current legacy broad stages.
 6. Retire lexical source-span fallback after per-spec content jobs are live and every downstream prompt receives explicit compiled-spec `sourceSpanId[]` grounding.
 7. Make topic readiness explicit, for example `theory`, `deck`, and `enrichment` readiness instead of a single `ready` flag.

@@ -415,7 +415,7 @@ export function buildTopicStudyCardsMessages(snapshot: Record<string, unknown>):
         : undefined,
     }),
     compiledStudyCardSpecs.length > 0
-      ? 'Generate study cards only for the compiled study-card specs above. Each card difficulty and card type must match its spec, and content must satisfy that spec prompt using only the selected source spans.'
+      ? 'Generate exactly one study card for each compiled study-card spec above, in the same order. Each card difficulty and card type must match its spec, and content must satisfy that spec prompt using only the selected source spans.'
       : 'Every generated card difficulty should match the default target difficulty.',
   ].join('\n');
 
@@ -463,7 +463,7 @@ export function buildTopicMiniGameMessages(snapshot: Record<string, unknown>): P
     'Backend materialization deterministically assigns persisted card IDs; any model-generated id is temporary and will be ignored.',
     `Every card must have type MINI_GAME, content.gameType ${expectedGameType}, and topicId equal to the snapshot topic id.`,
     compiledMiniGameSpecs.length > 0
-      ? 'Generate cards only for the compiled mini-game specs above. Each card difficulty must match its spec difficulty, and content must satisfy that spec prompt using only the selected source spans.'
+      ? 'Generate exactly one mini-game card for each compiled mini-game spec above, in the same order. Each card difficulty must match its spec difficulty, and content must satisfy that spec prompt using only the selected source spans.'
       : 'Every generated card difficulty should match the default target difficulty.',
   ].join('\n');
 

@@ -196,6 +196,164 @@ describe('applyArtifactToLearningContent', () => {
     }));
   });
 
+  it('materializes plan-guided study cards with compiled concept and card-spec IDs', async () => {
+    const repo = makeRepo({
+      getTopicDetails: vi.fn(async () => ({
+        deviceId: 'dev-1',
+        subjectId: 'math',
+        topicId: 'limits',
+        details: { topicId: 'limits', subjectId: 'math', title: 'Limits', coreConcept: 'Limits', theory: 'Theory', keyTakeaways: [] },
+        contentHash: 'cnt_details',
+        status: 'generating',
+        updatedByRunId: 'run-details',
+        updatedAt: '2026-05-08T00:00:00.000Z',
+      })),
+    });
+
+    await applyArtifactToLearningContent({
+      learningContent: repo,
+      deviceId: 'dev-1',
+      runId: 'run-1',
+      artifactKind: 'topic-study-cards',
+      snapshot: {
+        subject_id: 'math',
+        topic_id: 'limits',
+        compiled_study_card_specs: [
+          {
+            concept_id: 'concept_compiled_limits',
+            card_spec_id: 'card_spec_compiled_definition',
+            card_type: 'FLASHCARD',
+            difficulty: 1,
+          },
+          {
+            concept_id: 'concept_compiled_limits',
+            card_spec_id: 'card_spec_compiled_delta_epsilon',
+            card_type: 'MULTIPLE_CHOICE',
+            difficulty: 2,
+          },
+        ],
+      },
+      contentHash: 'cnt_cards',
+      payload: {
+        cards: [
+          { id: 'llm-temp-1', topicId: 'limits', type: 'FLASHCARD', difficulty: 1, content: { front: 'What is a limit?', back: 'Approach behavior.' } },
+          { id: 'llm-temp-2', topicId: 'limits', type: 'MULTIPLE_CHOICE', difficulty: 2, content: { question: 'Which notation represents a limit?', options: ['lim', 'sum'], correctAnswer: 'lim', explanation: 'Limits use lim notation.' } },
+        ],
+      },
+    });
+
+    expect(repo.upsertTopicCards).toHaveBeenCalledWith(expect.objectContaining({
+      cards: [
+        expect.objectContaining({
+          conceptId: 'concept_compiled_limits',
+          cardSpecId: 'card_spec_compiled_definition',
+          miniGameSpecId: undefined,
+          cardId: expect.stringMatching(/^card_[0-9a-f]{64}$/),
+          questionSignature: expect.stringMatching(/^qsig_[0-9a-f]{64}$/),
+        }),
+        expect.objectContaining({
+          conceptId: 'concept_compiled_limits',
+          cardSpecId: 'card_spec_compiled_delta_epsilon',
+          miniGameSpecId: undefined,
+          cardId: expect.stringMatching(/^card_[0-9a-f]{64}$/),
+          questionSignature: expect.stringMatching(/^qsig_[0-9a-f]{64}$/),
+        }),
+      ],
+    }));
+  });
+
+  it('materializes plan-guided mini-game cards with compiled concept and mini-game-spec IDs', async () => {
+    const repo = makeRepo();
+
+    await applyArtifactToLearningContent({
+      learningContent: repo,
+      deviceId: 'dev-1',
+      runId: 'run-1',
+      artifactKind: 'topic-mini-game-category-sort',
+      snapshot: {
+        subject_id: 'math',
+        topic_id: 'limits',
+        compiled_mini_game_specs: [
+          {
+            concept_id: 'concept_compiled_limits',
+            mini_game_spec_id: 'mini_game_spec_compiled_categories',
+            game_type: 'CATEGORY_SORT',
+            difficulty: 2,
+          },
+        ],
+      },
+      contentHash: 'cnt_game',
+      payload: {
+        cards: [
+          { id: 'game-1', topicId: 'limits', difficulty: 2, content: { gameType: 'category-sort', prompt: 'Sort examples and non-examples.' } },
+        ],
+      },
+    });
+
+    expect(repo.upsertTopicCards).toHaveBeenCalledWith(expect.objectContaining({
+      cards: [expect.objectContaining({
+        conceptId: 'concept_compiled_limits',
+        cardSpecId: undefined,
+        miniGameSpecId: 'mini_game_spec_compiled_categories',
+        cardId: expect.stringMatching(/^card_[0-9a-f]{64}$/),
+        questionSignature: expect.stringMatching(/^qsig_[0-9a-f]{64}$/),
+      })],
+    }));
+  });
+
+  it('rejects plan-guided study-card artifacts whose output count differs from compiled spec count', async () => {
+    const repo = makeRepo();
+
+    await expect(applyArtifactToLearningContent({
+      learningContent: repo,
+      deviceId: 'dev-1',
+      runId: 'run-1',
+      artifactKind: 'topic-study-cards',
+      snapshot: {
+        subject_id: 'math',
+        topic_id: 'limits',
+        compiled_study_card_specs: [
+          { concept_id: 'concept_1', card_spec_id: 'card_spec_1', card_type: 'FLASHCARD', difficulty: 1 },
+          { concept_id: 'concept_1', card_spec_id: 'card_spec_2', card_type: 'FLASHCARD', difficulty: 1 },
+        ],
+      },
+      contentHash: 'cnt_cards',
+      payload: {
+        cards: [
+          { id: 'llm-1', topicId: 'limits', type: 'FLASHCARD', difficulty: 1, content: { front: 'f', back: 'b' } },
+        ],
+      },
+    })).rejects.toMatchObject({ code: 'validation:semantic-topic-content' });
+
+    expect(repo.upsertTopicCards).not.toHaveBeenCalled();
+  });
+
+  it('rejects plan-guided cards whose generated type or difficulty drifts from the compiled spec', async () => {
+    const repo = makeRepo();
+
+    await expect(applyArtifactToLearningContent({
+      learningContent: repo,
+      deviceId: 'dev-1',
+      runId: 'run-1',
+      artifactKind: 'topic-study-cards',
+      snapshot: {
+        subject_id: 'math',
+        topic_id: 'limits',
+        compiled_study_card_specs: [
+          { concept_id: 'concept_1', card_spec_id: 'card_spec_1', card_type: 'FLASHCARD', difficulty: 1 },
+        ],
+      },
+      contentHash: 'cnt_cards',
+      payload: {
+        cards: [
+          { id: 'llm-1', topicId: 'limits', type: 'MULTIPLE_CHOICE', difficulty: 1, content: { question: 'q', options: ['a', 'b'], correctAnswer: 'a', explanation: 'e' } },
+        ],
+      },
+    })).rejects.toMatchObject({ code: 'validation:semantic-topic-content' });
+
+    expect(repo.upsertTopicCards).not.toHaveBeenCalled();
+  });
+
 
   it('rejects duplicate question signatures within one generated card artifact', async () => {
     const repo = makeRepo();

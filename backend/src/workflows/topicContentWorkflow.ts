@@ -1015,25 +1015,24 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
           stage: 'study-cards',
           parentContentHashes: Object.keys(studyCardsParentContentHashes).length > 0 ? studyCardsParentContentHashes : undefined,
         });
+        const studyCardPromptBaseSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId, plannedCardSourceSpanIds);
+        const plannedCardSpecs = planningState
+          ? compiledStudyCardSpecsForPrompt(planningState.cardPlan.cardSpecs)
+          : [];
+        const studyCardPromptSnapshot = plannedCardSpecs.length > 0
+          ? {
+            ...studyCardPromptBaseSnapshot,
+            compiled_study_card_specs: plannedCardSpecs,
+            grounding_source_selection: 'compiled-card-specs',
+          }
+          : studyCardPromptBaseSnapshot;
 
         const studyCardsResult = (await useCachedStage(
-          step, repos, runId, deviceId, 'study-cards', 'topic-study-cards', studyCardsInputHash, snapshot,
+          step, repos, runId, deviceId, 'study-cards', 'topic-study-cards', studyCardsInputHash, studyCardPromptSnapshot,
         )) ?? await runStage(
           step, repos, runId, deviceId, 'study-cards', 'topic-study-cards',
-          snapshot, studyCardsInputHash, cardsSchemaVersion,
+          studyCardPromptSnapshot, studyCardsInputHash, cardsSchemaVersion,
           async (generationPolicy) => {
-            const promptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId, plannedCardSourceSpanIds);
-            const plannedCardSpecs = planningState
-              ? compiledStudyCardSpecsForPrompt(planningState.cardPlan.cardSpecs)
-              : [];
-            const studyCardPromptSnapshot = plannedCardSpecs.length > 0
-              ? {
-                ...promptSnapshot,
-                compiled_study_card_specs: plannedCardSpecs,
-                grounding_source_selection: 'compiled-card-specs',
-              }
-              : promptSnapshot;
-
             return callTopicContent(
               {
                 modelId: generationPolicy.modelId,
@@ -1094,28 +1093,27 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
               stage: miniStage,
               parentContentHashes: Object.keys(parentContentHashes).length > 0 ? parentContentHashes : undefined,
             });
+            const plannedMiniGameSpecs = planningState
+              ? compiledMiniGameSpecsForType(planningState.cardPlan, gameType)
+              : [];
+            const promptSnapshot = await buildTopicCardPromptSnapshot(repos, {
+              ...snapshot,
+              pipeline_kind: kind,
+            }, theoryArtifactId, planningState ? sourceSpanIdsForMiniGameType(planningState.cardPlan, gameType) : undefined);
+            const miniGamePromptSnapshot = plannedMiniGameSpecs.length > 0
+              ? {
+                ...promptSnapshot,
+                compiled_mini_game_specs: miniGameSpecsForPrompt(plannedMiniGameSpecs),
+                grounding_source_selection: 'compiled-mini-game-specs',
+              }
+              : promptSnapshot;
 
             return (await useCachedStage(
-              step, repos, runId, deviceId, miniStage, kind, miniGameInputHash, snapshot,
+              step, repos, runId, deviceId, miniStage, kind, miniGameInputHash, miniGamePromptSnapshot,
             )) ?? await runStage(
               step, repos, runId, deviceId, miniStage, kind,
-              snapshot, miniGameInputHash, schemaVersion,
+              miniGamePromptSnapshot, miniGameInputHash, schemaVersion,
               async (generationPolicy) => {
-                const plannedMiniGameSpecs = planningState
-                  ? compiledMiniGameSpecsForType(planningState.cardPlan, gameType)
-                  : [];
-                const promptSnapshot = await buildTopicCardPromptSnapshot(repos, {
-                  ...snapshot,
-                  pipeline_kind: kind,
-                }, theoryArtifactId, planningState ? sourceSpanIdsForMiniGameType(planningState.cardPlan, gameType) : undefined);
-                const miniGamePromptSnapshot = plannedMiniGameSpecs.length > 0
-                  ? {
-                    ...promptSnapshot,
-                    compiled_mini_game_specs: miniGameSpecsForPrompt(plannedMiniGameSpecs),
-                    grounding_source_selection: 'compiled-mini-game-specs',
-                  }
-                  : promptSnapshot;
-
                 return callTopicContent(
                   {
                     modelId: generationPolicy.modelId,
