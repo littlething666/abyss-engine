@@ -104,7 +104,6 @@ vi.mock('@/features/mentor', () => ({
 
 vi.mock('@/infrastructure/di', () => ({
   deckRepository: { getManifest: deckApi.getManifest },
-  deckWriter: {},
 }));
 
 vi.mock('@/features/crystalTrial', () => ({

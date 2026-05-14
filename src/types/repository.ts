@@ -42,15 +42,6 @@ export interface ICrystalTrialSetRepository {
   getCurrentTrialSet(subjectId: string, topicId: string, targetLevel: number): Promise<CrystalTrialSetReadModel | null>;
 }
 
-export interface IDeckContentWriter {
-  upsertSubject(subject: Subject & { themeId?: string; contentSource?: DeckContentSource }): Promise<void>;
-  upsertGraph(graph: SubjectGraph): Promise<void>;
-  upsertTopicDetails(details: TopicDetails): Promise<void>;
-  upsertTopicCards(subjectId: string, topicId: string, cards: Card[]): Promise<void>;
-  /** Merges with existing deck: same `card.id` replaces; new ids append. */
-  appendTopicCards(subjectId: string, topicId: string, cards: Card[]): Promise<void>;
-}
-
 export interface StudyHistoryQuery {
   daysWindow?: number;
   fromTimestamp?: number;

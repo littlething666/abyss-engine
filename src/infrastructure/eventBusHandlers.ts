@@ -633,8 +633,8 @@ if (!g.__abyssEventBusHandlersRegistered) {
   }));
 
   // Card pool change detection: invalidate pre-generated trials.
-  // Subscribes to the renamed v1 pubsub event `topic-cards:updated` published
-  // by `deckContentWriter.persistTopicContentBundle(...)`.
+  // Subscribes to backend Learning Content refresh notifications published
+  // through the local pubsub adapter.
   //
   // `pubSubClient.on(...)` returns `void` -- it does not vend a
   // per-listener disposer, so this registration is not pushed onto

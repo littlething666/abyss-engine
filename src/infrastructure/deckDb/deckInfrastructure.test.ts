@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { deckContentWriter } from '../deckContentWriter';
 import { pubSubClient } from '../pubsub';
 import { IndexedDbDeckRepository } from '../repositories/IndexedDbDeckRepository';
 import { resetDeckIndexedDbDebugSyncForTests } from './deckDbDebugLog';
@@ -148,21 +147,4 @@ describe('IndexedDB deck', () => {
     ]);
   });
 
-  it('deckContentWriter upserts cards and emits pubsub', async () => {
-    const emitSpy = vi.spyOn(pubSubClient, 'emit');
-    const newCard: Card = {
-      id: 'c2',
-      type: 'FLASHCARD',
-      difficulty: 1,
-      content: { front: 'n', back: 'm' },
-    };
-
-    await deckContentWriter.upsertTopicCards('sub-a', 'top-1', [newCard]);
-
-    const cards = await repo.getTopicCards('sub-a', 'top-1');
-    expect(cards).toEqual([newCard]);
-    expect(emitSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'topic-cards:updated', subjectId: 'sub-a', topicId: 'top-1' }),
-    );
-  });
 });
