@@ -43,3 +43,11 @@ App is unreleased, so you can introduce breaking changes with no data migration 
   - [ ] Add workflow-level tests for planning checkpoint reuse, stale checkpoint rejection, and broad-stage cache-key binding.
 - [ ] Remove temporary LLM ID compatibility from generation contracts once ID-free content schemas exist.
 - [ ] Replace single topic readiness with explicit theory/deck/enrichment readiness state.
+
+## Deep Modularization
+
+1. **Durable Run Observation Bridge**
+**Files**: [useContentGenerationHydration.ts](/Users/quantum_craft/_DEV/abyss-engine/src/hooks/useContentGenerationHydration.ts:13), [generationRunEventHandlers.ts](/Users/quantum_craft/_DEV/abyss-engine/src/infrastructure/generationRunEventHandlers.ts:56), [eventBus.ts](/Users/quantum_craft/_DEV/abyss-engine/src/infrastructure/eventBus.ts:185)
+**Problem**: React reconstructs intents from backend snapshots, while the event handler fabricates legacy App Event Bus payloads with placeholder values. That Interface has low Depth because callers still need legacy generation semantics.
+**Solution**: make durable observation a deeper Module that consumes backend publication facts and emits product-shaped notifications, not old frontend-generation events.
+**Benefits**: stronger Leverage for Mentor, Telemetry, and query invalidation; tests can target backend observation behavior instead of snapshot field parsing.
