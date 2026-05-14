@@ -112,6 +112,10 @@ import {
   compiledStudyCardSpecsForPrompt,
   sourceSpanIdsForStudyCardSpecs,
 } from './topicStudyCardPlanStages';
+import {
+  mapWithBoundedConcurrency,
+  TOPIC_CONTENT_PER_SPEC_FAN_OUT_CONCURRENCY,
+} from './boundedFanOut';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1014,56 +1018,60 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         if (plannedCardSpecs.length > 0) {
           const responseFormat = jsonSchemaResponseFormat('topic-card-content');
           const schemaVersion = (snapshot.schema_version as number) ?? topicCardContentSchemaVersion;
-          const results = await Promise.all(plannedCardSpecs.map(async (plannedSpec) => {
-            const perCardStage = `study-cards:${plannedSpec.card_spec_id}` as const;
-            const parentContentHashes: Record<string, string> = { cardSpec: plannedSpec.card_spec_id };
-            if (bindParentArtifactHashes && theoryContentHash) parentContentHashes.theory = theoryContentHash;
-            if (bindParentArtifactHashes && planningState) parentContentHashes.cardPlan = planningState.cardCheckpoint.contentHash;
-            const perCardInputHash = await topicContentStageInputHash({
-              snapshot,
-              baseInputHash: _inputHash,
-              stage: perCardStage,
-              parentContentHashes,
-            });
-            const basePromptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId, plannedSpec.source_span_ids);
-            const promptSnapshot = {
-              ...basePromptSnapshot,
-              pipeline_kind: 'topic-card-content',
-              compiled_study_card_specs: [plannedSpec],
-              grounding_source_selection: 'compiled-card-spec',
-            };
+          const results = await mapWithBoundedConcurrency({
+            items: plannedCardSpecs,
+            concurrency: TOPIC_CONTENT_PER_SPEC_FAN_OUT_CONCURRENCY,
+            task: async (plannedSpec) => {
+              const perCardStage = `study-cards:${plannedSpec.card_spec_id}` as const;
+              const parentContentHashes: Record<string, string> = { cardSpec: plannedSpec.card_spec_id };
+              if (bindParentArtifactHashes && theoryContentHash) parentContentHashes.theory = theoryContentHash;
+              if (bindParentArtifactHashes && planningState) parentContentHashes.cardPlan = planningState.cardCheckpoint.contentHash;
+              const perCardInputHash = await topicContentStageInputHash({
+                snapshot,
+                baseInputHash: _inputHash,
+                stage: perCardStage,
+                parentContentHashes,
+              });
+              const basePromptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId, plannedSpec.source_span_ids);
+              const promptSnapshot = {
+                ...basePromptSnapshot,
+                pipeline_kind: 'topic-card-content',
+                compiled_study_card_specs: [plannedSpec],
+                grounding_source_selection: 'compiled-card-spec',
+              };
 
-            return (await useCachedStage(
-              step, repos, runId, deviceId, perCardStage, 'topic-card-content', perCardInputHash, promptSnapshot,
-            )) ?? await runStage(
-              step, repos, runId, deviceId, perCardStage, 'topic-card-content',
-              promptSnapshot, perCardInputHash, schemaVersion,
-              async (generationPolicy) => callTopicContent(
-                {
-                  modelId: generationPolicy.modelId,
-                  messages: buildTopicCardContentMessages(promptSnapshot),
-                  responseFormat,
-                  providerHealingRequested: generationPolicy.providerHealingRequested,
-                  temperature: generationPolicy.temperature,
-                  stage: perCardStage,
+              return (await useCachedStage(
+                step, repos, runId, deviceId, perCardStage, 'topic-card-content', perCardInputHash, promptSnapshot,
+              )) ?? await runStage(
+                step, repos, runId, deviceId, perCardStage, 'topic-card-content',
+                promptSnapshot, perCardInputHash, schemaVersion,
+                async (generationPolicy) => callTopicContent(
+                  {
+                    modelId: generationPolicy.modelId,
+                    messages: buildTopicCardContentMessages(promptSnapshot),
+                    responseFormat,
+                    providerHealingRequested: generationPolicy.providerHealingRequested,
+                    temperature: generationPolicy.temperature,
+                    stage: perCardStage,
+                  },
+                  this.env,
+                ),
+                (raw) => {
+                  const parseResult = strictParseArtifact('topic-card-content', raw.text);
+                  if (!parseResult.ok) {
+                    throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+                  }
+
+                  const semResult = semanticValidateArtifact('topic-card-content', parseResult.payload);
+                  if (!semResult.ok) {
+                    throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
+                  }
+
+                  return parseResult.payload as Record<string, unknown>;
                 },
-                this.env,
-              ),
-              (raw) => {
-                const parseResult = strictParseArtifact('topic-card-content', raw.text);
-                if (!parseResult.ok) {
-                  throw new WorkflowFail(parseResult.failureCode, parseResult.message);
-                }
-
-                const semResult = semanticValidateArtifact('topic-card-content', parseResult.payload);
-                if (!semResult.ok) {
-                  throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
-                }
-
-                return parseResult.payload as Record<string, unknown>;
-              },
-            );
-          }));
+              );
+            },
+          });
           studyCardsContentHash = await contentHash(results.map((result) => result.contentHash).sort());
           await step.do('mark-topic-ready-after-card-content', WORKFLOW_STORAGE_STEP_RETRY, async () => {
             await setTopicContentStatus(repos, deviceId, runId, snapshot, 'ready');
@@ -1137,59 +1145,63 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
           const responseFormat = jsonSchemaResponseFormat('topic-mini-game-content');
           const schemaVersion = (snapshot.schema_version as number) ?? topicMiniGameContentSchemaVersion;
 
-          await Promise.all(plannedMiniGameSpecs.map(async (plannedSpec) => {
-            const perMiniGameStage = `mini-games:${plannedSpec.miniGameSpecId}` as const;
-            const parentContentHashes: Record<string, string> = { miniGameSpec: plannedSpec.miniGameSpecId };
-            if (bindParentArtifactHashes && theoryContentHash) parentContentHashes.theory = theoryContentHash;
-            if (bindParentArtifactHashes && studyCardsContentHash) parentContentHashes.studyCards = studyCardsContentHash;
-            if (bindParentArtifactHashes) parentContentHashes.cardPlan = planningState.cardCheckpoint.contentHash;
-            const perMiniGameInputHash = await topicContentStageInputHash({
-              snapshot,
-              baseInputHash: _inputHash,
-              stage: perMiniGameStage,
-              parentContentHashes,
-            });
-            const promptSnapshot = await buildTopicCardPromptSnapshot(repos, {
-              ...snapshot,
-              pipeline_kind: 'topic-mini-game-content',
-            }, theoryArtifactId, plannedSpec.sourceSpanIds);
-            const miniGameContentPromptSnapshot = {
-              ...promptSnapshot,
-              compiled_mini_game_specs: miniGameSpecsForPrompt([plannedSpec]),
-              grounding_source_selection: 'compiled-mini-game-spec',
-            };
+          await mapWithBoundedConcurrency({
+            items: plannedMiniGameSpecs,
+            concurrency: TOPIC_CONTENT_PER_SPEC_FAN_OUT_CONCURRENCY,
+            task: async (plannedSpec) => {
+              const perMiniGameStage = `mini-games:${plannedSpec.miniGameSpecId}` as const;
+              const parentContentHashes: Record<string, string> = { miniGameSpec: plannedSpec.miniGameSpecId };
+              if (bindParentArtifactHashes && theoryContentHash) parentContentHashes.theory = theoryContentHash;
+              if (bindParentArtifactHashes && studyCardsContentHash) parentContentHashes.studyCards = studyCardsContentHash;
+              if (bindParentArtifactHashes) parentContentHashes.cardPlan = planningState.cardCheckpoint.contentHash;
+              const perMiniGameInputHash = await topicContentStageInputHash({
+                snapshot,
+                baseInputHash: _inputHash,
+                stage: perMiniGameStage,
+                parentContentHashes,
+              });
+              const promptSnapshot = await buildTopicCardPromptSnapshot(repos, {
+                ...snapshot,
+                pipeline_kind: 'topic-mini-game-content',
+              }, theoryArtifactId, plannedSpec.sourceSpanIds);
+              const miniGameContentPromptSnapshot = {
+                ...promptSnapshot,
+                compiled_mini_game_specs: miniGameSpecsForPrompt([plannedSpec]),
+                grounding_source_selection: 'compiled-mini-game-spec',
+              };
 
-            return (await useCachedStage(
-              step, repos, runId, deviceId, perMiniGameStage, 'topic-mini-game-content', perMiniGameInputHash, miniGameContentPromptSnapshot,
-            )) ?? await runStage(
-              step, repos, runId, deviceId, perMiniGameStage, 'topic-mini-game-content',
-              miniGameContentPromptSnapshot, perMiniGameInputHash, schemaVersion,
-              async (generationPolicy) => callTopicContent(
-                {
-                  modelId: generationPolicy.modelId,
-                  messages: buildTopicMiniGameContentMessages(miniGameContentPromptSnapshot),
-                  responseFormat,
-                  providerHealingRequested: generationPolicy.providerHealingRequested,
-                  temperature: generationPolicy.temperature,
-                  stage: perMiniGameStage,
+              return (await useCachedStage(
+                step, repos, runId, deviceId, perMiniGameStage, 'topic-mini-game-content', perMiniGameInputHash, miniGameContentPromptSnapshot,
+              )) ?? await runStage(
+                step, repos, runId, deviceId, perMiniGameStage, 'topic-mini-game-content',
+                miniGameContentPromptSnapshot, perMiniGameInputHash, schemaVersion,
+                async (generationPolicy) => callTopicContent(
+                  {
+                    modelId: generationPolicy.modelId,
+                    messages: buildTopicMiniGameContentMessages(miniGameContentPromptSnapshot),
+                    responseFormat,
+                    providerHealingRequested: generationPolicy.providerHealingRequested,
+                    temperature: generationPolicy.temperature,
+                    stage: perMiniGameStage,
+                  },
+                  this.env,
+                ),
+                (raw) => {
+                  const parseResult = strictParseArtifact('topic-mini-game-content', raw.text);
+                  if (!parseResult.ok) {
+                    throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+                  }
+
+                  const semResult = semanticValidateArtifact('topic-mini-game-content', parseResult.payload);
+                  if (!semResult.ok) {
+                    throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
+                  }
+
+                  return parseResult.payload as Record<string, unknown>;
                 },
-                this.env,
-              ),
-              (raw) => {
-                const parseResult = strictParseArtifact('topic-mini-game-content', raw.text);
-                if (!parseResult.ok) {
-                  throw new WorkflowFail(parseResult.failureCode, parseResult.message);
-                }
-
-                const semResult = semanticValidateArtifact('topic-mini-game-content', parseResult.payload);
-                if (!semResult.ok) {
-                  throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
-                }
-
-                return parseResult.payload as Record<string, unknown>;
-              },
-            );
-          }));
+              );
+            },
+          });
         } else {
           await Promise.all(
             miniStages.map(async (rawMiniStage) => {

@@ -232,6 +232,19 @@ Completed:
 
 The intended per-spec content fan-out now exists for both study cards and mini-games. Remaining work is mostly durability hardening, readiness semantics, and retiring compatibility surfaces.
 
+### Bounded per-spec content fan-out
+
+This patch adds workflow-level concurrency control for planned per-spec card and mini-game content jobs.
+
+Completed:
+
+- Added a reusable deterministic bounded fan-out helper for workflow content jobs.
+- Planned `topic-card-content` stages now run through the bounded fan-out helper instead of unbounded `Promise.all` over every compiled `cardSpecId`.
+- Planned `topic-mini-game-content` stages now run through the same bounded fan-out helper instead of unbounded `Promise.all` over every compiled `miniGameSpecId`.
+- The helper preserves result ordering for aggregate study-card content hashing while limiting active LLM/cache/materialization tasks to the named per-spec content fan-out policy.
+- The helper rejects invalid concurrency configuration explicitly instead of silently falling back to unbounded or serial execution.
+- Added unit coverage for order preservation, active-task limiting, and invalid concurrency rejection.
+
 ## Deterministic materialization policy
 
 For legacy broad artifacts, the backend currently derives:
@@ -260,6 +273,7 @@ For planning artifacts, backend-local snapshots, the compiler, checkpoint helper
 - per-mini-game `topic-mini-game-content` input hashes from the compiled card-plan checkpoint content hash plus the individual compiled `miniGameSpecId`.
 - planning checkpoint reuse from current subject/topic scope plus current theory source spans or compiled concept references.
 - per-card study-card prompt grounding and instructions from the selected compiled `cardSpec` when planning state is available.
+- bounded per-spec content fan-out from the named topic-content concurrency policy for planned study-card and mini-game jobs.
 - legacy broad study-card prompt grounding and instructions from compiled `cardSpecs` only for unplanned/legacy fallback paths.
 - legacy broad mini-game stage selection from compiled `miniGameSpecs.gameType` values only for unplanned/legacy fallback paths.
 - `topic-card-content` materialization from the selected compiled `conceptId` and `cardSpecId` values.
@@ -289,11 +303,11 @@ backend materialization
    - `topic-concept-plan`
    - `topic-card-plan`
    - `topic-card-content` and `topic-mini-game-content` are now durable, but their prompt snapshot builders still live in the backend workflow seam.
-2. Add bounded concurrency controls for per-spec content jobs before card and mini-game fan-out grows beyond small topic plans.
-3. Retire lexical source-span fallback after legacy broad fallback stages are no longer needed and every downstream prompt receives explicit compiled-spec `sourceSpanId[]` grounding.
-4. Make topic readiness explicit, for example `theory`, `deck`, and `enrichment` readiness instead of a single `ready` flag. Per-card study-card fan-out currently marks the topic ready after all card-content stages complete; mini-game enrichment completion is still implicit in workflow completion.
-5. Remove temporary LLM ID compatibility from external generation contracts once the contract source is updated to allow ID-free content outputs.
-6. Add duplicate-repair retry jobs that regenerate only the failed card or mini-game spec when `question_signature` conflicts.
-7. Add end-to-end Worker/runtime tests with a mocked LLM provider for the full planning path, including stale checkpoint regeneration, per-card study-card fan-out, and per-mini-game fan-out in a real D1/R2-backed workflow environment.
-8. Tighten retry/resume checkpoint semantics for per-spec study-card and mini-game fan-out so a child run can distinguish already-materialized individual `cardSpecId` / `miniGameSpecId` stages from aggregate legacy stages without relying only on artifact cache hits.
-9. Retire the planned broad mini-game prompt guidance path after confidence in per-mini-game fan-out and retry behavior is covered by runtime tests.
+2. Retire lexical source-span fallback after legacy broad fallback stages are no longer needed and every downstream prompt receives explicit compiled-spec `sourceSpanId[]` grounding.
+3. Make topic readiness explicit, for example `theory`, `deck`, and `enrichment` readiness instead of a single `ready` flag. Per-card study-card fan-out currently marks the topic ready after all card-content stages complete; mini-game enrichment completion is still implicit in workflow completion.
+4. Remove temporary LLM ID compatibility from external generation contracts once the contract source is updated to allow ID-free content outputs.
+5. Add duplicate-repair retry jobs that regenerate only the failed card or mini-game spec when `question_signature` conflicts.
+6. Add end-to-end Worker/runtime tests with a mocked LLM provider for the full planning path, including stale checkpoint regeneration, per-card study-card fan-out, and per-mini-game fan-out in a real D1/R2-backed workflow environment.
+7. Tighten retry/resume checkpoint semantics for per-spec study-card and mini-game fan-out so a child run can distinguish already-materialized individual `cardSpecId` / `miniGameSpecId` stages from aggregate legacy stages without relying only on artifact cache hits.
+8. Retire the planned broad mini-game prompt guidance path after confidence in per-mini-game fan-out and retry behavior is covered by runtime tests.
+9. Make the per-spec fan-out concurrency policy environment-tunable if production telemetry shows that a static Worker-safe limit is either too conservative or too aggressive for deployed LLM/R2/D1 capacity.
