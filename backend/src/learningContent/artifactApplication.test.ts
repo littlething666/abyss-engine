@@ -179,7 +179,7 @@ describe('applyArtifactToLearningContent', () => {
       contentHash: 'cnt_game',
       payload: {
         cards: [
-          { id: 'game-1', topicId: 'limits', difficulty: 2, content: { gameType: 'category-sort', prompt: 'Sort them.' } },
+          { id: 'game-1', topicId: 'limits', difficulty: 2, content: { gameType: 'CATEGORY_SORT', categories: [{ id: 'examples', label: 'Examples' }, { id: 'non-examples', label: 'Non-examples' }], items: [{ id: 'item-1', label: 'Approaches a value', categoryId: 'examples' }, { id: 'item-2', label: 'Jumps randomly', categoryId: 'non-examples' }] } },
         ],
       },
     });
@@ -323,7 +323,7 @@ describe('applyArtifactToLearningContent', () => {
       contentHash: 'cnt_game',
       payload: {
         cards: [
-          { id: 'game-1', topicId: 'limits', difficulty: 2, content: { gameType: 'category-sort', prompt: 'Sort examples and non-examples.' } },
+          { id: 'game-1', topicId: 'limits', difficulty: 2, content: { gameType: 'CATEGORY_SORT', categories: [{ id: 'examples', label: 'Examples' }, { id: 'non-examples', label: 'Non-examples' }], items: [{ id: 'item-1', label: 'Approaches a value', categoryId: 'examples' }, { id: 'item-2', label: 'Jumps randomly', categoryId: 'non-examples' }] } },
         ],
       },
     });
@@ -335,6 +335,42 @@ describe('applyArtifactToLearningContent', () => {
         miniGameSpecId: 'mini_game_spec_compiled_categories',
         cardId: expect.stringMatching(/^card_[0-9a-f]{64}$/),
         questionSignature: expect.stringMatching(/^qsig_[0-9a-f]{64}$/),
+      })],
+    }));
+  });
+
+  it('materializes per-mini-game content against exactly one compiled mini-game spec', async () => {
+    const repo = makeRepo();
+
+    await applyArtifactToLearningContent({
+      learningContent: repo,
+      deviceId: 'dev-1',
+      runId: 'run-1',
+      artifactKind: 'topic-mini-game-content',
+      snapshot: {
+        subject_id: 'math',
+        topic_id: 'limits',
+        compiled_mini_game_specs: [
+          {
+            concept_id: 'concept_compiled_limits',
+            mini_game_spec_id: 'mini_game_spec_compiled_pairs',
+            game_type: 'MATCH_PAIRS',
+            difficulty: 2,
+          },
+        ],
+      },
+      contentHash: 'cnt_game_content',
+      payload: {
+        card: { id: 'game-1', topicId: 'limits', type: 'MINI_GAME', difficulty: 2, content: { gameType: 'MATCH_PAIRS', pairs: [{ id: 'p1', left: 'Limit', right: 'Approached value' }, { id: 'p2', left: 'x→a', right: 'Input approaches a' }] } },
+      },
+    });
+
+    expect(repo.upsertTopicCards).toHaveBeenCalledWith(expect.objectContaining({
+      cards: [expect.objectContaining({
+        conceptId: 'concept_compiled_limits',
+        cardSpecId: undefined,
+        miniGameSpecId: 'mini_game_spec_compiled_pairs',
+        sourceArtifactKind: 'topic-mini-game-content',
       })],
     }));
   });

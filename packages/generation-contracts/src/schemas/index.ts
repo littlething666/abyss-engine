@@ -37,18 +37,30 @@ export {
 } from './topicCardContent';
 
 export {
+  topicMiniGameContentArtifactSchema,
+  topicMiniGameContentSchemaVersion,
+  type TopicMiniGameContentArtifactPayload,
+} from './topicMiniGameContent';
+
+export {
+  categorySortContentSchema,
+  categorySortCardSchema,
   topicMiniGameCategorySortArtifactSchema,
   topicMiniGameCategorySortSchemaVersion,
   type TopicMiniGameCategorySortArtifactPayload,
 } from './topicMiniGameCategorySort';
 
 export {
+  sequenceBuildContentSchema,
+  sequenceBuildCardSchema,
   topicMiniGameSequenceBuildArtifactSchema,
   topicMiniGameSequenceBuildSchemaVersion,
   type TopicMiniGameSequenceBuildArtifactPayload,
 } from './topicMiniGameSequenceBuild';
 
 export {
+  matchPairsContentSchema,
+  matchPairsCardSchema,
   topicMiniGameMatchPairsArtifactSchema,
   topicMiniGameMatchPairsSchemaVersion,
   type TopicMiniGameMatchPairsArtifactPayload,

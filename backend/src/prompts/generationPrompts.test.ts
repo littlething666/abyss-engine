@@ -10,6 +10,7 @@ import {
   buildTopicCardPlanMessages,
   buildTopicConceptPlanMessages,
   buildTopicExpansionMessages,
+  buildTopicMiniGameContentMessages,
   buildTopicMiniGameMessages,
   buildTopicStudyCardsMessages,
   buildTopicTheoryMessages,
@@ -204,6 +205,40 @@ describe('backend generation prompt modules', () => {
     expect(content).toContain('Match vector notation to its geometric meaning.');
     expect(content).toContain('Generate exactly one mini-game card for each compiled mini-game spec above, in the same order.');
     expect(content).toContain('Grounding source selection: compiled-mini-game-specs');
+  });
+
+  it('builds one-spec mini-game content prompts for per-mini-game fan-out', () => {
+    const miniGame = buildTopicMiniGameContentMessages({
+      ...base,
+      pipeline_kind: 'topic-mini-game-content',
+      subject_id: 'math',
+      topic_id: 'vectors',
+      theory_excerpt: '[span-a | theory] Pair vector notation with meaning.',
+      syllabus_questions: ['Which notation maps to which vector idea?'],
+      target_difficulty: 1,
+      grounding_source_count: 1,
+      grounding_source_selection: 'compiled-mini-game-spec',
+      has_authoritative_primary_source: false,
+      compiled_mini_game_specs: [
+        {
+          mini_game_spec_id: 'mini_game_spec_backend_owned',
+          concept_id: 'concept_backend_owned',
+          concept_key: 'vector-notation',
+          mini_game_key: 'notation-pairs',
+          game_type: 'MATCH_PAIRS',
+          difficulty: 3,
+          prompt: 'Match vector notation to its geometric meaning.',
+          source_span_ids: ['span-a'],
+        },
+      ],
+    });
+
+    const content = miniGame[0].content;
+    expect(content).toContain('topic-mini-game-content schema');
+    expect(content).toContain('Expected gameType: MATCH_PAIRS');
+    expect(content).toContain('notation-pairs | mini_game_spec_backend_owned');
+    expect(content).toContain('difficulty equal to the compiled mini-game spec difficulty');
+    expect(miniGame[1].content).toBe('Output only the JSON object with the card field.');
   });
 
   it('includes compiled study-card specs when broad study-card prompts are plan-guided', () => {

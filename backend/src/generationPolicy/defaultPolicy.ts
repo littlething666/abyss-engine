@@ -8,6 +8,7 @@ const DEFAULT_JOB_POLICY: Record<BackendGenerationJobKind, { modelId: string; te
   'topic-theory': { modelId: DEFAULT_LLM_PIPELINE_MODEL },
   'topic-study-cards': { modelId: DEFAULT_LLM_PIPELINE_MODEL },
   'topic-card-content': { modelId: DEFAULT_LLM_PIPELINE_MODEL },
+  'topic-mini-game-content': { modelId: DEFAULT_LLM_PIPELINE_MODEL },
   'topic-concept-plan': { modelId: DEFAULT_LLM_PIPELINE_MODEL, temperature: 0.1 },
   'topic-card-plan': { modelId: DEFAULT_LLM_PIPELINE_MODEL, temperature: 0.1 },
   'topic-mini-game-category-sort': { modelId: DEFAULT_LLM_PIPELINE_MODEL },

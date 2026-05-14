@@ -23,6 +23,7 @@ import { subjectGraphEdgesFixtures } from './subjectGraphEdges.fixtures';
 import { subjectGraphTopicsFixtures } from './subjectGraphTopics.fixtures';
 import { topicCardContentFixtures } from './topicCardContent.fixtures';
 import { topicExpansionCardsFixtures } from './topicExpansionCards.fixtures';
+import { topicMiniGameContentFixtures } from './topicMiniGameContent.fixtures';
 import { topicMiniGameCategorySortFixtures } from './topicMiniGameCategorySort.fixtures';
 import { topicMiniGameMatchPairsFixtures } from './topicMiniGameMatchPairs.fixtures';
 import { topicMiniGameSequenceBuildFixtures } from './topicMiniGameSequenceBuild.fixtures';
@@ -36,6 +37,7 @@ export const EVAL_FIXTURES_BY_KIND: EvalFixturesByKind = {
   'topic-theory': topicTheoryFixtures,
   'topic-study-cards': topicStudyCardsFixtures,
   'topic-card-content': topicCardContentFixtures,
+  'topic-mini-game-content': topicMiniGameContentFixtures,
   'topic-mini-game-category-sort': topicMiniGameCategorySortFixtures,
   'topic-mini-game-sequence-build': topicMiniGameSequenceBuildFixtures,
   'topic-mini-game-match-pairs': topicMiniGameMatchPairsFixtures,

@@ -32,6 +32,7 @@ import {
   buildTopicCardContentMessages,
   buildTopicCardPlanMessages,
   buildTopicConceptPlanMessages,
+  buildTopicMiniGameContentMessages,
   buildTopicMiniGameMessages,
   buildTopicStudyCardsMessages,
   buildTopicTheoryMessages,
@@ -73,6 +74,7 @@ import {
   topicTheorySchemaVersion,
   topicStudyCardsSchemaVersion,
   topicCardContentSchemaVersion,
+  topicMiniGameContentSchemaVersion,
   topicMiniGameCategorySortSchemaVersion,
   topicMiniGameSequenceBuildSchemaVersion,
   topicMiniGameMatchPairsSchemaVersion,
@@ -100,10 +102,8 @@ import {
   isTopicConceptPlanCheckpointReusable,
 } from './topicPlanningCheckpointReuse';
 import {
-  compiledMiniGameSpecsForType,
   miniGameSpecsForPrompt,
   resolvePlannedTopicMiniGameStages,
-  sourceSpanIdsForMiniGameType,
   TOPIC_MINI_GAME_TYPES,
   type TopicMiniGameType,
   type TopicMiniGameStage,
@@ -1121,7 +1121,7 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
         studyCardsContentHash = await loadStageArtifactContentHash(repos, studyCardsCheckpointArtifactId, 'study-cards');
       }
 
-      // ---- 4. MINI-GAMES (plan-gated legacy broad artifacts) ----
+      // ---- 4. MINI-GAMES ----
       const miniStages = resolvePlannedTopicMiniGameStages({
         wantedStages,
         cardPlan: planningState?.cardPlan ?? null,
@@ -1129,63 +1129,59 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
       if (miniStages.length > 0) {
         await checkCancel('before-mini-games');
 
-        await Promise.all(
-          miniStages.map(async (rawMiniStage) => {
-            const miniStage = rawMiniStage as TopicMiniGameStage;
-            const gameType = miniStage.replace('mini-games:', '') as MiniGameType;
-            const kind = MINI_GAME_ARTIFACT_KINDS[gameType];
-            const schemaVersion = MINI_GAME_SCHEMA_VERSIONS[gameType];
-            const responseFormat = jsonSchemaResponseFormat(kind);
-            const parentContentHashes: Record<string, string> = {};
+        if (planningState && planningState.cardPlan.miniGameSpecs.length > 0) {
+          const wantedGameTypes = new Set(miniStages.map((stage) => stage.replace('mini-games:', '') as MiniGameType));
+          const plannedMiniGameSpecs = planningState.cardPlan.miniGameSpecs
+            .filter((spec) => wantedGameTypes.has(spec.gameType as MiniGameType))
+            .sort((a, b) => a.gameType.localeCompare(b.gameType) || a.difficulty - b.difficulty || a.miniGameSpecId.localeCompare(b.miniGameSpecId));
+          const responseFormat = jsonSchemaResponseFormat('topic-mini-game-content');
+          const schemaVersion = (snapshot.schema_version as number) ?? topicMiniGameContentSchemaVersion;
+
+          await Promise.all(plannedMiniGameSpecs.map(async (plannedSpec) => {
+            const perMiniGameStage = `mini-games:${plannedSpec.miniGameSpecId}` as const;
+            const parentContentHashes: Record<string, string> = { miniGameSpec: plannedSpec.miniGameSpecId };
             if (bindParentArtifactHashes && theoryContentHash) parentContentHashes.theory = theoryContentHash;
             if (bindParentArtifactHashes && studyCardsContentHash) parentContentHashes.studyCards = studyCardsContentHash;
-            if (bindParentArtifactHashes && planningState) parentContentHashes.cardPlan = planningState.cardCheckpoint.contentHash;
-            const miniGameInputHash = await topicContentStageInputHash({
+            if (bindParentArtifactHashes) parentContentHashes.cardPlan = planningState.cardCheckpoint.contentHash;
+            const perMiniGameInputHash = await topicContentStageInputHash({
               snapshot,
               baseInputHash: _inputHash,
-              stage: miniStage,
-              parentContentHashes: Object.keys(parentContentHashes).length > 0 ? parentContentHashes : undefined,
+              stage: perMiniGameStage,
+              parentContentHashes,
             });
-            const plannedMiniGameSpecs = planningState
-              ? compiledMiniGameSpecsForType(planningState.cardPlan, gameType)
-              : [];
             const promptSnapshot = await buildTopicCardPromptSnapshot(repos, {
               ...snapshot,
-              pipeline_kind: kind,
-            }, theoryArtifactId, planningState ? sourceSpanIdsForMiniGameType(planningState.cardPlan, gameType) : undefined);
-            const miniGamePromptSnapshot = plannedMiniGameSpecs.length > 0
-              ? {
-                ...promptSnapshot,
-                compiled_mini_game_specs: miniGameSpecsForPrompt(plannedMiniGameSpecs),
-                grounding_source_selection: 'compiled-mini-game-specs',
-              }
-              : promptSnapshot;
+              pipeline_kind: 'topic-mini-game-content',
+            }, theoryArtifactId, plannedSpec.sourceSpanIds);
+            const miniGameContentPromptSnapshot = {
+              ...promptSnapshot,
+              compiled_mini_game_specs: miniGameSpecsForPrompt([plannedSpec]),
+              grounding_source_selection: 'compiled-mini-game-spec',
+            };
 
             return (await useCachedStage(
-              step, repos, runId, deviceId, miniStage, kind, miniGameInputHash, miniGamePromptSnapshot,
+              step, repos, runId, deviceId, perMiniGameStage, 'topic-mini-game-content', perMiniGameInputHash, miniGameContentPromptSnapshot,
             )) ?? await runStage(
-              step, repos, runId, deviceId, miniStage, kind,
-              miniGamePromptSnapshot, miniGameInputHash, schemaVersion,
-              async (generationPolicy) => {
-                return callTopicContent(
-                  {
-                    modelId: generationPolicy.modelId,
-                    messages: buildTopicMiniGameMessages(miniGamePromptSnapshot),
-                    responseFormat,
-                    providerHealingRequested: generationPolicy.providerHealingRequested,
-                    temperature: generationPolicy.temperature,
-                    stage: miniStage,
-                  },
-                  this.env,
-                );
-              },
+              step, repos, runId, deviceId, perMiniGameStage, 'topic-mini-game-content',
+              miniGameContentPromptSnapshot, perMiniGameInputHash, schemaVersion,
+              async (generationPolicy) => callTopicContent(
+                {
+                  modelId: generationPolicy.modelId,
+                  messages: buildTopicMiniGameContentMessages(miniGameContentPromptSnapshot),
+                  responseFormat,
+                  providerHealingRequested: generationPolicy.providerHealingRequested,
+                  temperature: generationPolicy.temperature,
+                  stage: perMiniGameStage,
+                },
+                this.env,
+              ),
               (raw) => {
-                const parseResult = strictParseArtifact(kind, raw.text);
+                const parseResult = strictParseArtifact('topic-mini-game-content', raw.text);
                 if (!parseResult.ok) {
                   throw new WorkflowFail(parseResult.failureCode, parseResult.message);
                 }
 
-                const semResult = semanticValidateArtifact(kind, parseResult.payload);
+                const semResult = semanticValidateArtifact('topic-mini-game-content', parseResult.payload);
                 if (!semResult.ok) {
                   throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
                 }
@@ -1193,8 +1189,62 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
                 return parseResult.payload as Record<string, unknown>;
               },
             );
-          }),
-        );
+          }));
+        } else {
+          await Promise.all(
+            miniStages.map(async (rawMiniStage) => {
+              const miniStage = rawMiniStage as TopicMiniGameStage;
+              const gameType = miniStage.replace('mini-games:', '') as MiniGameType;
+              const kind = MINI_GAME_ARTIFACT_KINDS[gameType];
+              const schemaVersion = MINI_GAME_SCHEMA_VERSIONS[gameType];
+              const responseFormat = jsonSchemaResponseFormat(kind);
+              const parentContentHashes: Record<string, string> = {};
+              if (bindParentArtifactHashes && theoryContentHash) parentContentHashes.theory = theoryContentHash;
+              if (bindParentArtifactHashes && studyCardsContentHash) parentContentHashes.studyCards = studyCardsContentHash;
+              const miniGameInputHash = await topicContentStageInputHash({
+                snapshot,
+                baseInputHash: _inputHash,
+                stage: miniStage,
+                parentContentHashes: Object.keys(parentContentHashes).length > 0 ? parentContentHashes : undefined,
+              });
+              const promptSnapshot = await buildTopicCardPromptSnapshot(repos, {
+                ...snapshot,
+                pipeline_kind: kind,
+              }, theoryArtifactId);
+
+              return (await useCachedStage(
+                step, repos, runId, deviceId, miniStage, kind, miniGameInputHash, promptSnapshot,
+              )) ?? await runStage(
+                step, repos, runId, deviceId, miniStage, kind,
+                promptSnapshot, miniGameInputHash, schemaVersion,
+                async (generationPolicy) => callTopicContent(
+                  {
+                    modelId: generationPolicy.modelId,
+                    messages: buildTopicMiniGameMessages(promptSnapshot),
+                    responseFormat,
+                    providerHealingRequested: generationPolicy.providerHealingRequested,
+                    temperature: generationPolicy.temperature,
+                    stage: miniStage,
+                  },
+                  this.env,
+                ),
+                (raw) => {
+                  const parseResult = strictParseArtifact(kind, raw.text);
+                  if (!parseResult.ok) {
+                    throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+                  }
+
+                  const semResult = semanticValidateArtifact(kind, parseResult.payload);
+                  if (!semResult.ok) {
+                    throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
+                  }
+
+                  return parseResult.payload as Record<string, unknown>;
+                },
+              );
+            }),
+          );
+        }
       }
 
       // ---- 5. READY ----

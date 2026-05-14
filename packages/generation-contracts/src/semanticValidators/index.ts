@@ -29,6 +29,7 @@ export {
   validateStudyCardLikeCards,
 } from './topicStudyCards';
 export { validateTopicCardContentArtifact } from './topicCardContent';
+export { validateTopicMiniGameContentArtifact } from './topicMiniGameContent';
 export { validateTopicMiniGameCategorySortArtifact } from './topicMiniGameCategorySort';
 export { validateTopicMiniGameSequenceBuildArtifact } from './topicMiniGameSequenceBuild';
 export { validateTopicMiniGameMatchPairsArtifact } from './topicMiniGameMatchPairs';

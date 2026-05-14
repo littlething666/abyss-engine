@@ -11,6 +11,7 @@ const ALL_KINDS: ArtifactKind[] = [
   'topic-theory',
   'topic-study-cards',
   'topic-card-content',
+  'topic-mini-game-content',
   'topic-mini-game-category-sort',
   'topic-mini-game-sequence-build',
   'topic-mini-game-match-pairs',

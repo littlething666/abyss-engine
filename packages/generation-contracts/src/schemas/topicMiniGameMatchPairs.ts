@@ -8,7 +8,7 @@ import { DifficultyTier, KebabId, NonEmptyString } from './_shared';
  * Pair uniqueness, anti-pair cross-talk, and minimum-pair playability
  * are semantic-validator concerns (Phase 0 step 9).
  */
-const matchPairsContentSchema = z
+export const matchPairsContentSchema = z
   .object({
     gameType: z.literal('MATCH_PAIRS'),
     pairs: z
@@ -25,7 +25,7 @@ const matchPairsContentSchema = z
   })
   .strict();
 
-const matchPairsCardSchema = z
+export const matchPairsCardSchema = z
   .object({
     id: NonEmptyString,
     topicId: KebabId,

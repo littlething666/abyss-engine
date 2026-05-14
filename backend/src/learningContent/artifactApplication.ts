@@ -8,6 +8,7 @@ import { buildTopicTheorySourceSpans, topicTheorySourceSpansAsJson } from './the
 const TOPIC_CARD_ARTIFACT_KINDS = new Set<ArtifactKind>([
   'topic-study-cards',
   'topic-card-content',
+  'topic-mini-game-content',
   'topic-expansion-cards',
   'topic-mini-game-category-sort',
   'topic-mini-game-sequence-build',
@@ -130,7 +131,8 @@ function plannedBindingsForArtifactKind(
 ): PlannedCardBinding[] {
   if (artifactKind === 'topic-study-cards' || artifactKind === 'topic-card-content') return plannedStudyCardBindingsFromSnapshot(snapshot);
   if (
-    artifactKind === 'topic-mini-game-category-sort'
+    artifactKind === 'topic-mini-game-content'
+    || artifactKind === 'topic-mini-game-category-sort'
     || artifactKind === 'topic-mini-game-sequence-build'
     || artifactKind === 'topic-mini-game-match-pairs'
   ) {
@@ -140,10 +142,8 @@ function plannedBindingsForArtifactKind(
 }
 
 function expectedMiniGameContentGameType(plannedGameType: string): string {
-  if (plannedGameType === 'CATEGORY_SORT') return 'category-sort';
-  if (plannedGameType === 'SEQUENCE_BUILD') return 'sequence-build';
-  if (plannedGameType === 'MATCH_PAIRS') return 'match-pairs';
-  return plannedGameType;
+  if (plannedGameType === 'CATEGORY_SORT' || plannedGameType === 'SEQUENCE_BUILD' || plannedGameType === 'MATCH_PAIRS') return plannedGameType;
+  throw new WorkflowFail('validation:semantic-topic-content', `unsupported compiled mini-game spec type ${plannedGameType}`);
 }
 
 function checklistFromSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
@@ -244,7 +244,7 @@ async function cardRowsFromPayload(
   payload: Record<string, unknown>,
   input: { subjectId: string; topicId: string; snapshot: Record<string, unknown> },
 ): Promise<PutTopicCardInput[]> {
-  const cards = artifactKind === 'topic-card-content' ? [payload.card] : payload.cards;
+  const cards = artifactKind === 'topic-card-content' || artifactKind === 'topic-mini-game-content' ? [payload.card] : payload.cards;
   if (!Array.isArray(cards)) {
     throw new WorkflowFail('validation:semantic-topic-content', `${artifactKind}.cards must be an array`);
   }

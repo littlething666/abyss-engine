@@ -4,6 +4,7 @@ export const BACKEND_GENERATION_JOB_KINDS = [
   'topic-theory',
   'topic-study-cards',
   'topic-card-content',
+  'topic-mini-game-content',
   'topic-concept-plan',
   'topic-card-plan',
   'topic-mini-game-category-sort',

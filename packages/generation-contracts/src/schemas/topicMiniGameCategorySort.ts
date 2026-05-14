@@ -11,7 +11,7 @@ import { DifficultyTier, KebabId, NonEmptyString } from './_shared';
  * playability (min items per category, single-correct-target invariant)
  * is a semantic-validator concern (Phase 0 step 9).
  */
-const categorySortContentSchema = z
+export const categorySortContentSchema = z
   .object({
     gameType: z.literal('CATEGORY_SORT'),
     categories: z
@@ -38,7 +38,7 @@ const categorySortContentSchema = z
   })
   .strict();
 
-const categorySortCardSchema = z
+export const categorySortCardSchema = z
   .object({
     id: NonEmptyString,
     topicId: KebabId,

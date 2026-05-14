@@ -10,7 +10,7 @@ import { DifficultyTier, KebabId, NonEmptyString } from './_shared';
  * and minimum-step playability live in the playability semantic
  * validator (Phase 0 step 9).
  */
-const sequenceBuildContentSchema = z
+export const sequenceBuildContentSchema = z
   .object({
     gameType: z.literal('SEQUENCE_BUILD'),
     steps: z
@@ -27,7 +27,7 @@ const sequenceBuildContentSchema = z
   })
   .strict();
 
-const sequenceBuildCardSchema = z
+export const sequenceBuildCardSchema = z
   .object({
     id: NonEmptyString,
     topicId: KebabId,

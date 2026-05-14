@@ -514,6 +514,47 @@ export function buildTopicMiniGameMessages(snapshot: Record<string, unknown>): P
   ];
 }
 
+export function buildTopicMiniGameContentMessages(snapshot: Record<string, unknown>): PromptMessage[] {
+  const syllabusQuestions = requireStringArray(snapshot.syllabus_questions, 'snapshot.syllabus_questions');
+  const topicId = requireString(snapshot.topic_id, 'snapshot.topic_id');
+  const targetDifficulty = requireInteger(snapshot.target_difficulty, 'snapshot.target_difficulty');
+  const compiledMiniGameSpecs = requireRecordArray(snapshot.compiled_mini_game_specs, 'snapshot.compiled_mini_game_specs');
+  if (compiledMiniGameSpecs.length !== 1) {
+    throw new Error('snapshot.compiled_mini_game_specs must contain exactly one spec for topic-mini-game-content prompt construction');
+  }
+  const expectedGameType = requireString(compiledMiniGameSpecs[0].game_type, 'snapshot.compiled_mini_game_specs[0].game_type');
+  const system = [
+    'You are an Abyss Engine Topic Content prompt module.',
+    'Create exactly one playable mini-game card and return only JSON matching the topic-mini-game-content schema.',
+    '',
+    `Subject id: ${requireString(snapshot.subject_id, 'snapshot.subject_id')}`,
+    `Topic id: ${topicId}`,
+    `Expected gameType: ${expectedGameType}`,
+    `Default target difficulty: ${targetDifficulty}`,
+    `Grounding source count: ${requireInteger(snapshot.grounding_source_count, 'snapshot.grounding_source_count')}`,
+    `Grounding source selection: ${optionalString(snapshot.grounding_source_selection, 'snapshot.grounding_source_selection') ?? 'compiled-mini-game-spec'}`,
+    `Has authoritative primary source: ${formatBoolean(snapshot.has_authoritative_primary_source, 'snapshot.has_authoritative_primary_source')}`,
+    '',
+    'Compiled mini-game spec selected by the backend card plan:',
+    formatCompiledMiniGameSpecRecords(compiledMiniGameSpecs),
+    '',
+    'Syllabus questions:',
+    formatList(syllabusQuestions),
+    '',
+    'Selected theory source spans or excerpt:',
+    requireString(snapshot.theory_excerpt, 'snapshot.theory_excerpt'),
+    '',
+    'Backend materialization deterministically assigns persisted card IDs; any model-generated id is temporary and will be ignored.',
+    `The card must have type MINI_GAME, content.gameType ${expectedGameType}, topicId equal to the snapshot topic id, and difficulty equal to the compiled mini-game spec difficulty.`,
+    'Generate exactly one mini-game card for the compiled spec above. The game type, difficulty, playability structure, and grounding must match the spec. Use only the selected source spans.',
+  ].join('\n');
+
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: 'Output only the JSON object with the card field.' },
+  ];
+}
+
 export function buildTopicExpansionMessages(snapshot: Record<string, unknown>): PromptMessage[] {
   const syllabusQuestions = requireStringArray(snapshot.syllabus_questions, 'snapshot.syllabus_questions');
   const existingConceptStems = requireStringArray(snapshot.existing_concept_stems, 'snapshot.existing_concept_stems');

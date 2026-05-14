@@ -118,11 +118,11 @@ describe('createLearningContentRepo', () => {
       cardMetadata.cardSpecId,
       cardMetadata.miniGameSpecId,
       cardMetadata.questionSignature,
-      JSON.stringify(validCard),
       2,
       'topic-study-cards',
       'run-1',
     ]));
+    expect(JSON.parse(calls[0].args[8] as string)).toEqual(validCard);
   });
 
   it('upserts and reads crystal trial sets by card-pool hash', async () => {

@@ -20,6 +20,7 @@ import { validateCrystalTrialArtifact } from './crystalTrial';
 import { validateSubjectGraphEdgesArtifact } from './subjectGraphEdges';
 import { validateSubjectGraphTopicsArtifact } from './subjectGraphTopics';
 import { validateTopicCardContentArtifact } from './topicCardContent';
+import { validateTopicMiniGameContentArtifact } from './topicMiniGameContent';
 import { validateTopicExpansionCardsArtifact } from './topicExpansionCards';
 import { validateTopicMiniGameCategorySortArtifact } from './topicMiniGameCategorySort';
 import { validateTopicMiniGameMatchPairsArtifact } from './topicMiniGameMatchPairs';
@@ -43,6 +44,8 @@ export const SEMANTIC_VALIDATORS_BY_KIND: SemanticValidatorByKind = {
     validateTopicStudyCardsArtifact as SemanticValidator<unknown>,
   'topic-card-content':
     validateTopicCardContentArtifact as SemanticValidator<unknown>,
+  'topic-mini-game-content':
+    validateTopicMiniGameContentArtifact as SemanticValidator<unknown>,
   'topic-mini-game-category-sort':
     validateTopicMiniGameCategorySortArtifact as SemanticValidator<unknown>,
   'topic-mini-game-sequence-build':
