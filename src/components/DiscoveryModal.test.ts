@@ -55,10 +55,6 @@ vi.mock('../features/content', () => ({
   useSubjectGraphs: () => [],
 }));
 
-vi.mock('../features/contentGeneration/contentGenerationStore', () => ({
-  useContentGenerationStore: (fn: (s: { jobs: Record<string, never> }) => unknown) => fn({ jobs: {} }),
-}));
-
 vi.mock('../hooks/useTopicContentStatusMap', () => ({
   useTopicContentStatusMap: () => ({}),
 }));

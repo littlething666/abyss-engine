@@ -40,7 +40,7 @@ export interface IncrementalSubjectModalProps {
  *
  * Phase D: the legacy "Subject generation started…" success toast was
  * removed; the mentor rule engine surfaces a `subject:generation-started`
- * dialog (with stage-aware copy) instead, and the generation HUD owns
+ * dialog (with stage-aware copy) instead, and backend run diagnostics own
  * progress visibility.
  */
 export function IncrementalSubjectModal({ isOpen, onClose }: IncrementalSubjectModalProps) {
@@ -159,7 +159,7 @@ export function IncrementalSubjectModal({ isOpen, onClose }: IncrementalSubjectM
                 </Button>
               }
             />
-            <CollapsibleContent className="space-y-4 pt-2">
+            <CollapsibleContent className="flex flex-col gap-4 pt-2">
               <Field>
                 <FieldLabel>Goal</FieldLabel>
                 <FieldContent>

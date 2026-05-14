@@ -5,6 +5,7 @@ import {
   waitForDeckReady,
   startConsoleErrorCapture,
   E2E_HOME_PATH,
+  installDurableGenerationWorkerMock,
 } from '../utils/test-helpers';
 import { installProgressionEventProbe } from '../utils/progression-probe';
 
@@ -17,6 +18,7 @@ interface SeedOptions {
 
 export async function seedApp(page: Page, opts: SeedOptions = {}): Promise<void> {
   const { loadDefaultDeck = true, rngSeed = 'abyss-e2e-seed-1' } = opts;
+  await installDurableGenerationWorkerMock(page);
 
   // Clear storage and seed deterministic RNG BEFORE first paint so we don't
   // have to navigate twice. The prior `goto -> clear -> goto` pattern forced

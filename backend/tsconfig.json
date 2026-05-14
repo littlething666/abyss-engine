@@ -13,8 +13,8 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "paths": {
-      "@contracts/*": ["../src/features/generationContracts/*"],
-      "@contracts": ["../src/features/generationContracts"]
+      "@contracts/*": ["../packages/generation-contracts/src/*"],
+      "@contracts": ["../packages/generation-contracts/src"]
     }
   },
   "include": ["src/**/*.ts"],

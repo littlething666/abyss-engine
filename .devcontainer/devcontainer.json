@@ -1,0 +1,6 @@
+{
+  "name": "Abyss Engine",
+  "remoteUser": "1000",
+  "containerUser": "1000",
+  "updateRemoteUserUID": true
+}

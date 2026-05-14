@@ -14,6 +14,10 @@ _Avoid_: Dashboard, course list, learning app
 A learner-facing course container with generation strategy, visual identity, and topics.
 _Avoid_: Deck, course service, syllabus object
 
+**Published Subject**:
+A generated subject that has completed Subject Graph Generation and is visible through Learning Content Store reads.
+_Avoid_: Partial subject, draft subject, visible row
+
 **Subject Graph**:
 The persisted curriculum graph for one subject.
 _Avoid_: Scene graph, dependency graph, topic tree
@@ -112,6 +116,10 @@ _Avoid_: Graph generation, curriculum generation, subject pipeline
 The generation of additional cards triggered by crystal progression.
 _Avoid_: Expansion, level content, follow-up cards
 
+**Learning Content Store**:
+The backend-authoritative persistence surface for Subjects, Subject Graphs, Topic Content, study cards, and generated Crystal Trial question sets. The browser reads learning content from this store and no longer owns generation-pipeline persistence. Crystal Trial question-set reads use a backend-resolved current card-pool hash rather than frontend-persisted question/hash state.
+_Avoid_: Local deck, browser cache, generated content cache
+
 ### Guidance And Signals
 
 **Mentor**:
@@ -132,7 +140,8 @@ _Avoid_: User profile, analytics profile, account
 
 ## Relationships
 
-- A **Subject** has exactly one persisted **Subject Graph**.
+- A **Published Subject** has exactly one persisted **Subject Graph** and stub Topic Details rows whose **Topic Content Status** starts as `unavailable`.
+- A generated **Subject** becomes a **Published Subject** only after **Subject Graph Generation** finishes both the **Topic Lattice** and **Prerequisite Edge** stages.
 - A **Subject Graph** contains many **Topics**.
 - A **Topic Lattice** becomes a **Subject Graph** after **Prerequisite Edges** are added and validated.
 - A **Topic** is visualized as one **Crystal**.
@@ -144,16 +153,18 @@ _Avoid_: User profile, analytics profile, account
 - **Unlock Points** unlock **Topics**; **Resonance Points** are earned but not spent.
 - **Topic Content** is produced by a **Topic Content Pipeline**.
 - A **Topic Content Pipeline** consists of one or more **Content Generation Jobs**.
+- **Topic Content Status** is the readiness interface for study: `ready` means theory plus at least one difficulty-1 study card are persisted; `generating` means an active Topic Content Pipeline is producing study content; `unavailable` means the Subject Graph may be visible but the Topic is not study-ready.
 - **Subject Graph Generation** produces a **Topic Lattice** before prerequisite wiring.
 - **Topic Expansion** adds study cards when crystal progression calls for more material.
 - A **Crystal Trial** gates progression toward a target **Crystal Level**.
+- The **Learning Content Store** persists generated Subjects, Subject Graphs, Topic Content, study cards, and Crystal Trial question sets after durable backend workflows validate artifacts.
 - The **Mentor** reacts to events carried by the **App Event Bus**.
 - **Telemetry** records product-domain signals without owning analytics deployment details.
 
 ## Example Dialogue
 
 > **Dev:** "When a learner creates a **Subject**, do we immediately have a **Subject Graph**?"
-> **Domain expert:** "Not until **Subject Graph Generation** finishes both the **Topic Lattice** and **Prerequisite Edge** stages."
+> **Domain expert:** "No. It is not a **Published Subject** until **Subject Graph Generation** finishes both the **Topic Lattice** and **Prerequisite Edge** stages."
 >
 > **Dev:** "Can a locked **Topic** still have **Topic Content**?"
 > **Domain expert:** "Yes, **Topic Content Status** tells us whether the material exists, while **Prerequisite Edges** and **Unlock Points** decide whether the **Topic** can be studied."
@@ -170,4 +181,5 @@ _Avoid_: User profile, analytics profile, account
 - "session" can mean **Study Session**, telemetry session metadata, or pomodoro timing; use **Study Session** only for card review queues.
 - "ritual" should mean **Attunement Ritual** unless another ritual is explicitly introduced.
 - "pipeline" should be qualified as **Topic Content Pipeline** or **Subject Graph Generation**.
+- "subject exists" should distinguish an in-progress generated **Subject** from a **Published Subject** visible through Learning Content Store reads.
 - "analytics" should not be used for product-domain events; use **Telemetry** for product signals and PostHog adapter language only when discussing infrastructure.

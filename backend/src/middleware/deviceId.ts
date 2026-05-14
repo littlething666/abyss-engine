@@ -6,6 +6,7 @@
 
 import type { Context, Next } from 'hono';
 import { makeRepos } from '../repositories';
+import { createLogger, errorFields } from '../observability/logger';
 
 export async function deviceIdMiddleware(c: Context, next: Next) {
   const deviceId = c.req.header('x-abyss-device');
@@ -31,7 +32,7 @@ export async function deviceIdMiddleware(c: Context, next: Next) {
   try {
     await repos.devices.upsert(normalizedId);
   } catch (err) {
-    console.error('[deviceIdMiddleware] upsert failed:', err);
+    createLogger({ deviceId: normalizedId }).error('device.upsert.failure', errorFields(err));
     return c.json({ error: 'internal_error', message: 'Failed to upsert device' }, 500);
   }
 

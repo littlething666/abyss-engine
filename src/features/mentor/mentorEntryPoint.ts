@@ -17,8 +17,8 @@ import {
  * Returns true iff a plan was successfully appended to the dialog queue.
  *
  * Replaces the legacy `tryEnqueueBubbleClick` helper; both the MentorBubble
- * billboard and the HUD Quick Actions "Mentor" item route through this
- * single helper so they stay behaviorally identical and contextual.
+ * billboard and the Quick Actions "Mentor" item route through this single
+ * helper so they stay behaviorally identical and contextual.
  */
 export function tryEnqueueMentorEntry(
   context: MentorEntryContext,

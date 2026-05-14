@@ -1,8 +1,8 @@
 /**
- * Durable Generation Run Event Handlers — Phase 0.5 step 6.
+ * Durable Generation Run Event Handlers.
  *
- * This is the **single sanctioned composition root** that translates
- * backend `RunEvent`s into local artifact application, legacy
+ * This is the **single sanctioned composition root** that translates backend
+ * `RunEvent`s into Learning Content Store query invalidation, legacy
  * `AppEventBus` notifications, and telemetry.
  *
  * ## Boundary rules (locked by AGENTS.md amendment)
@@ -10,43 +10,31 @@
  * - Imports ONLY from feature public APIs (barrels).
  * - Must NOT deep-import feature internals, own generation rules, or
  *   perform remote I/O directly.
- * - Must NOT mutate stores except through exported feature appliers.
+ * - Must NOT mutate generated-content stores; backend workflows publish generated artifacts.
  * - Must NOT emit `crystal-trial:completed` — that event is
  *   exclusively the player-assessment surface.
  * - Topic Expansion supersession MUST suppress player-facing failure
  *   copy.
- * - Subject Graph Stage B MUST NOT apply before Stage A's contentHash
- *   is recorded.
+ * - Durable artifacts MUST NOT be frontend-applied; `artifact.ready` is a
+ *   progress signal until backend publication is observed at `run.completed`.
  *
  * ## When this runs
  *
- * During the Phase 0.5 → Phase 1 transition, `generationRunEventHandlers`
- * activates only when `NEXT_PUBLIC_DURABLE_RUNS` is `true` and the
- * `DurableGenerationRunRepository` is the active adapter. For local
- * runs (flag OFF), today's in-tab runners still own store writes and
- * event emission through the legacy path.
- *
- * In Phase 1, this composition root becomes the sole path for artifact
- * application and event emission from generation results.
+ * `generationRunEventHandlers` now runs against the durable Worker adapter
+ * unconditionally. Local in-tab runners no longer participate in runtime
+ * submission/observation; remaining local runner files are deletion targets.
+ * This composition root consumes durable events only to refresh backend-owned
+ * content projections and emit product notifications.
  */
 
 import { appEventBus, type AppEventBus } from './eventBus';
-import type { RunInput, RunSnapshot } from '@/types/repository';
+import type { GenerationRunIntent, PipelineKind, RunSnapshot, SubmitGenerationRunInput } from '@/types/repository';
 import type { IDeckRepository } from '@/types/repository';
-import type {
-  ArtifactApplier,
-  ArtifactApplyContext,
-  AppliedArtifactsStore,
-  ArtifactEnvelope,
-  ArtifactKind,
-  RunEvent,
-} from '@/features/generationContracts';
+import type { RunEvent } from '@abyss/generation-contracts';
+import type { RunEventCursorStore } from '@/infrastructure/repositories/runEventCursorStore';
 import type { TopicLattice, TopicLatticeNode } from '@/types/topicLattice';
 import type { GenerationClient } from '@/features/contentGeneration';
-import type { TopicContentApplier } from '@/features/contentGeneration/appliers/topicContentApplier';
-import type { TopicExpansionApplier } from '@/features/contentGeneration/appliers/topicExpansionApplier';
-import type { SubjectGraphApplier } from '@/features/subjectGeneration/appliers/subjectGraphApplier';
-import type { CrystalTrialApplier } from '@/features/crystalTrial/appliers/crystalTrialApplier';
+import type { PubSubClient } from './pubsub';
 
 // ---------------------------------------------------------------------------
 // Dependencies
@@ -54,15 +42,11 @@ import type { CrystalTrialApplier } from '@/features/crystalTrial/appliers/cryst
 
 export interface GenerationRunEventHandlersDeps {
   client: GenerationClient;
-  appliers: {
-    topicContent: TopicContentApplier;
-    topicExpansion: TopicExpansionApplier;
-    subjectGraph: SubjectGraphApplier;
-    crystalTrial: CrystalTrialApplier;
-  };
   eventBus: AppEventBus;
-  dedupeStore: AppliedArtifactsStore;
+  /** Phase 3.6 Step 2: Durable per-run event cursor so rehydration survives browser reloads. */
+  cursorStore: RunEventCursorStore;
   deckRepository: IDeckRepository;
+  contentPublication: Pick<PubSubClient, 'publishBackendSubjectGraph' | 'publishTopicContent' | 'publishTopicCards' | 'publishCrystalTrial'>;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,13 +61,22 @@ export interface GenerationRunEventHandlers {
    *
    * The handler:
    * 1. Opens the RunEvent stream via `client.observe(runId)`.
-   * 2. For each `artifact.ready`: fetches the artifact, applies via the
-   *    appropriate applier (idempotent by `contentHash`).
+   * 2. For locally materialized artifact kinds: fetches the artifact and
+   *    applies via the appropriate applier (idempotent by `contentHash`).
+   *    Durable subject-graph artifacts are progress-only and are not fetched.
    * 3. For terminal events: fires legacy `AppEventBus` events matching
    *    today's runner emissions so `eventBusHandlers.ts` listeners
    *    (mentor triggers, telemetry, HUD) continue to work.
    */
-  observeRun(runId: string, runInput: RunInput): Promise<void>;
+  observeRun(runId: string, runInput: SubmitGenerationRunInput): Promise<void>;
+
+  /**
+   * Returns `0` (backwards compat only). For the authoritative seq, use
+   * `runEventCursorStore.get(runId)` from `runEventCursorStore`.
+   *
+   * Phase 3.6 Step 2: seq tracking is now durable via cursorStore.
+   */
+  getLastAppliedSeq(): number;
 
   /** Stop all active observations. */
   stop(): void;
@@ -92,6 +85,16 @@ export interface GenerationRunEventHandlers {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+type ObservedRunInput = SubmitGenerationRunInput;
+type ObservedTopicContentInput = Extract<GenerationRunIntent, { kind: 'topic-content' }>;
+type ObservedTopicExpansionInput = Extract<GenerationRunIntent, { kind: 'topic-expansion' }>;
+type ObservedSubjectGraphInput = Extract<GenerationRunIntent, { kind: 'subject-graph' }>;
+type ObservedCrystalTrialInput = Extract<GenerationRunIntent, { kind: 'crystal-trial' }>;
+
+function pipelineKindOf(input: ObservedRunInput): PipelineKind {
+  return input.kind;
+}
 
 /**
  * Resolve a human-readable topic label from the deck.
@@ -113,94 +116,14 @@ async function resolveTopicLabel(
 }
 
 /**
- * Extract the stage tag from a `RunInput` for the
+ * Extract the stage tag from a durable intent for the
  * `topic-content:generation-completed` / `topic-content:generation-failed`
  * event payloads.
  */
-function topicContentStageFromSnapshot(
-  input: Extract<RunInput, { pipelineKind: 'topic-content' }>,
+function topicContentStageFromIntent(
+  input: ObservedTopicContentInput,
 ): 'theory' | 'study-cards' | 'mini-games' | 'full' {
-  // Legacy stage option takes priority (supplied by in-tab callers)
-  const legacy = input.topicContentLegacyOptions?.legacyStage;
-  if (legacy) return legacy;
-
-  // Derive from snapshot kind
-  const pk = input.snapshot.pipeline_kind;
-  if (pk === 'topic-theory') return 'theory';
-  if (pk === 'topic-study-cards') return 'study-cards';
-  return 'mini-games';
-}
-
-/**
- * Build the `ArtifactApplyContext` for a given run + artifact.
- */
-function buildApplyContext(
-  runInput: RunInput,
-  runId: string,
-  deviceId: string,
-  dedupeStore: AppliedArtifactsStore,
-): ArtifactApplyContext {
-  const ctx: ArtifactApplyContext = {
-    runId,
-    deviceId,
-    now: () => Date.now(),
-    dedupeStore,
-  };
-
-  // Populate subject/topic when available
-  if ('subjectId' in runInput) ctx.subjectId = runInput.subjectId;
-  if ('topicId' in runInput) ctx.topicId = runInput.topicId;
-
-  // Topic expansion supersession context
-  if (
-    runInput.pipelineKind === 'topic-expansion' &&
-    'nextLevel' in runInput
-  ) {
-    ctx.topicExpansionTargetLevel = runInput.nextLevel;
-  }
-
-  // Subject graph Stage B requires Stage A lattice hash.
-  // The lattice_artifact_content_hash is available from the edges snapshot.
-  if (runInput.pipelineKind === 'subject-graph' && runInput.stage === 'edges') {
-    const snap = runInput.snapshot;
-    if (
-      snap &&
-      typeof snap === 'object' &&
-      'lattice_artifact_content_hash' in snap
-    ) {
-      ctx.subjectGraphLatticeContentHash = (
-        snap as { lattice_artifact_content_hash: string }
-      ).lattice_artifact_content_hash;
-    }
-  }
-
-  return ctx;
-}
-
-/**
- * Pick the right applier for an artifact kind.
- */
-function pickApplier(
-  kind: string,
-  appliers: GenerationRunEventHandlersDeps['appliers'],
-): ArtifactApplier | null {
-  switch (kind) {
-    case 'topic-theory':
-    case 'topic-study-cards':
-    case 'topic-mini-game-category-sort':
-    case 'topic-mini-game-sequence-build':
-    case 'topic-mini-game-match-pairs':
-      return appliers.topicContent;
-    case 'topic-expansion-cards':
-      return appliers.topicExpansion;
-    case 'subject-graph-topics':
-    case 'subject-graph-edges':
-      return appliers.subjectGraph;
-    case 'crystal-trial':
-      return appliers.crystalTrial;
-    default:
-      return null;
-  }
+  return input.stage;
 }
 
 /**
@@ -209,7 +132,7 @@ function pickApplier(
 async function emitTopicContentCompleted(
   eventBus: AppEventBus,
   deck: IDeckRepository,
-  input: Extract<RunInput, { pipelineKind: 'topic-content' }>,
+  input: ObservedTopicContentInput,
   runId: string,
 ): Promise<void> {
   const topicLabel = await resolveTopicLabel(
@@ -217,7 +140,7 @@ async function emitTopicContentCompleted(
     input.subjectId,
     input.topicId,
   );
-  const stage = topicContentStageFromSnapshot(input);
+  const stage = topicContentStageFromIntent(input);
 
   eventBus.emit('topic-content:generation-completed', {
     subjectId: input.subjectId,
@@ -234,7 +157,7 @@ async function emitTopicContentCompleted(
 async function emitTopicContentFailed(
   eventBus: AppEventBus,
   deck: IDeckRepository,
-  input: Extract<RunInput, { pipelineKind: 'topic-content' }>,
+  input: ObservedTopicContentInput,
   runId: string,
   errorCode: string,
   errorMessage: string,
@@ -244,7 +167,7 @@ async function emitTopicContentFailed(
     input.subjectId,
     input.topicId,
   );
-  const stage = topicContentStageFromSnapshot(input);
+  const stage = topicContentStageFromIntent(input);
 
   eventBus.emit('topic-content:generation-failed', {
     subjectId: input.subjectId,
@@ -263,7 +186,7 @@ async function emitTopicContentFailed(
 async function emitTopicExpansionCompleted(
   eventBus: AppEventBus,
   deck: IDeckRepository,
-  input: Extract<RunInput, { pipelineKind: 'topic-expansion' }>,
+  input: ObservedTopicExpansionInput,
 ): Promise<void> {
   const topicLabel = await resolveTopicLabel(
     deck,
@@ -285,7 +208,7 @@ async function emitTopicExpansionCompleted(
 async function emitTopicExpansionFailed(
   eventBus: AppEventBus,
   deck: IDeckRepository,
-  input: Extract<RunInput, { pipelineKind: 'topic-expansion' }>,
+  input: ObservedTopicExpansionInput,
   errorCode: string,
   errorMessage: string,
 ): Promise<void> {
@@ -313,15 +236,11 @@ async function emitTopicExpansionFailed(
  */
 async function emitSubjectGraphGenerated(
   eventBus: AppEventBus,
-  input: Extract<RunInput, { pipelineKind: 'subject-graph' }>,
+  input: ObservedSubjectGraphInput,
   runId: string,
   runSnapshot: RunSnapshot,
 ): Promise<void> {
-  // Derive model from the snapshot
-  const boundModel =
-    input.snapshot && 'model_id' in input.snapshot
-      ? (input.snapshot as { model_id: string }).model_id
-      : 'unknown';
+  const boundModel = 'backend-policy';
 
   // Compute durations from run timestamps
   const stageADurationMs =
@@ -353,7 +272,7 @@ async function emitSubjectGraphGenerated(
  */
 function emitSubjectGraphFailed(
   eventBus: AppEventBus,
-  input: Extract<RunInput, { pipelineKind: 'subject-graph' }>,
+  input: ObservedSubjectGraphInput,
   runId: string,
   errorCode: string,
   errorMessage: string,
@@ -374,14 +293,11 @@ function emitSubjectGraphFailed(
  */
 function emitSubjectGraphValidationFailed(
   eventBus: AppEventBus,
-  input: Extract<RunInput, { pipelineKind: 'subject-graph' }>,
+  input: ObservedSubjectGraphInput,
   errorCode: string,
   errorMessage: string,
 ): void {
-  const boundModel =
-    input.snapshot && 'model_id' in input.snapshot
-      ? (input.snapshot as { model_id: string }).model_id
-      : 'unknown';
+  const boundModel = 'backend-policy';
 
   eventBus.emit('subject-graph:validation-failed', {
     subjectId: input.subjectId,
@@ -403,7 +319,7 @@ function emitSubjectGraphValidationFailed(
 async function emitCrystalTrialFailed(
   eventBus: AppEventBus,
   deck: IDeckRepository,
-  input: Extract<RunInput, { pipelineKind: 'crystal-trial' }>,
+  input: ObservedCrystalTrialInput,
   errorCode: string,
   errorMessage: string,
 ): Promise<void> {
@@ -440,9 +356,18 @@ function isSubjectGraphValidationCode(code: string): boolean {
 export function createGenerationRunEventHandlers(
   deps: GenerationRunEventHandlersDeps,
 ): GenerationRunEventHandlers {
-  const { client, appliers, eventBus, dedupeStore, deckRepository } = deps;
+  const { client, eventBus, cursorStore, deckRepository, contentPublication } = deps;
   const activeRuns = new Set<string>();
   let stopped = false;
+
+  /**
+   * Record the highest seq we've seen for a run.
+   * Persisted durably so rehydration survives browser reloads.
+   */
+  async function trackSeq(runId: string, seq: number): Promise<void> {
+    const prev = await cursorStore.get(runId);
+    if (seq > prev) await cursorStore.set(runId, seq);
+  }
 
   /**
    * Core observation loop. Creates an async context that reads the
@@ -450,7 +375,7 @@ export function createGenerationRunEventHandlers(
    */
   async function observeRun(
     runId: string,
-    runInput: RunInput,
+    runInput: ObservedRunInput,
   ): Promise<void> {
     if (stopped) return;
     if (activeRuns.has(runId)) return;
@@ -460,76 +385,53 @@ export function createGenerationRunEventHandlers(
       const runSnapshot = (await client.listRuns({ status: 'all', limit: 100 })).find((r) => r.runId === runId);
       const deviceId = runSnapshot?.deviceId ?? 'unknown';
 
-      const applyCtx = buildApplyContext(
-        runInput,
-        runId,
-        deviceId,
-        dedupeStore,
-      );
+      // Phase 3.6 Step 2: seed startSeq from the durable cursor so SSE
+      // replays only unprocessed events after a browser reload.
+      const startSeq = await cursorStore.get(runId);
+      let lastProcessedSeq = startSeq;
 
-      for await (const event of client.observe(runId)) {
+      for await (const event of client.observe(runId, startSeq)) {
         if (stopped) break;
+        if (event.seq <= lastProcessedSeq) continue;
 
         switch (event.type) {
-          // ── artifact.ready: apply via applier ──────────────────
-          case 'artifact.ready': {
-            const { artifactId, kind } = event.body;
-            const applier = pickApplier(kind, appliers);
-            if (!applier) {
-              console.error(
-                `[generationRunEventHandlers] unknown artifact kind: ${kind} (runId=${runId})`,
-              );
-              break;
-            }
-
-            let artifact: ArtifactEnvelope;
-            try {
-              artifact = await client.getArtifact(artifactId);
-            } catch (err) {
-              console.error(
-                `[generationRunEventHandlers] failed to fetch artifact ${artifactId}:`,
-                err,
-              );
-              break;
-            }
-
-            const result = await applier.apply(
-              artifact as ArtifactEnvelope<ArtifactKind>,
-              applyCtx,
-            );
-
-            if (!result.applied) {
-              // supressed: duplicate, superseded, missing-stage-a, or invalid
-              if (result.reason === 'superseded') {
-                // Superseded expansion — silence, per Plan v3 policy.
-                // The winning run will emit the completion event.
-              }
-            }
+          // ── artifact.ready: progress signal only ───────────────
+          case 'artifact.ready':
+            // Backend workflows already apply artifacts to the Learning
+            // Content Store. Fetching artifacts here would recreate a second
+            // frontend write path and drift from durable authority.
             break;
-          }
 
-          // ── run.completed: fire legacy completion event ────────
+          // ── run.completed: refresh backend content reads ───────
           case 'run.completed': {
-            switch (runInput.pipelineKind) {
-              case 'topic-content':
+            const runKind = pipelineKindOf(runInput);
+            switch (runKind) {
+              case 'topic-content': {
+                const input = runInput as ObservedTopicContentInput;
+                contentPublication.publishTopicContent(input.subjectId, input.topicId);
                 await emitTopicContentCompleted(
                   eventBus,
                   deckRepository,
-                  runInput as Extract<RunInput, { pipelineKind: 'topic-content' }>,
+                  input,
                   runId,
                 );
                 break;
-              case 'topic-expansion':
+              }
+              case 'topic-expansion': {
+                const input = runInput as ObservedTopicExpansionInput;
+                contentPublication.publishTopicCards(input.subjectId, input.topicId);
                 await emitTopicExpansionCompleted(
                   eventBus,
                   deckRepository,
-                  runInput as Extract<RunInput, { pipelineKind: 'topic-expansion' }>,
+                  input,
                 );
                 break;
+              }
               case 'subject-graph':
+                contentPublication.publishBackendSubjectGraph(runInput.subjectId);
                 await emitSubjectGraphGenerated(
                   eventBus,
-                  runInput as Extract<RunInput, { pipelineKind: 'subject-graph' }>,
+                  runInput as ObservedSubjectGraphInput,
                   runId,
                   runSnapshot ?? {
                     runId,
@@ -538,18 +440,17 @@ export function createGenerationRunEventHandlers(
                     status: 'applied-local',
                     inputHash: '',
                     createdAt: 0,
-                    snapshotJson: runInput.snapshot,
+                    snapshotJson: { pipeline_kind: runKind } as unknown as RunSnapshot['snapshotJson'],
                     jobs: [],
                   },
                 );
                 break;
-              case 'crystal-trial':
+              case 'crystal-trial': {
+                const input = runInput as ObservedCrystalTrialInput;
+                contentPublication.publishCrystalTrial(input.subjectId, input.topicId);
                 // MUST NOT emit crystal-trial:completed (Plan v3 Q21).
-                // The existing trial-availability watcher in
-                // eventBusHandlers.ts fires the mentor trigger via
-                // handleMentorTrigger('crystal-trial:available-for-player', ...)
-                // automatically after the applier writes to the store.
                 break;
+              }
             }
             break;
           }
@@ -557,12 +458,12 @@ export function createGenerationRunEventHandlers(
           // ── run.failed: fire legacy failure event ──────────────
           case 'run.failed': {
             const { code, message } = event;
-            switch (runInput.pipelineKind) {
+            switch (pipelineKindOf(runInput)) {
               case 'topic-content':
                 await emitTopicContentFailed(
                   eventBus,
                   deckRepository,
-                  runInput as Extract<RunInput, { pipelineKind: 'topic-content' }>,
+                  runInput as ObservedTopicContentInput,
                   runId,
                   code,
                   message,
@@ -572,16 +473,13 @@ export function createGenerationRunEventHandlers(
                 await emitTopicExpansionFailed(
                   eventBus,
                   deckRepository,
-                  runInput as Extract<RunInput, { pipelineKind: 'topic-expansion' }>,
+                  runInput as ObservedTopicExpansionInput,
                   code,
                   message,
                 );
                 break;
               case 'subject-graph': {
-                const sgInput = runInput as Extract<
-                  RunInput,
-                  { pipelineKind: 'subject-graph' }
-                >;
+                const sgInput = runInput as ObservedSubjectGraphInput;
                 if (isSubjectGraphValidationCode(code)) {
                   emitSubjectGraphValidationFailed(
                     eventBus,
@@ -604,7 +502,7 @@ export function createGenerationRunEventHandlers(
                 await emitCrystalTrialFailed(
                   eventBus,
                   deckRepository,
-                  runInput as Extract<RunInput, { pipelineKind: 'crystal-trial' }>,
+                  runInput as ObservedCrystalTrialInput,
                   code,
                   message,
                 );
@@ -617,7 +515,7 @@ export function createGenerationRunEventHandlers(
           case 'run.cancelled': {
             if (
               event.reason === 'superseded' &&
-              runInput.pipelineKind === 'topic-expansion'
+              pipelineKindOf(runInput) === 'topic-expansion'
             ) {
               // Superseded expansion — suppress player-facing event.
             }
@@ -628,24 +526,25 @@ export function createGenerationRunEventHandlers(
             break;
           }
 
-          // ── lifecycle events: HUD-owned ────────────────────────
+          // ── lifecycle events: durable diagnostics-owned ────────
           case 'run.queued':
           case 'run.status':
           case 'stage.progress':
           case 'run.cancel-acknowledged':
-            // HUD progress managed by useContentGenerationStore;
-            // these events are informational from the handlers'
-            // perspective.
+            // Backend run/debug endpoints own progress diagnostics; these
+            // events are informational from the handlers' perspective.
             break;
 
           default: {
             const _exhaustive: never = event;
-            console.warn(
+            throw new Error(
               `[generationRunEventHandlers] unhandled event type: ${(_exhaustive as RunEvent).type}`,
             );
-            break;
           }
         }
+
+        await trackSeq(runId, event.seq);
+        lastProcessedSeq = Math.max(lastProcessedSeq, event.seq);
       }
     } finally {
       activeRuns.delete(runId);
@@ -654,6 +553,11 @@ export function createGenerationRunEventHandlers(
 
   return {
     observeRun,
+    getLastAppliedSeq(): number {
+      // Phase 3.6 Step 2: seq tracking moved to durable cursorStore.
+      // Callers needing the authoritative value should use cursorStore.get(runId).
+      return 0;
+    },
     stop() {
       stopped = true;
     },

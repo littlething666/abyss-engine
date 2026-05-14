@@ -1,18 +1,24 @@
 /**
  * Artifact routes — GET /v1/artifacts/:id.
  *
- * Returns the artifact envelope or a signed Supabase Storage download URL.
+ * Returns the artifact envelope by reading the R2 object referenced from the
+ * D1 artifacts metadata row.
  */
 
 import { Hono } from 'hono';
 import { makeRepos } from '../repositories';
+import { validateArtifactReadInput } from './validation';
 import type { Env } from '../env';
 
 const artifacts = new Hono<{ Bindings: Env; Variables: { deviceId: string } }>();
 
 artifacts.get('/:id', async (c) => {
   const deviceId = c.get('deviceId');
-  const artifactId = c.req.param('id');
+  const input = validateArtifactReadInput({ artifactId: c.req.param('id') });
+  if (!input.ok) {
+    return c.json(input.failure, 400);
+  }
+  const { artifactId } = input.value;
   const repos = makeRepos(c.env);
 
   const row = await repos.artifacts.get(artifactId);

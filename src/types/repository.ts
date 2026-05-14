@@ -1,36 +1,19 @@
 import type { Card, MiniGameType, Subject, SubjectGraph, TopicDetails } from './core';
-import type { TopicPipelineRetryContext } from './contentGeneration';
+import type { CrystalTrialScenarioQuestion } from './crystalTrial';
+import type { StudyChecklist } from './studyChecklist';
+import type { TopicContentStatusRecord } from './topicContent';
 import type {
   ArtifactEnvelope,
-  CrystalTrialRunInputSnapshot,
   RunEvent,
   RunInputSnapshot,
   RunStatus,
-  SubjectGraphEdgesRunInputSnapshot,
-  SubjectGraphTopicsRunInputSnapshot,
-  TopicExpansionRunInputSnapshot,
-  TopicMiniGameCardsRunInputSnapshot,
-  TopicStudyCardsRunInputSnapshot,
-  TopicTheoryRunInputSnapshot,
-} from '@/features/generationContracts';
-
-export type {
-  ChatCompletionResult,
-  ChatCompletionStreamInput,
-  ChatMessage,
-  ChatMessageRole,
-  ChatStreamChunk,
-  ChatStreamChunkType,
-  IChatCompletionsRepository,
-} from './llm';
-
-export type { InferenceSurfaceId, LlmInferenceProviderId } from './llmInference';
+} from '@abyss/generation-contracts';
 
 export interface Manifest {
   subjects: Subject[];
 }
 
-export type DeckContentSource = 'bundled' | 'generated';
+export type DeckContentSource = 'bundled' | 'generated' | 'manual';
 
 export interface ManifestOptions {
   includePregeneratedCurriculums?: boolean;
@@ -41,15 +24,22 @@ export interface IDeckRepository {
   getSubjectGraph(subjectId: string): Promise<SubjectGraph>;
   getTopicDetails(subjectId: string, topicId: string): Promise<TopicDetails>;
   getTopicCards(subjectId: string, topicId: string): Promise<Card[]>;
+  getTopicContentStatuses(subjectId: string): Promise<TopicContentStatusRecord[]>;
 }
 
-export interface IDeckContentWriter {
-  upsertSubject(subject: Subject & { themeId?: string; contentSource?: DeckContentSource }): Promise<void>;
-  upsertGraph(graph: SubjectGraph): Promise<void>;
-  upsertTopicDetails(details: TopicDetails): Promise<void>;
-  upsertTopicCards(subjectId: string, topicId: string, cards: Card[]): Promise<void>;
-  /** Merges with existing deck: same `card.id` replaces; new ids append. */
-  appendTopicCards(subjectId: string, topicId: string, cards: Card[]): Promise<void>;
+export interface CrystalTrialSetReadModel {
+  subjectId: string;
+  topicId: string;
+  targetLevel: number;
+  cardPoolHash: string;
+  questions: CrystalTrialScenarioQuestion[];
+  contentHash: string;
+  createdByRunId: string;
+  createdAt: string;
+}
+
+export interface ICrystalTrialSetRepository {
+  getCurrentTrialSet(subjectId: string, topicId: string, targetLevel: number): Promise<CrystalTrialSetReadModel | null>;
 }
 
 export interface StudyHistoryQuery {
@@ -82,18 +72,11 @@ export interface IStudyHistoryRepository {
 }
 
 // ---------------------------------------------------------------------------
-// Durable Workflow Orchestration — Phase 0.5 step 1
+// Durable Workflow Orchestration
 //
-// `IGenerationRunRepository` is the single contract both the in-tab adapter
-// (`LocalGenerationRunRepository`, Phase 0.5 step 2) and the durable Worker
-// adapter (`DurableGenerationRunRepository`, Phase 1) implement. The
-// `GenerationClient` facade (Phase 0.5 step 3) is the only feature-layer
-// consumer; no feature/component/hook may take an `IGenerationRunRepository`
-// directly, per the architecture amendment locked in the Durable Workflow
-// Orchestration plan.
-//
-// All inputs are deterministic snapshots from `@/features/generationContracts`
-// so a backend-routed run can be reconstructed without browser state.
+// `IGenerationRunRepository` is the durable Worker adapter contract consumed
+// only through the `GenerationClient` facade. Browser submissions are compact
+// generation intents; backend snapshots remain read-only observation data.
 // ---------------------------------------------------------------------------
 
 /**
@@ -131,82 +114,47 @@ export type PipelineKind =
  */
 export type CancelReason = 'user' | 'superseded';
 
-/**
- * Topic Content Pipeline snapshot variant. The pipeline runs as one durable
- * run with three checkpointed stages (theory → study-cards → mini-games);
- * the snapshot bound to the current job is the matching variant.
- */
-export type TopicContentRunInputSnapshot =
-  | TopicTheoryRunInputSnapshot
-  | TopicStudyCardsRunInputSnapshot
-  | TopicMiniGameCardsRunInputSnapshot;
+export type TopicContentGenerationStage = 'theory' | 'study-cards' | 'mini-games' | 'full';
 
-/**
- * Run input handed to `submitRun`. The `pipelineKind` discriminates the
- * snapshot variant and carries the routing context (subject / topic / level /
- * stage) the orchestrator needs to dispatch the correct Workflow class.
- *
- * Snapshots themselves come straight from the
- * `@/features/generationContracts` builders (`buildTopicTheorySnapshot`,
- * `buildSubjectGraphTopicsSnapshot`, etc.) so `inputHash` is deterministic
- * across local and durable adapters.
- */
-export type RunInput =
+export type GenerationRunIntent =
   | {
-      pipelineKind: 'topic-content';
-      snapshot: TopicContentRunInputSnapshot;
+      kind: 'topic-content';
       subjectId: string;
       topicId: string;
-      /**
-       * Bridges today's `runTopicGenerationPipeline` surface (full pipeline,
-       * per-stage retries, `forceRegenerate`, mini-game subset) until durable
-       * stage checkpoints own every flag on the snapshot envelope.
-       */
-      topicContentLegacyOptions?: {
-        enableReasoning: boolean;
-        forceRegenerate: boolean;
-        legacyStage?: 'theory' | 'study-cards' | 'mini-games' | 'full';
-        miniGameKindsOverride?: MiniGameType[];
-        retryContext?: TopicPipelineRetryContext;
-        resumeFromStage?: 'theory' | 'study-cards' | 'mini-games' | 'full';
-      };
+      stage: TopicContentGenerationStage;
+      miniGameType?: MiniGameType;
     }
   | {
-      pipelineKind: 'topic-expansion';
-      snapshot: TopicExpansionRunInputSnapshot;
+      kind: 'topic-expansion';
       subjectId: string;
       topicId: string;
       nextLevel: 1 | 2 | 3;
-      topicExpansionLegacyOptions?: {
-        enableReasoning: boolean;
-        retryOf?: string;
-      };
     }
   | {
-      pipelineKind: 'subject-graph';
-      snapshot: SubjectGraphTopicsRunInputSnapshot | SubjectGraphEdgesRunInputSnapshot;
+      kind: 'subject-graph';
       subjectId: string;
-      stage: 'topics' | 'edges';
-      subjectGraphLegacyOptions?: {
-        orchestratorRetryOf?: string;
-      };
+      stage: 'topics';
+      checklist: StudyChecklist;
     }
   | {
-      pipelineKind: 'crystal-trial';
-      snapshot: CrystalTrialRunInputSnapshot;
+      kind: 'subject-graph';
+      subjectId: string;
+      stage: 'edges';
+      latticeArtifactContentHash: string;
+    }
+  | {
+      kind: 'crystal-trial';
       subjectId: string;
       topicId: string;
       currentLevel: number;
-      crystalTrialLegacyOptions?: {
-        retryOf?: string;
-      };
+      targetLevel?: number;
     };
 
+export type SubmitGenerationRunInput = GenerationRunIntent;
+
 /**
- * Per-job snapshot. Mirrors the durable Worker's `jobs` table and the local
- * adapter's per-stage state. `kind` matches the existing
- * `ContentGenerationJobKind` literal union so HUD / mentor / failure-dashboard
- * consumers stay parity-stable across the durable cutover.
+ * Per-job snapshot. Mirrors the durable Worker's `jobs` table. `kind` is a
+ * Worker job discriminator used only for backend run/debug observation.
  */
 export interface JobSnapshot {
   jobId: string;
@@ -217,7 +165,7 @@ export interface JobSnapshot {
   /** Set when this job is a retry of an earlier job in the same lineage. */
   retryOf?: string;
   inputHash: string;
-  /** Resolved model id at job start (e.g. `'openrouter/qwen/qwen3-...'`). */
+  /** Resolved model id at job start (OpenRouter `provider/model`, e.g. `'google/gemini-3.1-flash-lite-preview'`). */
   model: string;
   /** Free-form metadata bag (`providerHealingRequested`, `structuredOutputMode`, etc.). */
   metadata?: Record<string, unknown>;
@@ -281,7 +229,7 @@ export interface IGenerationRunRepository {
    *   - Durable adapter: server-side `(device_id, idempotency_key)`
    *     uniqueness, identical re-submits return the existing `runId`.
    */
-  submitRun(input: RunInput, idempotencyKey: string): Promise<{ runId: string }>;
+  submitRun(input: SubmitGenerationRunInput, idempotencyKey: string): Promise<{ runId: string }>;
 
   /** Read the latest known run state (snapshot + per-job rows). */
   getRun(runId: string): Promise<RunSnapshot>;

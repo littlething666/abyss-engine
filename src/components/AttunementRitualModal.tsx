@@ -55,6 +55,7 @@ import { parseTopicRefKey, topicRefKey } from '@/lib/topicRef';
 import { useTopicMetadata } from '../features/content';
 import { deckRepository } from '../infrastructure/di';
 import { topicCardsQueryKey } from '../hooks/useDeckData';
+import { useTopicContentStatusMap } from '../hooks/useTopicContentStatusMap';
 import { Card } from '../types/core';
 
 const motionFadeInitial = { opacity: 0, scale: 0.95 };
@@ -105,6 +106,7 @@ export function AttunementRitualModal({
     return out;
   }, [activeCrystals]);
   const allTopicMetadata = useTopicMetadata(activeTopicRefs);
+  const contentStatusByTopicKey = useTopicContentStatusMap();
   const topicCardQueries = useQueries({
     queries: activeTopicRefs.map((ref) => {
       const k = topicRefKey(ref);
@@ -112,7 +114,7 @@ export function AttunementRitualModal({
       return {
         queryKey: topicCardsQueryKey(subjectId, ref.topicId),
         queryFn: () => deckRepository.getTopicCards(subjectId, ref.topicId),
-        enabled: Boolean(subjectId),
+        enabled: Boolean(subjectId) && contentStatusByTopicKey[k] === 'ready',
         staleTime: Infinity,
       };
     }),
@@ -128,8 +130,8 @@ export function AttunementRitualModal({
     return map;
   }, [activeTopicRefs, topicCardQueries]);
   const selectedTopicCards = useMemo(
-    () => (targetCrystal ? topicCardsByKey.get(targetCrystal) ?? [] : []),
-    [targetCrystal, topicCardsByKey],
+    () => (targetCrystal && contentStatusByTopicKey[targetCrystal] === 'ready' ? topicCardsByKey.get(targetCrystal) ?? [] : []),
+    [targetCrystal, topicCardsByKey, contentStatusByTopicKey],
   );
   const sectionBuffs = useMemo(() => ({
     biological: getCategoryBuffs('biological').map((definition) => BuffEngine.get().grantBuff(definition.id, 'biological')),
@@ -278,7 +280,7 @@ export function AttunementRitualModal({
                 Ritual cooldown: {cooldownLabel} left.
               </p>
             )}
-            <FieldSet className="space-y-2 mb-5">
+            <FieldSet className="gap-2 mb-5">
               <FieldLegend>🧬 1. Biological Foundation</FieldLegend>
               <FieldDescription className="text-xs">Section unlocks</FieldDescription>
               <ul className="mb-3 flex flex-wrap gap-2 text-muted-foreground text-sm">
@@ -295,7 +297,7 @@ export function AttunementRitualModal({
                   </li>
                 ))}
               </ul>
-              <FieldGroup className="space-y-1">
+              <FieldGroup className="gap-1">
                 <Field>
                   <FieldLabel>😴 Sleep (Biological Readiness)</FieldLabel>
                   <ToggleGroup
@@ -355,7 +357,7 @@ export function AttunementRitualModal({
               </FieldGroup>
             </FieldSet>
 
-            <FieldSet className="space-y-2 mb-5">
+            <FieldSet className="gap-2 mb-5">
               <FieldLegend>🧠 2. Cognitive Environment</FieldLegend>
               <FieldDescription className="text-xs">Section unlocks</FieldDescription>
               <ul className="mb-3 flex flex-wrap gap-2 text-muted-foreground text-sm">
@@ -372,7 +374,7 @@ export function AttunementRitualModal({
                   </li>
                 ))}
               </ul>
-              <FieldGroup className="space-y-1">
+              <FieldGroup className="gap-1">
                 <Field orientation="horizontal">
                   <Switch
                     id="cognitive-digital-silence"
@@ -400,7 +402,7 @@ export function AttunementRitualModal({
               </FieldGroup>
             </FieldSet>
 
-            <FieldSet className="space-y-2 mb-5">
+            <FieldSet className="gap-2 mb-5">
               <FieldLegend>🎯 3. Quest Intent</FieldLegend>
               <FieldDescription className="text-xs">Section unlocks</FieldDescription>
               <ul className="mb-3 flex flex-wrap gap-2 text-muted-foreground text-sm">
@@ -417,7 +419,7 @@ export function AttunementRitualModal({
                   </li>
                 ))}
               </ul>
-              <FieldGroup className="space-y-1">
+              <FieldGroup className="gap-1">
                 <Field>
                   <FieldLabel>💎 Target Crystal</FieldLabel>
                   <Select

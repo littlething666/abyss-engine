@@ -49,9 +49,9 @@ const en: LineCatalog = {
   },
   'subject:generation-started': {
     'witty-sarcastic': [
-      'I have begun assembling {subjectName}. The machinery is humming, which is either progress or a small administrative omen. Watch the generation HUD for details.',
-      '{subjectName} is entering the curriculum apparatus. If anything sparks, the background generation HUD will make it look official.',
-      'Good news: {subjectName} is being generated. Better news: the HUD is tracking it, so neither of us has to pretend this silence is suspense.',
+      'I have begun assembling {subjectName}. The machinery is humming, which is either progress or a small administrative omen. Backend workflows are tracking it now.',
+      '{subjectName} is entering the curriculum apparatus. If anything sparks, the backend run log will have the paperwork.',
+      'Good news: {subjectName} is being generated. Better news: the backend workflow is tracking it, so neither of us has to pretend this silence is suspense.',
     ],
   },
   'subject:generated': {
@@ -64,10 +64,10 @@ const en: LineCatalog = {
   },
   'subject:generation-failed': {
     'witty-sarcastic': [
-      '{subjectName} hit a generation fault. The good news is the HUD kept receipts. Open background generation and inspect the bureaucracy.',
-      '{subjectName} did not survive the apparatus. Before we blame the abyss, check the generation HUD. It enjoys evidence.',
-      'The curriculum machine declined {subjectName}. Rude, but documented. Open the background generation panel for the retry lever.',
-      'Generation paused itself with great confidence and poor results. {subjectName} needs attention in the HUD, where the logs are having a very official little meeting.',
+      '{subjectName} hit a generation fault. The backend run log kept receipts; request generation again when ready.',
+      '{subjectName} did not survive the apparatus. Before we blame the abyss, let the backend run diagnostics keep the evidence.',
+      'The curriculum machine declined {subjectName}. Rude, but documented. Request generation again when the curriculum machine is ready.',
+      'Generation paused itself with great confidence and poor results. {subjectName} needs attention in the backend run logs, where the diagnostics are having a very official little meeting.',
     ],
   },
   'mentor-bubble:clicked': {
@@ -79,13 +79,13 @@ const en: LineCatalog = {
   },
   // Phase A: terminal-event copy for the new content-generation triggers.
   // Tone matches the witty-sarcastic mentor voice; copy stays blameless
-  // and points the player at the generation HUD or the study panel as
+  // and points the player at backend-owned diagnostics or the study panel as
   // appropriate. 3 variants per failure trigger; 2 for topic-ready.
   'topic-content:generation-failed': {
     'witty-sarcastic': [
-      "{topicLabel} stalled mid-generation. The HUD's logs are intact; open background generation if you want the gory details.",
-      'The apparatus declined {topicLabel}. Polite about it, but firm. Open the generation HUD to inspect or retry.',
-      "Generation hiccupped on {topicLabel}. Nothing's lost — the HUD is keeping the receipts.",
+      "{topicLabel} stalled mid-generation. Backend diagnostics have the gory details.",
+      'The apparatus declined {topicLabel}. Polite about it, but firm. Request generation again when ready.',
+      "Generation hiccupped on {topicLabel}. Nothing's lost — the backend diagnostics are keeping the receipts.",
     ],
   },
   'topic-content:generation-ready': {
@@ -96,23 +96,23 @@ const en: LineCatalog = {
   },
   'topic-expansion:generation-failed': {
     'witty-sarcastic': [
-      "{topicLabel}'s level {level} expansion stalled. The HUD has the breakdown if you want to peek.",
-      'Expansion to level {level} for {topicLabel} hit a snag. Retry from the generation HUD whenever the abyss is in a better mood.',
-      "Couldn't quite plant the level {level} cards for {topicLabel}. The retry lever lives in the generation HUD.",
+      "{topicLabel}'s level {level} expansion stalled. Backend diagnostics have the breakdown.",
+      'Expansion to level {level} for {topicLabel} hit a snag. Request generation again whenever the abyss is in a better mood.',
+      "Couldn't quite plant the level {level} cards for {topicLabel}. Request generation again when the backend is ready.",
     ],
   },
   'crystal-trial:generation-failed': {
     'witty-sarcastic': [
-      "{topicLabel}'s trial questions failed to compile. The HUD has the failed job; another attempt is one click away.",
-      'Trial generation for {topicLabel} fizzled. Open the generation HUD if you want to coax it again.',
-      'The abyss declined to author this round of trial questions for {topicLabel}. Try again from the generation HUD.',
+      "{topicLabel}'s trial questions failed to compile. Backend diagnostics have the failed job; another attempt starts from the trial request.",
+      'Trial generation for {topicLabel} fizzled. Request trial generation again if you want to coax it.',
+      'The abyss declined to author this round of trial questions for {topicLabel}. Try again from the trial request.',
     ],
   },
   'content-generation:retry-failed': {
     'witty-sarcastic': [
-      "Retry routing collapsed on {jobLabel}. The HUD has the trail if you want to tell me which knob to turn.",
-      "{jobLabel} ran out of retry runway. Open the generation HUD; I'll wait here, judging quietly.",
-      "We pushed every retry button {jobLabel} had. The HUD knows what's left to try.",
+      "Retry routing collapsed on {jobLabel}. Backend diagnostics have the trail if you want to tell me which knob to turn.",
+      "{jobLabel} ran out of retry runway. Request generation again; I'll wait here, judging quietly.",
+      "We pushed every retry button {jobLabel} had. Backend diagnostics know what's left to try.",
     ],
   },
 };
@@ -144,16 +144,16 @@ const subjectGenerationStartedStageLines: Record<
 > = {
   topics: {
     'witty-sarcastic': [
-      'Drafting the topic lattice for {subjectName}. The HUD is keeping receipts; you may resume worrying productively.',
-      '{subjectName} is having its topics generated. The bureaucracy is loud but functional. Watch the generation HUD.',
-      'Topic outline incoming for {subjectName}. The abyss has been polite about it so far. The HUD will tell you if that changes.',
+      'Drafting the topic lattice for {subjectName}. Backend diagnostics are keeping receipts; you may resume worrying productively.',
+      '{subjectName} is having its topics generated. The bureaucracy is loud but functional. Backend workflows are tracking it.',
+      'Topic outline incoming for {subjectName}. The abyss has been polite about it so far. Backend diagnostics will tell you if that changes.',
     ],
   },
   edges: {
     'witty-sarcastic': [
-      'Topics for {subjectName} are wired; we are now connecting prerequisites. The HUD will narrate, sparingly.',
+      'Topics for {subjectName} are wired; we are now connecting prerequisites. Backend diagnostics will narrate, sparingly.',
       'Edges are being threaded through {subjectName}. If a topic looks lonely, do not worry — that is its current job.',
-      'Wiring up the prerequisite graph for {subjectName}. The HUD will know before either of us does when it lands.',
+      'Wiring up the prerequisite graph for {subjectName}. Backend diagnostics will know before either of us does when it lands.',
     ],
   },
 };

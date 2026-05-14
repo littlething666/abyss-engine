@@ -7,13 +7,9 @@ import { Button } from '@/components/ui/button';
 import { ParticlesAnimation, RITUAL_PARTICLE_ANIMATION } from '@/components/ui/particles-animation';
 import { useAllGraphs, useSubjects } from '@/features/content';
 import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
-import type { TopicContentStatus } from '@/types/progression';
+import type { TopicContentStatus } from '@/types/topicContent';
 import { topicRefKey } from '@/lib/topicRef';
-import {
-  activeTopicContentGenerationLabel,
-  triggerTopicGenerationPipeline,
-  useContentGenerationStore,
-} from '@/features/contentGeneration';
+import { triggerTopicGenerationPipeline } from '@/features/contentGeneration';
 import {
   crystalGardenOrchestrator,
   getXpToNextBandThreshold,
@@ -127,19 +123,13 @@ export default function TopicSelectionBar({
   // Content generation awareness
   const selectedTopicContentStatus: TopicContentStatus = useMemo(() => {
     if (!selectedTopic) {
-      return 'ready';
+      return 'unavailable';
     }
     const key = topicRefKey(selectedTopic);
-    return contentStatusMap[key] ?? 'ready';
+    return contentStatusMap[key] ?? 'unavailable';
   }, [selectedTopic, contentStatusMap]);
 
-  const activeTopicContentGenLabel = useContentGenerationStore((s) => {
-    if (!selectedTopic) return null;
-    return activeTopicContentGenerationLabel(s, selectedTopic.subjectId, selectedTopic.topicId);
-  });
-
-  const isTopicStudyContentGenerating =
-    selectedTopicContentStatus === 'generating' || activeTopicContentGenLabel !== null;
+  const isTopicStudyContentGenerating = selectedTopicContentStatus === 'generating';
 
   const celebrationLookupKey = selectedTopic ? topicRefKey(selectedTopic) : '';
   const isCelebrationPendingForTopic = useCrystalContentCelebrationStore((s) =>
@@ -207,8 +197,8 @@ export default function TopicSelectionBar({
 
   const handleBeginStudySession: React.MouseEventHandler<HTMLButtonElement> = (event) => {
     stopPropagation(event);
-    if (!selectedCards?.length) {
-      console.warn(`[TopicSelectionBar] No cards available for topic ${selectedTopic.topicId}`);
+    if (selectedTopicContentStatus !== 'ready' || !selectedCards?.length) {
+      console.warn(`[TopicSelectionBar] No ready cards available for topic ${selectedTopic.topicId}`);
       return;
     }
     useCrystalContentCelebrationStore.getState().dismissPending(topicRefKey(selectedTopic));
@@ -259,15 +249,13 @@ export default function TopicSelectionBar({
   // Determine the primary action button in the action area.
   const renderPrimaryAction = () => {
     if (isTopicStudyContentGenerating) {
-      // Replace Play with generation status label.
-      const label = activeTopicContentGenLabel ?? 'Generating…';
       return (
         <span
           className="inline-flex shrink-0 items-center gap-1 text-[10px] leading-tight text-primary"
           role="status"
         >
           <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
-          <span className="max-w-[6rem] truncate">{label}</span>
+          <span className="max-w-[6rem] truncate">Generating…</span>
         </span>
       );
     }
@@ -286,7 +274,7 @@ export default function TopicSelectionBar({
           title="Generate content"
           className="shrink-0"
         >
-          <Sparkles className="h-3.5 w-3.5" />
+          <Sparkles data-icon="inline-start" aria-hidden />
         </Button>
       );
     }
@@ -304,7 +292,7 @@ export default function TopicSelectionBar({
         title="Begin study session"
         className="relative shrink-0 overflow-visible"
       >
-        <Play className="relative z-10 h-3.5 w-3.5" aria-hidden />
+        <Play data-icon="inline-start" className="relative z-10" aria-hidden />
         <ParticlesAnimation isActive={playCelebrationParticlesActive} particles={RITUAL_PARTICLE_ANIMATION} />
       </Button>
     );
@@ -363,7 +351,7 @@ export default function TopicSelectionBar({
                 title="Unlock topic"
                 className="shrink-0"
               >
-                <Lock className="h-3.5 w-3.5" />
+                <Lock data-icon="inline-start" aria-hidden />
               </Button>
             ) : null}
 
@@ -400,9 +388,9 @@ export default function TopicSelectionBar({
                 className="relative shrink-0 overflow-visible disabled:opacity-60"
               >
                 {isTrialLoading ? (
-                  <Loader2 className="relative z-10 h-3.5 w-3.5 animate-spin" aria-hidden />
+                  <Loader2 data-icon="inline-start" className="relative z-10 animate-spin" aria-hidden />
                 ) : (
-                  <Sparkles className="relative z-10 h-3.5 w-3.5" aria-hidden />
+                  <Sparkles data-icon="inline-start" className="relative z-10" aria-hidden />
                 )}
                 <ParticlesAnimation isActive={trialGateParticlesActive} particles={RITUAL_PARTICLE_ANIMATION} />
               </Button>
@@ -424,7 +412,7 @@ export default function TopicSelectionBar({
               size="icon-sm"
               className="shrink-0"
             >
-              <X className="h-3.5 w-3.5" />
+              <X data-icon="inline-start" aria-hidden />
             </Button>
           </div>
         </div>

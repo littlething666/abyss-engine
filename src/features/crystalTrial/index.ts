@@ -20,13 +20,8 @@ export {
 } from './crystalTrialConfig';
 export type {
   CrystalTrial,
+  CrystalTrialAttempt,
   CrystalTrialResult,
   CrystalTrialScenarioQuestion,
   CrystalTrialStatus,
 } from '@/types/crystalTrial';
-
-// Phase 0.5 step 5 — Artifact Appliers
-export {
-  createCrystalTrialApplier,
-  type CrystalTrialApplier,
-} from './appliers/crystalTrialApplier';

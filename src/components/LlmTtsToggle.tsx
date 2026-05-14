@@ -37,10 +37,10 @@ export function LlmTtsToggle({ enabled, onToggle, speaking = false }: LlmTtsTogg
           className={cn('inline-flex shrink-0', showSpeakingMotion && TTS_ICON_SPEAKING_CLASSNAME)}
           aria-hidden
         >
-          <Volume2 className="h-3.5 w-3.5 text-primary" aria-hidden />
+          <Volume2 className="text-primary" data-icon="inline-start" aria-hidden />
         </span>
       ) : (
-        <VolumeX className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+        <VolumeX className="text-muted-foreground" data-icon="inline-start" aria-hidden />
       )}
     </Button>
   );

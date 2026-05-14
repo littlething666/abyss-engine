@@ -8,8 +8,8 @@ Configuration is read from `components.json`.
 
 ## Contents
 
-- Commands: init, apply, add (dry-run, smart merge), search, view, docs, info, build
-- Templates: next, vite, start, react-router, astro
+- Commands: init, apply, add (dry-run, smart merge), search, view, docs, info, build, migrate, preset, registry
+- Templates: next, vite, start, react-router, astro, laravel
 - Presets: named, code, URL formats and fields
 - Switching presets
 
@@ -27,7 +27,8 @@ Initializes shadcn/ui in an existing project or creates a new project (when `--n
 
 | Flag                    | Short | Description                                               | Default |
 | ----------------------- | ----- | --------------------------------------------------------- | ------- |
-| `--template <template>` | `-t`  | Template (next, start, vite, next-monorepo, react-router) | —       |
+| `--template <template>` | `-t`  | Template (`next`, `start`, `vite`, `react-router`, `astro`, `laravel`) | —       |
+| `--base <base>`         |       | Base for primitive layer (`radix` or `base`)                              | —       |
 | `--preset [name]`       | `-p`  | Preset configuration (named, code, or URL)                | —       |
 | `--yes`                 | `-y`  | Skip confirmation prompt                                  | `true`  |
 | `--defaults`            | `-d`  | Use defaults (`--template=next --preset=base-nova`)       | `false` |
@@ -37,6 +38,10 @@ Initializes shadcn/ui in an existing project or creates a new project (when `--n
 | `--silent`              | `-s`  | Mute output                                               | `false` |
 | `--rtl`                 |       | Enable RTL support                                        | —       |
 | `--reinstall`           |       | Re-install existing UI components                         | `false` |
+| `--css-variables`       |       | Include CSS variables support                                      | —       |
+| `--no-css-variables`    |       | Skip CSS variable generation                                       | —       |
+| `--pointer`             |       | Enable pointer-specific defaults                                    | —       |
+| `--no-pointer`          |       | Skip pointer-specific defaults                                      | —       |
 | `--monorepo`            |       | Scaffold a monorepo project                               | —       |
 | `--no-monorepo`         |       | Skip the monorepo prompt                                  | —       |
 
@@ -53,6 +58,7 @@ Applies a preset to an existing project, overwriting preset-driven config, fonts
 | Flag                | Short | Description                                | Default |
 | ------------------- | ----- | ------------------------------------------ | ------- |
 | `--preset <preset>` | —     | Preset configuration (named, code, or URL) | —       |
+| `--only <parts>`    |       | Apply only selected preset parts (`components`, `css`, `theme`)        | all     |
 | `--yes`             | `-y`  | Skip confirmation prompt                   | `false` |
 | `--cwd <cwd>`       | `-c`  | Working directory                          | current |
 | `--silent`          | `-s`  | Mute output                                | `false` |
@@ -154,6 +160,12 @@ npx shadcn@latest docs <components...> [options]
 
 Outputs resolved URLs for component documentation, examples, and API references. Accepts one or more component names. Fetch the URLs to get the actual content.
 
+| Flag         | Short | Description                                      | Default |
+| ------------ | ----- | ------------------------------------------------ | ------- |
+| `--base <base>` | —   | Resolve docs for the given base (`radix` or `base`) | project base |
+| `--json`     |       | Output JSON payload instead of text                | `false` |
+| `--cwd <cwd>`| `-c`  | Working directory                                 | current |
+
 Example output for `npx shadcn@latest docs input button`:
 
 ```
@@ -236,6 +248,30 @@ Builds `registry.json` into individual JSON files for distribution. Default inpu
 | ----------------- | ----- | ----------------- | ------------ |
 | `--output <path>` | `-o`  | Output directory  | `./public/r` |
 | `--cwd <cwd>`     | `-c`  | Working directory | current      |
+
+### `migrate` — Migrate legacy shadcn configuration
+
+```bash
+npx shadcn@latest migrate [options]
+```
+
+Use this command to migrate older project setups. For current flags, run `npx shadcn@latest migrate --help` in this repo.
+
+### `preset` — Preset commands
+
+```bash
+npx shadcn@latest preset [options]
+```
+
+Preset utilities moved under this command in newer CLI versions. Use `npx shadcn@latest preset --help` for supported subcommands and flags.
+
+### `registry` — Registry commands
+
+```bash
+npx shadcn@latest registry [options]
+```
+
+Use this command group for registry maintenance operations. Check live flags with `npx shadcn@latest registry --help`.
 
 ---
 

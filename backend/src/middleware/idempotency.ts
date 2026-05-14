@@ -1,15 +1,14 @@
 /**
- * Idempotency middleware — checks `(device_id, idempotency_key)` uniqueness.
+ * Idempotency middleware — validates and forwards the Idempotency-Key header.
  *
- * On re-submit within 24h, returns the existing `runId` immediately without
- * creating a new run or Workflow.  The 24h window is enforced by a periodic
- * cleanup job (Phase 3) or a TTL index; for Phase 1, stale idempotency keys
- * are harmless (the `idempotency_key` column on `runs` is indexed but
- * stale keys just sit there).
+ * Flow:
+ * 1. If no Idempotency-Key header → 400.
+ * 2. Store the trimmed key on context.
+ * 3. `POST /v1/runs` passes the key to the D1 repository method that owns
+ *    idempotency, budget reservation, and run creation.
  */
 
 import type { Context, Next } from 'hono';
-import { makeRepos } from '../repositories';
 
 export async function idempotencyMiddleware(c: Context, next: Next) {
   const key = c.req.header('idempotency-key');
@@ -21,16 +20,8 @@ export async function idempotencyMiddleware(c: Context, next: Next) {
     );
   }
 
-  const deviceId = c.get('deviceId') as string;
-  const repos = makeRepos(c.env);
+  const trimmed = key.trim();
 
-  const existingRunId = await repos.runs.findByIdempotencyKey(deviceId, key.trim());
-
-  if (existingRunId) {
-    return c.json({ runId: existingRunId }, 200);
-  }
-
-  // Store the key on context so the handler can persist it.
-  c.set('idempotencyKey', key.trim());
+  c.set('idempotencyKey', trimmed);
   await next();
 }

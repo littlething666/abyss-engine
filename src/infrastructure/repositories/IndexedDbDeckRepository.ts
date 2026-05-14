@@ -3,6 +3,8 @@ import { ensureDeckSeeded } from '../deckDb/deckSeed';
 import { deckDb, topicCompositeKey, type DeckSubjectRow } from '../deckDb/deckDb';
 import type { IDeckRepository, Manifest, ManifestOptions } from '../../types/repository';
 import type { Card, Subject, SubjectGraph, TopicDetails } from '../../types/core';
+import type { TopicContentStatusRecord } from '../../types/topicContent';
+import { topicStudyContentReady } from '../../features/contentGeneration/topicStudyContentReady';
 
 export class IndexedDbDeckRepository implements IDeckRepository {
   async getManifest(options: ManifestOptions = {}): Promise<Manifest> {
@@ -58,6 +60,33 @@ export class IndexedDbDeckRepository implements IDeckRepository {
     return row.details;
   }
 
+  async getTopicContentStatuses(subjectId: string): Promise<TopicContentStatusRecord[]> {
+    await ensureDeckSeeded();
+    const graph = await deckDb.graphs.get(subjectId);
+    if (!graph) {
+      throw new Error(`No subject graph in IndexedDB for ${subjectId}`);
+    }
+    const statuses = await Promise.all(graph.nodes.map(async (node) => {
+      const key = topicCompositeKey(subjectId, node.topicId);
+      const [topicRow, cardRow] = await Promise.all([
+        deckDb.topics.get(key),
+        deckDb.topicCards.get(key),
+      ]);
+      return {
+        subjectId,
+        topicId: node.topicId,
+        status: topicRow && topicStudyContentReady(topicRow.details, cardRow?.cards ?? []) ? 'ready' as const : 'unavailable' as const,
+      };
+    }));
+    logDeckIndexedDb('IndexedDB', {
+      method: 'getTopicContentStatuses',
+      ops: 'graphs.get+topics.get+topicCards.get',
+      subjectId,
+      topicCount: statuses.length,
+    });
+    return statuses;
+  }
+
   async getTopicCards(subjectId: string, topicId: string): Promise<Card[]> {
     await ensureDeckSeeded();
     const key = topicCompositeKey(subjectId, topicId);
@@ -95,10 +124,10 @@ function partitionRowsByVisibility(
   rows: DeckSubjectRow[],
   includePregeneratedCurriculums: boolean,
 ): DeckSubjectRow[] {
-  const generated = rows.filter((row) => row.contentSource === 'generated');
+  const userOwned = rows.filter((row) => row.contentSource === 'generated' || row.contentSource === 'manual');
   if (!includePregeneratedCurriculums) {
-    return generated;
+    return userOwned;
   }
   const bundled = rows.filter((row) => row.contentSource === 'bundled');
-  return [...generated, ...bundled];
+  return [...userOwned, ...bundled];
 }

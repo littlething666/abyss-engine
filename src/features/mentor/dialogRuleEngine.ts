@@ -216,15 +216,7 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
         id: 'subject-generation-failed',
         text,
         mood: 'concern',
-        choices: [
-          {
-            id: 'open-generation-hud',
-            label: 'Open generation HUD',
-            effect: { kind: 'open_generation_hud' },
-            next: 'end',
-          },
-          { id: 'dismiss', label: 'Dismiss', next: 'end' },
-        ],
+        choices: [{ id: 'dismiss', label: 'Dismiss', next: 'end' }],
       },
     ],
   },
@@ -236,8 +228,8 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
   // -------------------------------------------------------------------
   // Phase A: content-generation terminal triggers. Priorities locked by
   // the Mentor Notifications plan (retry-failed=85, topic/expansion=84,
-  // crystal-trial=83, topic-ready=40). Failures route to the generation
-  // HUD; topic-ready routes to the topic study panel. Failures do NOT
+  // crystal-trial=83, topic-ready=40). Failures surface as mentor
+  // concern dialogs; topic-ready routes to the topic study panel. Failures do NOT
   // dedupe — each genuine failure should surface, mirroring the existing
   // subject:generation-failed precedent. Topic-ready dedupes per
   // pipelineId + 4h per (subjectId, topicId).
@@ -250,15 +242,7 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
         id: 'content-generation-retry-failed',
         text,
         mood: 'concern',
-        choices: [
-          {
-            id: 'open-generation-hud',
-            label: 'Open generation HUD',
-            effect: { kind: 'open_generation_hud' },
-            next: 'end',
-          },
-          { id: 'dismiss', label: 'Dismiss', next: 'end' },
-        ],
+        choices: [{ id: 'dismiss', label: 'Dismiss', next: 'end' }],
       },
     ],
   },
@@ -270,15 +254,7 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
         id: 'topic-content-generation-failed',
         text,
         mood: 'concern',
-        choices: [
-          {
-            id: 'open-generation-hud',
-            label: 'Open generation HUD',
-            effect: { kind: 'open_generation_hud' },
-            next: 'end',
-          },
-          { id: 'dismiss', label: 'Dismiss', next: 'end' },
-        ],
+        choices: [{ id: 'dismiss', label: 'Dismiss', next: 'end' }],
       },
     ],
   },
@@ -290,15 +266,7 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
         id: 'topic-expansion-generation-failed',
         text,
         mood: 'concern',
-        choices: [
-          {
-            id: 'open-generation-hud',
-            label: 'Open generation HUD',
-            effect: { kind: 'open_generation_hud' },
-            next: 'end',
-          },
-          { id: 'dismiss', label: 'Dismiss', next: 'end' },
-        ],
+        choices: [{ id: 'dismiss', label: 'Dismiss', next: 'end' }],
       },
     ],
   },
@@ -310,15 +278,7 @@ export const TRIGGER_SPECS: Record<MentorTriggerId, TriggerSpec> = {
         id: 'crystal-trial-generation-failed',
         text,
         mood: 'concern',
-        choices: [
-          {
-            id: 'open-generation-hud',
-            label: 'Open generation HUD',
-            effect: { kind: 'open_generation_hud' },
-            next: 'end',
-          },
-          { id: 'dismiss', label: 'Dismiss', next: 'end' },
-        ],
+        choices: [{ id: 'dismiss', label: 'Dismiss', next: 'end' }],
       },
     ],
   },

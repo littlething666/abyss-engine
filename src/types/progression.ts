@@ -1,8 +1,9 @@
 import type { ActiveCrystal, Card, TopicIconName, TopicRef } from './core';
 import type { SubjectGraph } from './core';
+import type { TopicContentStatus } from './topicContent';
 
 /** Study-ready content state for a topic (IndexedDB + generation jobs). */
-export type TopicContentStatus = 'ready' | 'generating' | 'unavailable';
+export type { TopicContentStatus } from './topicContent';
 
 export type BuffModifierType = 'growth_speed' | 'xp_multiplier' | 'clarity_boost' | 'mana_boost';
 export type BuffCondition = 'session_end' | 'next_10_cards' | 'next_5_cards' | 'manual';

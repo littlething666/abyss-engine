@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware';
 import { topicRefKey } from '@/lib/topicRef';
 import type { TopicRef } from '@/types/core';
 import type {
-  CrystalTrial,
+  CrystalTrialAttempt,
   CrystalTrialResult,
   CrystalTrialScenarioQuestion,
   CrystalTrialStatus,
@@ -20,8 +20,8 @@ import { appEventBus } from '@/infrastructure/eventBus';
 const STORAGE_KEY = 'abyss-crystal-trial-v2';
 
 interface CrystalTrialState {
-  /** Active trials keyed by topicRefKey */
-  trials: Record<string, CrystalTrial>;
+  /** Active attempt state keyed by topicRefKey. Generated questions are backend-owned. */
+  trials: Record<string, CrystalTrialAttempt>;
   /** Cards reviewed per topic during cooldown, keyed by topicRefKey */
   cooldownCardsReviewed: Record<string, number>;
   /** Timestamp when cooldown started per topic, keyed by topicRefKey */
@@ -30,18 +30,14 @@ interface CrystalTrialState {
 
 interface CrystalTrialActions {
   getTrialStatus: (ref: TopicRef) => CrystalTrialStatus;
-  getCurrentTrial: (ref: TopicRef) => CrystalTrial | null;
+  getCurrentTrial: (ref: TopicRef) => CrystalTrialAttempt | null;
   startPregeneration: (params: {
     subjectId: string;
     topicId: string;
     targetLevel: number;
   }) => void;
-  setTrialQuestions: (
-    ref: TopicRef,
-    questions: CrystalTrialScenarioQuestion[],
-  ) => void;
+  markTrialQuestionsReady: (ref: TopicRef) => void;
   setTrialGenerationFailed: (ref: TopicRef) => void;
-  setCardPoolHash: (ref: TopicRef, hash: string) => void;
   startTrial: (ref: TopicRef) => void;
   cancelTrialAttempt: (ref: TopicRef) => void;
   answerQuestion: (
@@ -49,12 +45,18 @@ interface CrystalTrialActions {
     questionId: string,
     answer: string,
   ) => void;
-  submitTrial: (ref: TopicRef) => CrystalTrialResult | null;
+  submitTrial: (
+    ref: TopicRef,
+    questions: CrystalTrialScenarioQuestion[],
+  ) => CrystalTrialResult | null;
   recordCooldownCardReview: (ref: TopicRef) => void;
   isCooldownComplete: (ref: TopicRef, now: number) => boolean;
   clearCooldown: (ref: TopicRef) => void;
   clearTrial: (ref: TopicRef) => void;
-  forceCompleteWithCorrectAnswers: (ref: TopicRef) => CrystalTrialResult | null;
+  forceCompleteWithCorrectAnswers: (
+    ref: TopicRef,
+    questions: CrystalTrialScenarioQuestion[],
+  ) => CrystalTrialResult | null;
   /**
    * Invalidate an awaiting/pregenerating trial.
    * When regenerateParams is provided, atomically replaces the old trial
@@ -72,20 +74,18 @@ function makeTrial(
   subjectId: string,
   topicId: string,
   targetLevel: number,
-): CrystalTrial {
+): CrystalTrialAttempt {
   return {
     trialId: `trial-${subjectId}-${topicId}-L${targetLevel}-${Date.now()}`,
     subjectId,
     topicId,
     targetLevel,
-    questions: [],
     status: 'pregeneration',
     answers: {},
     score: null,
     passThreshold: PASS_THRESHOLD,
     createdAt: Date.now(),
     completedAt: null,
-    cardPoolHash: null,
   };
 }
 
@@ -134,7 +134,7 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
         }));
       },
 
-      setTrialQuestions: (ref, questions) => {
+      markTrialQuestionsReady: (ref) => {
         const key = topicRefKey(ref);
         set((state) => {
           const trial = state.trials[key];
@@ -144,7 +144,7 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
           return {
             trials: {
               ...state.trials,
-              [key]: { ...trial, questions, status: 'awaiting_player' },
+              [key]: { ...trial, status: 'awaiting_player' },
             },
           };
         });
@@ -161,22 +161,6 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
             trials: {
               ...state.trials,
               [key]: { ...trial, status: 'failed' },
-            },
-          };
-        });
-      },
-
-      setCardPoolHash: (ref, hash) => {
-        const key = topicRefKey(ref);
-        set((state) => {
-          const trial = state.trials[key];
-          if (!trial) {
-            return {};
-          }
-          return {
-            trials: {
-              ...state.trials,
-              [key]: { ...trial, cardPoolHash: hash },
             },
           };
         });
@@ -239,15 +223,15 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
         });
       },
 
-      submitTrial: (ref) => {
+      submitTrial: (ref, questions) => {
         const key = topicRefKey(ref);
         const trial = get().trials[key];
-        if (!trial || trial.status !== 'in_progress') {
+        if (!trial || trial.status !== 'in_progress' || questions.length === 0) {
           return null;
         }
 
         const result = evaluateTrial(
-          trial.questions,
+          questions,
           trial.answers,
           trial.passThreshold,
         );
@@ -290,10 +274,14 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
         return result;
       },
 
-      forceCompleteWithCorrectAnswers: (ref) => {
+      forceCompleteWithCorrectAnswers: (ref, questions) => {
         const key = topicRefKey(ref);
         const initialStatus = get().getTrialStatus(ref);
         if (initialStatus !== 'awaiting_player' && initialStatus !== 'in_progress') {
+          return null;
+        }
+
+        if (questions.length === 0) {
           return null;
         }
 
@@ -306,12 +294,8 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
           return null;
         }
 
-        if (preSubmitTrial.questions.length === 0) {
-          return null;
-        }
-
         const correctAnswers: Record<string, string> = {};
-        for (const question of preSubmitTrial.questions) {
+        for (const question of questions) {
           correctAnswers[question.id] = question.correctAnswer;
         }
 
@@ -334,7 +318,7 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
           };
         });
 
-        const result = get().submitTrial(ref);
+        const result = get().submitTrial(ref, questions);
         if (!result) {
           return null;
         }
@@ -443,7 +427,24 @@ export const useCrystalTrialStore = create<CrystalTrialStore>()(
     }),
     {
       name: STORAGE_KEY,
-      version: 1,
+      version: 2,
+      migrate: (persisted) => {
+        const state = persisted as Partial<CrystalTrialState> | undefined;
+        return {
+          trials: Object.fromEntries(
+            Object.entries(state?.trials ?? {}).map(([key, trial]) => {
+              const legacy = trial as CrystalTrialAttempt & {
+                questions?: unknown;
+                cardPoolHash?: unknown;
+              };
+              const { questions: _questions, cardPoolHash: _cardPoolHash, ...attempt } = legacy;
+              return [key, attempt];
+            }),
+          ),
+          cooldownCardsReviewed: state?.cooldownCardsReviewed ?? {},
+          cooldownStartedAt: state?.cooldownStartedAt ?? {},
+        } satisfies CrystalTrialState;
+      },
       partialize: (state) => ({
         trials: state.trials,
         cooldownCardsReviewed: state.cooldownCardsReviewed,

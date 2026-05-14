@@ -105,6 +105,9 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_PUBLIC_PLAYWRIGHT: '1',
+      NEXT_PUBLIC_DURABLE_GENERATION_URL:
+        process.env.NEXT_PUBLIC_DURABLE_GENERATION_URL ??
+        'http://127.0.0.1:3000/__abyss-e2e-durable-generation',
     },
   },
 });

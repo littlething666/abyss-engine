@@ -1,11 +1,27 @@
 import type { TopicDetails } from '@/types/core';
 
-import type { ParsedTopicTheoryContentPayload } from '../parsers/parseTopicTheoryContentPayload';
+export interface LoadedTopicTheoryPayload {
+  coreConcept: string;
+  theory: string;
+  keyTakeaways: string[];
+  coreQuestionsByDifficulty: {
+    1: string[];
+    2: string[];
+    3: string[];
+    4: string[];
+  };
+  groundingSources: NonNullable<TopicDetails['groundingSources']>;
+}
 
 /**
  * Reconstructs the theory payload used by study-card and mini-game stages from persisted topic details.
+ *
+ * This shape intentionally lives beside the persisted-read helper instead of
+ * importing the deprecated permissive topic-theory parser. Pipeline code must
+ * reconstruct from already-published Learning Content fields, not reach back
+ * into LLM-response parser modules.
  */
-export function loadTheoryPayloadFromTopicDetails(details: TopicDetails): ParsedTopicTheoryContentPayload {
+export function loadTheoryPayloadFromTopicDetails(details: TopicDetails): LoadedTopicTheoryPayload {
   const theory = details.theory?.trim() ?? '';
   if (!theory) {
     throw new Error('Cannot load theory payload: topic theory is missing or blank.');

@@ -10,13 +10,9 @@ import {
 } from '../features/progression';
 import { useTopicMetadata } from '../features/content';
 import { useTopicCards } from './useDeckData';
-import topicSystemPromptTemplate from '../prompts/topic-system.prompt';
-import { useStudySettingsStore } from '../store/studySettingsStore';
-import { TARGET_AUDIENCE_OPTIONS } from '../store/studySettingsStore';
+import { useTopicContentStatusMap } from './useTopicContentStatusMap';
 import {
   buildPriorKnowledgeLines,
-  getAgentPersonalityInstructions,
-  interpolatePromptTemplate,
   resolveActiveCard,
 } from '../features/studyPanel';
 import { toRenderableCard, type RenderableCard, type RenderableType } from '../features/studyPanel/cardPresenter';
@@ -43,7 +39,6 @@ export interface StudyPanelModel {
   activeCard: Card | null;
   renderedCard: RenderableCard | null;
   currentQuestion: string;
-  topicSystemPrompt: string;
   sm2State: SM2Data | null;
   isLoadingCards: boolean;
   isCardsLoadError: boolean;
@@ -87,9 +82,6 @@ export function useStudyPanelModel({
     () => activeCrystals.map((c) => topicRefKey({ subjectId: c.subjectId, topicId: c.topicId })),
     [activeCrystals],
   );
-  const targetAudience = useStudySettingsStore((state) => state.targetAudience);
-  const agentPersonality = useStudySettingsStore((state) => state.agentPersonality);
-
   const resolvedTopicRef = useMemo((): TopicRef | null => {
     if (currentSubjectId && currentTopicId) {
       return { subjectId: currentSubjectId, topicId: currentTopicId };
@@ -120,6 +112,7 @@ export function useStudyPanelModel({
   const topicMetadata = useTopicMetadata(topicRefs);
 
   const metaKey = resolvedTopicRef ? topicRefKey(resolvedTopicRef) : '';
+  const contentStatusByTopicKey = useTopicContentStatusMap();
 
   const resolvedTopicTheory = useMemo(
     () => (metaKey ? topicMetadata[metaKey]?.theory || null : null),
@@ -144,8 +137,9 @@ export function useStudyPanelModel({
 
   const resolvedTopicId = resolvedTopicRef?.topicId ?? null;
 
-  const topicCardQuery = useTopicCards(resolvedSubjectId || '', resolvedTopicId || '');
-  const topicCards = topicCardQuery.data ?? [];
+  const selectedTopicContentStatus = metaKey ? contentStatusByTopicKey[metaKey] ?? 'unavailable' : 'unavailable';
+  const topicCardQuery = useTopicCards(resolvedSubjectId || '', resolvedTopicId || '', selectedTopicContentStatus === 'ready');
+  const topicCards = selectedTopicContentStatus === 'ready' ? topicCardQuery.data ?? [] : [];
   const activeCard = useMemo(
     () => resolveActiveCard(topicCards, currentSession?.currentCardId, currentCardId),
     [currentSession?.currentCardId, currentCardId, topicCards],
@@ -159,22 +153,6 @@ export function useStudyPanelModel({
     }
     return (activeCard.content as { question: string }).question ?? 'unknown';
   }, [activeCard]);
-
-  const topicSystemPrompt = useMemo(
-    () =>
-      interpolatePromptTemplate(
-        topicSystemPromptTemplate,
-        {
-          subject: resolvedSubject,
-          topic: resolvedTopic,
-          priorKnowledge: priorKnowledgeLines,
-          question: currentQuestion,
-          targetAudience: targetAudience || TARGET_AUDIENCE_OPTIONS[0],
-          personality: getAgentPersonalityInstructions(agentPersonality),
-        },
-      ),
-    [resolvedSubject, resolvedTopic, priorKnowledgeLines, currentQuestion, targetAudience, agentPersonality],
-  );
 
   const sm2State = useMemo(() => {
     if (!resolvedTopicRef || !activeCard) {
@@ -217,7 +195,6 @@ export function useStudyPanelModel({
     activeCard,
     renderedCard,
     currentQuestion,
-    topicSystemPrompt,
     sm2State,
     isLoadingCards,
     isCardsLoadError,

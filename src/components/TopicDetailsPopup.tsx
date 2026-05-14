@@ -12,10 +12,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { TieredTopic, TopicUnlockStatus } from '@/features/progression';
-import {
-  activeTopicContentGenerationLabel,
-  useContentGenerationStore,
-} from '@/features/contentGeneration';
 import { useTopicDetails } from '@/hooks/useDeckData';
 
 import { TopicIcon } from './topicIcons/TopicIcon';
@@ -49,10 +45,6 @@ export function TopicDetailsPopup({
   const contentStatus = topic.contentStatus;
   const isContentReady = contentStatus === 'ready';
   const isContentGenerating = contentStatus === 'generating';
-  const activeJobLabel = useContentGenerationStore((s) => {
-    if (!isOpen) return null;
-    return activeTopicContentGenerationLabel(s, topic.subjectId, topic.id);
-  });
   const detailsQuery = useTopicDetails(topic.subjectId, topic.id);
   const syllabus = detailsQuery.data?.coreQuestionsByDifficulty;
 
@@ -76,13 +68,7 @@ export function TopicDetailsPopup({
         <div className="min-h-0 overflow-y-auto">
           <p className="text-muted-foreground mb-4 text-sm">{topic.description}</p>
 
-          {activeJobLabel ? (
-            <p className="text-primary mb-3 text-sm font-medium" role="status">
-              Synthesizing knowledge: {activeJobLabel}
-            </p>
-          ) : null}
-
-          {isContentGenerating && !activeJobLabel ? (
+          {isContentGenerating ? (
             <p className="text-primary mb-3 text-sm font-medium" role="status">
               ⏳ Content generation in progress…
             </p>
@@ -95,7 +81,7 @@ export function TopicDetailsPopup({
           ) : null}
 
           {syllabus ? (
-            <div className="mb-4 space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+            <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-3">
               <p className="text-foreground text-sm font-semibold">Syllabus (core questions)</p>
               {([1, 2, 3] as const).map((tier) => {
                 const qs = syllabus[tier];
@@ -105,7 +91,7 @@ export function TopicDetailsPopup({
                 return (
                   <div key={tier}>
                     <p className="text-muted-foreground mb-1 text-xs font-medium">Difficulty {tier}</p>
-                    <ul className="text-foreground list-inside list-disc space-y-1 text-sm">
+                    <ul className="text-foreground list-inside list-disc flex flex-col gap-1 text-sm">
                       {qs.map((q, i) => (
                         <li key={`${tier}-${i}`}>{q}</li>
                       ))}
@@ -117,7 +103,7 @@ export function TopicDetailsPopup({
           ) : null}
 
           {topic.isLocked && !unlockStatus.hasPrerequisites && (
-            <div className="mb-4 space-y-2">
+            <div className="mb-4 flex flex-col gap-2">
               <div className="bg-destructive/10 border-destructive rounded-lg border p-3">
                 <Badge variant="destructive" className="mb-2">
                   🔒 Requires prerequisites

@@ -1,12 +1,7 @@
-import type { IDeckContentWriter, IDeckRepository } from '../types/repository';
-import type { IChatCompletionsRepository } from '../types/llm';
-import { deckContentWriter } from './deckContentWriter';
-import { IndexedDbDeckRepository } from './repositories/IndexedDbDeckRepository';
-import { createHttpChatCompletionsRepositoryFromEnv } from './repositories/HttpChatCompletionsRepository';
+import type { ICrystalTrialSetRepository, IDeckRepository } from '../types/repository';
+import { createCrystalTrialSetRepository } from './crystalTrialSetRepositoryFactory';
+import { createDeckRepository } from './deckRepositoryFactory';
 
-export const deckRepository: IDeckRepository = new IndexedDbDeckRepository();
+export const deckRepository: IDeckRepository = createDeckRepository();
 
-export const deckWriter: IDeckContentWriter = deckContentWriter;
-
-export const chatCompletionsRepository: IChatCompletionsRepository =
-  createHttpChatCompletionsRepositoryFromEnv();
+export const crystalTrialSetRepository: ICrystalTrialSetRepository = createCrystalTrialSetRepository();

@@ -7,3 +7,4 @@
 # this workspace so its dependency resolution stays isolated.
 packages:
   - backend
+  - packages/generation-contracts

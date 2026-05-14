@@ -39,24 +39,11 @@ import { InfoPopover } from '@/components/InfoPopover';
 import { useTopicContentStatusMap } from '@/hooks/useTopicContentStatusMap';
 import { topicRefKey } from '@/lib/topicRef';
 import { triggerTopicGenerationPipeline } from '@/features/contentGeneration';
-import { useContentGenerationStore } from '@/features/contentGeneration/contentGenerationStore';
-import type { ContentGenerationJobKind } from '@/types/contentGeneration';
 import { TopicDetailsPopup } from './TopicDetailsPopup';
 import { TopicIcon } from './topicIcons/TopicIcon';
-import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '@/store/uiStore';
 
 const DISCOVERY_MODAL_SUBJECT_STORAGE_KEY = 'abyss:discoveryModalSubjectId';
-
-const TOPIC_TIER_SORT_KINDS = new Set<ContentGenerationJobKind>([
-  'topic-theory',
-  'topic-study-cards',
-  'topic-mini-games',
-  'topic-mini-game-category-sort',
-  'topic-mini-game-sequence-build',
-  'topic-mini-game-match-pairs',
-  'topic-expansion-cards',
-]);
 
 /** Sits beside the filter icon (no overlap) — keep compact for the toggle row. */
 const FILTER_COUNT_BADGE_CLASS =
@@ -81,19 +68,11 @@ function discoveryTopicActivityBand(topic: TieredTopic): number {
   return 0;
 }
 
-function sortDiscoveryTierTopics(
-  topics: TieredTopic[],
-  maxFinishedAtByTopicKey: Record<string, number>,
-): TieredTopic[] {
+function sortDiscoveryTierTopics(topics: TieredTopic[]): TieredTopic[] {
   return [...topics].sort((a, b) => {
     const bandA = discoveryTopicActivityBand(a);
     const bandB = discoveryTopicActivityBand(b);
     if (bandA !== bandB) return bandB - bandA;
-    const ka = topicRefKey({ subjectId: a.subjectId, topicId: a.id });
-    const kb = topicRefKey({ subjectId: b.subjectId, topicId: b.id });
-    const fa = maxFinishedAtByTopicKey[ka] ?? 0;
-    const fb = maxFinishedAtByTopicKey[kb] ?? 0;
-    if (fa !== fb) return fb - fa;
     return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   });
 }
@@ -270,7 +249,6 @@ export function DiscoveryModal({
   // component's same-named prop).
   const allGraphs = useAllGraphs();
   const { data: subjects = [] } = useSubjects();
-  const jobs = useContentGenerationStore(useShallow((state) => state.jobs));
 
   const cgActiveCrystals = useCrystalGardenStore((s) => s.activeCrystals);
   const cgUnlockPoints = useCrystalGardenStore((s) => s.unlockPoints);
@@ -312,29 +290,17 @@ export function DiscoveryModal({
     };
   }, [topicsByTier]);
 
-  const maxFinishedAtByTopicKey = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const job of Object.values(jobs)) {
-      if (!job.subjectId || !job.topicId) continue;
-      if (!TOPIC_TIER_SORT_KINDS.has(job.kind)) continue;
-      if (job.status !== 'completed' || job.finishedAt == null) continue;
-      const k = topicRefKey({ subjectId: job.subjectId, topicId: job.topicId });
-      map[k] = Math.max(map[k] ?? 0, job.finishedAt);
-    }
-    return map;
-  }, [jobs]);
-
   const displayTiers = useMemo(() => {
     const out: { tier: number; topics: TieredTopic[] }[] = [];
     for (const tierData of topicsByTier) {
       const filtered = tierData.topics.filter((t) => matchesTopicListFilter(t, topicListFilter));
-      const sorted = sortDiscoveryTierTopics(filtered, maxFinishedAtByTopicKey);
+      const sorted = sortDiscoveryTierTopics(filtered);
       if (sorted.length > 0) {
         out.push({ tier: tierData.tier, topics: sorted });
       }
     }
     return out;
-  }, [topicsByTier, topicListFilter, maxFinishedAtByTopicKey]);
+  }, [topicsByTier, topicListFilter]);
 
   const selectedTopic = useMemo((): TieredTopic | null => {
     if (!selectedTopicKey) return null;
@@ -436,7 +402,7 @@ export function DiscoveryModal({
     <>
       <Dialog open={isOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="flex max-h-[95vh] min-h-0 flex-col sm:max-w-4xl">
-          <DialogHeader className="shrink-0 space-y-3 pb-0">
+          <DialogHeader className="shrink-0 gap-3 pb-0">
             <DialogTitle>🏛️ Wisdom Altar</DialogTitle>
             <DialogDescription className="flex flex-wrap items-center gap-1">
               <span className="min-w-0">Spend keys to unlock topic crystals, tier by tier.</span>
@@ -591,7 +557,7 @@ export function DiscoveryModal({
                 </Empty>
               )
             ) : (
-              <div className="space-y-6 pb-2">
+              <div className="flex flex-col gap-6 pb-2">
                 {displayTiers.map((tierData) => (
                   <div key={tierData.tier}>
                     <div className="mb-3 flex items-center">
@@ -603,14 +569,14 @@ export function DiscoveryModal({
                     </div>
 
                     {showSubjectGroups ? (
-                      <div className="space-y-5">
+                    <div className="flex flex-col gap-5">
                         {groupTopicsBySubjectInManifestOrder(tierData.topics, subjectOrderRank).map((subjectGroup) => {
                           const headingId = `tier-${tierData.tier}-subject-${subjectGroup.subjectId}`;
                           return (
-                            <section
+                              <section
                               key={`${tierData.tier}:${subjectGroup.subjectId}`}
                               aria-labelledby={headingId}
-                              className="space-y-2"
+                              className="flex flex-col gap-2"
                             >
                               <h3
                                 id={headingId}

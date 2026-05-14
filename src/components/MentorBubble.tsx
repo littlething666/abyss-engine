@@ -5,11 +5,6 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber/webgpu';
 import * as THREE from 'three/webgpu';
 import { Billboard } from '@react-three/drei/webgpu';
 import {
-  generationAttentionSurface,
-  useContentGenerationStore,
-} from '@/features/contentGeneration';
-import { useShallow } from 'zustand/react/shallow';
-import {
   selectMentorBubbleVisual,
   tryEnqueueMentorEntry,
   useMentorStore,
@@ -56,12 +51,11 @@ function stepColor(
  * backed by a transparent hit-target plane that keeps mobile taps reliable.
  *
  * Visual state is computed by the pure selector `selectMentorBubbleVisual`,
- * which reads mentor mood, mentor activity, the active subject-graph phase,
- * and the unified primary failure surface. Animation timing (pulse,
+ * which reads mentor mood and mentor activity. Animation timing (pulse,
  * reduced-motion clamps, color cross-fade) lives here.
  *
  * Click selection is delegated to `tryEnqueueMentorEntry(context)` so the
- * bubble and HUD Quick Actions "🗣️ Mentor" item share identical, contextual
+ * bubble and Quick Actions "🗣️ Mentor" item share identical, contextual
  * semantics.
  */
 export const MentorBubble: React.FC = () => {
@@ -75,17 +69,15 @@ export const MentorBubble: React.FC = () => {
   const hasMentorActivity = useMentorStore(
     (s) => s.currentDialog !== null || s.dialogQueue.length > 0,
   );
-  const attention = useContentGenerationStore(useShallow(generationAttentionSurface));
-
   const visual = useMemo(
     () =>
       selectMentorBubbleVisual({
         mood,
         hasMentorActivity,
-        subjectGraphActivePhase: attention.subjectGraphActivePhase,
-        primaryFailure: attention.primaryFailure,
+        subjectGraphActivePhase: null,
+        hasPrimaryFailure: false,
       }),
-    [mood, hasMentorActivity, attention.subjectGraphActivePhase, attention.primaryFailure],
+    [mood, hasMentorActivity],
   );
 
   const entryContext = useMentorEntryContext();

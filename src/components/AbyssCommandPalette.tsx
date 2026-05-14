@@ -17,6 +17,7 @@ import {
   Zap,
 } from 'lucide-react';
 
+import { useCurrentCrystalTrialSet } from '@/hooks/useCrystalTrialSet';
 import type { MiniGameType } from '@/types/core';
 import type { BaseStudyCardType, StudyCardFilterSelection } from '@/features/content';
 
@@ -31,8 +32,6 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { appEventBus } from '@/infrastructure/eventBus';
-import { deckRepository } from '@/infrastructure/di';
-import { resolveModelForSurface } from '@/infrastructure/llmInferenceSurfaceProviders';
 import {
   crystalCeremonyStore,
   crystalGardenOrchestrator,
@@ -43,10 +42,8 @@ import {
 import { uiStore, useUIStore } from '@/store/uiStore';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import { calculateLevelFromXP, MAX_CRYSTAL_LEVEL } from '@/types/crystalLevel';
-import {
-  getGenerationClient,
-  prepareCrystalTrialRunInput,
-} from '@/features/contentGeneration';
+import { getGenerationClient } from '@/features/contentGeneration';
+import { observeGenerationRun } from '@/infrastructure/wireGenerationClient';
 import { useCrystalTrialStore } from '@/features/crystalTrial/crystalTrialStore';
 
 const DEV_XP_BUFF_ID = 'dev_xp_multiplier_5x' as const;
@@ -208,6 +205,15 @@ export function AbyssCommandPalette({
   const devXpBuffActive = useBuffStore((s) => s.activeBuffs.some(matchesDevXpBuff));
   const activeCrystals = useCrystalGardenStore((s) => s.activeCrystals);
   const trialStatus = useCrystalTrialStore((s) => (selectedTopic ? s.getTrialStatus(selectedTopic) : 'idle'));
+  const currentTrial = useCrystalTrialStore((s) => (
+    selectedTopic ? s.getCurrentTrial(selectedTopic) : null
+  ));
+  const currentTrialSet = useCurrentCrystalTrialSet(
+    selectedTopic?.subjectId,
+    selectedTopic?.topicId,
+    currentTrial?.targetLevel,
+  );
+  const currentTrialQuestions = currentTrialSet.data?.questions ?? [];
   const sfxEnabled = useFeatureFlagsStore((s) => s.sfxEnabled);
   const toggleSfxEnabled = useFeatureFlagsStore((s) => s.toggleSfxEnabled);
   const [studyCardFilter, setStudyCardFilter] = useState(createDefaultStudyCardFilter);
@@ -221,7 +227,9 @@ export function AbyssCommandPalette({
     Boolean(selectedTopic) && selectedCrystal != null && selectedCrystalLevel !== null &&
     selectedCrystalLevel < MAX_CRYSTAL_LEVEL &&
     (trialStatus === 'idle' || trialStatus === 'failed' || trialStatus === 'cooldown');
-  const canForceTrialPass = Boolean(selectedTopic) && (trialStatus === 'awaiting_player' || trialStatus === 'in_progress');
+  const canForceTrialPass = Boolean(selectedTopic) &&
+    currentTrialQuestions.length > 0 &&
+    (trialStatus === 'awaiting_player' || trialStatus === 'in_progress');
   const canTriggerLevelUpAnimation = Boolean(selectedTopic && selectedCrystal);
 
   const rememberRecentCommand = (commandId: PaletteCommandId) => {
@@ -273,16 +281,15 @@ export function AbyssCommandPalette({
       });
       void (async () => {
         try {
-          const modelId = resolveModelForSurface('crystalTrial');
-          const runInput = await prepareCrystalTrialRunInput(
-            deckRepository,
-            modelId,
-            new Date().toISOString(),
-            selectedTopic.subjectId,
-            selectedTopic.topicId,
-            selectedCrystalLevel,
-          );
-          await getGenerationClient().submitRun(runInput);
+          const intent = {
+            kind: 'crystal-trial' as const,
+            subjectId: selectedTopic.subjectId,
+            topicId: selectedTopic.topicId,
+            currentLevel: selectedCrystalLevel,
+            targetLevel: selectedCrystalLevel + 1,
+          };
+          const { runId } = await getGenerationClient().startCrystalTrial(intent);
+          observeGenerationRun(runId, intent);
         } catch (err) {
           console.error('[AbyssCommandPalette] trial regeneration failed', err);
         }
@@ -293,7 +300,7 @@ export function AbyssCommandPalette({
 
   const handleForceTrialPass = () => {
     if (!selectedTopic || !canForceTrialPass) return;
-    const result = useCrystalTrialStore.getState().forceCompleteWithCorrectAnswers(selectedTopic);
+    const result = useCrystalTrialStore.getState().forceCompleteWithCorrectAnswers(selectedTopic, currentTrialQuestions);
     if (!result) return;
     uiStore.getState().openCrystalTrial();
     onOpenChange(false);

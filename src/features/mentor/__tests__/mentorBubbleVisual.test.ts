@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GenerationAttentionPrimaryFailure } from '@/features/contentGeneration';
 import {
   ALERT_COLOR,
   MOOD_COLOR,
@@ -11,24 +10,13 @@ import {
 import { MENTOR_ICON_NAMES } from '../mentorIconAllowlist';
 import type { MentorMood } from '../mentorTypes';
 
-function failure(
-  partial?: Partial<GenerationAttentionPrimaryFailure>,
-): GenerationAttentionPrimaryFailure {
-  return {
-    kind: 'topic-content',
-    failureKey: 'fk',
-    subjectId: 's1',
-    ...partial,
-  };
-}
-
 describe('selectMentorBubbleVisual', () => {
   it('alerts win unconditionally and use anti-flicker fixed opacity', () => {
     const visual = selectMentorBubbleVisual({
       mood: 'cheer',
       hasMentorActivity: true,
       subjectGraphActivePhase: 'topics',
-      primaryFailure: failure(),
+      hasPrimaryFailure: true,
     });
     expect(visual.iconName).toBe('triangle-alert');
     expect(visual.ringColor).toBe(ALERT_COLOR);
@@ -44,7 +32,7 @@ describe('selectMentorBubbleVisual', () => {
       mood: 'celebrate',
       hasMentorActivity: false,
       subjectGraphActivePhase: 'edges',
-      primaryFailure: null,
+      hasPrimaryFailure: false,
     });
     expect(visual.iconName).toBe(MOOD_TO_ICON.celebrate);
     expect(visual.ringColor).toBe(MOOD_COLOR.celebrate);
@@ -56,7 +44,7 @@ describe('selectMentorBubbleVisual', () => {
       mood: null,
       hasMentorActivity: false,
       subjectGraphActivePhase: 'topics',
-      primaryFailure: null,
+      hasPrimaryFailure: false,
     });
     expect(topics.iconName).toBe(PHASE_TO_ICON.topics);
     expect(topics.iconName).toBe('compass');
@@ -67,7 +55,7 @@ describe('selectMentorBubbleVisual', () => {
       mood: null,
       hasMentorActivity: false,
       subjectGraphActivePhase: 'edges',
-      primaryFailure: null,
+      hasPrimaryFailure: false,
     });
     expect(edges.iconName).toBe('network');
   });
@@ -77,7 +65,7 @@ describe('selectMentorBubbleVisual', () => {
       mood: null,
       hasMentorActivity: false,
       subjectGraphActivePhase: null,
-      primaryFailure: null,
+      hasPrimaryFailure: false,
     });
     expect(visual.iconName).toBe('philosopher-stone');
     expect(visual.ringColor).toBe(MOOD_COLOR.neutral);
@@ -90,13 +78,13 @@ describe('selectMentorBubbleVisual', () => {
       mood: null,
       hasMentorActivity: false,
       subjectGraphActivePhase: null,
-      primaryFailure: null,
+      hasPrimaryFailure: false,
     });
     const busy = selectMentorBubbleVisual({
       mood: null,
       hasMentorActivity: true,
       subjectGraphActivePhase: null,
-      primaryFailure: null,
+      hasPrimaryFailure: false,
     });
     expect(busy.iconName).toBe(idle.iconName);
     expect(busy.iconName).toBe('philosopher-stone');
@@ -111,7 +99,7 @@ describe('selectMentorBubbleVisual', () => {
         mood,
         hasMentorActivity: false,
         subjectGraphActivePhase: null,
-        primaryFailure: null,
+        hasPrimaryFailure: false,
       });
       expect((MENTOR_ICON_NAMES as readonly string[]).includes(visual.iconName)).toBe(
         true,

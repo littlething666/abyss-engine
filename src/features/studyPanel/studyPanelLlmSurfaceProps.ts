@@ -1,4 +1,4 @@
-import type { StudyFormulaExplainContext } from './formulaExplainLlmMessages';
+import type { StudyFormulaExplainContext } from './studyLlmClient';
 
 export type StudyPanelLlmExplainProps = {
   isPending: boolean;

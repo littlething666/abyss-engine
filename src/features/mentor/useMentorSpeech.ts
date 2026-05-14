@@ -19,8 +19,8 @@ export interface UseMentorSpeechResult {
  * Web Speech API mentor-only TTS hook (Q2). Gated only on the mentor narration
  * preference (`mentorStore.narrationEnabled`).
  *
- * Explicitly NOT used: provider-backed TTS, `getChatCompletionsRepositoryForSurface`,
- * `llmInferenceRegistry`. The mentor canned lines never round-trip an LLM.
+ * Explicitly NOT used: provider-backed TTS or any LLM stream. The mentor canned
+ * lines never round-trip an LLM.
  *
  * Cancels in-flight speech on unmount or when mentor narration flips off.
  */

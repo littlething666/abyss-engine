@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { GroundingSearchPolicy } from '@/types/grounding';
 
-import { FIRECRAWL_TOPIC_GROUNDING_POLICY } from './groundingPolicy';
+import { FIRECRAWL_TOPIC_GROUNDING_POLICY, TOPIC_THEORY_INTERIM_UNGROUNDED_POLICY } from './groundingPolicy';
 import { validateGroundingSources } from './validateGroundingSources';
 
 const providerMetadata = {
@@ -53,6 +53,16 @@ describe('validateGroundingSources', () => {
     expect(result.acceptedSources).toHaveLength(1);
     expect(result.acceptedSources[0]?.trustLevel).toBe('medium');
     expect(result.errors).toContain('At least one authoritative primary source is required');
+  });
+
+  it('accepts empty sources with interim ungrounded policy and no provider usage', () => {
+    const result = validateGroundingSources({
+      sources: [],
+      policy: TOPIC_THEORY_INTERIM_UNGROUNDED_POLICY,
+      providerMetadata: {},
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.acceptedSources).toEqual([]);
   });
 
   it('accepts reddit and similar hosts when rejectedDomains is empty on the policy', () => {

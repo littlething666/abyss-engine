@@ -4,81 +4,42 @@ import {
   registerGenerationClient,
   type GenerationClient,
 } from '@/features/contentGeneration/generationClient';
-import {
-  createTopicContentApplier,
-} from '@/features/contentGeneration/appliers/topicContentApplier';
-import {
-  createTopicExpansionApplier,
-} from '@/features/contentGeneration/appliers/topicExpansionApplier';
-import {
-  createSubjectGraphApplier,
-} from '@/features/subjectGeneration/appliers/subjectGraphApplier';
-import {
-  createCrystalTrialApplier,
-} from '@/features/crystalTrial/appliers/crystalTrialApplier';
-import {
-  createLegacyLocalRunnerDispatchers,
-  LocalGenerationRunRepository,
-} from '@/infrastructure/repositories/LocalGenerationRunRepository';
-import { appliedArtifactsStore } from '@/infrastructure/repositories/appliedArtifactsStore';
+import { runEventCursorStore } from '@/infrastructure/repositories/runEventCursorStore';
 import {
   createGenerationRunEventHandlers,
   type GenerationRunEventHandlers,
 } from '@/infrastructure/generationRunEventHandlers';
 import { appEventBus } from '@/infrastructure/eventBus';
-import { deckRepository, deckWriter } from '@/infrastructure/di';
-import { getChatCompletionsRepositoryForSurface } from '@/infrastructure/llmInferenceRegistry';
-import type { IGenerationRunRepository, RunInput } from '@/types/repository';
+import { pubSubClient } from '@/infrastructure/pubsub';
+import { deckRepository } from '@/infrastructure/di';
+import { DurableGenerationRunRepository } from '@/infrastructure/repositories/DurableGenerationRunRepository';
+import { createApiClient } from '@/infrastructure/http/apiClient';
+import { readOrMintDeviceId } from '@/infrastructure/deviceIdentity';
+import type { SubmitGenerationRunInput } from '@/types/repository';
 
-const DEVICE_STORAGE_KEY = 'abyss.deviceId';
+function readDurableGenerationWorkerUrl(): string {
+  const workerUrl =
+    typeof process !== 'undefined' &&
+    typeof process.env.NEXT_PUBLIC_DURABLE_GENERATION_URL === 'string'
+      ? process.env.NEXT_PUBLIC_DURABLE_GENERATION_URL.trim()
+      : '';
 
-function readOrMintDeviceId(): string {
-  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
-    return 'ssr-anonymous-device';
+  if (!workerUrl) {
+    throw new Error(
+      'Durable generation requires NEXT_PUBLIC_DURABLE_GENERATION_URL to be configured before app bootstrap.',
+    );
   }
-  try {
-    const existing = window.localStorage.getItem(DEVICE_STORAGE_KEY);
-    if (existing && existing.trim().length > 0) {
-      return existing.trim();
-    }
-    const id = crypto.randomUUID();
-    window.localStorage.setItem(DEVICE_STORAGE_KEY, id);
-    return id;
-  } catch {
-    return crypto.randomUUID();
-  }
+
+  return workerUrl;
 }
-
-const unreachableDurableRepo: IGenerationRunRepository = {
-  submitRun: async () => {
-    throw new Error('Durable generation runs are not wired in this build (NEXT_PUBLIC_DURABLE_RUNS).');
-  },
-  getRun: async () => {
-    throw new Error('Durable generation runs are not wired in this build (NEXT_PUBLIC_DURABLE_RUNS).');
-  },
-  streamRunEvents: async function* () {
-    throw new Error('Durable generation runs are not wired in this build (NEXT_PUBLIC_DURABLE_RUNS).');
-  },
-  cancelRun: async () => {
-    throw new Error('Durable generation runs are not wired in this build (NEXT_PUBLIC_DURABLE_RUNS).');
-  },
-  retryRun: async () => {
-    throw new Error('Durable generation runs are not wired in this build (NEXT_PUBLIC_DURABLE_RUNS).');
-  },
-  listRuns: async () => [],
-  getArtifact: async () => {
-    throw new Error('Durable generation runs are not wired in this build (NEXT_PUBLIC_DURABLE_RUNS).');
-  },
-};
 
 let wired = false;
 let handlersInstance: GenerationRunEventHandlers | null = null;
-let durableRunsEnabled = false;
 
 /**
  * Idempotent browser bootstrap: registers the module-level `GenerationClient`
- * backed by `LocalGenerationRunRepository` before any `appEventBus` handler
- * invokes `getGenerationClient()`.
+ * backed by the durable Worker repository. Local in-tab generation routing is
+ * intentionally unavailable; missing Worker configuration fails at bootstrap.
  */
 export function ensureGenerationClientRegistered(): GenerationClient {
   if (wired) {
@@ -86,49 +47,23 @@ export function ensureGenerationClientRegistered(): GenerationClient {
   }
 
   const deviceId = readOrMintDeviceId();
-  const now = () => Date.now();
-  durableRunsEnabled =
-    typeof process !== 'undefined' &&
-    typeof process.env.NEXT_PUBLIC_DURABLE_RUNS === 'string' &&
-    process.env.NEXT_PUBLIC_DURABLE_RUNS === 'true';
-
-  const localRepo = new LocalGenerationRunRepository({
-    deviceId,
-    now,
-    dispatchers: createLegacyLocalRunnerDispatchers({
-      chat: getChatCompletionsRepositoryForSurface('topicContent'),
-      crystalTrialChat: getChatCompletionsRepositoryForSurface('crystalTrial'),
-      deckRepository,
-      writer: deckWriter,
-    }),
-  });
+  const workerUrl = readDurableGenerationWorkerUrl();
+  const http = createApiClient({ baseUrl: workerUrl, deviceId });
+  const repo = new DurableGenerationRunRepository({ http, deviceId });
 
   const client = createGenerationClient({
     deviceId,
-    now,
-    flags: { durableRuns: durableRunsEnabled },
-    localRepo,
-    durableRepo: unreachableDurableRepo,
+    now: () => Date.now(),
+    repo,
   });
   registerGenerationClient(client);
 
-  // Phase 0.5 step 7: wire the generationRunEventHandlers composition root.
-  // When NEXT_PUBLIC_DURABLE_RUNS is false (default), handlers exist but are
-  // NOT wired into local run observation — today's in-tab runners still own
-  // store writes and event emission. When the flag is true (Phase 1+),
-  // observeRun activates and handlers become the sole path for artifact
-  // application and legacy AppEventBus events.
   handlersInstance = createGenerationRunEventHandlers({
     client,
-    appliers: {
-      topicContent: createTopicContentApplier({ deckWriter, deckRepository }),
-      topicExpansion: createTopicExpansionApplier({ deckWriter }),
-      subjectGraph: createSubjectGraphApplier({ deckWriter, deckRepository }),
-      crystalTrial: createCrystalTrialApplier(),
-    },
     eventBus: appEventBus,
-    dedupeStore: appliedArtifactsStore,
+    cursorStore: runEventCursorStore,
     deckRepository,
+    contentPublication: pubSubClient,
   });
 
   wired = true;
@@ -136,18 +71,10 @@ export function ensureGenerationClientRegistered(): GenerationClient {
 }
 
 /**
- * Observe a newly submitted run through the generationRunEventHandlers.
- *
- * When `NEXT_PUBLIC_DURABLE_RUNS` is OFF: this is a no-op — legacy
- * in-tab runners own store writes and AppEventBus event emission.
- *
- * When `NEXT_PUBLIC_DURABLE_RUNS` is ON: the handlers become the sole
- * path for artifact application and legacy AppEventBus events. The
- * durable repo produces RunEvents from the Worker; this function
- * opens the event stream and applies artifacts + fires events.
+ * Observe a newly submitted durable run through the generationRunEventHandlers.
+ * The handlers refresh backend content reads and emit legacy AppEventBus events.
  */
-export function observeGenerationRun(runId: string, runInput: RunInput): void {
-  if (!durableRunsEnabled) return;
+export function observeGenerationRun(runId: string, runInput: SubmitGenerationRunInput): void {
   const h = handlersInstance;
   if (!h) {
     console.error(
@@ -161,4 +88,14 @@ export function observeGenerationRun(runId: string, runInput: RunInput): void {
       err,
     );
   });
+}
+
+/**
+ * Get the registered `GenerationRunEventHandlers` instance.
+ *
+ * Used by `useContentGenerationHydration` to rehydrate durable runs.
+ * Returns `null` when the module hasn't been bootstrapped yet.
+ */
+export function getGenerationRunEventHandlers(): GenerationRunEventHandlers | null {
+  return handlersInstance;
 }

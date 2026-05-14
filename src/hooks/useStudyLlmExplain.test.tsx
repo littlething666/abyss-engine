@@ -24,13 +24,13 @@ import {
   useStudyQuestionLlmExplain,
 } from './useStudyQuestionLlmExplain';
 
-const { streamChatMock } = vi.hoisted(() => ({
-  streamChatMock: vi.fn(),
+const { studyLlmStreamMock } = vi.hoisted(() => ({
+  studyLlmStreamMock: vi.fn(),
 }));
 
-vi.mock('../infrastructure/llmInferenceRegistry', () => ({
-  getChatCompletionsRepositoryForSurface: vi.fn(() => ({
-    streamChat: streamChatMock,
+vi.mock('../infrastructure/wireStudyLlmClient', () => ({
+  ensureStudyLlmClientRegistered: vi.fn(() => ({
+    stream: studyLlmStreamMock,
   })),
 }));
 
@@ -38,21 +38,19 @@ type QuestionHarnessProps = {
   topicLabel: string;
   questionText: string;
   cardId: string | null;
-  reasoningFromUserToggle?: boolean;
 };
 
 type QuestionApi = ReturnType<typeof useStudyQuestionLlmExplain>;
 
 const QuestionHarness = forwardRef<QuestionApi | null, QuestionHarnessProps>(
   function QuestionHarness(
-    { topicLabel, questionText, cardId, reasoningFromUserToggle },
+    { topicLabel, questionText, cardId },
     ref,
   ) {
     const api = useStudyQuestionLlmExplain({
       topicLabel,
       questionText,
       cardId,
-      reasoningFromUserToggle: reasoningFromUserToggle ?? false,
     });
     useImperativeHandle(ref, () => api, [api]);
     return null;
@@ -63,18 +61,16 @@ type FormulaHarnessProps = {
   topicLabel: string;
   cardQuestionText: string;
   cardId: string | null;
-  reasoningFromUserToggle?: boolean;
 };
 
 type FormulaApi = ReturnType<typeof useStudyFormulaLlmExplain>;
 
 const FormulaHarness = forwardRef<FormulaApi | null, FormulaHarnessProps>(
-  function FormulaHarness({ topicLabel, cardQuestionText, cardId, reasoningFromUserToggle }, ref) {
+  function FormulaHarness({ topicLabel, cardQuestionText, cardId }, ref) {
     const api = useStudyFormulaLlmExplain({
       topicLabel,
       cardQuestionText,
       cardId,
-      reasoningFromUserToggle: reasoningFromUserToggle ?? false,
     });
     useImperativeHandle(ref, () => api, [api]);
     return null;
@@ -140,12 +136,12 @@ afterEach(() => {
 
 describe('useStudyQuestionLlmExplain', () => {
   beforeEach(() => {
-    streamChatMock.mockReset();
+    studyLlmStreamMock.mockReset();
     clearStudyQuestionLlmExplainSessionCacheForTests();
   });
 
-  it('skips streamChat when session cache has a completed answer', async () => {
-    streamChatMock.mockImplementation(async function* () {
+  it('skips study LLM stream when session cache has a completed answer', async () => {
+    studyLlmStreamMock.mockImplementation(async function* () {
       yield { type: 'content', text: 'hello' };
     });
 
@@ -160,7 +156,12 @@ describe('useStudyQuestionLlmExplain', () => {
     await flushStreamUpdates();
     expect(first.getApi()?.assistantText).toBe('hello');
     expect(first.getApi()?.isPending).toBe(false);
-    expect(streamChatMock).toHaveBeenCalledTimes(1);
+    expect(studyLlmStreamMock).toHaveBeenCalledTimes(1);
+    expect(studyLlmStreamMock.mock.calls[0][0]).toMatchObject({
+      kind: 'study-question-explain',
+      intent: { topicLabel: 'Topic', questionText: 'Why?' },
+    });
+    expect(JSON.stringify(studyLlmStreamMock.mock.calls[0][0])).not.toMatch(/model|messages|response_format|plugins|tools|enableReasoning/);
 
     first.unmount();
 
@@ -173,7 +174,7 @@ describe('useStudyQuestionLlmExplain', () => {
       second.getApi()?.requestExplain();
     });
     await flushStreamUpdates();
-    expect(streamChatMock).toHaveBeenCalledTimes(1);
+    expect(studyLlmStreamMock).toHaveBeenCalledTimes(1);
     expect(second.getApi()?.assistantText).toBe('hello');
     expect(second.getApi()?.isPending).toBe(false);
     second.unmount();
@@ -185,7 +186,7 @@ describe('useStudyQuestionLlmExplain', () => {
       release = r;
     });
 
-    streamChatMock.mockImplementation(async function* () {
+    studyLlmStreamMock.mockImplementation(async function* () {
       yield { type: 'content', text: 'a' };
       await gate;
       yield { type: 'content', text: 'b' };
@@ -220,7 +221,7 @@ describe('useStudyQuestionLlmExplain', () => {
       release = r;
     });
 
-    streamChatMock.mockImplementation(async function* () {
+    studyLlmStreamMock.mockImplementation(async function* () {
       yield { type: 'content', text: 'x' };
       await gate;
       yield { type: 'content', text: 'y' };
@@ -243,12 +244,12 @@ describe('useStudyQuestionLlmExplain', () => {
 
 describe('useStudyFormulaLlmExplain', () => {
   beforeEach(() => {
-    streamChatMock.mockReset();
+    studyLlmStreamMock.mockReset();
     clearStudyFormulaLlmExplainSessionCacheForTests();
   });
 
-  it('skips streamChat when session cache has a completed formula explanation', async () => {
-    streamChatMock.mockImplementation(async function* () {
+  it('skips study LLM stream when session cache has a completed formula explanation', async () => {
+    studyLlmStreamMock.mockImplementation(async function* () {
       yield { type: 'content', text: 'fn' };
     });
 
@@ -262,7 +263,11 @@ describe('useStudyFormulaLlmExplain', () => {
     });
     await flushStreamUpdates();
     expect(first.getApi()?.assistantText).toBe('fn');
-    expect(streamChatMock).toHaveBeenCalledTimes(1);
+    expect(studyLlmStreamMock).toHaveBeenCalledTimes(1);
+    expect(studyLlmStreamMock.mock.calls[0][0]).toEqual({
+      kind: 'study-formula-explain',
+      intent: { topicLabel: 'Topic', cardQuestionText: 'Compute?', latex: 'x^2', context: 'question' },
+    });
     first.unmount();
 
     const second = renderFormulaHarness({
@@ -274,7 +279,7 @@ describe('useStudyFormulaLlmExplain', () => {
       second.getApi()?.requestExplain('x^2', 'question');
     });
     await flushStreamUpdates();
-    expect(streamChatMock).toHaveBeenCalledTimes(1);
+    expect(studyLlmStreamMock).toHaveBeenCalledTimes(1);
     expect(second.getApi()?.assistantText).toBe('fn');
     second.unmount();
   });
@@ -285,7 +290,7 @@ describe('useStudyFormulaLlmExplain', () => {
       release = r;
     });
 
-    streamChatMock.mockImplementation(async function* () {
+    studyLlmStreamMock.mockImplementation(async function* () {
       await gate;
       yield { type: 'content', text: 'z' };
     });

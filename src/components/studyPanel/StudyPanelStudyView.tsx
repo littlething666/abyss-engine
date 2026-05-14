@@ -17,11 +17,9 @@ import {
   type ResponsiveLlmInferenceDescription,
 } from '../ResponsiveLlmInferenceSurface';
 import { LlmReasoningBlock } from '../LlmReasoningBlock';
-import { LlmReasoningToggle } from '../LlmReasoningToggle';
 import { LlmTtsToggle } from '../LlmTtsToggle';
 import { Lightbulb, Sparkles } from 'lucide-react';
 import { StudyKatexInteractive } from './StudyKatexInteractive';
-import { StudyPromptExternalActions } from './StudyPromptExternalActions';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useLlmAssistantSpeech } from '@/hooks/useLlmAssistantSpeech';
 import { useStudyPanelLlmSurfaces } from '@/hooks/useStudyPanelLlmSurfaces';
@@ -152,8 +150,6 @@ interface StudyPanelStudyViewProps {
   isRevealed: boolean;
   sm2State: SM2Data | null;
   activeCard: Card | null;
-  topicSystemPrompt: string;
-  resolvedTopic: string;
   onSelectAnswer: (answer: string) => void;
   onChoiceSubmit: () => void;
   onChoiceContinue: () => void;
@@ -161,12 +157,6 @@ interface StudyPanelStudyViewProps {
   onHintUsed: () => void;
   llmExplain: StudyPanelLlmExplainProps;
   llmFormulaExplain: StudyPanelFormulaExplainProps;
-  explainReasoningEnabled: boolean;
-  explainReasoningToggleDisabled: boolean;
-  formulaReasoningEnabled: boolean;
-  formulaReasoningToggleDisabled: boolean;
-  onToggleExplainReasoning: () => void;
-  onToggleFormulaReasoning: () => void;
   explainTtsEnabled: boolean;
   formulaTtsEnabled: boolean;
   onToggleExplainTts: () => void;
@@ -196,8 +186,6 @@ export function StudyPanelStudyView({
   isRevealed,
   selectedAnswers,
   activeCard,
-  topicSystemPrompt,
-  resolvedTopic,
   onSelectAnswer,
   onChoiceSubmit,
   onChoiceContinue,
@@ -205,12 +193,6 @@ export function StudyPanelStudyView({
   onHintUsed,
   llmExplain,
   llmFormulaExplain,
-  explainReasoningEnabled,
-  explainReasoningToggleDisabled,
-  formulaReasoningEnabled,
-  formulaReasoningToggleDisabled,
-  onToggleExplainReasoning,
-  onToggleFormulaReasoning,
   explainTtsEnabled,
   formulaTtsEnabled,
   onToggleExplainTts,
@@ -239,8 +221,6 @@ export function StudyPanelStudyView({
   } = useStudyPanelLlmSurfaces({
     llmExplain,
     llmFormulaExplain,
-    explainReasoningEnabled,
-    formulaReasoningEnabled,
     isAnswerSubmitted,
     onHintUsed,
   });
@@ -258,16 +238,8 @@ export function StudyPanelStudyView({
     isPending: llmFormulaExplain.isPending,
   });
 
-  const trimmedSystemPrompt = topicSystemPrompt.trim();
-  const hasSystemPrompt = trimmedSystemPrompt.length > 0;
-
   const questionExplainBody = (
     <div className="flex flex-col gap-2">
-      {!hasSystemPrompt && (
-        <p className="text-muted-foreground text-xs italic" data-testid="study-card-llm-explain-prompt-helper">
-          No topic prompt yet, so the search and diagram shortcuts are disabled.
-        </p>
-      )}
       <LlmStreamBlock
         isPending={llmExplain.isPending}
         errorMessage={llmExplain.errorMessage}
@@ -360,7 +332,7 @@ export function StudyPanelStudyView({
 
         {/* Choice Options */}
         {!isFlashcard && renderedCard.options && (
-          <div className="mt-4 space-y-2 study-markdown-secondary" data-testid="study-card-choice-options">
+          <div className="mt-4 flex flex-col gap-2 study-markdown-secondary" data-testid="study-card-choice-options">
             {renderedCard.options.map((option, index) => {
               const isSelected = selectedAnswers.includes(option);
               const isCorrectOption = Boolean(renderedCard.correctAnswers?.includes(option));
@@ -369,7 +341,7 @@ export function StudyPanelStudyView({
               const optionMarker = optionPresentation[optionState].marker;
               const optionMarkerClass = optionPresentation[optionState].markerClass;
 
-            return (
+              return (
                 <Button
                   key={index}
                   onClick={() => onSelectAnswer(option)}
@@ -425,16 +397,6 @@ export function StudyPanelStudyView({
         sheetBodyScrollClassName="max-h-[min(40vh,32rem)]"
         headerAction={
           <div className="flex items-center gap-1">
-            <StudyPromptExternalActions
-              topicSystemPrompt={topicSystemPrompt}
-              resolvedTopic={resolvedTopic}
-            />
-            <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-            <LlmReasoningToggle
-              enabled={explainReasoningEnabled}
-              disabled={explainReasoningToggleDisabled}
-              onToggle={onToggleExplainReasoning}
-            />
             <LlmTtsToggle
               enabled={explainTtsEnabled}
               onToggle={onToggleExplainTts}
@@ -458,11 +420,6 @@ export function StudyPanelStudyView({
         sheetBodyScrollClassName="max-h-[min(40vh,32rem)]"
         headerAction={
           <div className="flex items-center gap-1">
-            <LlmReasoningToggle
-              enabled={formulaReasoningEnabled}
-              disabled={formulaReasoningToggleDisabled}
-              onToggle={onToggleFormulaReasoning}
-            />
             <LlmTtsToggle
               enabled={formulaTtsEnabled}
               onToggle={onToggleFormulaTts}
