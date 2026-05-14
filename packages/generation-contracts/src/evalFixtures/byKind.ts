@@ -21,6 +21,7 @@ import type { ArtifactKind } from '../artifacts/types';
 import { crystalTrialFixtures } from './crystalTrial.fixtures';
 import { subjectGraphEdgesFixtures } from './subjectGraphEdges.fixtures';
 import { subjectGraphTopicsFixtures } from './subjectGraphTopics.fixtures';
+import { topicCardContentFixtures } from './topicCardContent.fixtures';
 import { topicExpansionCardsFixtures } from './topicExpansionCards.fixtures';
 import { topicMiniGameCategorySortFixtures } from './topicMiniGameCategorySort.fixtures';
 import { topicMiniGameMatchPairsFixtures } from './topicMiniGameMatchPairs.fixtures';
@@ -34,6 +35,7 @@ export const EVAL_FIXTURES_BY_KIND: EvalFixturesByKind = {
   'subject-graph-edges': subjectGraphEdgesFixtures,
   'topic-theory': topicTheoryFixtures,
   'topic-study-cards': topicStudyCardsFixtures,
+  'topic-card-content': topicCardContentFixtures,
   'topic-mini-game-category-sort': topicMiniGameCategorySortFixtures,
   'topic-mini-game-sequence-build': topicMiniGameSequenceBuildFixtures,
   'topic-mini-game-match-pairs': topicMiniGameMatchPairsFixtures,

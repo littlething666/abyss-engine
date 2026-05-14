@@ -29,6 +29,7 @@ import {
   type ResolvedGenerationJobPolicy,
 } from '../generationPolicy';
 import {
+  buildTopicCardContentMessages,
   buildTopicCardPlanMessages,
   buildTopicConceptPlanMessages,
   buildTopicMiniGameMessages,
@@ -57,6 +58,7 @@ import {
   topicConceptPlanArtifactPayloadSchema,
   type CompiledTopicCardPlan,
   type CompiledTopicConceptSpec,
+  type PersistedTopicPlanCheckpoint,
   type TopicCardPlanArtifactPayload,
   type TopicCardPlanCheckpointPayload,
   type TopicConceptPlanArtifactPayload,
@@ -70,6 +72,7 @@ import {
   jsonSchemaResponseFormat,
   topicTheorySchemaVersion,
   topicStudyCardsSchemaVersion,
+  topicCardContentSchemaVersion,
   topicMiniGameCategorySortSchemaVersion,
   topicMiniGameSequenceBuildSchemaVersion,
   topicMiniGameMatchPairsSchemaVersion,
@@ -699,7 +702,7 @@ async function buildOrLoadTopicPlanningState(input: {
       parse: parseTopicConceptPlanPayload,
     });
     concepts = await compileTopicConceptPlan({ subjectId, topicId, sourceSpans, payload: generated.payload });
-    conceptCheckpoint = await input.step.do(`persist:${TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => (
+    conceptCheckpoint = await input.step.do(`persist:${TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async (): Promise<any> => (
       persistCompiledTopicConceptPlanCheckpoint({
         repos: input.repos,
         runId: input.runId,
@@ -709,8 +712,8 @@ async function buildOrLoadTopicPlanningState(input: {
         sourceSpanIds: sourceSpans.map((span) => span.spanId),
         planPayload: generated.payload,
         compiledConcepts: concepts,
-      })
-    ));
+      }) as unknown as Record<string, unknown>
+    )) as unknown as PersistedTopicPlanCheckpoint<TopicConceptPlanCheckpointPayload>;
     if (generated.jobId) await input.repos.stageCheckpoints.linkJob(input.runId, TOPIC_CONCEPT_PLAN_CHECKPOINT_STAGE, generated.jobId).catch(() => undefined);
   }
 
@@ -757,7 +760,7 @@ async function buildOrLoadTopicPlanningState(input: {
       parse: parseTopicCardPlanPayload,
     });
     cardPlan = await compileTopicCardPlan({ subjectId, topicId, concepts, payload: generated.payload });
-    cardCheckpoint = await input.step.do(`persist:${TOPIC_CARD_PLAN_CHECKPOINT_STAGE.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async () => (
+    cardCheckpoint = await input.step.do(`persist:${TOPIC_CARD_PLAN_CHECKPOINT_STAGE.replace(/:/g, '_')}`, WORKFLOW_STORAGE_STEP_RETRY, async (): Promise<any> => (
       persistCompiledTopicCardPlanCheckpoint({
         repos: input.repos,
         runId: input.runId,
@@ -767,8 +770,8 @@ async function buildOrLoadTopicPlanningState(input: {
         concepts,
         planPayload: generated.payload,
         compiledPlan: cardPlan,
-      })
-    ));
+      }) as unknown as Record<string, unknown>
+    )) as unknown as PersistedTopicPlanCheckpoint<TopicCardPlanCheckpointPayload>;
     if (generated.jobId) await input.repos.stageCheckpoints.linkJob(input.runId, TOPIC_CARD_PLAN_CHECKPOINT_STAGE, generated.jobId).catch(() => undefined);
   }
 
@@ -1004,36 +1007,86 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
       if (wantedStages.includes('study-cards')) {
         await checkCancel('before-study-cards');
 
-        const cardsResponseFormat = jsonSchemaResponseFormat('topic-study-cards');
-        const cardsSchemaVersion = (snapshot.schema_version as number) ?? topicStudyCardsSchemaVersion;
-        const studyCardsParentContentHashes: Record<string, string> = {};
-        if (bindParentArtifactHashes && theoryContentHash) studyCardsParentContentHashes.theory = theoryContentHash;
-        if (bindParentArtifactHashes && planningState) studyCardsParentContentHashes.cardPlan = planningState.cardCheckpoint.contentHash;
-        const studyCardsInputHash = await topicContentStageInputHash({
-          snapshot,
-          baseInputHash: _inputHash,
-          stage: 'study-cards',
-          parentContentHashes: Object.keys(studyCardsParentContentHashes).length > 0 ? studyCardsParentContentHashes : undefined,
-        });
-        const studyCardPromptBaseSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId, plannedCardSourceSpanIds);
         const plannedCardSpecs = planningState
           ? compiledStudyCardSpecsForPrompt(planningState.cardPlan.cardSpecs)
           : [];
-        const studyCardPromptSnapshot = plannedCardSpecs.length > 0
-          ? {
-            ...studyCardPromptBaseSnapshot,
-            compiled_study_card_specs: plannedCardSpecs,
-            grounding_source_selection: 'compiled-card-specs',
-          }
-          : studyCardPromptBaseSnapshot;
 
-        const studyCardsResult = (await useCachedStage(
-          step, repos, runId, deviceId, 'study-cards', 'topic-study-cards', studyCardsInputHash, studyCardPromptSnapshot,
-        )) ?? await runStage(
-          step, repos, runId, deviceId, 'study-cards', 'topic-study-cards',
-          studyCardPromptSnapshot, studyCardsInputHash, cardsSchemaVersion,
-          async (generationPolicy) => {
-            return callTopicContent(
+        if (plannedCardSpecs.length > 0) {
+          const responseFormat = jsonSchemaResponseFormat('topic-card-content');
+          const schemaVersion = (snapshot.schema_version as number) ?? topicCardContentSchemaVersion;
+          const results = await Promise.all(plannedCardSpecs.map(async (plannedSpec) => {
+            const perCardStage = `study-cards:${plannedSpec.card_spec_id}` as const;
+            const parentContentHashes: Record<string, string> = { cardSpec: plannedSpec.card_spec_id };
+            if (bindParentArtifactHashes && theoryContentHash) parentContentHashes.theory = theoryContentHash;
+            if (bindParentArtifactHashes && planningState) parentContentHashes.cardPlan = planningState.cardCheckpoint.contentHash;
+            const perCardInputHash = await topicContentStageInputHash({
+              snapshot,
+              baseInputHash: _inputHash,
+              stage: perCardStage,
+              parentContentHashes,
+            });
+            const basePromptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId, plannedSpec.source_span_ids);
+            const promptSnapshot = {
+              ...basePromptSnapshot,
+              pipeline_kind: 'topic-card-content',
+              compiled_study_card_specs: [plannedSpec],
+              grounding_source_selection: 'compiled-card-spec',
+            };
+
+            return (await useCachedStage(
+              step, repos, runId, deviceId, perCardStage, 'topic-card-content', perCardInputHash, promptSnapshot,
+            )) ?? await runStage(
+              step, repos, runId, deviceId, perCardStage, 'topic-card-content',
+              promptSnapshot, perCardInputHash, schemaVersion,
+              async (generationPolicy) => callTopicContent(
+                {
+                  modelId: generationPolicy.modelId,
+                  messages: buildTopicCardContentMessages(promptSnapshot),
+                  responseFormat,
+                  providerHealingRequested: generationPolicy.providerHealingRequested,
+                  temperature: generationPolicy.temperature,
+                  stage: perCardStage,
+                },
+                this.env,
+              ),
+              (raw) => {
+                const parseResult = strictParseArtifact('topic-card-content', raw.text);
+                if (!parseResult.ok) {
+                  throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+                }
+
+                const semResult = semanticValidateArtifact('topic-card-content', parseResult.payload);
+                if (!semResult.ok) {
+                  throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
+                }
+
+                return parseResult.payload as Record<string, unknown>;
+              },
+            );
+          }));
+          studyCardsContentHash = await contentHash(results.map((result) => result.contentHash).sort());
+          await step.do('mark-topic-ready-after-card-content', WORKFLOW_STORAGE_STEP_RETRY, async () => {
+            await setTopicContentStatus(repos, deviceId, runId, snapshot, 'ready');
+          });
+        } else {
+          const cardsResponseFormat = jsonSchemaResponseFormat('topic-study-cards');
+          const cardsSchemaVersion = (snapshot.schema_version as number) ?? topicStudyCardsSchemaVersion;
+          const studyCardsParentContentHashes: Record<string, string> = {};
+          if (bindParentArtifactHashes && theoryContentHash) studyCardsParentContentHashes.theory = theoryContentHash;
+          const studyCardsInputHash = await topicContentStageInputHash({
+            snapshot,
+            baseInputHash: _inputHash,
+            stage: 'study-cards',
+            parentContentHashes: Object.keys(studyCardsParentContentHashes).length > 0 ? studyCardsParentContentHashes : undefined,
+          });
+          const studyCardPromptSnapshot = await buildTopicCardPromptSnapshot(repos, snapshot, theoryArtifactId, plannedCardSourceSpanIds);
+
+          const studyCardsResult = (await useCachedStage(
+            step, repos, runId, deviceId, 'study-cards', 'topic-study-cards', studyCardsInputHash, studyCardPromptSnapshot,
+          )) ?? await runStage(
+            step, repos, runId, deviceId, 'study-cards', 'topic-study-cards',
+            studyCardPromptSnapshot, studyCardsInputHash, cardsSchemaVersion,
+            async (generationPolicy) => callTopicContent(
               {
                 modelId: generationPolicy.modelId,
                 messages: buildTopicStudyCardsMessages(studyCardPromptSnapshot),
@@ -1043,27 +1096,27 @@ export class TopicContentWorkflow extends WorkflowEntrypoint<
                 stage: 'study-cards',
               },
               this.env,
-            );
-          },
-          (raw) => {
-            const parseResult = strictParseArtifact('topic-study-cards', raw.text);
-            if (!parseResult.ok) {
-              throw new WorkflowFail(parseResult.failureCode, parseResult.message);
-            }
+            ),
+            (raw) => {
+              const parseResult = strictParseArtifact('topic-study-cards', raw.text);
+              if (!parseResult.ok) {
+                throw new WorkflowFail(parseResult.failureCode, parseResult.message);
+              }
 
-            const existingStems = Array.isArray(snapshot.existing_concept_stems)
-              ? (snapshot.existing_concept_stems as string[])
-              : undefined;
-            const ctx = existingStems ? { existingConceptStems: existingStems } : undefined;
-            const semResult = semanticValidateArtifact('topic-study-cards', parseResult.payload, ctx);
-            if (!semResult.ok) {
-              throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
-            }
+              const existingStems = Array.isArray(snapshot.existing_concept_stems)
+                ? (snapshot.existing_concept_stems as string[])
+                : undefined;
+              const ctx = existingStems ? { existingConceptStems: existingStems } : undefined;
+              const semResult = semanticValidateArtifact('topic-study-cards', parseResult.payload, ctx);
+              if (!semResult.ok) {
+                throw new WorkflowFail(semResult.failureCode, semResult.message ?? 'semantic validation failed');
+              }
 
-            return parseResult.payload as Record<string, unknown>;
-          },
-        );
-        studyCardsContentHash = studyCardsResult.contentHash;
+              return parseResult.payload as Record<string, unknown>;
+            },
+          );
+          studyCardsContentHash = studyCardsResult.contentHash;
+        }
       } else if (studyCardsCheckpointArtifactId) {
         studyCardsContentHash = await loadStageArtifactContentHash(repos, studyCardsCheckpointArtifactId, 'study-cards');
       }

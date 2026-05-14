@@ -31,6 +31,12 @@ export {
 } from './topicStudyCards';
 
 export {
+  topicCardContentArtifactSchema,
+  topicCardContentSchemaVersion,
+  type TopicCardContentArtifactPayload,
+} from './topicCardContent';
+
+export {
   topicMiniGameCategorySortArtifactSchema,
   topicMiniGameCategorySortSchemaVersion,
   type TopicMiniGameCategorySortArtifactPayload,

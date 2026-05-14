@@ -5,6 +5,7 @@ export const TOPIC_CONTENT_STAGE_HASH_SCOPE_FIELD = 'topic_content_stage_hash_sc
 export type TopicContentStageInputHashStage =
   | 'theory'
   | 'study-cards'
+  | `study-cards:${string}`
   | `mini-games:${string}`;
 
 export type TopicContentParentContentHashes = Readonly<Record<string, string>>;

@@ -7,6 +7,7 @@ import { buildTopicTheorySourceSpans, topicTheorySourceSpansAsJson } from './the
 
 const TOPIC_CARD_ARTIFACT_KINDS = new Set<ArtifactKind>([
   'topic-study-cards',
+  'topic-card-content',
   'topic-expansion-cards',
   'topic-mini-game-category-sort',
   'topic-mini-game-sequence-build',
@@ -127,7 +128,7 @@ function plannedBindingsForArtifactKind(
   artifactKind: ArtifactKind,
   snapshot: Record<string, unknown>,
 ): PlannedCardBinding[] {
-  if (artifactKind === 'topic-study-cards') return plannedStudyCardBindingsFromSnapshot(snapshot);
+  if (artifactKind === 'topic-study-cards' || artifactKind === 'topic-card-content') return plannedStudyCardBindingsFromSnapshot(snapshot);
   if (
     artifactKind === 'topic-mini-game-category-sort'
     || artifactKind === 'topic-mini-game-sequence-build'
@@ -243,7 +244,7 @@ async function cardRowsFromPayload(
   payload: Record<string, unknown>,
   input: { subjectId: string; topicId: string; snapshot: Record<string, unknown> },
 ): Promise<PutTopicCardInput[]> {
-  const cards = payload.cards;
+  const cards = artifactKind === 'topic-card-content' ? [payload.card] : payload.cards;
   if (!Array.isArray(cards)) {
     throw new WorkflowFail('validation:semantic-topic-content', `${artifactKind}.cards must be an array`);
   }
@@ -261,7 +262,7 @@ async function cardRowsFromPayload(
   for (const [index, value] of cards.entries()) {
     const canonical = requireRecord(value, `${artifactKind}.cards[${index}]`);
     const plannedBinding = plannedBindings[index];
-    const deckCard = artifactKind === 'topic-study-cards' || artifactKind === 'topic-expansion-cards'
+    const deckCard = artifactKind === 'topic-study-cards' || artifactKind === 'topic-card-content' || artifactKind === 'topic-expansion-cards'
       ? deckStudyCardFromCanonical(canonical, `${artifactKind}.cards[${index}]`)
       : deckMiniGameCardFromCanonical(canonical, `${artifactKind}.cards[${index}]`);
     if (!deckCard) {

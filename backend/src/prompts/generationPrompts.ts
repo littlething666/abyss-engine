@@ -74,17 +74,17 @@ function formatStudyCardSemanticRules(topicId: string, difficulty: number, optio
     '- Every card.topicId must equal the snapshot topic id.',
     options.difficultyRule ?? `- Every card.difficulty must equal ${difficulty}.`,
     '- FLASHCARD content must contain non-empty string fields front and back.',
-    '- MULTIPLE_CHOICE content must contain question, options, explanation, and correctAnswer or correctAnswers.',
-    '- MULTIPLE_CHOICE question and explanation must be non-empty strings.',
-    '- MULTIPLE_CHOICE options must be an array of non-empty strings.',
-    '- MULTIPLE_CHOICE correctAnswer must be one string copied exactly from options, or correctAnswers must be a non-empty array of strings copied exactly from options.',
-    '- Do not use alternate content keys such as prompt, answer, term, definition, choices, correctOption, or rationale.',
+    '- MULTIPLE_CHOICE content must contain exactly question, options, and correctAnswer.',
+    '- MULTIPLE_CHOICE question and correctAnswer must be non-empty strings.',
+    '- MULTIPLE_CHOICE options must be an array of at least two non-empty strings.',
+    '- MULTIPLE_CHOICE correctAnswer must be one string copied exactly from options.',
+    '- Do not use alternate content keys such as prompt, answer, term, definition, choices, correctOption, correctAnswers, explanation, or rationale.',
     '',
     'Valid FLASHCARD shape:',
     `{"id":"temporary-id-ignored-by-backend","topicId":"${topicId}","type":"FLASHCARD","difficulty":${difficulty},"content":{"front":"<question or term>","back":"<answer or explanation>"}}`,
     '',
     'Valid MULTIPLE_CHOICE shape:',
-    `{"id":"temporary-id-ignored-by-backend","topicId":"${topicId}","type":"MULTIPLE_CHOICE","difficulty":${difficulty},"content":{"question":"<question>","options":["<option A>","<option B>","<option C>"],"correctAnswer":"<one option copied exactly>","explanation":"<why the answer is correct>"}}`,
+    `{"id":"temporary-id-ignored-by-backend","topicId":"${topicId}","type":"MULTIPLE_CHOICE","difficulty":${difficulty},"content":{"question":"<question>","options":["<option A>","<option B>","<option C>"],"correctAnswer":"<one option copied exactly>"}}`,
   ].join('\n');
 }
 
@@ -422,6 +422,47 @@ export function buildTopicStudyCardsMessages(snapshot: Record<string, unknown>):
   return [
     { role: 'system', content: system },
     { role: 'user', content: 'Output only the JSON object with the cards array.' },
+  ];
+}
+
+export function buildTopicCardContentMessages(snapshot: Record<string, unknown>): PromptMessage[] {
+  const syllabusQuestions = requireStringArray(snapshot.syllabus_questions, 'snapshot.syllabus_questions');
+  const topicId = requireString(snapshot.topic_id, 'snapshot.topic_id');
+  const targetDifficulty = requireInteger(snapshot.target_difficulty, 'snapshot.target_difficulty');
+  const compiledStudyCardSpecs = requireRecordArray(snapshot.compiled_study_card_specs, 'snapshot.compiled_study_card_specs');
+  if (compiledStudyCardSpecs.length !== 1) {
+    throw new Error('snapshot.compiled_study_card_specs must contain exactly one spec for topic-card-content prompt construction');
+  }
+  const system = [
+    'You are an Abyss Engine Topic Content prompt module.',
+    'Create exactly one deck-compatible study card and return only JSON matching the topic-card-content schema.',
+    '',
+    `Subject id: ${requireString(snapshot.subject_id, 'snapshot.subject_id')}`,
+    `Topic id: ${topicId}`,
+    `Default target difficulty: ${targetDifficulty}`,
+    `Grounding source count: ${requireInteger(snapshot.grounding_source_count, 'snapshot.grounding_source_count')}`,
+    `Grounding source selection: ${optionalString(snapshot.grounding_source_selection, 'snapshot.grounding_source_selection') ?? 'compiled-card-spec'}`,
+    `Has authoritative primary source: ${formatBoolean(snapshot.has_authoritative_primary_source, 'snapshot.has_authoritative_primary_source')}`,
+    '',
+    'Compiled study-card spec selected by the backend card plan:',
+    formatCompiledStudyCardSpecRecords(compiledStudyCardSpecs),
+    '',
+    'Syllabus questions:',
+    formatList(syllabusQuestions),
+    '',
+    'Selected theory source spans or excerpt:',
+    requireString(snapshot.theory_excerpt, 'snapshot.theory_excerpt'),
+    '',
+    formatStudyCardSemanticRules(topicId, targetDifficulty, {
+      includeMinimum: false,
+      difficultyRule: '- The card.difficulty must match the compiled study-card spec difficulty.',
+    }),
+    'Generate exactly one study card for the compiled spec above. The card type, difficulty, and grounding must match the spec. Use only the selected source spans.',
+  ].join('\n');
+
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: 'Output only the JSON object with the card field.' },
   ];
 }
 

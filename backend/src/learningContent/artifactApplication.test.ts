@@ -262,6 +262,44 @@ describe('applyArtifactToLearningContent', () => {
     }));
   });
 
+  it('materializes per-card content with the selected compiled card-spec ID', async () => {
+    const repo = makeRepo();
+
+    await applyArtifactToLearningContent({
+      learningContent: repo,
+      deviceId: 'dev-1',
+      runId: 'run-1',
+      artifactKind: 'topic-card-content',
+      snapshot: {
+        subject_id: 'math',
+        topic_id: 'limits',
+        compiled_study_card_specs: [
+          {
+            concept_id: 'concept_compiled_limits',
+            card_spec_id: 'card_spec_compiled_definition',
+            card_type: 'FLASHCARD',
+            difficulty: 1,
+          },
+        ],
+      },
+      contentHash: 'cnt_card',
+      payload: {
+        card: { id: 'llm-temp-1', topicId: 'limits', type: 'FLASHCARD', difficulty: 1, content: { front: 'What is a limit?', back: 'Approach behavior.' } },
+      },
+    });
+
+    expect(repo.upsertTopicCards).toHaveBeenCalledWith(expect.objectContaining({
+      cards: [expect.objectContaining({
+        conceptId: 'concept_compiled_limits',
+        cardSpecId: 'card_spec_compiled_definition',
+        miniGameSpecId: undefined,
+        sourceArtifactKind: 'topic-card-content',
+        cardId: expect.stringMatching(/^card_[0-9a-f]{64}$/),
+        questionSignature: expect.stringMatching(/^qsig_[0-9a-f]{64}$/),
+      })],
+    }));
+  });
+
   it('materializes plan-guided mini-game cards with compiled concept and mini-game-spec IDs', async () => {
     const repo = makeRepo();
 

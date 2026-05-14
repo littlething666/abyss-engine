@@ -265,8 +265,8 @@ describe('backend generation prompt modules', () => {
     expect(content).toContain('Every card object must include topicId, type, difficulty, and content.');
     expect(content).toContain('Every card.difficulty must equal 2.');
     expect(content).toContain('FLASHCARD content must contain non-empty string fields front and back.');
-    expect(content).toContain('MULTIPLE_CHOICE content must contain question, options, explanation, and correctAnswer or correctAnswers.');
-    expect(content).toContain('Do not use alternate content keys such as prompt, answer, term, definition, choices, correctOption, or rationale.');
+    expect(content).toContain('MULTIPLE_CHOICE content must contain exactly question, options, and correctAnswer.');
+    expect(content).toContain('Do not use alternate content keys such as prompt, answer, term, definition, choices, correctOption, correctAnswers, explanation, or rationale.');
     expect(content).toContain('"content":{"front"');
     expect(content).toContain('"difficulty":2');
     expect(content).not.toContain('Create FLASHCARD, CLOZE, and MULTIPLE_CHOICE cards only');
@@ -301,7 +301,7 @@ describe('backend generation prompt modules', () => {
     expect(expansion[0].content).toContain('Existing card ids');
     expect(expansion[0].content).toContain('vector basics');
     expect(expansion[0].content).toContain('FLASHCARD content must contain non-empty string fields front and back.');
-    expect(expansion[0].content).toContain('MULTIPLE_CHOICE content must contain question, options, explanation, and correctAnswer or correctAnswers.');
+    expect(expansion[0].content).toContain('MULTIPLE_CHOICE content must contain exactly question, options, and correctAnswer.');
     expect(expansion[0].content).not.toContain(`at least ${SEMANTIC_DEFAULT_MIN_CARD_POOL_SIZE} deck-compatible`);
     expect(trial[0].content).toContain('sha256:pool');
     expect(trial[0].content).toContain('Use engineering scenarios.');
